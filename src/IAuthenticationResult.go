@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 package msalgo
 
 // AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication

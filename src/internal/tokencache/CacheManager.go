@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 package tokencache
 
 import (
@@ -5,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/markzuber/msalgo/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
 	log "github.com/sirupsen/logrus"
 )
