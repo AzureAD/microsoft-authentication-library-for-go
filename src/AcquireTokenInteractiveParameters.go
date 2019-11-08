@@ -1,6 +1,6 @@
 package msalgo
 
-import "github.com/markzuber/msalgo/internal/msalbase"
+import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
 // AcquireTokenInteractiveParameters stuff
 type AcquireTokenInteractiveParameters struct {

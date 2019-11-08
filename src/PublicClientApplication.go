@@ -1,9 +1,9 @@
 package msalgo
 
 import (
-	"github.com/markzuber/msalgo/internal/msalbase"
-	"github.com/markzuber/msalgo/internal/requests"
-	"github.com/markzuber/msalgo/internal/tokencache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
 )
 
 // PublicClientApplication is used to acquire tokens in desktop or mobile applications (Desktop / UWP / Xamarin.iOS / Xamarin.Android).
