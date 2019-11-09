@@ -3,7 +3,7 @@
 
 package msalgo
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+import "internal/msalbase"
 
 // PublicClientApplicationParameters stuff
 type PublicClientApplicationParameters struct {

@@ -8,7 +8,7 @@ package tokencache
 import (
 	"errors"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"internal/msalbase"
 )
 
 type linuxStorageManager struct {

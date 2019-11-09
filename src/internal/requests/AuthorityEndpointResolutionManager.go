@@ -9,7 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/markzuber/msalgo/internal/msalbase"
+	"internal/msalbase"
 )
 
 type authorityEndpointCacheEntry struct {

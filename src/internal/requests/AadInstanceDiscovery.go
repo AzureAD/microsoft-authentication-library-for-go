@@ -6,7 +6,7 @@ package requests
 import (
 	"sync"
 
-	"github.com/markzuber/msalgo/internal/msalbase"
+	"internal/msalbase"
 )
 
 var instanceDiscoveryCache = map[string]*instanceDiscoveryMetadata{}

@@ -6,7 +6,7 @@ package requests
 import (
 	"errors"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"internal/msalbase"
 )
 
 type IOpenIdConfigurationEndpointManager interface {

@@ -6,7 +6,7 @@ package requests
 import (
 	"encoding/json"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"internal/msalbase"
 )
 
 // TenantDiscoveryResponse stuff

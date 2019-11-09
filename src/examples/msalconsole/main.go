@@ -12,7 +12,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/markzuber/msalgo"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/msalgo"
 	"github.com/shirou/gopsutil/host"
 	"golang.org/x/crypto/ssh/terminal"
 )

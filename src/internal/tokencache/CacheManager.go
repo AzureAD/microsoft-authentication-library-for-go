@@ -8,7 +8,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"internal/msalbase"
 
 	log "github.com/sirupsen/logrus"
 )

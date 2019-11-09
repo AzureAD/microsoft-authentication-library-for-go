@@ -4,7 +4,7 @@
 package requests
 
 import (
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"internal/msalbase"
 )
 
 type IRealmMetadata interface {

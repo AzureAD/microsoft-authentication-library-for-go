@@ -15,8 +15,8 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/wstrust"
+	"internal/msalbase"
+	"internal/wstrust"
 )
 
 // WebRequestManager stuff
