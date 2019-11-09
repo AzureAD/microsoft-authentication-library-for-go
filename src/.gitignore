@@ -1,3 +1,4 @@
 *.exe
 
-pkg/
+github.com/
+golang.org/
