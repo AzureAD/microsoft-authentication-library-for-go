@@ -5,10 +5,9 @@ package requests
 
 import (
 	"encoding/json"
-	"strconv"
 	"time"
 
-	"internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 type deviceCodeResponse struct {
@@ -16,12 +15,9 @@ type deviceCodeResponse struct {
 	UserCode        string `json:"user_code"`
 	DeviceCode      string `json:"device_code"`
 	VerificationURL string `json:"verification_url"`
-	ExpiresInStr    string `json:"expires_in"`
-	IntervalStr     string `json:"interval"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
 	Message         string `json:"message"`
-
-	ExpiresIn int
-	Interval  int
 }
 
 // createDeviceCodeResponse stuff
@@ -38,18 +34,6 @@ func createDeviceCodeResponse(responseCode int, responseData string) (*deviceCod
 	}
 
 	dcResponse.BaseResponse = baseResponse
-
-	expiresIn, err := strconv.Atoi(dcResponse.ExpiresInStr)
-	if err != nil {
-		return nil, err
-	}
-	dcResponse.ExpiresIn = expiresIn
-
-	interval, err := strconv.Atoi(dcResponse.IntervalStr)
-	if err != nil {
-		return nil, err
-	}
-	dcResponse.Interval = interval
 
 	return dcResponse, nil
 }

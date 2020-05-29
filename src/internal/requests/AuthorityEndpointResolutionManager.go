@@ -9,7 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 type authorityEndpointCacheEntry struct {

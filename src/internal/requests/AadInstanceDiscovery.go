@@ -6,7 +6,7 @@ package requests
 import (
 	"sync"
 
-	"internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 var instanceDiscoveryCache = map[string]*instanceDiscoveryMetadata{}

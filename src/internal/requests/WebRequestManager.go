@@ -15,8 +15,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"internal/msalbase"
-	"internal/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/wstrust"
 )
 
 // WebRequestManager stuff
@@ -25,8 +26,11 @@ type WebRequestManager struct {
 }
 
 func isErrorAuthorizationPending(err error) bool {
-	// todo: implement me!
-	return false
+	return err.Error() == "authorization_pending"
+}
+
+func isErrorSlowDown(err error) bool {
+	return err.Error() == "slow_down"
 }
 
 // ContentType stuff

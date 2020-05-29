@@ -12,7 +12,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src"
+	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src"
 	"github.com/shirou/gopsutil/host"
 	"golang.org/x/crypto/ssh/terminal"
 )
@@ -83,9 +83,10 @@ func main() {
 	h, _ := host.Info()
 	log.Infof("%#v", h)
 
-	// set this to get function names in the logs: log.SetReportCaller(true)
+	// set this to get function names in the logs:
+	log.SetReportCaller(true)
 	log.Info("creating pca")
 
-	acquireByDeviceCode()
-	//acquireByUsernamePassword()
+	//acquireByDeviceCode()
+	acquireByUsernamePassword()
 }

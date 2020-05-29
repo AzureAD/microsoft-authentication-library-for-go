@@ -4,8 +4,9 @@
 package requests
 
 import (
-	"internal/msalbase"
-	"internal/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/wstrust"
 )
 
 // IWebRequestManager interface

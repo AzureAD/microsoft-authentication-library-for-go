@@ -3,7 +3,7 @@
 
 package msalgo
 
-import "internal/msalbase"
+import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
 // AcquireTokenDeviceCodeParameters stuff
 type AcquireTokenDeviceCodeParameters struct {

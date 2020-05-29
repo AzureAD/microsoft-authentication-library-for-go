@@ -9,7 +9,7 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 // DeviceCodeRequest stuff
@@ -32,6 +32,13 @@ func CreateDeviceCodeRequest(
 func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 
 	// resolve authority endpoints
+	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
+	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
+	if err != nil {
+		return nil, err
+	}
+
+	req.authParameters.SetAuthorityEndpoints(endpoints)
 
 	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(req.authParameters)
 	if err != nil {
@@ -46,6 +53,8 @@ func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 
 func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
 
+	interval := 5
+
 	timeRemaining := deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
 
 	for timeRemaining.Seconds() > 0.0 {
@@ -57,18 +66,16 @@ func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 		if err != nil {
 			if isErrorAuthorizationPending(err) {
 				timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
+			} else if isErrorSlowDown(err) {
+				interval += 5
 			} else {
 				return nil, err
 			}
 		} else {
-			if tokenResponse.IsAuthorizationPending() {
-				timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
-			} else {
-				return tokenResponse, nil
-			}
+			return tokenResponse, nil
 		}
 
-		time.Sleep(5 * time.Second)
+		time.Sleep(time.Duration(interval) * time.Second)
 	}
 
 	return nil, errors.New("Verification code expired before contacting the server")

@@ -3,7 +3,7 @@
 
 package msalgo
 
-import "internal/msalbase"
+import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
 // AcquireTokenSilentParameters stuff
 type AcquireTokenSilentParameters struct {
