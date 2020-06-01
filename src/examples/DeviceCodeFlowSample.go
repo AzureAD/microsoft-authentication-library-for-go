@@ -4,44 +4,36 @@
 package main
 
 import (
-	log "github.com/sirupsen/logrus"
+	"fmt"
 
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src"
+	log "github.com/sirupsen/logrus"
 )
 
 // CLIENTID is a UUID issued by the authorization server for your application
-const CLIENTID string = "0615b6ca-88d4-4884-8729-b178178f7c27"
+const CLIENTID string = "649e183b-9097-4a61-8222-10be1ab5c7c3"
 
 // AUTHORITY is a URL that defines token authority
-const AUTHORITY string = "https://login.microsoftonline.com/organizations"
+const AUTHORITY string = "https://login.microsoftonline.com/f86c8166-c7df-412e-b770-884135fdedf5"
 
 //SCOPES are requested to access a protected API
 var SCOPES []string = []string{"user.read"}
 
-//createPCAParams is used to instantiate the parameters to create the Public Client Application
-func createPCAParams() *msalgo.PublicClientApplicationParameters {
-	pcaParams := msalgo.CreatePublicClientApplicationParameters(CLIENTID)
-	pcaParams.SetAadAuthority(AUTHORITY)
-	return pcaParams
-}
-
 func acquireTokenDeviceCode() {
+	config := CreateConfig("config.json")
 	// Creating the Public Client Application
-	pcaParams := createPCAParams()
+	fmt.Println(config.GetClientID(), config.GetAuthority())
+	pcaParams := createPCAParams(config.GetClientID(), config.GetAuthority())
 	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(SCOPES)
+	fmt.Println(config.GetScopes())
+	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes())
 	result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
 	if err != nil {
 		log.Fatal(err)
 	}
 	accessToken := result.GetAccessToken()
 	log.Info("Access token is: " + accessToken)
-}
-
-func main() {
-	acquireTokenDeviceCode()
 }

@@ -53,7 +53,7 @@ func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 
 func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
 
-	interval := 5
+	interval := deviceCodeResult.GetInterval()
 
 	timeRemaining := deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
 
