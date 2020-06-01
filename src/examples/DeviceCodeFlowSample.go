@@ -10,15 +10,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// CLIENTID is a UUID issued by the authorization server for your application
-const CLIENTID string = "649e183b-9097-4a61-8222-10be1ab5c7c3"
-
-// AUTHORITY is a URL that defines token authority
-const AUTHORITY string = "https://login.microsoftonline.com/f86c8166-c7df-412e-b770-884135fdedf5"
-
-//SCOPES are requested to access a protected API
-var SCOPES []string = []string{"user.read"}
-
 func acquireTokenDeviceCode() {
 	config := CreateConfig("config.json")
 	// Creating the Public Client Application
