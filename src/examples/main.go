@@ -9,6 +9,8 @@ func main() {
 	if exampleType == "1" {
 		acquireTokenDeviceCode()
 	} else if exampleType == "2" {
-		acquireByUsernamePassword()
+		acquireTokenDeviceCodeWithCancel()
+	} else if exampleType == "3" {
+		acquireByUsernamePasswordPublic()
 	}
 }

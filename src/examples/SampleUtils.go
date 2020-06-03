@@ -12,6 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+//Config represents the config.json required to run the samples
 type Config struct {
 	ClientID  string   `json:"client_id"`
 	Authority string   `json:"authority"`
@@ -20,6 +21,7 @@ type Config struct {
 	Password  string   `json:"password"`
 }
 
+//CreateConfig creates the Config struct from a json file
 func CreateConfig(fileName string) *Config {
 	jsonFile, err := os.Open(fileName)
 	if err != nil {
@@ -35,22 +37,27 @@ func CreateConfig(fileName string) *Config {
 	return config
 }
 
+//GetClientID returns the Client ID of the config
 func (c *Config) GetClientID() string {
 	return c.ClientID
 }
 
+//GetAuthority returns the authority URI of the config
 func (c *Config) GetAuthority() string {
 	return c.Authority
 }
 
+//GetScopes returns all the scopes of the config
 func (c *Config) GetScopes() []string {
 	return c.Scopes
 }
 
+//GetUsername returns the username of the config
 func (c *Config) GetUsername() string {
 	return c.Username
 }
 
+//GetPassword returns the password of the config
 func (c *Config) GetPassword() string {
 	return c.Password
 }

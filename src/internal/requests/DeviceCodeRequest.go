@@ -17,6 +17,8 @@ type DeviceCodeRequest struct {
 	webRequestManager IWebRequestManager
 	cacheManager      msalbase.ICacheManager
 	authParameters    *msalbase.AuthParametersInternal
+	deviceCodeResult  *msalbase.DeviceCodeResult
+	cancel            bool
 }
 
 // CreateDeviceCodeRequest stuff
@@ -24,13 +26,19 @@ func CreateDeviceCodeRequest(
 	webRequestManager IWebRequestManager,
 	cacheManager msalbase.ICacheManager,
 	authParameters *msalbase.AuthParametersInternal) *DeviceCodeRequest {
-	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters}
+	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, nil, false}
+	return req
+}
+
+func CreateDeviceCodeRequestWithDeviceCode(webRequestManager IWebRequestManager,
+	cacheManager msalbase.ICacheManager,
+	authParameters *msalbase.AuthParametersInternal, deviceCodeResult *msalbase.DeviceCodeResult) *DeviceCodeRequest {
+	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeResult, false}
 	return req
 }
 
 // Execute stuff
 func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
-
 	// resolve authority endpoints
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
@@ -40,15 +48,26 @@ func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 
 	req.authParameters.SetAuthorityEndpoints(endpoints)
 
+	// fire deviceCodeResult up to user
+	log.Infof("%v", req.deviceCodeResult)
+
+	return req.waitForTokenResponse(req.deviceCodeResult)
+}
+
+func (req *DeviceCodeRequest) SetDeviceCodeResult() error {
+	// resolve authority endpoints
+	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
+	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
+	if err != nil {
+		return err
+	}
+	req.authParameters.SetAuthorityEndpoints(endpoints)
 	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(req.authParameters)
 	if err != nil {
-		return nil, err
+		return err
 	}
-
-	// fire deviceCodeResult up to user
-	log.Infof("%v", deviceCodeResult)
-
-	return req.waitForTokenResponse(deviceCodeResult)
+	req.deviceCodeResult = deviceCodeResult
+	return nil
 }
 
 func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
@@ -59,7 +78,9 @@ func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 
 	for timeRemaining.Seconds() > 0.0 {
 		// todo: how to check for cancellation requested...
-
+		if req.cancel {
+			return nil, errors.New("Token request canceled")
+		}
 		// todo: learn more about go error handling so that this is managed through error flow and not parsing the token response...
 
 		tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
@@ -79,4 +100,12 @@ func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 	}
 
 	return nil, errors.New("Verification code expired before contacting the server")
+}
+
+func (req *DeviceCodeRequest) CancelRequest() {
+	req.cancel = true
+}
+
+func (req *DeviceCodeRequest) GetDeviceCodeResult() *msalbase.DeviceCodeResult {
+	return req.deviceCodeResult
 }

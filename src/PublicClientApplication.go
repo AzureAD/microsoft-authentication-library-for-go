@@ -18,7 +18,7 @@ type PublicClientApplication struct {
 	cacheManager      msalbase.ICacheManager
 }
 
-// CreatePublicClientApplication stuff
+// CreatePublicClientApplication creates a PublicClientApplication Instance given its parameters, which include client ID and authority info
 func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParameters) (*PublicClientApplication, error) {
 	err := pcaParameters.validate()
 	if err != nil {
@@ -34,6 +34,17 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 
 	pca := &PublicClientApplication{pcaParameters, webRequestManager, cacheManager}
 	return pca, nil
+}
+
+func (pca *PublicClientApplication) AcquireDeviceCode(deviceCodeParameters *AcquireTokenDeviceCodeParameters) (*requests.DeviceCodeRequest, error) {
+	authParams := pca.pcaParameters.createAuthenticationParameters()
+	deviceCodeParameters.augmentAuthenticationParameters(authParams)
+	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	err := req.SetDeviceCodeResult()
+	if err != nil {
+		return nil, err
+	}
+	return req, nil
 }
 
 // AcquireTokenSilent stuff
@@ -67,12 +78,12 @@ func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(
 
 // AcquireTokenByDeviceCode stuff
 func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
-	deviceCodeParameters *AcquireTokenDeviceCodeParameters) (IAuthenticationResult, error) {
+	deviceCodeParameters *AcquireTokenDeviceCodeParameters, deviceCodeRequest *requests.DeviceCodeRequest) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
 
-	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
+	//req := requests.CreateDeviceCodeRequestWithDeviceCode(pca.webRequestManager, pca.cacheManager, authParams, deviceCodeResult)
+	return pca.executeTokenRequestWithoutCacheWrite(deviceCodeRequest, authParams)
 }
 
 // AcquireTokenInteractive stuff
@@ -82,7 +93,7 @@ func (pca *PublicClientApplication) AcquireTokenInteractive(
 	interactiveParams.augmentAuthenticationParameters(authParams)
 
 	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	return pca.executeTokenRequestWithCacheWrite(req, authParams)
+	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
 // executeTokenRequestWithoutCacheWrite stuff
