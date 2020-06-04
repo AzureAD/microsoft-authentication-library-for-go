@@ -36,15 +36,12 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	return pca, nil
 }
 
-func (pca *PublicClientApplication) AcquireDeviceCode(deviceCodeParameters *AcquireTokenDeviceCodeParameters) (*requests.DeviceCodeRequest, error) {
+func (pca *PublicClientApplication) AcquireAuthCode(interactiveTokenParameters *AcquireTokenInteractiveParameters) (string, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
-	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	err := req.SetDeviceCodeResult()
-	if err != nil {
-		return nil, err
-	}
-	return req, nil
+	interactiveTokenParameters.augmentAuthenticationParameters(authParams)
+	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	authURL, err := req.GetAuthURL()
+	return authURL, err
 }
 
 // AcquireTokenSilent stuff
@@ -78,12 +75,11 @@ func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(
 
 // AcquireTokenByDeviceCode stuff
 func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
-	deviceCodeParameters *AcquireTokenDeviceCodeParameters, deviceCodeRequest *requests.DeviceCodeRequest) (IAuthenticationResult, error) {
+	deviceCodeParameters *AcquireTokenDeviceCodeParameters, cancelChannel chan bool) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-
-	//req := requests.CreateDeviceCodeRequestWithDeviceCode(pca.webRequestManager, pca.cacheManager, authParams, deviceCodeResult)
-	return pca.executeTokenRequestWithoutCacheWrite(deviceCodeRequest, authParams)
+	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeResult, cancelChannel)
+	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
 // AcquireTokenInteractive stuff
@@ -91,7 +87,6 @@ func (pca *PublicClientApplication) AcquireTokenInteractive(
 	interactiveParams *AcquireTokenInteractiveParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	interactiveParams.augmentAuthenticationParameters(authParams)
-
 	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
