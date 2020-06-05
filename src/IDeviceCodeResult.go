@@ -3,8 +3,15 @@
 
 package msalgo
 
-// AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
-// or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
+import "time"
+
+// IDeviceCodeResult is an interface for DeviceCodeResult
 type IDeviceCodeResult interface {
 	GetMessage() string
+	String() string
+	GetUserCode() string
+	GetDeviceCode() string
+	GetVerificationURL() string
+	GetExpiresOn() time.Time
+	GetInterval() int
 }

@@ -11,20 +11,24 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+func deviceCodeCallback(deviceCodeResult msalgo.IDeviceCodeResult) {
+	log.Infof(deviceCodeResult.GetMessage())
+}
+
 func setCancelTimeout(seconds int, cancelChannel chan bool) {
 	time.Sleep(time.Duration(seconds) * time.Second)
 	cancelChannel <- true
 }
 
 func acquireTokenDeviceCode() {
-	cancelTimeout := 100
+	cancelTimeout := 100 //Change this for cancel timeout
 	config := CreateConfig("config.json")
 	pcaParams := createPCAParams(config.GetClientID(), config.GetAuthority())
 	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
 	if err != nil {
 		log.Fatal(err)
 	}
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes())
+	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes(), deviceCodeCallback)
 	cancelChannel := make(chan bool)
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
@@ -33,12 +37,6 @@ func acquireTokenDeviceCode() {
 		errChannel <- err
 		resultChannel <- result
 	}()
-	var deviceCodeResult msalgo.IDeviceCodeResult
-	deviceCodeResult = deviceCodeParams.GetDeviceCodeResult()
-	for deviceCodeResult.GetMessage() == "" {
-		continue
-	}
-	fmt.Println("Message is: " + deviceCodeResult.GetMessage())
 	go setCancelTimeout(cancelTimeout, cancelChannel)
 	err = <-errChannel
 	if err != nil {

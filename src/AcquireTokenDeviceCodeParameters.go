@@ -7,15 +7,15 @@ import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/
 
 // AcquireTokenDeviceCodeParameters stuff
 type AcquireTokenDeviceCodeParameters struct {
-	commonParameters *acquireTokenCommonParameters
-	deviceCodeResult *msalbase.DeviceCodeResult
+	commonParameters   *acquireTokenCommonParameters
+	deviceCodeCallback func(IDeviceCodeResult)
 }
 
 // CreateAcquireTokenDeviceCodeParameters stuff
-func CreateAcquireTokenDeviceCodeParameters(scopes []string) *AcquireTokenDeviceCodeParameters {
+func CreateAcquireTokenDeviceCodeParameters(scopes []string, deviceCodeCallback func(IDeviceCodeResult)) *AcquireTokenDeviceCodeParameters {
 	p := &AcquireTokenDeviceCodeParameters{
-		commonParameters: createAcquireTokenCommonParameters(scopes),
-		deviceCodeResult: &msalbase.DeviceCodeResult{},
+		commonParameters:   createAcquireTokenCommonParameters(scopes),
+		deviceCodeCallback: deviceCodeCallback,
 	}
 	return p
 }
@@ -25,6 +25,13 @@ func (p *AcquireTokenDeviceCodeParameters) augmentAuthenticationParameters(authP
 	authParams.SetAuthorizationType(msalbase.AuthorizationTypeDeviceCode)
 }
 
+/*
 func (p *AcquireTokenDeviceCodeParameters) GetDeviceCodeResult() *msalbase.DeviceCodeResult {
 	return p.deviceCodeResult
+}*/
+
+func (p *AcquireTokenDeviceCodeParameters) InternalCallback(dcr *msalbase.DeviceCodeResult) {
+	var returnedDCR IDeviceCodeResult
+	returnedDCR = dcr
+	p.deviceCodeCallback(returnedDCR)
 }

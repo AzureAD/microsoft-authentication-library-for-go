@@ -36,13 +36,14 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	return pca, nil
 }
 
+/*
 func (pca *PublicClientApplication) AcquireAuthCode(interactiveTokenParameters *AcquireTokenInteractiveParameters) (string, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	interactiveTokenParameters.augmentAuthenticationParameters(authParams)
 	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
 	authURL, err := req.GetAuthURL()
 	return authURL, err
-}
+}*/
 
 // AcquireTokenSilent stuff
 func (pca *PublicClientApplication) AcquireTokenSilent(
@@ -78,7 +79,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	deviceCodeParameters *AcquireTokenDeviceCodeParameters, cancelChannel chan bool) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeResult, cancelChannel)
+	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.InternalCallback, cancelChannel)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
@@ -88,7 +89,7 @@ func (pca *PublicClientApplication) AcquireTokenInteractive(
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	interactiveParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	req.SetCode(code)
+	//req.SetCode(code)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 

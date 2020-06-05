@@ -14,11 +14,11 @@ import (
 
 // DeviceCodeRequest stuff
 type DeviceCodeRequest struct {
-	webRequestManager IWebRequestManager
-	cacheManager      msalbase.ICacheManager
-	authParameters    *msalbase.AuthParametersInternal
-	deviceCodeResult  *msalbase.DeviceCodeResult
-	cancelChannel     chan bool
+	webRequestManager  IWebRequestManager
+	cacheManager       msalbase.ICacheManager
+	authParameters     *msalbase.AuthParametersInternal
+	deviceCodeCallback func(*msalbase.DeviceCodeResult)
+	cancelChannel      chan bool
 }
 
 // CreateDeviceCodeRequest stuff
@@ -26,8 +26,8 @@ func CreateDeviceCodeRequest(
 	webRequestManager IWebRequestManager,
 	cacheManager msalbase.ICacheManager,
 	authParameters *msalbase.AuthParametersInternal,
-	deviceCodeResult *msalbase.DeviceCodeResult, cancelChannel chan bool) *DeviceCodeRequest {
-	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeResult, cancelChannel}
+	deviceCodeCallback func(*msalbase.DeviceCodeResult), cancelChannel chan bool) *DeviceCodeRequest {
+	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeCallback, cancelChannel}
 	return req
 }
 
@@ -45,27 +45,11 @@ func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	deviceCodeResult.CopyTo(req.deviceCodeResult)
+	//deviceCodeResult.CopyTo(req.deviceCodeResult)
 	// fire deviceCodeResult up to user
-	log.Infof("%v", req.deviceCodeResult)
-
-	return req.waitForTokenResponse(req.deviceCodeResult)
-}
-
-func (req *DeviceCodeRequest) SetDeviceCodeResult() error {
-	// resolve authority endpoints
-	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
-	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
-	if err != nil {
-		return err
-	}
-	req.authParameters.SetAuthorityEndpoints(endpoints)
-	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(req.authParameters)
-	if err != nil {
-		return err
-	}
-	req.deviceCodeResult = deviceCodeResult
-	return nil
+	log.Infof("%v", deviceCodeResult)
+	req.deviceCodeCallback(deviceCodeResult)
+	return req.waitForTokenResponse(deviceCodeResult)
 }
 
 func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
@@ -102,8 +86,4 @@ func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 	}
 
 	return nil, errors.New("Verification code expired before contacting the server")
-}
-
-func (req *DeviceCodeRequest) GetDeviceCodeResult() *msalbase.DeviceCodeResult {
-	return req.deviceCodeResult
 }
