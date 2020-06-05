@@ -84,10 +84,11 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 
 // AcquireTokenInteractive stuff
 func (pca *PublicClientApplication) AcquireTokenInteractive(
-	interactiveParams *AcquireTokenInteractiveParameters) (IAuthenticationResult, error) {
+	interactiveParams *AcquireTokenInteractiveParameters, code string) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	interactiveParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	req.SetCode(code)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 

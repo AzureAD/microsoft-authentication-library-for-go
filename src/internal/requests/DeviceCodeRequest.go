@@ -31,14 +31,6 @@ func CreateDeviceCodeRequest(
 	return req
 }
 
-/*
-func CreateDeviceCodeRequestWithDeviceCode(webRequestManager IWebRequestManager,
-	cacheManager msalbase.ICacheManager,
-	authParameters *msalbase.AuthParametersInternal, deviceCodeResult *msalbase.DeviceCodeResult) *DeviceCodeRequest {
-	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeResult, false}
-	return req
-}*/
-
 // Execute stuff
 func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	// resolve authority endpoints
