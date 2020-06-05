@@ -9,7 +9,8 @@ To run one of the examples of uses of MSAL Go, you need to first create a `confi
         // You can find the other permission names from this document
         // https://docs.microsoft.com/en-us/graph/permissions-reference
     "username": "your_username",
-    "password": "your_password" //This is a sample only. DO NOT persist your password.
+    "password": "your_password", //This is a sample only. DO NOT persist your password.
+    "redirect_uri": "The URL you want to redirect to after getting the token (auth code flow)"
 }
 ```
 

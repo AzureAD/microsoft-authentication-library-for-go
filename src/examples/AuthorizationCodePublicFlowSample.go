@@ -41,7 +41,6 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Fprintf(w, result.GetAccessToken())
 	fmt.Println("Access token is " + result.GetAccessToken())
 }
 
