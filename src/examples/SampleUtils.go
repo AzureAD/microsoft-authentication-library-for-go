@@ -14,11 +14,12 @@ import (
 
 //Config represents the config.json required to run the samples
 type Config struct {
-	ClientID  string   `json:"client_id"`
-	Authority string   `json:"authority"`
-	Scopes    []string `json:"scopes"`
-	Username  string   `json:"username"`
-	Password  string   `json:"password"`
+	ClientID    string   `json:"client_id"`
+	Authority   string   `json:"authority"`
+	Scopes      []string `json:"scopes"`
+	Username    string   `json:"username"`
+	Password    string   `json:"password"`
+	RedirectURI string   `json:"redirect_uri"`
 }
 
 //CreateConfig creates the Config struct from a json file
@@ -60,6 +61,10 @@ func (c *Config) GetUsername() string {
 //GetPassword returns the password of the config
 func (c *Config) GetPassword() string {
 	return c.Password
+}
+
+func (c *Config) GetRedirectURI() string {
+	return c.RedirectURI
 }
 
 //createPCAParams is used to instantiate the parameters to create the Public Client Application

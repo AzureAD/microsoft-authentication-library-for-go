@@ -82,6 +82,10 @@ func (ap *AuthParametersInternal) GetRedirectURI() string {
 	return ap.redirecturi
 }
 
+func (ap *AuthParametersInternal) SetRedirectURI(redirecturi string) {
+	ap.redirecturi = redirecturi
+}
+
 func (ap *AuthParametersInternal) GetAuthorizationType() AuthorizationType {
 	return ap.authorizationType
 }
