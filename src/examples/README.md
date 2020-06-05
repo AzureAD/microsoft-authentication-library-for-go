@@ -15,5 +15,4 @@ To run one of the examples of uses of MSAL Go, you need to first create a `confi
 
 To run one of the examples, run the command `go run src/examples/*.go <example-arg>`. The example arguments are as follows:
 * 1 - `DeviceCodeFlowSample.go` without cancellation timeout
-* 2 - `DeviceCodeFlowSample.go` with cancellation timeout
 * 2 - `UsernamePasswordPublicFlowSample.go`

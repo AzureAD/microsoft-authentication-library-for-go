@@ -25,11 +25,6 @@ func (p *AcquireTokenDeviceCodeParameters) augmentAuthenticationParameters(authP
 	authParams.SetAuthorizationType(msalbase.AuthorizationTypeDeviceCode)
 }
 
-/*
-func (p *AcquireTokenDeviceCodeParameters) GetDeviceCodeResult() *msalbase.DeviceCodeResult {
-	return p.deviceCodeResult
-}*/
-
 func (p *AcquireTokenDeviceCodeParameters) InternalCallback(dcr *msalbase.DeviceCodeResult) {
 	var returnedDCR IDeviceCodeResult
 	returnedDCR = dcr
