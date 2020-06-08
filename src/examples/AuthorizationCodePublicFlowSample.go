@@ -23,7 +23,7 @@ var authCodeParams *msalgo.AcquireTokenInteractiveParameters
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Creating the Public Client Application
 
-	authURL, err := publicClientApp.AcquireAuthCode(authCodeParams)
+	authURL, err := publicClientApp.AcquireAuthCodeURL(authCodeParams)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -41,7 +41,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("Access token is " + result.GetAccessToken())
+	fmt.Fprintf(w, "Access token is "+result.GetAccessToken())
 }
 
 func acquireByAuthorizationCodePublic() {
