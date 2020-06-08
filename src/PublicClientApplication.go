@@ -36,10 +36,10 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	return pca, nil
 }
 
-func (pca *PublicClientApplication) AcquireAuthCodeURL(interactiveTokenParameters *AcquireTokenInteractiveParameters) (string, error) {
+func (pca *PublicClientApplication) AcquireAuthCodeURL(authCodeTokenParameters *AcquireTokenAuthCodeParameters) (string, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
-	interactiveTokenParameters.augmentAuthenticationParameters(authParams)
-	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	authCodeTokenParameters.augmentAuthenticationParameters(authParams)
+	req := requests.CreateAuthCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
 	authURL, err := req.GetAuthURL()
 	return authURL, err
 }
@@ -82,13 +82,13 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
-// AcquireTokenInteractive stuff
-func (pca *PublicClientApplication) AcquireTokenInteractive(
-	interactiveParams *AcquireTokenInteractiveParameters, code string) (IAuthenticationResult, error) {
+// AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code
+func (pca *PublicClientApplication) AcquireTokenByAuthCode(
+	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
-	interactiveParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	req.SetCode(code)
+	authCodeParams.augmentAuthenticationParameters(authParams)
+	req := requests.CreateAuthCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	req.SetCode(authCodeParams.code)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 

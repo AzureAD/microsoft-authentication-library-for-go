@@ -63,6 +63,8 @@ func (c *Config) GetPassword() string {
 	return c.Password
 }
 
+//GetRedirectURI returns the redirect URI to redirect to
+//Used in the case of auth code flow
 func (c *Config) GetRedirectURI() string {
 	return c.RedirectURI
 }
