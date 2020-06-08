@@ -69,14 +69,3 @@ func (dcr *DeviceCodeResult) GetClientID() string {
 func (dcr *DeviceCodeResult) GetScopes() []string {
 	return dcr.scopes
 }
-
-func (dcr *DeviceCodeResult) CopyTo(newDCR *DeviceCodeResult) {
-	newDCR.userCode = dcr.userCode
-	newDCR.deviceCode = dcr.deviceCode
-	newDCR.verificationURL = dcr.verificationURL
-	newDCR.expiresOn = dcr.expiresOn
-	newDCR.interval = dcr.interval
-	newDCR.message = dcr.message
-	newDCR.clientID = dcr.clientID
-	newDCR.scopes = dcr.scopes
-}

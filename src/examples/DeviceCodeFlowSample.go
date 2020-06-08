@@ -28,12 +28,12 @@ func acquireTokenDeviceCode() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes(), deviceCodeCallback)
 	cancelChannel := make(chan bool)
+	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes(), deviceCodeCallback, cancelChannel)
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
 	go func() {
-		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams, cancelChannel)
+		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
 		errChannel <- err
 		resultChannel <- result
 	}()

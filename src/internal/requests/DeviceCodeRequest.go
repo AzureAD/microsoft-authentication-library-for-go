@@ -45,7 +45,6 @@ func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	if err != nil {
 		return nil, err
 	}
-	//deviceCodeResult.CopyTo(req.deviceCodeResult)
 	// fire deviceCodeResult up to user
 	log.Infof("%v", deviceCodeResult)
 	req.deviceCodeCallback(deviceCodeResult)
@@ -58,31 +57,27 @@ func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 	timeRemaining := deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
 
 	for timeRemaining.Seconds() > 0.0 {
-		// todo: how to check for cancellation requested...
 		select {
 		case cancel := <-req.cancelChannel:
 			if cancel {
 				return nil, errors.New("Token request canceled")
 			}
 		default:
-
-		}
-		// todo: learn more about go error handling so that this is managed through error flow and not parsing the token response...
-
-		tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
-		if err != nil {
-			if isErrorAuthorizationPending(err) {
-				timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
-			} else if isErrorSlowDown(err) {
-				interval += 5
+			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
+			if err != nil {
+				if isErrorAuthorizationPending(err) {
+					timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
+				} else if isErrorSlowDown(err) {
+					interval += 5
+				} else {
+					return nil, err
+				}
 			} else {
-				return nil, err
+				return tokenResponse, nil
 			}
-		} else {
-			return tokenResponse, nil
-		}
 
-		time.Sleep(time.Duration(interval) * time.Second)
+			time.Sleep(time.Duration(interval) * time.Second)
+		}
 	}
 
 	return nil, errors.New("Verification code expired before contacting the server")

@@ -36,15 +36,6 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	return pca, nil
 }
 
-/*
-func (pca *PublicClientApplication) AcquireAuthCode(interactiveTokenParameters *AcquireTokenInteractiveParameters) (string, error) {
-	authParams := pca.pcaParameters.createAuthenticationParameters()
-	interactiveTokenParameters.augmentAuthenticationParameters(authParams)
-	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	authURL, err := req.GetAuthURL()
-	return authURL, err
-}*/
-
 // AcquireTokenSilent stuff
 func (pca *PublicClientApplication) AcquireTokenSilent(
 	silentParameters *AcquireTokenSilentParameters) (IAuthenticationResult, error) {
@@ -76,10 +67,11 @@ func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(
 
 // AcquireTokenByDeviceCode stuff
 func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
-	deviceCodeParameters *AcquireTokenDeviceCodeParameters, cancelChannel chan bool) (IAuthenticationResult, error) {
+	deviceCodeParameters *AcquireTokenDeviceCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.InternalCallback, cancelChannel)
+	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams,
+		deviceCodeParameters.InternalCallback, deviceCodeParameters.GetCancelChannel())
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
@@ -89,7 +81,6 @@ func (pca *PublicClientApplication) AcquireTokenInteractive(
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	interactiveParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	//req.SetCode(code)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
