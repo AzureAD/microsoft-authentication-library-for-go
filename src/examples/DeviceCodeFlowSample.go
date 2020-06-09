@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -28,8 +29,9 @@ func acquireTokenDeviceCode() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cancelChannel := make(chan bool)
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes(), deviceCodeCallback, cancelChannel)
+	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
+	defer cancelFunc()
+	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes(), deviceCodeCallback, cancelCtx)
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
 	go func() {
@@ -37,7 +39,6 @@ func acquireTokenDeviceCode() {
 		errChannel <- err
 		resultChannel <- result
 	}()
-	go setCancelTimeout(cancelTimeout, cancelChannel)
 	err = <-errChannel
 	if err != nil {
 		log.Fatal(err)

@@ -3,23 +3,27 @@
 
 package msalgo
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+import (
+	"context"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+)
 
 // AcquireTokenDeviceCodeParameters stuff
 type AcquireTokenDeviceCodeParameters struct {
 	commonParameters   *acquireTokenCommonParameters
 	deviceCodeCallback func(IDeviceCodeResult)
-	cancelChannel      chan bool
+	cancelCtx          context.Context
 }
 
 // CreateAcquireTokenDeviceCodeParameters stuff
 func CreateAcquireTokenDeviceCodeParameters(scopes []string,
 	deviceCodeCallback func(IDeviceCodeResult),
-	cancelChannel chan bool) *AcquireTokenDeviceCodeParameters {
+	cancelCtx context.Context) *AcquireTokenDeviceCodeParameters {
 	p := &AcquireTokenDeviceCodeParameters{
 		commonParameters:   createAcquireTokenCommonParameters(scopes),
 		deviceCodeCallback: deviceCodeCallback,
-		cancelChannel:      cancelChannel,
+		cancelCtx:          cancelCtx,
 	}
 	return p
 }
@@ -35,6 +39,6 @@ func (p *AcquireTokenDeviceCodeParameters) InternalCallback(dcr *msalbase.Device
 	p.deviceCodeCallback(returnedDCR)
 }
 
-func (p *AcquireTokenDeviceCodeParameters) GetCancelChannel() chan bool {
-	return p.cancelChannel
+func (p *AcquireTokenDeviceCodeParameters) GetCancelContext() context.Context {
+	return p.cancelCtx
 }

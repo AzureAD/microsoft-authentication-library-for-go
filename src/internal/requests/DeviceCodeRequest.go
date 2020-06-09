@@ -4,6 +4,7 @@
 package requests
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -18,7 +19,8 @@ type DeviceCodeRequest struct {
 	cacheManager       msalbase.ICacheManager
 	authParameters     *msalbase.AuthParametersInternal
 	deviceCodeCallback func(*msalbase.DeviceCodeResult)
-	cancelChannel      chan bool
+	//cancelChannel      chan bool
+	cancelCtx context.Context
 }
 
 // CreateDeviceCodeRequest stuff
@@ -26,8 +28,8 @@ func CreateDeviceCodeRequest(
 	webRequestManager IWebRequestManager,
 	cacheManager msalbase.ICacheManager,
 	authParameters *msalbase.AuthParametersInternal,
-	deviceCodeCallback func(*msalbase.DeviceCodeResult), cancelChannel chan bool) *DeviceCodeRequest {
-	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeCallback, cancelChannel}
+	deviceCodeCallback func(*msalbase.DeviceCodeResult), cancelCtx context.Context) *DeviceCodeRequest {
+	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeCallback, cancelCtx}
 	return req
 }
 
@@ -58,10 +60,8 @@ func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 
 	for timeRemaining.Seconds() > 0.0 {
 		select {
-		case cancel := <-req.cancelChannel:
-			if cancel {
-				return nil, errors.New("Token request canceled")
-			}
+		case <-req.cancelCtx.Done():
+			return nil, errors.New("Token request canceled")
 		default:
 			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
 			if err != nil {
