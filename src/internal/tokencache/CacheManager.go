@@ -175,14 +175,14 @@ func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInter
 }
 
 func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParametersInternal, tokenResponse *msalbase.TokenResponse) (*msalbase.Account, error) {
-	homeAccountID := "" // GetHomeAccountId(response)
-	// shared_ptr<Uri> authority = authParameters->GetAuthority();
-	environment := "" // authority.GetEnvironment()
-	realm := ""       // authority->GetRealm();
+	authParameters.SetHomeAccountID(tokenResponse.GetHomeAccountIDFromClientInfo())
+	homeAccountID := authParameters.GetHomeAccountID()
+	environment := authParameters.GetAuthorityInfo().GetHost()
+	realm := authParameters.GetAuthorityInfo().GetUserRealmURIPrefix()
 	clientID := authParameters.GetClientID()
 	target := strings.Join(tokenResponse.GetGrantedScopes(), " ")
 
-	log.Tracef("Writing to the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target '%s'", homeAccountID, environment, realm, clientID, target)
+	log.Infof("Writing to the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target '%s'", homeAccountID, environment, realm, clientID, target)
 
 	if homeAccountID == "" || environment == "" || realm == "" || clientID == "" || target == "" {
 		log.Warn("Skipping writing data to the tokens cache, one of the primary keys is empty")
@@ -239,7 +239,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 		return nil, nil
 	}
 
-	localAccountID := "" // GetLocalAccountId(idTokenJwt)
+	localAccountID := "" //GetLocalAccountId(idTokenJwt)
 	authorityType := authParameters.GetAuthorityInfo().GetAuthorityType()
 
 	account := msalbase.CreateAccount(

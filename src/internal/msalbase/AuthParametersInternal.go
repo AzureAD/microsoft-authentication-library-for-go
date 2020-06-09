@@ -97,3 +97,7 @@ func (ap *AuthParametersInternal) SetAuthorizationType(authType AuthorizationTyp
 func (ap *AuthParametersInternal) GetHomeAccountID() string {
 	return ap.homeaccountid
 }
+
+func (ap *AuthParametersInternal) SetHomeAccountID(homeaccountid string) {
+	ap.homeaccountid = homeaccountid
+}

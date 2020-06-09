@@ -23,10 +23,11 @@ type tokenResponseJSONPayload struct {
 }
 
 type clientInfoJSONPayload struct {
-	uid  string `json:"uid"`
-	utid string `json:"utid"`
+	UID  string `json:"uid"`
+	Utid string `json:"utid"`
 }
 
+//TokenResponse
 type TokenResponse struct {
 	baseResponse   *OAuthResponseBase
 	accessToken    string
@@ -47,14 +48,6 @@ func (tr *TokenResponse) HasAccessToken() bool {
 
 func (tr *TokenResponse) HasRefreshToken() bool {
 	return len(tr.refreshToken) > 0
-}
-
-func (tr *TokenResponse) IsAuthorizationPending() bool {
-	return tr.baseResponse.Error == "authorization_pending"
-}
-
-func (tr *TokenResponse) IsSlowDown() bool {
-	return tr.baseResponse.Error == "slow_down"
 }
 
 func (tr *TokenResponse) GetAccessToken() string {
@@ -89,6 +82,15 @@ func (tr *TokenResponse) GetExtendedExpiresOn() time.Time {
 	return tr.extExpiresOn
 }
 
+func (tr *TokenResponse) GetClientInfo() *clientInfoJSONPayload {
+	return tr.clientInfo
+}
+
+func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
+	homeAccountID := tr.clientInfo.UID + "." + tr.clientInfo.Utid
+	return homeAccountID
+}
+
 func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode int, responseData string) (*TokenResponse, error) {
 	baseResponse, err := CreateOAuthResponseBase(responseCode, responseData)
 	if err != nil {
@@ -109,12 +111,17 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	rawClientInfo := payload.ClientInfo
 	clientInfo := &clientInfoJSONPayload{}
 
+	// Client info may be empty in some flows, e.g. certificate exchange.
 	if len(rawClientInfo) > 0 {
-		// Client info may be empty in some flows, e.g. certificate exchange.
-		rawClientInfoDecoded, err := base64.RawStdEncoding.DecodeString(rawClientInfo)
+		// Adapted from MSAL Python and https://stackoverflow.com/a/31971780
+		if i := len(rawClientInfo) % 4; i != 0 {
+			rawClientInfo += strings.Repeat("=", 4-i)
+		}
+		rawClientInfoDecoded, err := base64.StdEncoding.DecodeString(rawClientInfo)
 		if err != nil {
 			return nil, err
 		}
+
 		err = json.Unmarshal(rawClientInfoDecoded, clientInfo)
 		if err != nil {
 			return nil, err
@@ -152,7 +159,8 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 		expiresOn:      expiresOn,
 		extExpiresOn:   extExpiresOn,
 		grantedScopes:  grantedScopes,
-		declinedScopes: declinedScopes}
+		declinedScopes: declinedScopes,
+		clientInfo:     clientInfo}
 	return tokenResponse, nil
 }
 
