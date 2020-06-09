@@ -79,7 +79,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
 	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.InternalCallback, cancelChannel)
-	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
+	return pca.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code

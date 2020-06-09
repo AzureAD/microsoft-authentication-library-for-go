@@ -21,13 +21,22 @@ func setCancelTimeout(seconds int, cancelChannel chan bool) {
 }
 
 func acquireTokenDeviceCode() {
-	cancelTimeout := 100 //Change this for cancel timeout
-	config := CreateConfig("config.json")
-	pcaParams := createPCAParams(config.GetClientID(), config.GetAuthority())
-	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
+	publicClientApp, err = msalgo.CreatePublicClientApplication(pcaParams)
 	if err != nil {
 		log.Fatal(err)
 	}
+	silentParams := msalgo.CreateAcquireTokenSilentParameters(config.GetScopes())
+	result, err := publicClientApp.AcquireTokenSilent(silentParams)
+	if err != nil {
+		log.Info("Acquiring access token using cached failed, trying device code flow now.")
+		tryWithDeviceCode()
+	} else {
+		fmt.Println("Access token is " + result.GetAccessToken())
+	}
+}
+
+func tryWithDeviceCode() {
+	cancelTimeout := 100 //Change this for cancel timeout
 	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes(), deviceCodeCallback)
 	cancelChannel := make(chan bool)
 	resultChannel := make(chan msalgo.IAuthenticationResult)

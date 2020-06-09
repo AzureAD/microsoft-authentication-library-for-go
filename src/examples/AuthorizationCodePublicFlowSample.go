@@ -15,12 +15,6 @@ import (
 // PORT is the port this server is running on
 const PORT = ":3000"
 
-var config = CreateConfig("config.json")
-var pcaParams = createPCAParams(config.GetClientID(), config.GetAuthority())
-var publicClientApp *msalgo.PublicClientApplication
-var err error
-var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
-
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authURL, err := publicClientApp.AcquireAuthCodeURL(authCodeParams)
