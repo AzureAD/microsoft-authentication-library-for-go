@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package requests
+package msalgo
 
 import (
 	"context"
@@ -11,32 +11,32 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
 // DeviceCodeRequest stuff
-type DeviceCodeRequest struct {
-	webRequestManager  IWebRequestManager
+type deviceCodeRequest struct {
+	webRequestManager  requests.IWebRequestManager
 	cacheManager       msalbase.ICacheManager
 	authParameters     *msalbase.AuthParametersInternal
-	deviceCodeCallback func(*msalbase.DeviceCodeResult)
-	//cancelChannel      chan bool
-	cancelCtx context.Context
+	deviceCodeCallback func(IDeviceCodeResult)
+	cancelCtx          context.Context
 }
 
 // CreateDeviceCodeRequest stuff
-func CreateDeviceCodeRequest(
-	webRequestManager IWebRequestManager,
+func createDeviceCodeRequest(cancelCtx context.Context,
+	webRequestManager requests.IWebRequestManager,
 	cacheManager msalbase.ICacheManager,
 	authParameters *msalbase.AuthParametersInternal,
-	deviceCodeCallback func(*msalbase.DeviceCodeResult), cancelCtx context.Context) *DeviceCodeRequest {
-	req := &DeviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeCallback, cancelCtx}
+	deviceCodeCallback func(IDeviceCodeResult)) *deviceCodeRequest {
+	req := &deviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeCallback, cancelCtx}
 	return req
 }
 
 // Execute stuff
-func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	// resolve authority endpoints
-	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
+	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
 	if err != nil {
 		return nil, err
@@ -53,7 +53,7 @@ func (req *DeviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	return req.waitForTokenResponse(deviceCodeResult)
 }
 
-func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
 
 	interval := deviceCodeResult.GetInterval()
 	timeRemaining := deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
@@ -65,9 +65,9 @@ func (req *DeviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 		default:
 			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
 			if err != nil {
-				if isErrorAuthorizationPending(err) {
+				if requests.IsErrorAuthorizationPending(err) {
 					timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
-				} else if isErrorSlowDown(err) {
+				} else if requests.IsErrorSlowDown(err) {
 					interval += 5
 				} else {
 					return nil, err

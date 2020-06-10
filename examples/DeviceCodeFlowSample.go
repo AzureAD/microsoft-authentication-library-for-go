@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src"
+	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -31,7 +31,7 @@ func acquireTokenDeviceCode() {
 	}
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
 	defer cancelFunc()
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(config.GetScopes(), deviceCodeCallback, cancelCtx)
+	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.GetScopes(), deviceCodeCallback)
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
 	go func() {

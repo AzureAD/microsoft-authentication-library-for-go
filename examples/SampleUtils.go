@@ -8,7 +8,7 @@ import (
 	"io/ioutil"
 	"os"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src"
+	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
 )
 

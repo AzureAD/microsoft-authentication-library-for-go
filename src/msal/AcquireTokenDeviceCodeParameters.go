@@ -17,9 +17,8 @@ type AcquireTokenDeviceCodeParameters struct {
 }
 
 // CreateAcquireTokenDeviceCodeParameters stuff
-func CreateAcquireTokenDeviceCodeParameters(scopes []string,
-	deviceCodeCallback func(IDeviceCodeResult),
-	cancelCtx context.Context) *AcquireTokenDeviceCodeParameters {
+func CreateAcquireTokenDeviceCodeParameters(cancelCtx context.Context, scopes []string,
+	deviceCodeCallback func(IDeviceCodeResult)) *AcquireTokenDeviceCodeParameters {
 	p := &AcquireTokenDeviceCodeParameters{
 		commonParameters:   createAcquireTokenCommonParameters(scopes),
 		deviceCodeCallback: deviceCodeCallback,
@@ -31,12 +30,6 @@ func CreateAcquireTokenDeviceCodeParameters(scopes []string,
 func (p *AcquireTokenDeviceCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.SetAuthorizationType(msalbase.AuthorizationTypeDeviceCode)
-}
-
-func (p *AcquireTokenDeviceCodeParameters) InternalCallback(dcr *msalbase.DeviceCodeResult) {
-	var returnedDCR IDeviceCodeResult
-	returnedDCR = dcr
-	p.deviceCodeCallback(returnedDCR)
 }
 
 func (p *AcquireTokenDeviceCodeParameters) GetCancelContext() context.Context {
