@@ -14,11 +14,12 @@ import (
 )
 
 type cacheManager struct {
-	storageManager IStorageManager
+	storageManager    IStorageManager
+	cacheAccessAspect ICacheAccessAspect
 }
 
 func CreateCacheManager(storageManager IStorageManager) msalbase.ICacheManager {
-	cache := &cacheManager{storageManager}
+	cache := &cacheManager{storageManager: storageManager}
 	return cache
 }
 
@@ -26,11 +27,11 @@ func isAccessTokenValid(accessToken *msalbase.Credential) bool {
 	// const int64_t now = TimeUtils::GetSecondsFromEpochNow();
 	// // If the token expires in less than 5 minutes (300 seconds), consider it invalid to guarantee that valid access
 	// // tokens have a time windows to use them.
-	// if (accessToken.GetExpiresOn() <= now + 300)
-	// {
-	//     log.Info("The access token is expired");
-	//     return false;
-	// }
+	/*
+		if accessToken.GetExpiresOn() <= now+300 {
+			log.Info("The access token is expired")
+			return false
+		}*/
 	// // Also check that the token isn't cached in the "future" which can happen if the user changed the clock, in which
 	// // case the token should be conidered invalid, since it can't really be validated.
 	// if (accessToken.GetCachedAt() > now)
@@ -224,7 +225,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 		credentialsToWrite = append(credentialsToWrite, msalbase.CreateCredentialIdToken(homeAccountID, environment, realm, clientID, cachedAt, idTokenJwt.GetRaw(), ""))
 	}
 
-	emptyCorrelationID := ""
+	/*emptyCorrelationID := ""
 
 	operationStatus, err := m.storageManager.WriteCredentials(emptyCorrelationID, credentialsToWrite)
 	if err != nil {
@@ -237,7 +238,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 
 	if idTokenJwt.IsEmpty() {
 		return nil, nil
-	}
+	}*/
 
 	localAccountID := "" //GetLocalAccountId(idTokenJwt)
 	authorityType := authParameters.GetAuthorityInfo().GetAuthorityType()
@@ -256,13 +257,14 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 		idTokenJwt.GetAlternativeId(),
 		tokenResponse.GetRawClientInfo(),
 		"")
+	log.Infof("%v", account)
+	/*
+		operationStatus, err = m.storageManager.WriteAccount(emptyCorrelationID, account)
 
-	operationStatus, err = m.storageManager.WriteAccount(emptyCorrelationID, account)
-
-	if operationStatus.StatusType != OperationStatusTypeSuccess {
-		log.Warn("Error writing an account to the cache")
-	}
-
+		if operationStatus.StatusType != OperationStatusTypeSuccess {
+			log.Warn("Error writing an account to the cache")
+		}
+	*/
 	return account, nil
 }
 
