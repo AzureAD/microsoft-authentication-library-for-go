@@ -15,8 +15,9 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	"internal/msalbase"
-	"internal/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/wstrust"
 )
 
 // WebRequestManager stuff
@@ -24,9 +25,12 @@ type WebRequestManager struct {
 	httpManager *msalbase.HTTPManager
 }
 
-func isErrorAuthorizationPending(err error) bool {
-	// todo: implement me!
-	return false
+func IsErrorAuthorizationPending(err error) bool {
+	return err.Error() == "authorization_pending"
+}
+
+func IsErrorSlowDown(err error) bool {
+	return err.Error() == "slow_down"
 }
 
 // ContentType stuff
@@ -218,8 +222,7 @@ func joinScopes(scopes []string) string {
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
 	log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.GetScopes()
-
-	// openid equired to get an id token
+	// openid required to get an id token
 	// offline_access required to get a refresh token
 	// profile required to get the client_info field back
 	requestedScopes = append(requestedScopes, "openid", "offline_access", "profile")

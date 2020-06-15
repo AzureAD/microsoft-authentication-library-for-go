@@ -4,9 +4,9 @@
 package msalgo
 
 import (
-	"internal/msalbase"
-	"internal/requests"
-	"internal/tokencache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
 )
 
 // PublicClientApplication is used to acquire tokens in desktop or mobile applications (Desktop / UWP / Xamarin.iOS / Xamarin.Android).
@@ -18,7 +18,7 @@ type PublicClientApplication struct {
 	cacheManager      msalbase.ICacheManager
 }
 
-// CreatePublicClientApplication stuff
+// CreatePublicClientApplication creates a PublicClientApplication Instance given its parameters, which include client ID and authority info
 func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParameters) (*PublicClientApplication, error) {
 	err := pcaParameters.validate()
 	if err != nil {
@@ -70,19 +70,17 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	deviceCodeParameters *AcquireTokenDeviceCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-
-	req := requests.CreateDeviceCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	req := createDeviceCodeRequest(deviceCodeParameters.GetCancelContext(), pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
 // AcquireTokenInteractive stuff
 func (pca *PublicClientApplication) AcquireTokenInteractive(
-	interactiveParams *AcquireTokenInteractiveParameters) (IAuthenticationResult, error) {
+	interactiveParams *AcquireTokenInteractiveParameters, code string) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	interactiveParams.augmentAuthenticationParameters(authParams)
-
 	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	return pca.executeTokenRequestWithCacheWrite(req, authParams)
+	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
 // executeTokenRequestWithoutCacheWrite stuff
