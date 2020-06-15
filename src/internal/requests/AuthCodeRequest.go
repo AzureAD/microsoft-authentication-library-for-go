@@ -16,6 +16,8 @@ type AuthCodeRequest struct {
 	authParameters        *msalbase.AuthParametersInternal
 	authCodeURLParameters *msalbase.AuthorizationCodeURLParameters
 	code                  string
+	codeChallenge         string
+	codeChallengeMethod   string
 }
 
 // CreateAuthCodeRequest creates an instance of AuthCodeRequest
@@ -23,13 +25,24 @@ func CreateAuthCodeRequest(
 	webRequestManager IWebRequestManager,
 	cacheManager msalbase.ICacheManager,
 	authParameters *msalbase.AuthParametersInternal) *AuthCodeRequest {
-	req := &AuthCodeRequest{webRequestManager, cacheManager, authParameters, nil, ""}
+	req := &AuthCodeRequest{
+		webRequestManager: webRequestManager,
+		cacheManager:      cacheManager,
+		authParameters:    authParameters}
 	return req
 }
 
 //SetCode sets the authorization code of this request
 func (req *AuthCodeRequest) SetCode(code string) {
 	req.code = code
+}
+
+func (req *AuthCodeRequest) SetCodeChallenge(codeChallenge string) {
+	req.codeChallenge = codeChallenge
+}
+
+func (req *AuthCodeRequest) SetCodeChallengeMethod(codeChallengeMethod string) {
+	req.codeChallengeMethod = codeChallengeMethod
 }
 
 //GetAuthURL returns the URL to go to to acquire the authorization code
@@ -40,7 +53,7 @@ func (req *AuthCodeRequest) GetAuthURL() (string, error) {
 		return "", err
 	}
 	req.authParameters.SetAuthorityEndpoints(endpoints)
-	req.authCodeURLParameters = msalbase.CreateAuthorizationCodeURLParameters(req.authParameters)
+	req.authCodeURLParameters = msalbase.CreateAuthorizationCodeURLParameters(req.authParameters, req.codeChallenge, req.codeChallengeMethod)
 	return req.buildURL()
 }
 
@@ -55,6 +68,8 @@ func (req *AuthCodeRequest) buildURL() (string, error) {
 	urlParams.Add("response_type", authCodeURLParameters.GetResponseType())
 	urlParams.Add("redirect_uri", authCodeURLParameters.GetAuthParameters().GetRedirectURI())
 	urlParams.Add("scope", authCodeURLParameters.GetSpaceSeparatedScopes())
+	urlParams.Add("code_challenge", authCodeURLParameters.GetCodeChallenge())
+	urlParams.Add("code_challenge_method", authCodeURLParameters.GetCodeChallengeMethod())
 	baseURL.RawQuery = urlParams.Encode()
 	return baseURL.String(), nil
 }
@@ -67,7 +82,7 @@ func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 		return nil, err
 	}
 	req.authParameters.SetAuthorityEndpoints(endpoints)
-	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.code)
+	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.code, req.codeChallenge)
 	if err != nil {
 		return nil, err
 	}

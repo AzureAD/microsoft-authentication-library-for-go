@@ -25,11 +25,11 @@ type WebRequestManager struct {
 	httpManager *msalbase.HTTPManager
 }
 
-func isErrorAuthorizationPending(err error) bool {
+func IsErrorAuthorizationPending(err error) bool {
 	return err.Error() == "authorization_pending"
 }
 
-func isErrorSlowDown(err error) bool {
+func IsErrorSlowDown(err error) bool {
 	return err.Error() == "slow_down"
 }
 
@@ -294,10 +294,11 @@ func (wrm *WebRequestManager) exchangeGrantForToken(authParameters *msalbase.Aut
 }
 
 // GetAccessTokenFromAuthCode stuff
-func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal, authCode string) (*msalbase.TokenResponse, error) {
+func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal, authCode string, codeVerifier string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
-		"grant_type": "authorization_code",
-		"code":       authCode,
+		"grant_type":    "authorization_code",
+		"code":          authCode,
+		"code_verifier": codeVerifier,
 	}
 
 	addRedirectURIQueryParam(decodedQueryParams, authParameters)

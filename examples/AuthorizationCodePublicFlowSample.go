@@ -8,15 +8,14 @@ import (
 	"fmt"
 	"net/http"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src"
+	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
 )
 
-// PORT is the port this server is running on
-const PORT = ":3000"
+const port = ":3000"
 
 var config = CreateConfig("config.json")
-var pcaParams = createPCAParams(config.GetClientID(), config.GetAuthority())
+var pcaParams = createPCAParams(config.ClientID, config.Authority)
 var publicClientApp *msalgo.PublicClientApplication
 var err error
 var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
@@ -53,9 +52,9 @@ func acquireByAuthorizationCodePublic() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	authCodeParams = msalgo.CreateAcquireTokenAuthCodeParameters(config.GetScopes(), config.GetRedirectURI())
+	authCodeParams = msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI, config.CodeChallenge, config.CodeChallengeMethod)
 	http.HandleFunc("/", redirectToURL)
-	// The redirect uri set in our app's registration is http://localhost:PORT/redirect
+	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)
-	log.Fatal(http.ListenAndServe(PORT, nil))
+	log.Fatal(http.ListenAndServe(port, nil))
 }
