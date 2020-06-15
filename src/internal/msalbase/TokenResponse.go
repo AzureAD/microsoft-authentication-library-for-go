@@ -9,6 +9,8 @@ import (
 	"errors"
 	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type tokenResponseJSONPayload struct {
@@ -146,6 +148,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	}
 
 	idToken, err := CreateIDToken(payload.IDToken)
+	log.Infof("%v", idToken)
 	if err != nil {
 		return nil, err
 	}
