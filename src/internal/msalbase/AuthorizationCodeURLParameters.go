@@ -48,3 +48,23 @@ func (p *AuthorizationCodeURLParameters) GetCodeChallenge() string {
 func (p *AuthorizationCodeURLParameters) GetCodeChallengeMethod() string {
 	return p.codeChallengeMethod
 }
+
+func (p *AuthorizationCodeURLParameters) SetResponseMode(responseMode string) {
+	p.responseMode = responseMode
+}
+
+func (p *AuthorizationCodeURLParameters) SetState(state string) {
+	p.state = state
+}
+
+func (p *AuthorizationCodeURLParameters) SetPrompt(prompt string) {
+	p.prompt = prompt
+}
+
+func (p *AuthorizationCodeURLParameters) SetLoginHint(loginHint string) {
+	p.loginHint = loginHint
+}
+
+func (p *AuthorizationCodeURLParameters) SetDomainHint(domainHint string) {
+	p.domainHint = domainHint
+}

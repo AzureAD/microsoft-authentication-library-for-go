@@ -83,7 +83,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
 	req := createDeviceCodeRequest(deviceCodeParameters.GetCancelContext(), pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
-	return pca.executeTokenRequestWithCacheWrite(req, authParams)
+	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code
@@ -104,7 +104,7 @@ func (pca *PublicClientApplication) executeTokenRequestWithoutCacheWrite(
 	tokenResponse, err := req.Execute()
 	if err == nil {
 		// todo: is account being nil proper here?
-		return msalbase.CreateAuthenticationResult(tokenResponse, nil), nil
+		return msalbase.CreateAuthenticationResult(tokenResponse, nil)
 	}
 	return nil, err
 }
@@ -119,7 +119,7 @@ func (pca *PublicClientApplication) executeTokenRequestWithCacheWrite(
 		if err != nil {
 			return nil, err
 		}
-		return msalbase.CreateAuthenticationResult(tokenResponse, account), nil
+		return msalbase.CreateAuthenticationResult(tokenResponse, account)
 	}
 	return nil, err
 }

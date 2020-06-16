@@ -11,7 +11,7 @@ type AcquireTokenSilentParameters struct {
 }
 
 // CreateAcquireTokenSilentParameters stuff
-func CreateAcquireTokenSilentParameters(scopes []string, username string, password string) *AcquireTokenSilentParameters {
+func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
 	p := &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 	}
