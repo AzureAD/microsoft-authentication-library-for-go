@@ -7,6 +7,8 @@ require (
 	github.com/go-ole/go-ole v1.2.4 // indirect
 	github.com/shirou/gopsutil v2.20.5+incompatible
 	github.com/sirupsen/logrus v1.6.0
+	github.com/stretchr/objx v0.2.0 // indirect
+	github.com/stretchr/testify v1.3.0
 	github.com/twinj/uuid v1.0.0
 	golang.org/x/sys v0.0.0-20200610111108-226ff32320da // indirect
 )
