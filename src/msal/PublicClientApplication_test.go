@@ -3,7 +3,7 @@
 package msalgo
 
 import (
-	"fmt"
+	"reflect"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
@@ -34,6 +34,31 @@ var testPCA = &PublicClientApplication{
 	cacheManager:      new(tokencache.MockCacheManager),
 }
 
+func TestAcquireAuthCodeURL(t *testing.T) {
+	authCodeParams := &AcquireTokenAuthCodeParameters{
+		commonParameters:    tokenCommonParams,
+		codeChallenge:       "codeChallenge",
+		codeChallengeMethod: "plain",
+		redirectURI:         "redirect",
+	}
+	tdr := &requests.TenantDiscoveryResponse{
+		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
+		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
+		Issuer:                "https://login.microsoftonline.com/v2.0",
+	}
+	wrm.On("GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
+	url, err := testPCA.AcquireAuthCodeURL(authCodeParams)
+	if err != nil {
+		t.Errorf("Error should be nil, instead it is %v", err)
+	}
+	actualURL := "https://login.microsoftonline.com/v2.0/authorize?client_id=clientID&code_challenge=codeChallenge" +
+		"&code_challenge_method=plain&redirect_uri=redirect&response_type=code&scope=openid"
+	if !reflect.DeepEqual(actualURL, url) {
+		t.Errorf("URL should be %v, instead it is %v", actualURL, url)
+	}
+}
+
 func TestAcquireTokenByAuthCode(t *testing.T) {
 	testAuthParams.SetAuthorityEndpoints(testAuthorityEndpoints)
 	testAuthParams.SetAuthorizationType(msalbase.AuthorizationTypeAuthCode)
@@ -50,8 +75,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
 	wrm.On("GetAccessTokenFromAuthCode", testAuthParams, "", "").Return(actualTokenResp, nil)
-	authResult, err := testPCA.AcquireTokenByAuthCode(authCodeParams)
-	fmt.Println(fmt.Sprintf("%v", authResult))
+	_, err := testPCA.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}
