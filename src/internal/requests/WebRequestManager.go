@@ -55,7 +55,7 @@ func (wrm *WebRequestManager) GetUserRealm(authParameters *msalbase.AuthParamete
 	url := authParameters.GetAuthorityEndpoints().GetUserRealmEndpoint(authParameters.GetUsername())
 
 	log.Trace("user realm endpoint: " + url)
-	httpManagerResponse, err := wrm.httpManager.Get(url, wrm.getAadHeaders(authParameters))
+	httpManagerResponse, err := wrm.httpManager.Get(url, getAadHeaders(authParameters))
 	if err != nil {
 		return nil, err
 	}
@@ -275,7 +275,6 @@ func encodeQueryParameters(queryParameters map[string]string) string {
 		buffer.WriteString("=")
 		buffer.WriteString(url.QueryEscape(v))
 	}
-
 	result := buffer.String()
 	log.Trace(result)
 	return result
@@ -336,11 +335,6 @@ func (wrm *WebRequestManager) GetAccessTokenWithCertificate(authParameters *msal
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
-}
-
-func (wrm *WebRequestManager) getAadHeaders(authParameters *msalbase.AuthParametersInternal) map[string]string {
-	headers := make(map[string]string)
-	return headers
 }
 
 // GetAadinstanceDiscoveryResponse stuff

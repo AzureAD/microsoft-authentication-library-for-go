@@ -37,6 +37,7 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	return pca, nil
 }
 
+// AcquireAuthCodeURL creates a URL used to acquire an authorization code
 func (pca *PublicClientApplication) AcquireAuthCodeURL(authCodeTokenParameters *AcquireTokenAuthCodeParameters) (string, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	authCodeTokenParameters.augmentAuthenticationParameters(authParams)

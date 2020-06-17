@@ -18,11 +18,13 @@ func createApplicationCommonParameters(clientID string) *applicationCommonParame
 	return p
 }
 
-func (p *applicationCommonParameters) SetAadAuthority(authorityURI string) {
-	// todo: need to propagate errors here...
-	// perhaps collect any errors along the way and surface them in validate()?
-	authorityInfo, _ := msalbase.CreateAuthorityInfoFromAuthorityUri(authorityURI, true)
+func (p *applicationCommonParameters) SetAadAuthority(authorityURI string) error {
+	authorityInfo, err := msalbase.CreateAuthorityInfoFromAuthorityUri(authorityURI, true)
+	if err != nil {
+		return err
+	}
 	p.authorityInfo = authorityInfo
+	return nil
 }
 
 func (p *applicationCommonParameters) GetClientID() string {
