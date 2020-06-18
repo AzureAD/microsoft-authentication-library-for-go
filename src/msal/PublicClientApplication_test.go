@@ -3,6 +3,7 @@
 package msalgo
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 
@@ -27,11 +28,17 @@ var appCommonParams = &applicationCommonParameters{
 var pcaParams = &PublicClientApplicationParameters{
 	commonParameters: appCommonParams,
 }
+var tdr = &requests.TenantDiscoveryResponse{
+	AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
+	TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
+	Issuer:                "https://login.microsoftonline.com/v2.0",
+}
 var wrm = new(requests.MockWebRequestManager)
+var cacheManager = new(tokencache.MockCacheManager)
 var testPCA = &PublicClientApplication{
 	pcaParameters:     pcaParams,
 	webRequestManager: wrm,
-	cacheManager:      new(tokencache.MockCacheManager),
+	cacheManager:      cacheManager,
 }
 
 func TestAcquireAuthCodeURL(t *testing.T) {
@@ -41,11 +48,7 @@ func TestAcquireAuthCodeURL(t *testing.T) {
 		codeChallengeMethod: "plain",
 		redirectURI:         "redirect",
 	}
-	tdr := &requests.TenantDiscoveryResponse{
-		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
-		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
-		Issuer:                "https://login.microsoftonline.com/v2.0",
-	}
+
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	url, err := testPCA.AcquireAuthCodeURL(authCodeParams)
@@ -66,11 +69,6 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	authCodeParams := &AcquireTokenAuthCodeParameters{
 		commonParameters: tokenCommonParams,
 	}
-	tdr := &requests.TenantDiscoveryResponse{
-		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
-		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
-		Issuer:                "https://login.microsoftonline.com/v2.0",
-	}
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
@@ -78,5 +76,22 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	_, err := testPCA.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
+	}
+}
+
+func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
+	req := new(requests.MockTokenRequest)
+	actualTokenResp := &msalbase.TokenResponse{}
+	req.On("Execute").Return(actualTokenResp, nil)
+	_, err := testPCA.executeTokenRequestWithoutCacheWrite(req, testAuthParams)
+	if err != nil {
+		t.Errorf("Error should be nil, instead it is %v", err)
+	}
+	mockError := errors.New("This is a mock error")
+	errorReq := new(requests.MockTokenRequest)
+	errorReq.On("Execute").Return(nil, mockError)
+	_, err = testPCA.executeTokenRequestWithoutCacheWrite(errorReq, testAuthParams)
+	if !reflect.DeepEqual(err, mockError) {
+		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
 	}
 }
