@@ -1,12 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package msalbase
+package msalgo
 
-import "strings"
+import (
+	"net/url"
+	"strings"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+)
 
 type AuthorizationCodeURLParameters struct {
-	authParameters      *AuthParametersInternal
+	clientID            string
+	redirectURI         string
 	responseType        string
 	responseMode        string
 	state               string
@@ -15,19 +22,38 @@ type AuthorizationCodeURLParameters struct {
 	domainHint          string
 	codeChallenge       string
 	codeChallengeMethod string
+	scopes              []string
 }
 
-func CreateAuthorizationCodeURLParameters(authParams *AuthParametersInternal, codeChallenge string) *AuthorizationCodeURLParameters {
+func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, scopes []string, codeChallenge string) *AuthorizationCodeURLParameters {
 	p := &AuthorizationCodeURLParameters{
-		authParameters: authParams,
-		responseType:   DefaultAuthCodeResponseType,
-		codeChallenge:  codeChallenge,
+		clientID:      clientID,
+		responseType:  msalbase.DefaultAuthCodeResponseType,
+		redirectURI:   redirectURI,
+		scopes:        scopes,
+		codeChallenge: codeChallenge,
 	}
 	return p
 }
 
-func (p *AuthorizationCodeURLParameters) GetAuthParameters() *AuthParametersInternal {
-	return p.authParameters
+func (p *AuthorizationCodeURLParameters) CreateURL(wrm requests.IWebRequestManager, authParams *msalbase.AuthParametersInternal) (string, error) {
+	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(wrm)
+	endpoints, err := resolutionManager.ResolveEndpoints(authParams.GetAuthorityInfo(), "")
+	if err != nil {
+		return "", err
+	}
+	baseURL, err := url.Parse(endpoints.GetAuthorizationEndpoint())
+	if err != nil {
+		return "", err
+	}
+	urlParams := url.Values{}
+	urlParams.Add("client_id", p.clientID)
+	urlParams.Add("response_type", p.responseType)
+	urlParams.Add("redirect_uri", p.redirectURI)
+	urlParams.Add("scope", p.GetSpaceSeparatedScopes())
+	urlParams.Add("code_challenge", p.codeChallenge)
+	baseURL.RawQuery = urlParams.Encode()
+	return baseURL.String(), nil
 }
 
 func (p *AuthorizationCodeURLParameters) GetResponseType() string {
@@ -35,7 +61,7 @@ func (p *AuthorizationCodeURLParameters) GetResponseType() string {
 }
 
 func (p *AuthorizationCodeURLParameters) GetSpaceSeparatedScopes() string {
-	return strings.Join(p.authParameters.GetScopes(), DefaultScopeSeparator)
+	return strings.Join(p.scopes, msalbase.DefaultScopeSeparator)
 }
 
 func (p *AuthorizationCodeURLParameters) GetCodeChallenge() string {

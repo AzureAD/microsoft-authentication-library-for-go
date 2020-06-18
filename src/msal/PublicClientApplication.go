@@ -38,16 +38,8 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 }
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code
-func (pca *PublicClientApplication) CreateAuthCodeURL(authCodeTokenParameters *AcquireTokenAuthCodeParameters) (string, error) {
-	authParams := pca.pcaParameters.createAuthenticationParameters()
-	authCodeTokenParameters.augmentAuthenticationParameters(authParams)
-	req := requests.CreateAuthCodeRequest(pca.webRequestManager,
-		pca.cacheManager,
-		authParams)
-	req.SetCodeChallenge(authCodeTokenParameters.codeChallenge)
-	req.SetCodeChallengeMethod(authCodeTokenParameters.codeChallengeMethod)
-	authURL, err := req.GetAuthURL()
-	return authURL, err
+func (pca *PublicClientApplication) CreateAuthCodeURL(authCodeURLParameters *AuthorizationCodeURLParameters) (string, error) {
+	return authCodeURLParameters.CreateURL(pca.webRequestManager, pca.pcaParameters.createAuthenticationParameters())
 }
 
 // AcquireTokenSilent stuff

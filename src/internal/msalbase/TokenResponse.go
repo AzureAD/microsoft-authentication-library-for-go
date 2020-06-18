@@ -49,14 +49,6 @@ func (tr *TokenResponse) HasRefreshToken() bool {
 	return len(tr.refreshToken) > 0
 }
 
-func (tr *TokenResponse) IsAuthorizationPending() bool {
-	return tr.baseResponse.Error == "authorization_pending"
-}
-
-func (tr *TokenResponse) IsSlowDown() bool {
-	return tr.baseResponse.Error == "slow_down"
-}
-
 func (tr *TokenResponse) GetAccessToken() string {
 	return tr.accessToken
 }

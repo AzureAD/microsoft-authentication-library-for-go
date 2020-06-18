@@ -19,7 +19,7 @@ var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.mi
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
 	"login.microsoftonline.com")
-var testAuthorityInfo, err = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
+var testAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
 var testAuthParams = msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 var appCommonParams = &applicationCommonParameters{
 	clientID:      "clientID",
@@ -42,15 +42,11 @@ var testPCA = &PublicClientApplication{
 }
 
 func TestCreateAuthCodeURL(t *testing.T) {
-	authCodeParams := &AcquireTokenAuthCodeParameters{
-		commonParameters: tokenCommonParams,
-		codeChallenge:    "codeChallenge",
-		redirectURI:      "redirect",
-	}
+	authCodeURLParams := CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid"}, "codeChallenge")
 
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
-	url, err := testPCA.CreateAuthCodeURL(authCodeParams)
+	url, err := testPCA.CreateAuthCodeURL(authCodeURLParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}

@@ -18,15 +18,16 @@ var config = CreateConfig("config.json")
 var pcaParams = createPCAParams(config.ClientID, config.Authority)
 var publicClientApp *msalgo.PublicClientApplication
 var err error
-var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
 
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
-	authURL, err := publicClientApp.CreateAuthCodeURL(authCodeParams)
+	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes, config.CodeChallenge)
+	authURL, err := publicClientApp.CreateAuthCodeURL(authCodeURLParams)
 	if err != nil {
 		log.Fatal(err)
 	}
 	// Redirecting to the URL we have received
+	log.Info(authURL)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 
@@ -38,6 +39,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
+	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI, config.CodeChallenge)
 	authCodeParams.SetCode(code)
 	result, err := publicClientApp.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
@@ -52,7 +54,7 @@ func acquireByAuthorizationCodePublic() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	authCodeParams = msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI, config.CodeChallenge)
+
 	http.HandleFunc("/", redirectToURL)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)
