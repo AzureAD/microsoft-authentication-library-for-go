@@ -17,13 +17,11 @@ type AcquireTokenAuthCodeParameters struct {
 // CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance
 func CreateAcquireTokenAuthCodeParameters(scopes []string,
 	redirectURI string,
-	codeChallenge string,
-	codeChallengeMethod string) *AcquireTokenAuthCodeParameters {
+	codeChallenge string) *AcquireTokenAuthCodeParameters {
 	p := &AcquireTokenAuthCodeParameters{
-		commonParameters:    createAcquireTokenCommonParameters(scopes),
-		redirectURI:         redirectURI,
-		codeChallenge:       codeChallenge,
-		codeChallengeMethod: codeChallengeMethod,
+		commonParameters: createAcquireTokenCommonParameters(scopes),
+		redirectURI:      redirectURI,
+		codeChallenge:    codeChallenge,
 	}
 	return p
 }

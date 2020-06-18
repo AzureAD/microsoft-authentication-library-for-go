@@ -34,7 +34,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	// Getting the authorization code from the URL's query
 	codes, ok := r.URL.Query()["code"]
 	if !ok || len(codes[0]) < 1 {
-		log.Fatal(errors.New("Parameter code missing"))
+		log.Fatal(errors.New("Authorization code missing"))
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
@@ -52,7 +52,7 @@ func acquireByAuthorizationCodePublic() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	authCodeParams = msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI, config.CodeChallenge, config.CodeChallengeMethod)
+	authCodeParams = msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI, config.CodeChallenge)
 	http.HandleFunc("/", redirectToURL)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)

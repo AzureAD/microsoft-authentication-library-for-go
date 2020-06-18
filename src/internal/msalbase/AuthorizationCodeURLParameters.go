@@ -17,14 +17,11 @@ type AuthorizationCodeURLParameters struct {
 	codeChallengeMethod string
 }
 
-func CreateAuthorizationCodeURLParameters(authParams *AuthParametersInternal,
-	codeChallenge string,
-	codeChallengeMethod string) *AuthorizationCodeURLParameters {
+func CreateAuthorizationCodeURLParameters(authParams *AuthParametersInternal, codeChallenge string) *AuthorizationCodeURLParameters {
 	p := &AuthorizationCodeURLParameters{
-		authParameters:      authParams,
-		responseType:        "code",
-		codeChallenge:       codeChallenge,
-		codeChallengeMethod: codeChallengeMethod,
+		authParameters: authParams,
+		responseType:   DefaultAuthCodeResponseType,
+		codeChallenge:  codeChallenge,
 	}
 	return p
 }
@@ -38,7 +35,7 @@ func (p *AuthorizationCodeURLParameters) GetResponseType() string {
 }
 
 func (p *AuthorizationCodeURLParameters) GetSpaceSeparatedScopes() string {
-	return strings.Join(p.authParameters.GetScopes(), " ")
+	return strings.Join(p.authParameters.GetScopes(), DefaultScopeSeparator)
 }
 
 func (p *AuthorizationCodeURLParameters) GetCodeChallenge() string {
@@ -47,6 +44,10 @@ func (p *AuthorizationCodeURLParameters) GetCodeChallenge() string {
 
 func (p *AuthorizationCodeURLParameters) GetCodeChallengeMethod() string {
 	return p.codeChallengeMethod
+}
+
+func (p *AuthorizationCodeURLParameters) SetCodeChallengMethod(codeChallengeMethod string) {
+	p.codeChallengeMethod = codeChallengeMethod
 }
 
 func (p *AuthorizationCodeURLParameters) GetResponseMode() string {

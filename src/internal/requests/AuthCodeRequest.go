@@ -53,7 +53,7 @@ func (req *AuthCodeRequest) GetAuthURL() (string, error) {
 		return "", err
 	}
 	req.authParameters.SetAuthorityEndpoints(endpoints)
-	req.authCodeURLParameters = msalbase.CreateAuthorizationCodeURLParameters(req.authParameters, req.codeChallenge, req.codeChallengeMethod)
+	req.authCodeURLParameters = msalbase.CreateAuthorizationCodeURLParameters(req.authParameters, req.codeChallenge)
 	return req.buildURL()
 }
 
@@ -69,7 +69,6 @@ func (req *AuthCodeRequest) buildURL() (string, error) {
 	urlParams.Add("redirect_uri", authCodeURLParameters.GetAuthParameters().GetRedirectURI())
 	urlParams.Add("scope", authCodeURLParameters.GetSpaceSeparatedScopes())
 	urlParams.Add("code_challenge", authCodeURLParameters.GetCodeChallenge())
-	urlParams.Add("code_challenge_method", authCodeURLParameters.GetCodeChallengeMethod())
 	baseURL.RawQuery = urlParams.Encode()
 	return baseURL.String(), nil
 }

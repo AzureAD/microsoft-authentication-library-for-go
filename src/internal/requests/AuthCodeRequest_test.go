@@ -17,7 +17,7 @@ var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.mi
 	"https://login.microsoftonline.com")
 var testAuthorityInfo, err = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
 var testAuthParams = msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
-var testAuthCodeURLParams = msalbase.CreateAuthorizationCodeURLParameters(testAuthParams, "codeChallenge", "plain")
+var testAuthCodeURLParams = msalbase.CreateAuthorizationCodeURLParameters(testAuthParams, "codeChallenge")
 
 var wrm = new(MockWebRequestManager)
 
@@ -28,7 +28,6 @@ var authCodeRequest = &AuthCodeRequest{
 	authCodeURLParameters: testAuthCodeURLParams,
 	code:                  "code",
 	codeChallenge:         "codeChallenge",
-	codeChallengeMethod:   "plain",
 }
 
 func TestBuildURL(t *testing.T) {
@@ -40,7 +39,7 @@ func TestBuildURL(t *testing.T) {
 		t.Errorf("Error is supposed to be nil, instead it is %v", err)
 	}
 	actualURL := "https://login.microsoftonline.com/v2.0/authorize?client_id=clientID&code_challenge=codeChallenge" +
-		"&code_challenge_method=plain&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fredirect&response_type=code&scope=openid+user.read"
+		"&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fredirect&response_type=code&scope=openid+user.read"
 	if !reflect.DeepEqual(url, actualURL) {
 		t.Errorf("Actual URL %v differs from expected URL %v", actualURL, url)
 	}
@@ -61,7 +60,7 @@ func TestGetURL(t *testing.T) {
 		t.Errorf("Error is supposed to be nil, instead it is %v", err)
 	}
 	actualURL := "https://login.microsoftonline.com/v2.0/authorize?client_id=clientID&code_challenge=codeChallenge" +
-		"&code_challenge_method=plain&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fredirect&response_type=code&scope=openid+user.read"
+		"&redirect_uri=http%3A%2F%2Flocalhost%3A3000%2Fredirect&response_type=code&scope=openid+user.read"
 	if !reflect.DeepEqual(url, actualURL) {
 		t.Errorf("Actual URL %v differs from expected URL %v", actualURL, url)
 	}

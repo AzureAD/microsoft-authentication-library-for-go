@@ -10,7 +10,7 @@ To run one of the examples of uses of MSAL Go, you need to first create a `confi
         // https://docs.microsoft.com/en-us/graph/permissions-reference
     "username": "your_username",
     "password": "your_password", //This is a sample only. DO NOT persist your password.
-    "redirect_uri": "The URL you want to redirect to after getting the token (auth code flow)",
+    "redirect_uri": "The URL that the authorization server will send the user to once the app has been successfully authorized, and granted an authorization code or access token",
     "code_challenge": "transformed code verifier from PKCE", // https://tools.ietf.org/html/rfc7636#section-4.1
     "code_challenge_method": "how to transform the code verifier"
 }
