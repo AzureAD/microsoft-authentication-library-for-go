@@ -41,22 +41,21 @@ var testPCA = &PublicClientApplication{
 	cacheManager:      cacheManager,
 }
 
-func TestAcquireAuthCodeURL(t *testing.T) {
+func TestCreateAuthCodeURL(t *testing.T) {
 	authCodeParams := &AcquireTokenAuthCodeParameters{
-		commonParameters:    tokenCommonParams,
-		codeChallenge:       "codeChallenge",
-		codeChallengeMethod: "plain",
-		redirectURI:         "redirect",
+		commonParameters: tokenCommonParams,
+		codeChallenge:    "codeChallenge",
+		redirectURI:      "redirect",
 	}
 
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
-	url, err := testPCA.AcquireAuthCodeURL(authCodeParams)
+	url, err := testPCA.CreateAuthCodeURL(authCodeParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}
 	actualURL := "https://login.microsoftonline.com/v2.0/authorize?client_id=clientID&code_challenge=codeChallenge" +
-		"&code_challenge_method=plain&redirect_uri=redirect&response_type=code&scope=openid"
+		"&redirect_uri=redirect&response_type=code&scope=openid"
 	if !reflect.DeepEqual(actualURL, url) {
 		t.Errorf("URL should be %v, instead it is %v", actualURL, url)
 	}

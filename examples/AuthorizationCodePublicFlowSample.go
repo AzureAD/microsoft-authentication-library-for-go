@@ -22,7 +22,7 @@ var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
 
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
-	authURL, err := publicClientApp.AcquireAuthCodeURL(authCodeParams)
+	authURL, err := publicClientApp.CreateAuthCodeURL(authCodeParams)
 	if err != nil {
 		log.Fatal(err)
 	}

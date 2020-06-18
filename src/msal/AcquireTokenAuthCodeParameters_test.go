@@ -14,8 +14,7 @@ func TestCreateAcquireTokenAuthCodeParameters(t *testing.T) {
 	expectedScopes := []string{"user.read"}
 	expectedRedirectURI := "http://localhost:3000/redirect"
 	expectedCodeChallenge := "codeChallenge"
-	expectedCodeChallengeMethod := "plain"
-	params := CreateAcquireTokenAuthCodeParameters(expectedScopes, expectedRedirectURI, expectedCodeChallenge, expectedCodeChallengeMethod)
+	params := CreateAcquireTokenAuthCodeParameters(expectedScopes, expectedRedirectURI, expectedCodeChallenge)
 	if params == nil {
 		t.Error("Parameters cannot be nil.")
 	}
@@ -31,10 +30,7 @@ func TestCreateAcquireTokenAuthCodeParameters(t *testing.T) {
 	if !reflect.DeepEqual(expectedCodeChallenge, actualCodeChallenge) {
 		t.Errorf("Actual code challenge %v differs from expected code challenge %v", actualCodeChallenge, expectedCodeChallenge)
 	}
-	actualCodeChallengeMethod := params.codeChallengeMethod
-	if !reflect.DeepEqual(expectedCodeChallengeMethod, actualCodeChallengeMethod) {
-		t.Errorf("Actual code challenge method %v differs from expected code challenge method %v", actualCodeChallengeMethod, expectedCodeChallengeMethod)
-	}
+
 }
 
 func TestAugmentAuthenticationParametersForAuth(t *testing.T) {
