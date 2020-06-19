@@ -31,9 +31,9 @@ func TestCreateAuthenticationResult(t *testing.T) {
 		declinedScopes: testDeclinedScopesWithError,
 	}
 	testAccount := &Account{}
-	authResult, noErr := CreateAuthenticationResult(testTokenResponseWithoutError, testAccount)
-	if noErr != nil {
-		t.Errorf("There should be no error, however there is an error saying %v", noErr)
+	authResult, err := CreateAuthenticationResult(testTokenResponseWithoutError, testAccount)
+	if err != nil {
+		t.Errorf("There should be no error, however there is an error saying %v", err)
 	}
 	actualAccount := authResult.account
 	if !reflect.DeepEqual(actualAccount, testAccount) {
@@ -59,7 +59,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	if !reflect.DeepEqual(actualDeclinedScopes, testDeclinedScopesWithoutError) {
 		t.Errorf("Actual declined scopes %v differ from expected declined scopes %v", actualDeclinedScopes, testDeclinedScopesWithoutError)
 	}
-	authResult, err := CreateAuthenticationResult(testTokenResponseWithError, testAccount)
+	authResult, err = CreateAuthenticationResult(testTokenResponseWithError, testAccount)
 	if err == nil {
 		t.Error("Error should not be nil")
 	}

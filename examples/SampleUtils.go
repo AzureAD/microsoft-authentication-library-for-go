@@ -22,6 +22,7 @@ type Config struct {
 	RedirectURI         string   `json:"redirect_uri"`
 	CodeChallenge       string   `json:"code_challenge"`
 	CodeChallengeMethod string   `json:"code_challenge_method"`
+	State               string   `json:"state"`
 }
 
 //CreateConfig creates the Config struct from a json file

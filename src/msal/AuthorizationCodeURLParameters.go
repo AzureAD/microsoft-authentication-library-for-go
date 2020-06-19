@@ -52,6 +52,24 @@ func (p *AuthorizationCodeURLParameters) CreateURL(wrm requests.IWebRequestManag
 	urlParams.Add("redirect_uri", p.redirectURI)
 	urlParams.Add("scope", p.GetSpaceSeparatedScopes())
 	urlParams.Add("code_challenge", p.codeChallenge)
+	if p.state != "" {
+		urlParams.Add("state", p.state)
+	}
+	if p.responseMode != "" {
+		urlParams.Add("response_mode", p.responseMode)
+	}
+	if p.prompt != "" {
+		urlParams.Add("prompt", p.prompt)
+	}
+	if p.loginHint != "" {
+		urlParams.Add("login_hint", p.loginHint)
+	}
+	if p.domainHint != "" {
+		urlParams.Add("domain_hint", p.domainHint)
+	}
+	if p.codeChallengeMethod != "" {
+		urlParams.Add("code_challenge_method", p.codeChallengeMethod)
+	}
 	baseURL.RawQuery = urlParams.Encode()
 	return baseURL.String(), nil
 }
