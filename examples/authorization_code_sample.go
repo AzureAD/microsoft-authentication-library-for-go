@@ -14,7 +14,7 @@ import (
 
 const port = "3000"
 
-var config = CreateConfig("config.json")
+var config = createConfig("config.json")
 var pcaParams = createPCAParams(config.ClientID, config.Authority)
 var publicClientApp *msalgo.PublicClientApplication
 var err error

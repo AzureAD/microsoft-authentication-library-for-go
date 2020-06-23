@@ -26,7 +26,7 @@ type Config struct {
 }
 
 //CreateConfig creates the Config struct from a json file
-func CreateConfig(fileName string) *Config {
+func createConfig(fileName string) *Config {
 	jsonFile, err := os.Open(fileName)
 	if err != nil {
 		log.Fatal(err)

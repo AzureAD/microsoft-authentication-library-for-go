@@ -23,7 +23,7 @@ func setCancelTimeout(seconds int, cancelChannel chan bool) {
 
 func acquireTokenDeviceCode() {
 	cancelTimeout := 100 //Change this for cancel timeout
-	config := CreateConfig("config.json")
+	config := createConfig("config.json")
 	pcaParams := createPCAParams(config.ClientID, config.Authority)
 	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
 	if err != nil {
