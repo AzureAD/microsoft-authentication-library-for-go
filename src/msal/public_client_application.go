@@ -25,8 +25,8 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 		return nil, err
 	}
 
-	httpManager := msalbase.CreateHTTPManager()
-	webRequestManager := requests.CreateWebRequestManager(httpManager)
+	httpManager := CreateHTTPManager()
+	webRequestManager := CreateWebRequestManager(httpManager)
 
 	// todo: check parameters for whether persistent cache is desired, or self-caching (callback to byte array read/write)
 	cacheKeyGenerator := tokencache.CreateCacheKeyGenerator()
@@ -35,6 +35,11 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 
 	pca := &PublicClientApplication{pcaParameters, webRequestManager, cacheManager}
 	return pca, nil
+}
+
+func (pca *PublicClientApplication) SetHTTPManager(httpManager IHTTPManager) {
+	webRequestManager := CreateWebRequestManager(httpManager)
+	pca.webRequestManager = webRequestManager
 }
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code
@@ -92,7 +97,7 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(
 
 // executeTokenRequestWithoutCacheWrite stuff
 func (pca *PublicClientApplication) executeTokenRequestWithoutCacheWrite(
-	req requests.ITokenRequester,
+	req requests.TokenRequester,
 	authParams *msalbase.AuthParametersInternal) (IAuthenticationResult, error) {
 	tokenResponse, err := req.Execute()
 	if err == nil {
@@ -104,7 +109,7 @@ func (pca *PublicClientApplication) executeTokenRequestWithoutCacheWrite(
 
 // executeTokenRequestWithCacheWrite stuff
 func (pca *PublicClientApplication) executeTokenRequestWithCacheWrite(
-	req requests.ITokenRequester,
+	req requests.TokenRequester,
 	authParams *msalbase.AuthParametersInternal) (IAuthenticationResult, error) {
 	tokenResponse, err := req.Execute()
 	if err == nil {

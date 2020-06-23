@@ -12,10 +12,11 @@ import (
 )
 
 type windowsStorageManager struct {
+	cachekeyGenerator ICacheKeyGenerator
 }
 
-func CreateStorageManager() IStorageManager {
-	mgr := &windowsStorageManager{}
+func CreateStorageManager(ckg ICacheKeyGenerator) IStorageManager {
+	mgr := &windowsStorageManager{cachekeyGenerator: ckg}
 	return mgr
 }
 

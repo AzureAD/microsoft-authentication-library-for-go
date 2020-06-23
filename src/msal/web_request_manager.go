@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package requests
+package msalgo
 
 import (
 	"bytes"
@@ -16,20 +16,21 @@ import (
 	log "github.com/sirupsen/logrus"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/wstrust"
 )
 
 // WebRequestManager stuff
 type WebRequestManager struct {
-	httpManager *msalbase.HTTPManager
+	httpManager IHTTPManager
 }
 
-func IsErrorAuthorizationPending(err error) bool {
+func isErrorAuthorizationPending(err error) bool {
 	return err.Error() == "authorization_pending"
 }
 
-func IsErrorSlowDown(err error) bool {
+func isErrorSlowDown(err error) bool {
 	return err.Error() == "slow_down"
 }
 
@@ -44,7 +45,7 @@ const (
 )
 
 // CreateWebRequestManager stuff
-func CreateWebRequestManager(httpManager *msalbase.HTTPManager) IWebRequestManager {
+func CreateWebRequestManager(httpManager IHTTPManager) requests.IWebRequestManager {
 	m := &WebRequestManager{httpManager}
 	return m
 }
@@ -167,7 +168,7 @@ func (wrm *WebRequestManager) GetAccessTokenFromUsernamePassword(
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
-
+	log.Info(decodedQueryParams)
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
@@ -188,12 +189,12 @@ func (wrm *WebRequestManager) GetDeviceCodeResult(authParameters *msalbase.AuthP
 	if err != nil {
 		return nil, err
 	}
-	dcResponse, err := createDeviceCodeResponse(response.GetResponseCode(), response.GetResponseData())
+	dcResponse, err := requests.CreateDeviceCodeResponse(response.GetResponseCode(), response.GetResponseData())
 	if err != nil {
 		return nil, err
 	}
 
-	return dcResponse.toDeviceCodeResult(authParameters.GetClientID(), authParameters.GetScopes()), nil
+	return dcResponse.ToDeviceCodeResult(authParameters.GetClientID(), authParameters.GetScopes()), nil
 }
 
 // GetAccessTokenFromDeviceCodeResult stuff
@@ -339,7 +340,7 @@ func (wrm *WebRequestManager) GetAccessTokenWithCertificate(authParameters *msal
 
 // GetAadinstanceDiscoveryResponse stuff
 func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
-	authorityInfo *msalbase.AuthorityInfo) (*InstanceDiscoveryResponse, error) {
+	authorityInfo *msalbase.AuthorityInfo) (*requests.InstanceDiscoveryResponse, error) {
 
 	queryParams := map[string]string{
 		"api-version":            "1.1",
@@ -347,7 +348,7 @@ func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
 	}
 
 	var discoveryHost string
-	if isInTrustedHostList(authorityInfo.GetHost()) {
+	if requests.IsInTrustedHostList(authorityInfo.GetHost()) {
 		discoveryHost = authorityInfo.GetHost()
 	} else {
 		discoveryHost = "login.microsoftonline.com"
@@ -364,27 +365,27 @@ func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
 		return nil, errors.New("invalid response code") // todo: need error struct here
 	}
 
-	return createInstanceDiscoveryResponse(httpManagerResponse.GetResponseData())
+	return requests.CreateInstanceDiscoveryResponse(httpManagerResponse.GetResponseData())
 }
 
 // GetTenantDiscoveryResponse stuff
 func (wrm *WebRequestManager) GetTenantDiscoveryResponse(
-	openIDConfigurationEndpoint string) (*TenantDiscoveryResponse, error) {
+	openIDConfigurationEndpoint string) (*requests.TenantDiscoveryResponse, error) {
 
 	httpManagerResponse, err := wrm.httpManager.Get(openIDConfigurationEndpoint, nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return createTenantDiscoveryResponse(httpManagerResponse.GetResponseCode(), httpManagerResponse.GetResponseData())
+	return requests.CreateTenantDiscoveryResponse(httpManagerResponse.GetResponseCode(), httpManagerResponse.GetResponseData())
 }
 
-func (wrm *WebRequestManager) GetProviderConfigurationInformation(authParameters *msalbase.AuthParametersInternal) (*ProviderConfigurationInformation, error) {
+func (wrm *WebRequestManager) GetProviderConfigurationInformation(authParameters *msalbase.AuthParametersInternal) (*requests.ProviderConfigurationInformation, error) {
 
 	// TODO: load from web and parse...
 	configInfoJson := ""
 
-	configInfo := &ProviderConfigurationInformation{}
+	configInfo := &requests.ProviderConfigurationInformation{}
 	err := json.Unmarshal([]byte(configInfoJson), configInfo)
 	if err != nil {
 		return nil, err

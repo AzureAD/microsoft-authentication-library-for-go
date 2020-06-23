@@ -18,8 +18,23 @@ type IDToken struct {
 }
 
 func CreateIDToken(jwt string) (*IDToken, error) {
-	// todo: unmarshal the json...
 	return nil, nil
+	/*
+		if i := len(jwt) % 4; i != 0 {
+			jwt += strings.Repeat("=", 4-i)
+		}
+		fmt.Println(jwt, len(jwt))
+		jwtDecoded, err := base64.StdEncoding.DecodeString(jwt)
+		if err != nil {
+			return nil, err
+		}
+		fmt.Println(string(jwtDecoded))
+		idToken := &IDToken{}
+		err = json.Unmarshal(jwtDecoded, idToken)
+		if err != nil {
+			return nil, err
+		}
+		return idToken, nil*/
 }
 
 func (t *IDToken) GetRaw() string {

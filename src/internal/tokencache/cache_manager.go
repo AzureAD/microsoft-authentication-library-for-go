@@ -249,13 +249,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 		localAccountID,
 		authorityType,
 		idTokenJwt.GetPreferredUsername(),
-		idTokenJwt.GetGivenName(),
-		idTokenJwt.GetFamilyName(),
-		idTokenJwt.GetMiddleName(),
-		idTokenJwt.GetName(),
-		idTokenJwt.GetAlternativeId(),
-		tokenResponse.GetRawClientInfo(),
-		"")
+	)
 
 	operationStatus, err = m.storageManager.WriteAccount(emptyCorrelationID, account)
 

@@ -21,7 +21,7 @@ type deviceCodeResponse struct {
 }
 
 // createDeviceCodeResponse stuff
-func createDeviceCodeResponse(responseCode int, responseData string) (*deviceCodeResponse, error) {
+func CreateDeviceCodeResponse(responseCode int, responseData string) (*deviceCodeResponse, error) {
 	baseResponse, err := msalbase.CreateOAuthResponseBase(responseCode, responseData)
 	if err != nil {
 		return nil, err
@@ -38,7 +38,7 @@ func createDeviceCodeResponse(responseCode int, responseData string) (*deviceCod
 	return dcResponse, nil
 }
 
-func (dcr *deviceCodeResponse) toDeviceCodeResult(clientID string, scopes []string) *msalbase.DeviceCodeResult {
+func (dcr *deviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) *msalbase.DeviceCodeResult {
 	expiresOn := time.Now().UTC().Add(time.Duration(dcr.ExpiresIn) * time.Second)
 	return msalbase.CreateDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
 }

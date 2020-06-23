@@ -11,8 +11,7 @@ import (
 
 // TenantDiscoveryResponse stuff
 type TenantDiscoveryResponse struct {
-	BaseResponse *msalbase.OAuthResponseBase
-
+	BaseResponse          *msalbase.OAuthResponseBase
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	Issuer                string `json:"issuer"`
@@ -33,7 +32,7 @@ func (r *TenantDiscoveryResponse) HasIssuer() bool {
 	return len(r.Issuer) > 0
 }
 
-func createTenantDiscoveryResponse(responseCode int, responseData string) (*TenantDiscoveryResponse, error) {
+func CreateTenantDiscoveryResponse(responseCode int, responseData string) (*TenantDiscoveryResponse, error) {
 	baseResponse, err := msalbase.CreateOAuthResponseBase(responseCode, responseData)
 	if err != nil {
 		return nil, err

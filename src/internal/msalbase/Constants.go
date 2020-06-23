@@ -5,3 +5,4 @@ package msalbase
 
 const DefaultAuthCodeResponseType = "code"
 const DefaultScopeSeparator = " "
+const IntervalAddition = 5

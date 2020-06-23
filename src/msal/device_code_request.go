@@ -65,10 +65,10 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 		default:
 			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
 			if err != nil {
-				if requests.IsErrorAuthorizationPending(err) {
+				if isErrorAuthorizationPending(err) {
 					timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
-				} else if requests.IsErrorSlowDown(err) {
-					interval += 5
+				} else if isErrorSlowDown(err) {
+					interval += msalbase.IntervalAddition
 				} else {
 					return nil, err
 				}

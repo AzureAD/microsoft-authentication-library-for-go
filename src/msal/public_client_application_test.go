@@ -86,7 +86,7 @@ func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 	errorReq := new(requests.MockTokenRequest)
 	errorReq.On("Execute").Return(nil, mockError)
 	_, err = testPCA.executeTokenRequestWithoutCacheWrite(errorReq, testAuthParams)
-	if !reflect.DeepEqual(err, mockError) {
+	if err != mockError {
 		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
 	}
 }

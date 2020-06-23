@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package requests
+package msalgo
 
 import (
 	"reflect"

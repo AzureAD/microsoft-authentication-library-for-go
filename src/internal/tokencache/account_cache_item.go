@@ -7,6 +7,7 @@ type accountCacheItem struct {
 	HomeAccountID     string
 	Environment       string
 	RawClientInfo     string
+	Realm             string
 	TenantID          string
 	PreferredUsername string
 	Name              string

@@ -5,8 +5,7 @@ package msalbase
 
 import (
 	"encoding/json"
-
-	log "github.com/sirupsen/logrus"
+	"errors"
 )
 
 type UserRealmAccountType int
@@ -20,7 +19,7 @@ const (
 type UserRealm struct {
 	AccountType       string `json:"account_type"`
 	DomainName        string `json:"domain_name"`
-	CloudInstanceNmae string `json:"cloud_instance_name"`
+	CloudInstanceName string `json:"cloud_instance_name"`
 	CloudAudienceURN  string `json:"cloud_audience_urn"`
 
 	// required if accountType is Federated
@@ -30,19 +29,28 @@ type UserRealm struct {
 
 // CreateUserRealm stuff
 func CreateUserRealm(responseData string) (*UserRealm, error) {
-	log.Trace(responseData)
 	userRealm := &UserRealm{}
-	var err = json.Unmarshal([]byte(responseData), userRealm)
+	err := json.Unmarshal([]byte(responseData), userRealm)
 	if err != nil {
 		return nil, err
 	}
-
 	if userRealm.GetAccountType() == Federated {
-		// todo: assert federationProtocol and federationMetadataURL are set/valid/non-null
+		if userRealm.FederationProtocol == "" {
+			return nil, errors.New("Federation protocol of user realm is missing")
+		}
+		if userRealm.FederationMetadataURL == "" {
+			return nil, errors.New("Federation metadata URL of user realm is missing")
+		}
 	}
-
-	// todo: assert domainName, cloudInstanceName, cloudInstanceUrn are set/valid/non-null
-
+	if userRealm.DomainName == "" {
+		return nil, errors.New("Domain name of user realm is missing")
+	}
+	if userRealm.CloudInstanceName == "" {
+		return nil, errors.New("Cloud instance name of user realm is missing")
+	}
+	if userRealm.CloudAudienceURN == "" {
+		return nil, errors.New("Cloud Instance URN is missing")
+	}
 	return userRealm, nil
 }
 

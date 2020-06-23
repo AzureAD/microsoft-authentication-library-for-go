@@ -14,13 +14,13 @@ type MockCacheManager struct {
 
 func (mock *MockCacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal) (*msalbase.StorageTokenResponse, error) {
 	args := mock.Called(authParameters)
-	return &msalbase.StorageTokenResponse{}, args.Error(1)
+	return args.Get(0).(*msalbase.StorageTokenResponse), args.Error(1)
 }
 
 func (mock *MockCacheManager) CacheTokenResponse(authParameters *msalbase.AuthParametersInternal,
 	tokenResponse *msalbase.TokenResponse) (*msalbase.Account, error) {
 	args := mock.Called(authParameters, tokenResponse)
-	return &msalbase.Account{}, args.Error(1)
+	return args.Get(0).(*msalbase.Account), args.Error(1)
 }
 
 func (mock *MockCacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {

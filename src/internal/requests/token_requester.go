@@ -5,6 +5,6 @@ package requests
 
 import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
-type ITokenRequester interface {
+type TokenRequester interface {
 	Execute() (*msalbase.TokenResponse, error)
 }

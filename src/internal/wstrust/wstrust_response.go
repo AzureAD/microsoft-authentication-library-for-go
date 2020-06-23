@@ -16,8 +16,6 @@ type WsTrustResponse struct {
 }
 
 func CreateWsTrustResponse(responseData string) *WsTrustResponse {
-	log.Info("CreateWsTrustResponse ENTERED")
-	log.Trace(responseData)
 	response := &WsTrustResponse{responseData}
 	return response
 

@@ -1,10 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package msalbase
+package msalgo
 
 import (
-	"io/ioutil"
 	"net"
 	"net/http"
 	"strings"
@@ -16,49 +15,6 @@ import (
 // HTTPManager is a wrapper for http.Client
 type HTTPManager struct {
 	client *http.Client
-}
-
-// HTTPManagerResponse is a wrapper for a http.Response
-type HTTPManagerResponse struct {
-	responseCode int
-	responseData string
-	headers      map[string]string
-}
-
-// GetResponseCode returns the response code of the HTTP reponse
-func (r *HTTPManagerResponse) GetResponseCode() int {
-	return r.responseCode
-}
-
-// GetResponseData returns the body of the HTTP response
-func (r *HTTPManagerResponse) GetResponseData() string {
-	return r.responseData
-}
-
-// GetHeaders returns the headers of the HTTP response
-func (r *HTTPManagerResponse) GetHeaders() map[string]string {
-	return r.headers
-}
-
-// CreateHTTPManagerResponse wraps the http.Response object into a HTTPManagerResponse object
-func CreateHTTPManagerResponse(resp *http.Response) (*HTTPManagerResponse, error) {
-
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		return nil, err
-	}
-
-	log.Info("   HTTP Response: " + resp.Status)
-	log.Trace(string(body))
-
-	headers := make(map[string]string)
-	for k, v := range resp.Header {
-		headers[k] = v[0] // todo: broken?
-	}
-
-	r := &HTTPManagerResponse{responseCode: resp.StatusCode, responseData: string(body), headers: headers}
-	return r, nil
 }
 
 // CreateHTTPManager creates a http.Client object and wraps it in a HTTPManager
@@ -92,7 +48,7 @@ func (mgr *HTTPManager) performRequest(req *http.Request, requestHeaders map[str
 }
 
 // Get stuff
-func (mgr *HTTPManager) Get(url string, requestHeaders map[string]string) (*HTTPManagerResponse, error) {
+func (mgr *HTTPManager) Get(url string, requestHeaders map[string]string) (IHTTPManagerResponse, error) {
 	log.Info("<------------------")
 	log.Infof("   GET to %v", url)
 	defer log.Info("------------------>")
@@ -105,7 +61,7 @@ func (mgr *HTTPManager) Get(url string, requestHeaders map[string]string) (*HTTP
 }
 
 // Post stuff
-func (mgr *HTTPManager) Post(url string, body string, requestHeaders map[string]string) (*HTTPManagerResponse, error) {
+func (mgr *HTTPManager) Post(url string, body string, requestHeaders map[string]string) (IHTTPManagerResponse, error) {
 	log.Info("<------------------")
 	log.Infof("   POST to %v", url)
 	log.Trace(body)

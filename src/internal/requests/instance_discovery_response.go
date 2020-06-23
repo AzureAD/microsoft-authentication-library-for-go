@@ -11,7 +11,7 @@ type InstanceDiscoveryResponse struct {
 	Metadata                []instanceDiscoveryMetadata `json:"metadata"`
 }
 
-func createInstanceDiscoveryResponse(responseData string) (*InstanceDiscoveryResponse, error) {
+func CreateInstanceDiscoveryResponse(responseData string) (*InstanceDiscoveryResponse, error) {
 	discoveryResponse := &InstanceDiscoveryResponse{}
 	var err = json.Unmarshal([]byte(responseData), discoveryResponse)
 	if err != nil {

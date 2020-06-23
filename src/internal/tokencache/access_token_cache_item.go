@@ -9,6 +9,7 @@ type accessTokenCacheItem struct {
 	HomeAccountID                  string
 	Environment                    string
 	RawClientInfo                  string
+	Realm                          string
 	CredentialType                 string
 	ClientID                       string
 	Secret                         string
