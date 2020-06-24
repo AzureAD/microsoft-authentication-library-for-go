@@ -74,6 +74,31 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenByUsernamePassword(t *testing.T) {
+	testAuthParams.SetAuthorityEndpoints(testAuthorityEndpoints)
+	testAuthParams.SetAuthorizationType(msalbase.AuthorizationTypeUsernamePassword)
+	testAuthParams.SetScopes(tokenCommonParams.scopes)
+	testAuthParams.SetUsername("username")
+	testAuthParams.SetPassword("password")
+	userPassParams := &AcquireTokenUsernamePasswordParameters{
+		commonParameters: tokenCommonParams,
+		username:         "username",
+		password:         "password",
+	}
+	managedUserRealm := &msalbase.UserRealm{
+		AccountType: "Managed",
+	}
+	wrm.On("GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
+	wrm.On("GetUserRealm", testAuthParams).Return(managedUserRealm, nil)
+	actualTokenResp := &msalbase.TokenResponse{}
+	wrm.On("GetAccessTokenFromUsernamePassword", testAuthParams).Return(actualTokenResp, nil)
+	_, err := testPCA.AcquireTokenByUsernamePassword(userPassParams)
+	if err != nil {
+		t.Errorf("Error should be nil, instead it is %v", err)
+	}
+}
+
 func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 	req := new(requests.MockTokenRequest)
 	actualTokenResp := &msalbase.TokenResponse{}
