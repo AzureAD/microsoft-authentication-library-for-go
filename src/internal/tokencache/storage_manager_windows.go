@@ -15,8 +15,8 @@ type windowsStorageManager struct {
 	cachekeyGenerator ICacheKeyGenerator
 }
 
-func CreateStorageManager(ckg ICacheKeyGenerator) IStorageManager {
-	mgr := &windowsStorageManager{cachekeyGenerator: ckg}
+func CreateStorageManager() IStorageManager {
+	mgr := &windowsStorageManager{}
 	return mgr
 }
 

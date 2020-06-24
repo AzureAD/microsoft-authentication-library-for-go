@@ -29,8 +29,7 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	webRequestManager := CreateWebRequestManager(httpManager)
 
 	// todo: check parameters for whether persistent cache is desired, or self-caching (callback to byte array read/write)
-	cacheKeyGenerator := tokencache.CreateCacheKeyGenerator()
-	storageManager := tokencache.CreateStorageManager(cacheKeyGenerator)
+	storageManager := tokencache.CreateStorageManager()
 	cacheManager := tokencache.CreateCacheManager(storageManager)
 
 	pca := &PublicClientApplication{pcaParameters, webRequestManager, cacheManager}
