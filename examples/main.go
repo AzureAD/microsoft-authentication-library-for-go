@@ -3,11 +3,11 @@ package main
 import (
 	"os"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src"
+	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 )
 
-var config = CreateConfig("config.json")
-var pcaParams = createPCAParams(config.GetClientID(), config.GetAuthority())
+var config = createConfig("config.json")
+var pcaParams = createPCAParams(config.ClientID, config.Authority)
 var publicClientApp *msalgo.PublicClientApplication
 var err error
 var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
