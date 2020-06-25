@@ -88,6 +88,10 @@ func (tr *TokenResponse) GetClientInfo() *clientInfoJSONPayload {
 	return tr.clientInfo
 }
 
+func (tr *TokenResponse) GetFamilyID() string {
+	return tr.familyID
+}
+
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
 	homeAccountID := tr.clientInfo.UID + "." + tr.clientInfo.Utid
 	return homeAccountID

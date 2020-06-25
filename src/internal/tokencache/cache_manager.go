@@ -181,12 +181,11 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	environment := authParameters.GetAuthorityInfo().GetHost()
 	realm := authParameters.GetAuthorityInfo().GetUserRealmURIPrefix()
 	clientID := authParameters.GetClientID()
-	target := strings.Join(tokenResponse.GetGrantedScopes(), " ")
+	target := strings.Join(tokenResponse.GetGrantedScopes(), msalbase.DefaultScopeSeparator)
 
 	log.Infof("Writing to the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target '%s'", homeAccountID, environment, realm, clientID, target)
 
 	if homeAccountID == "" || environment == "" || realm == "" || clientID == "" || target == "" {
-		log.Warn("Skipping writing data to the tokens cache, one of the primary keys is empty")
 		return nil, errors.New("Skipping writing data to the tokens cache, one of the primary keys is empty")
 	}
 
@@ -195,7 +194,8 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	cachedAt := time.Now().Unix()
 
 	if tokenResponse.HasRefreshToken() {
-		credentialsToWrite = append(credentialsToWrite, msalbase.CreateCredentialRefreshToken(homeAccountID, environment, clientID, cachedAt, tokenResponse.GetRefreshToken(), ""))
+		//credentialsToWrite = append(credentialsToWrite, msalbase.CreateCredentialRefreshToken(homeAccountID, environment, clientID,
+		//cachedAt, tokenResponse.GetRefreshToken(), ""))
 	}
 
 	if tokenResponse.HasAccessToken() {
