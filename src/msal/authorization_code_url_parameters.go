@@ -12,124 +12,68 @@ import (
 )
 
 type AuthorizationCodeURLParameters struct {
-	clientID            string
-	redirectURI         string
-	responseType        string
-	responseMode        string
-	state               string
-	prompt              string
-	loginHint           string
-	domainHint          string
-	codeChallenge       string
-	codeChallengeMethod string
-	scopes              []string
+	ClientID            string
+	RedirectURI         string
+	ResponseType        string
+	ResponseMode        string
+	State               string
+	Prompt              string
+	LoginHint           string
+	DomainHint          string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	Scopes              []string
 }
 
 func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, scopes []string, codeChallenge string) *AuthorizationCodeURLParameters {
 	p := &AuthorizationCodeURLParameters{
-		clientID:      clientID,
-		responseType:  msalbase.DefaultAuthCodeResponseType,
-		redirectURI:   redirectURI,
-		scopes:        scopes,
-		codeChallenge: codeChallenge,
+		ClientID:      clientID,
+		ResponseType:  msalbase.DefaultAuthCodeResponseType,
+		RedirectURI:   redirectURI,
+		Scopes:        scopes,
+		CodeChallenge: codeChallenge,
 	}
 	return p
 }
 
 func (p *AuthorizationCodeURLParameters) CreateURL(wrm requests.IWebRequestManager, authParams *msalbase.AuthParametersInternal) (string, error) {
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(wrm)
-	endpoints, err := resolutionManager.ResolveEndpoints(authParams.GetAuthorityInfo(), "")
+	endpoints, err := resolutionManager.ResolveEndpoints(authParams.AuthorityInfo, "")
 	if err != nil {
 		return "", err
 	}
-	baseURL, err := url.Parse(endpoints.GetAuthorizationEndpoint())
+	baseURL, err := url.Parse(endpoints.AuthorizationEndpoint)
 	if err != nil {
 		return "", err
 	}
 	urlParams := url.Values{}
-	urlParams.Add("client_id", p.clientID)
-	urlParams.Add("response_type", p.responseType)
-	urlParams.Add("redirect_uri", p.redirectURI)
-	urlParams.Add("scope", p.GetSpaceSeparatedScopes())
-	urlParams.Add("code_challenge", p.codeChallenge)
-	if p.state != "" {
-		urlParams.Add("state", p.state)
+	urlParams.Add("client_id", p.ClientID)
+	urlParams.Add("response_type", p.ResponseType)
+	urlParams.Add("redirect_uri", p.RedirectURI)
+	urlParams.Add("scope", p.getSeparatedScopes())
+	urlParams.Add("code_challenge", p.CodeChallenge)
+	if p.State != "" {
+		urlParams.Add("state", p.State)
 	}
-	if p.responseMode != "" {
-		urlParams.Add("response_mode", p.responseMode)
+	if p.ResponseMode != "" {
+		urlParams.Add("response_mode", p.ResponseMode)
 	}
-	if p.prompt != "" {
-		urlParams.Add("prompt", p.prompt)
+	if p.Prompt != "" {
+		urlParams.Add("prompt", p.Prompt)
 	}
-	if p.loginHint != "" {
-		urlParams.Add("login_hint", p.loginHint)
+	if p.LoginHint != "" {
+		urlParams.Add("login_hint", p.LoginHint)
 	}
-	if p.domainHint != "" {
-		urlParams.Add("domain_hint", p.domainHint)
+	if p.DomainHint != "" {
+		urlParams.Add("domain_hint", p.DomainHint)
 	}
-	if p.codeChallengeMethod != "" {
-		urlParams.Add("code_challenge_method", p.codeChallengeMethod)
+	if p.CodeChallengeMethod != "" {
+		urlParams.Add("code_challenge_method", p.CodeChallengeMethod)
 	}
 	baseURL.RawQuery = urlParams.Encode()
 	return baseURL.String(), nil
 }
 
-func (p *AuthorizationCodeURLParameters) GetResponseType() string {
-	return p.responseType
-}
-
-func (p *AuthorizationCodeURLParameters) GetSpaceSeparatedScopes() string {
-	return strings.Join(p.scopes, msalbase.DefaultScopeSeparator)
-}
-
-func (p *AuthorizationCodeURLParameters) GetCodeChallenge() string {
-	return p.codeChallenge
-}
-
-func (p *AuthorizationCodeURLParameters) GetCodeChallengeMethod() string {
-	return p.codeChallengeMethod
-}
-
-func (p *AuthorizationCodeURLParameters) SetCodeChallengMethod(codeChallengeMethod string) {
-	p.codeChallengeMethod = codeChallengeMethod
-}
-
-func (p *AuthorizationCodeURLParameters) GetResponseMode() string {
-	return p.responseMode
-}
-
-func (p *AuthorizationCodeURLParameters) SetResponseMode(responseMode string) {
-	p.responseMode = responseMode
-}
-
-func (p *AuthorizationCodeURLParameters) GetState() string {
-	return p.state
-}
-
-func (p *AuthorizationCodeURLParameters) SetState(state string) {
-	p.state = state
-}
-
-func (p *AuthorizationCodeURLParameters) GetPrompt() string {
-	return p.prompt
-}
-
-func (p *AuthorizationCodeURLParameters) SetPrompt(prompt string) {
-	p.prompt = prompt
-}
-
-func (p *AuthorizationCodeURLParameters) GetLoginHint() string {
-	return p.loginHint
-}
-
-func (p *AuthorizationCodeURLParameters) SetLoginHint(loginHint string) {
-	p.loginHint = loginHint
-}
-
-func (p *AuthorizationCodeURLParameters) GetDomainHint() string {
-	return p.domainHint
-}
-
-func (p *AuthorizationCodeURLParameters) SetDomainHint(domainHint string) {
-	p.domainHint = domainHint
+func (p *AuthorizationCodeURLParameters) getSeparatedScopes() string {
+	return strings.Join(p.Scopes, msalbase.DefaultScopeSeparator)
 }

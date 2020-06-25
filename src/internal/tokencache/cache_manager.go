@@ -46,13 +46,13 @@ func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInter
 
 	emptyCorrelationID := ""
 	emptyFamilyID := ""
-	homeAccountID := authParameters.GetHomeAccountID()
+	homeAccountID := authParameters.HomeaccountID
 	// authorityURI := authParameters.GetAuthorityInfo().GetCanonicalAuthorityURI()
 	// shared_ptr<Uri> authority = authParameters.GetAuthority();
 	environment := "" // todo:  authority.GetEnvironment();
 	realm := ""       // authParameters.GetAuthorityInfo().GetRealm() // todo: authority->GetRealm();
-	clientID := authParameters.GetClientID()
-	target := strings.Join(authParameters.GetScopes(), " ")
+	clientID := authParameters.ClientID
+	target := strings.Join(authParameters.Scopes, " ")
 
 	log.Tracef("Querying the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target:'%s'", homeAccountID, environment, realm, clientID, target)
 
@@ -179,8 +179,8 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	// shared_ptr<Uri> authority = authParameters->GetAuthority();
 	environment := "" // authority.GetEnvironment()
 	realm := ""       // authority->GetRealm();
-	clientID := authParameters.GetClientID()
-	target := strings.Join(tokenResponse.GetGrantedScopes(), " ")
+	clientID := authParameters.ClientID
+	target := strings.Join(tokenResponse.GrantedScopes, msalbase.DefaultScopeSeparator)
 
 	log.Tracef("Writing to the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target '%s'", homeAccountID, environment, realm, clientID, target)
 
@@ -194,12 +194,12 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	cachedAt := time.Now().Unix()
 
 	if tokenResponse.HasRefreshToken() {
-		credentialsToWrite = append(credentialsToWrite, msalbase.CreateCredentialRefreshToken(homeAccountID, environment, clientID, cachedAt, tokenResponse.GetRefreshToken(), ""))
+		//credentialsToWrite = append(credentialsToWrite, msalbase.CreateCredentialRefreshToken(homeAccountID, environment, clientID, cachedAt, tokenResponse.GetRefreshToken(), ""))
 	}
 
 	if tokenResponse.HasAccessToken() {
-		expiresOn := tokenResponse.GetExpiresOn().Unix()
-		extendedExpiresOn := tokenResponse.GetExtendedExpiresOn().Unix()
+		expiresOn := tokenResponse.ExpiresOn.Unix()
+		extendedExpiresOn := tokenResponse.ExtExpiresOn.Unix()
 
 		accessToken := msalbase.CreateCredentialAccessToken(
 			homeAccountID,
@@ -210,7 +210,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 			cachedAt,
 			expiresOn,
 			extendedExpiresOn,
-			tokenResponse.GetAccessToken(),
+			tokenResponse.AccessToken,
 			"") // _emptyAdditionalFieldsJson
 
 		if isAccessTokenValid(accessToken) {
@@ -218,7 +218,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 		}
 	}
 
-	idTokenJwt := tokenResponse.GetIDToken()
+	idTokenJwt := tokenResponse.IDToken
 
 	if !idTokenJwt.IsEmpty() {
 		credentialsToWrite = append(credentialsToWrite, msalbase.CreateCredentialIdToken(homeAccountID, environment, realm, clientID, cachedAt, idTokenJwt.GetRaw(), ""))
@@ -240,7 +240,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	}
 
 	localAccountID := "" // GetLocalAccountId(idTokenJwt)
-	authorityType := authParameters.GetAuthorityInfo().GetAuthorityType()
+	authorityType := authParameters.AuthorityInfo.AuthorityType
 
 	account := msalbase.CreateAccount(
 		homeAccountID,
@@ -263,7 +263,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 func (m *cacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
 	homeAccountID := "" // todo: authParameters.GetAccountId()
 	environment := ""   // authParameters.GetAuthorityInfo().GetEnvironment()
-	clientID := authParameters.GetClientID()
+	clientID := authParameters.ClientID
 
 	emptyCorrelationID := ""
 	emptyRealm := ""

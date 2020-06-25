@@ -79,7 +79,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	deviceCodeParameters *AcquireTokenDeviceCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-	req := createDeviceCodeRequest(deviceCodeParameters.GetCancelContext(), pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
+	req := createDeviceCodeRequest(deviceCodeParameters.cancelCtx, pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
@@ -89,8 +89,8 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateAuthCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	req.SetCode(authCodeParams.code)
-	req.SetCodeChallenge(authCodeParams.codeChallenge)
+	req.Code = authCodeParams.Code
+	req.CodeChallenge = authCodeParams.codeChallenge
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 

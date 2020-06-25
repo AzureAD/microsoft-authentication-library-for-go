@@ -29,9 +29,5 @@ func CreateAcquireTokenDeviceCodeParameters(cancelCtx context.Context, scopes []
 
 func (p *AcquireTokenDeviceCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
-	authParams.SetAuthorizationType(msalbase.AuthorizationTypeDeviceCode)
-}
-
-func (p *AcquireTokenDeviceCodeParameters) GetCancelContext() context.Context {
-	return p.cancelCtx
+	authParams.AuthorizationType = msalbase.AuthorizationTypeDeviceCode
 }

@@ -27,7 +27,7 @@ func TestAugmentAuthenticationParameters(t *testing.T) {
 	testTokenParams := &acquireTokenCommonParameters{testScopes}
 	testAuthParams := &msalbase.AuthParametersInternal{}
 	testTokenParams.augmentAuthenticationParameters(testAuthParams)
-	authScopes := testAuthParams.GetScopes()
+	authScopes := testAuthParams.Scopes
 	if !reflect.DeepEqual(testScopes, authScopes) {
 		t.Errorf("Actual scopes %v differ from expected scopes %v", authScopes, testScopes)
 	}

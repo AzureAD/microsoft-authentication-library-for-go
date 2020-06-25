@@ -22,27 +22,9 @@ func CreateAcquireTokenUsernamePasswordParameters(scopes []string, username stri
 	return p
 }
 
-// SetUsername stuff
-func (p *AcquireTokenUsernamePasswordParameters) SetUsername(username string) {
-	p.username = username
-}
-
-func (p *AcquireTokenUsernamePasswordParameters) GetUsername() string {
-	return p.username
-}
-
-// SetPassword stuff
-func (p *AcquireTokenUsernamePasswordParameters) SetPassword(password string) {
-	p.password = password
-}
-
-func (p *AcquireTokenUsernamePasswordParameters) GetPassword() string {
-	return p.password
-}
-
 func (p *AcquireTokenUsernamePasswordParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
-	authParams.SetAuthorizationType(msalbase.AuthorizationTypeUsernamePassword)
-	authParams.SetUsername(p.GetUsername())
-	authParams.SetPassword(p.GetPassword())
+	authParams.AuthorizationType = msalbase.AuthorizationTypeUsernamePassword
+	authParams.Username = p.username
+	authParams.Password = p.password
 }

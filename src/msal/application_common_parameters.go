@@ -27,10 +27,6 @@ func (p *applicationCommonParameters) SetAadAuthority(authorityURI string) error
 	return nil
 }
 
-func (p *applicationCommonParameters) GetClientID() string {
-	return p.clientID
-}
-
 func (p *applicationCommonParameters) validate() error {
 	return nil
 }

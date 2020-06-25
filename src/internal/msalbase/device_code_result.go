@@ -26,7 +26,7 @@ func CreateDeviceCodeResult(userCode string, deviceCode string, verificationURL 
 }
 
 func (dcr DeviceCodeResult) String() string {
-	return fmt.Sprintf("UserCode: (%v)\nDeviceCode: (%v)\nURL: (%v)\nMessage: (%v)\n", dcr.GetUserCode(), dcr.GetDeviceCode(), dcr.GetVerificationURL(), dcr.GetMessage())
+	return fmt.Sprintf("UserCode: (%v)\nDeviceCode: (%v)\nURL: (%v)\nMessage: (%v)\n", dcr.userCode, dcr.deviceCode, dcr.verificationURL, dcr.message)
 
 }
 

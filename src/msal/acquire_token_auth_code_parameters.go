@@ -9,7 +9,7 @@ import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/
 type AcquireTokenAuthCodeParameters struct {
 	commonParameters    *acquireTokenCommonParameters
 	redirectURI         string
-	code                string
+	Code                string
 	codeChallenge       string
 	codeChallengeMethod string
 }
@@ -28,19 +28,6 @@ func CreateAcquireTokenAuthCodeParameters(scopes []string,
 
 func (p *AcquireTokenAuthCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
-	authParams.SetRedirectURI(p.redirectURI)
-	authParams.SetAuthorizationType(msalbase.AuthorizationTypeAuthCode)
-}
-
-//SetCode sets the auth code for the request
-func (p *AcquireTokenAuthCodeParameters) SetCode(code string) {
-	p.code = code
-}
-
-func (p *AcquireTokenAuthCodeParameters) SetCodeChallenge(codeChallenge string) {
-	p.codeChallenge = codeChallenge
-}
-
-func (p *AcquireTokenAuthCodeParameters) SetCodeChallengeMethod(codeChallengeMethod string) {
-	p.codeChallengeMethod = codeChallengeMethod
+	authParams.Redirecturi = p.redirectURI
+	authParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
 }

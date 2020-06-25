@@ -53,7 +53,7 @@ func CreateWebRequestManager(httpManager IHTTPManager) requests.IWebRequestManag
 // GetUserRealm stuff
 func (wrm *WebRequestManager) GetUserRealm(authParameters *msalbase.AuthParametersInternal) (*msalbase.UserRealm, error) {
 	log.Trace("GetUserRealm entered")
-	url := authParameters.GetAuthorityEndpoints().GetUserRealmEndpoint(authParameters.GetUsername())
+	url := authParameters.Endpoints.GetUserRealmEndpoint(authParameters.Username)
 
 	log.Trace("user realm endpoint: " + url)
 	httpManagerResponse, err := wrm.httpManager.Get(url, getAadHeaders(authParameters))
@@ -90,12 +90,12 @@ func (wrm *WebRequestManager) GetWsTrustResponse(
 	var wsTrustRequestMessage string
 	var err error
 
-	switch authParameters.GetAuthorizationType() {
+	switch authParameters.AuthorizationType {
 	case msalbase.AuthorizationTypeWindowsIntegratedAuth:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageWIA(cloudAudienceURN)
 	case msalbase.AuthorizationTypeUsernamePassword:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageUsernamePassword(
-			cloudAudienceURN, authParameters.GetUsername(), authParameters.GetPassword())
+			cloudAudienceURN, authParameters.Username, authParameters.Password)
 	default:
 		log.Error("unknown auth type!")
 		err = errors.New("Unknown auth type")
@@ -108,7 +108,7 @@ func (wrm *WebRequestManager) GetWsTrustResponse(
 	var soapAction string
 
 	// todo: make consts out of these strings
-	if endpoint.GetVersion() == wstrust.Trust2005 {
+	if endpoint.EndpointVersion == wstrust.Trust2005 {
 		soapAction = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
 	} else {
 		soapAction = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue"
@@ -120,7 +120,7 @@ func (wrm *WebRequestManager) GetWsTrustResponse(
 
 	addContentTypeHeader(headers, SoapXMLUtf8)
 
-	response, err := wrm.httpManager.Post(endpoint.GetURL(), wsTrustRequestMessage, headers)
+	response, err := wrm.httpManager.Post(endpoint.URL, wsTrustRequestMessage, headers)
 	if err != nil {
 		return nil, err
 	}
@@ -132,11 +132,11 @@ func (wrm *WebRequestManager) GetWsTrustResponse(
 func (wrm *WebRequestManager) GetAccessTokenFromSamlGrant(authParameters *msalbase.AuthParametersInternal, samlGrant *wstrust.SamlTokenInfo) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type": "password",
-		"username":   authParameters.GetUsername(),
-		"password":   authParameters.GetPassword(),
+		"username":   authParameters.Username,
+		"password":   authParameters.Password,
 	}
 
-	switch samlGrant.GetAssertionType() {
+	switch samlGrant.AssertionType {
 	case wstrust.SamlV1:
 		decodedQueryParams["grant_type"] = "urn:ietf:params:oauth:grant-type:saml1_1-bearer"
 		break
@@ -144,10 +144,10 @@ func (wrm *WebRequestManager) GetAccessTokenFromSamlGrant(authParameters *msalba
 		decodedQueryParams["grant_type"] = "urn:ietf:params:oauth:grant-type:saml2-bearer"
 		break
 	default:
-		return nil, errors.New("GetAccessTokenFromSamlGrant returned unknown saml assertion type: " + string(samlGrant.GetAssertionType()))
+		return nil, errors.New("GetAccessTokenFromSamlGrant returned unknown saml assertion type: " + string(samlGrant.AssertionType))
 	}
 
-	decodedQueryParams["assertion"] = base64.StdEncoding.WithPadding(base64.StdPadding).EncodeToString([]byte(samlGrant.GetAssertion())) //  .EncodeToString([]byte(samlGrant.GetAssertion())) // StringUtils::Base64RFCEncodePadded(samlGrant->GetAssertion());
+	decodedQueryParams["assertion"] = base64.StdEncoding.WithPadding(base64.StdPadding).EncodeToString([]byte(samlGrant.Assertion)) //  .EncodeToString([]byte(samlGrant.GetAssertion())) // StringUtils::Base64RFCEncodePadded(samlGrant->GetAssertion());
 
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
@@ -161,8 +161,8 @@ func (wrm *WebRequestManager) GetAccessTokenFromUsernamePassword(
 	authParameters *msalbase.AuthParametersInternal) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type": "password",
-		"username":   authParameters.GetUsername(),
-		"password":   authParameters.GetPassword(),
+		"username":   authParameters.Username,
+		"password":   authParameters.Password,
 	}
 
 	addClientIDQueryParam(decodedQueryParams, authParameters)
@@ -179,7 +179,7 @@ func (wrm *WebRequestManager) GetDeviceCodeResult(authParameters *msalbase.AuthP
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 
-	deviceCodeEndpoint := strings.Replace(authParameters.GetAuthorityEndpoints().GetTokenEndpoint(), "token", "devicecode", -1)
+	deviceCodeEndpoint := strings.Replace(authParameters.Endpoints.TokenEndpoint, "token", "devicecode", -1)
 
 	headers := getAadHeaders(authParameters)
 	addContentTypeHeader(headers, URLEncodedUtf8)
@@ -194,7 +194,7 @@ func (wrm *WebRequestManager) GetDeviceCodeResult(authParameters *msalbase.AuthP
 		return nil, err
 	}
 
-	return dcResponse.ToDeviceCodeResult(authParameters.GetClientID(), authParameters.GetScopes()), nil
+	return dcResponse.ToDeviceCodeResult(authParameters.ClientID, authParameters.Scopes), nil
 }
 
 // GetAccessTokenFromDeviceCodeResult stuff
@@ -213,7 +213,7 @@ func (wrm *WebRequestManager) GetAccessTokenFromDeviceCodeResult(authParameters 
 
 // addClientIdQueryParam stuff
 func addClientIDQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
-	queryParams["client_id"] = authParameters.GetClientID()
+	queryParams["client_id"] = authParameters.ClientID
 }
 
 func joinScopes(scopes []string) string {
@@ -222,7 +222,7 @@ func joinScopes(scopes []string) string {
 
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
 	log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
-	requestedScopes := authParameters.GetScopes()
+	requestedScopes := authParameters.Scopes
 	// openid required to get an id token
 	// offline_access required to get a refresh token
 	// profile required to get the client_info field back
@@ -236,7 +236,7 @@ func addClientInfoQueryParam(queryParams map[string]string) {
 
 // addRedirectUriQueryParam stuff
 func addRedirectURIQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
-	queryParams["redirect_uri"] = authParameters.GetRedirectURI()
+	queryParams["redirect_uri"] = authParameters.Redirecturi
 }
 
 func addContentTypeHeader(headers map[string]string, contentType ContentType) {
@@ -258,7 +258,7 @@ func getAadHeaders(authParameters *msalbase.AuthParametersInternal) map[string]s
 	headers["x-client-SKU"] = fmt.Sprintf("MSAL.golang.%s", runtime.GOOS)
 	headers["x-client-OS"] = msalbase.GetOSVersion()
 	// headers["x-client-Ver"] = todo: client version here;
-	headers["client-request-id"] = authParameters.GetCorrelationID()
+	headers["client-request-id"] = authParameters.CorrelationID
 	headers["return-client-request-id"] = "false"
 	return headers
 }
@@ -285,7 +285,7 @@ func (wrm *WebRequestManager) exchangeGrantForToken(authParameters *msalbase.Aut
 	headers := getAadHeaders(authParameters)
 	addContentTypeHeader(headers, URLEncodedUtf8)
 
-	response, err := wrm.httpManager.Post(authParameters.GetAuthorityEndpoints().GetTokenEndpoint(), encodeQueryParameters(queryParams), headers)
+	response, err := wrm.httpManager.Post(authParameters.Endpoints.TokenEndpoint, encodeQueryParameters(queryParams), headers)
 	if err != nil {
 		return nil, err
 	}
@@ -344,12 +344,12 @@ func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
 
 	queryParams := map[string]string{
 		"api-version":            "1.1",
-		"authorization_endpoint": fmt.Sprintf("https://%v/%v/auth2/v2.0/authorize", authorityInfo.GetHost(), authorityInfo.Tenant()),
+		"authorization_endpoint": fmt.Sprintf("https://%v/%v/auth2/v2.0/authorize", authorityInfo.Host, authorityInfo.Tenant),
 	}
 
 	var discoveryHost string
-	if requests.IsInTrustedHostList(authorityInfo.GetHost()) {
-		discoveryHost = authorityInfo.GetHost()
+	if requests.IsInTrustedHostList(authorityInfo.Host) {
+		discoveryHost = authorityInfo.Host
 	} else {
 		discoveryHost = "login.microsoftonline.com"
 	}
