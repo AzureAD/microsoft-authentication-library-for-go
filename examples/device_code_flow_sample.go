@@ -23,15 +23,15 @@ func setCancelTimeout(seconds int, cancelChannel chan bool) {
 
 func acquireTokenDeviceCode() {
 	cancelTimeout := 100 //Change this for cancel timeout
-	config := CreateConfig("config.json")
-	pcaParams := createPCAParams(config.GetClientID(), config.GetAuthority())
+	config := createConfig("config.json")
+	pcaParams := createPCAParams(config.ClientID, config.Authority)
 	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
 	if err != nil {
 		log.Fatal(err)
 	}
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
 	defer cancelFunc()
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.GetScopes(), deviceCodeCallback)
+	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
 	go func() {

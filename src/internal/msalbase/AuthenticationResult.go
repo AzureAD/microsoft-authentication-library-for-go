@@ -4,6 +4,7 @@
 package msalbase
 
 import (
+	"errors"
 	"strings"
 	"time"
 )
@@ -52,19 +53,12 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *St
 }
 
 // CreateAuthenticationResult creates and AuthenticationResult.  This should only be called from internal code.
-func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) *AuthenticationResult {
+func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) (*AuthenticationResult, error) {
 	grantedScopes := tokenResponse.GetGrantedScopes()
 	declinedScopes := tokenResponse.GetDeclinedScopes()
-
 	if len(declinedScopes) > 0 {
-		// _error = ErrorInternal::Create(
-		//     0x2384a19d /* tag_97kg3 */,
-		//     StatusInternal::Unexpected,
-		//     0,
-		//     FormatUtils::FormatString(
-		//         "Token response failed because declined scopes are present:'%s'",
-		//         StringUtils::JoinScopes(_declinedScopes)));
-		// return;
+		return nil, errors.New("Token response failed because declined scopes are present")
+
 	}
 
 	idToken := tokenResponse.GetIDToken()
@@ -72,7 +66,7 @@ func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) 
 	expiresOn := tokenResponse.GetExpiresOn()
 
 	ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
-	return ar
+	return ar, nil
 }
 
 // GetAccessToken retrieves the access token string from the result.

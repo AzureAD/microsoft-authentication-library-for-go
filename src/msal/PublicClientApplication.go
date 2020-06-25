@@ -29,11 +29,17 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	webRequestManager := requests.CreateWebRequestManager(httpManager)
 
 	// todo: check parameters for whether persistent cache is desired, or self-caching (callback to byte array read/write)
-	storageManager := tokencache.CreateStorageManager()
+	cacheKeyGenerator := tokencache.CreateCacheKeyGenerator()
+	storageManager := tokencache.CreateStorageManager(cacheKeyGenerator)
 	cacheManager := tokencache.CreateCacheManager(storageManager)
 
 	pca := &PublicClientApplication{pcaParameters, webRequestManager, cacheManager}
 	return pca, nil
+}
+
+// CreateAuthCodeURL creates a URL used to acquire an authorization code
+func (pca *PublicClientApplication) CreateAuthCodeURL(authCodeURLParameters *AuthorizationCodeURLParameters) (string, error) {
+	return authCodeURLParameters.CreateURL(pca.webRequestManager, pca.pcaParameters.createAuthenticationParameters())
 }
 
 // AcquireTokenSilent stuff
@@ -60,7 +66,6 @@ func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(
 	usernamePasswordParameters *AcquireTokenUsernamePasswordParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	usernamePasswordParameters.augmentAuthenticationParameters(authParams)
-
 	req := requests.CreateUsernamePasswordRequest(pca.webRequestManager, pca.cacheManager, authParams)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
@@ -74,12 +79,14 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
-// AcquireTokenInteractive stuff
-func (pca *PublicClientApplication) AcquireTokenInteractive(
-	interactiveParams *AcquireTokenInteractiveParameters, code string) (IAuthenticationResult, error) {
+// AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code
+func (pca *PublicClientApplication) AcquireTokenByAuthCode(
+	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
-	interactiveParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateInteractiveRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	authCodeParams.augmentAuthenticationParameters(authParams)
+	req := requests.CreateAuthCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	req.SetCode(authCodeParams.code)
+	req.SetCodeChallenge(authCodeParams.codeChallenge)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
@@ -90,7 +97,7 @@ func (pca *PublicClientApplication) executeTokenRequestWithoutCacheWrite(
 	tokenResponse, err := req.Execute()
 	if err == nil {
 		// todo: is account being nil proper here?
-		return msalbase.CreateAuthenticationResult(tokenResponse, nil), nil
+		return msalbase.CreateAuthenticationResult(tokenResponse, nil)
 	}
 	return nil, err
 }
@@ -105,7 +112,7 @@ func (pca *PublicClientApplication) executeTokenRequestWithCacheWrite(
 		if err != nil {
 			return nil, err
 		}
-		return msalbase.CreateAuthenticationResult(tokenResponse, account), nil
+		return msalbase.CreateAuthenticationResult(tokenResponse, account)
 	}
 	return nil, err
 }

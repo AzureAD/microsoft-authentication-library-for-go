@@ -64,7 +64,7 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 		// Since we're here, we've made a call to the backend.  We want to ensure we're caching
 		// the latest values from the server.
 		if cacheEntry, ok := endpointCacheEntries[authorityInfo.GetCanonicalAuthorityURI()]; ok {
-			for k, _ := range cacheEntry.ValidForDomainsInList {
+			for k := range cacheEntry.ValidForDomainsInList {
 				updatedCacheEntry.ValidForDomainsInList[k] = true
 			}
 		}
@@ -99,9 +99,11 @@ func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msa
 		log.Error(err)
 		return nil, err
 	}
+	log.Info(openIDConfigurationEndpoint)
 
 	// Discover endpoints via openid-configuration
 	tenantDiscoveryResponse, err := m.webRequestManager.GetTenantDiscoveryResponse(openIDConfigurationEndpoint)
+	log.Infof("%v, %v", tenantDiscoveryResponse, err)
 	if err != nil {
 		log.Error(err)
 		return nil, err

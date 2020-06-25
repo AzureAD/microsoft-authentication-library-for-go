@@ -13,34 +13,34 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-// HTTPManager stuff
+// HTTPManager is a wrapper for http.Client
 type HTTPManager struct {
 	client *http.Client
 }
 
-// HTTPManagerResponse stuff
+// HTTPManagerResponse is a wrapper for a http.Response
 type HTTPManagerResponse struct {
 	responseCode int
 	responseData string
 	headers      map[string]string
 }
 
-// GetResponseCode stuff
+// GetResponseCode returns the response code of the HTTP reponse
 func (r *HTTPManagerResponse) GetResponseCode() int {
 	return r.responseCode
 }
 
-// GetResponseData stuff
+// GetResponseData returns the body of the HTTP response
 func (r *HTTPManagerResponse) GetResponseData() string {
 	return r.responseData
 }
 
-// GetHeaders stuff
+// GetHeaders returns the headers of the HTTP response
 func (r *HTTPManagerResponse) GetHeaders() map[string]string {
 	return r.headers
 }
 
-// CreateHTTPManagerResponse stuff
+// CreateHTTPManagerResponse wraps the http.Response object into a HTTPManagerResponse object
 func CreateHTTPManagerResponse(resp *http.Response) (*HTTPManagerResponse, error) {
 
 	defer resp.Body.Close()
@@ -61,7 +61,7 @@ func CreateHTTPManagerResponse(resp *http.Response) (*HTTPManagerResponse, error
 	return r, nil
 }
 
-// CreateHTTPManager stuff
+// CreateHTTPManager creates a http.Client object and wraps it in a HTTPManager
 func CreateHTTPManager() *HTTPManager {
 	tr := &http.Transport{
 		DialContext: (&net.Dialer{
