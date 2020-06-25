@@ -17,17 +17,17 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	testDeclinedScopesWithoutError := []string{}
 	testDeclinedScopesWithError := []string{"openid"}
 	testTokenResponseWithoutError := &TokenResponse{
-		accessToken:    testAccessToken,
-		expiresOn:      testExpiresOn,
-		idToken:        testIDToken,
-		grantedScopes:  testGrantedScopes,
+		AccessToken:    testAccessToken,
+		ExpiresOn:      testExpiresOn,
+		IDToken:        testIDToken,
+		GrantedScopes:  testGrantedScopes,
 		declinedScopes: testDeclinedScopesWithoutError,
 	}
 	testTokenResponseWithError := &TokenResponse{
-		accessToken:    testAccessToken,
-		expiresOn:      testExpiresOn,
-		idToken:        testIDToken,
-		grantedScopes:  testGrantedScopes,
+		AccessToken:    testAccessToken,
+		ExpiresOn:      testExpiresOn,
+		IDToken:        testIDToken,
+		GrantedScopes:  testGrantedScopes,
 		declinedScopes: testDeclinedScopesWithError,
 	}
 	testAccount := &Account{}
@@ -35,7 +35,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	if err != nil {
 		t.Errorf("There should be no error, however there is an error saying %v", err)
 	}
-	actualAccount := authResult.account
+	actualAccount := authResult.Account
 	if !reflect.DeepEqual(actualAccount, testAccount) {
 		t.Errorf("Actual account %v differs from expected account %v", actualAccount, testAccount)
 	}
@@ -43,19 +43,19 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	if !reflect.DeepEqual(actualIDToken, testIDToken) {
 		t.Errorf("Actual ID token %v differs from expected ID Token %v", actualIDToken, testIDToken)
 	}
-	actualAccessToken := authResult.accessToken
+	actualAccessToken := authResult.AccessToken
 	if !reflect.DeepEqual(actualAccessToken, testAccessToken) {
 		t.Errorf("Actual access token %v differs from expected access token %v", actualAccessToken, testAccessToken)
 	}
-	actualExpiresOn := authResult.expiresOn
+	actualExpiresOn := authResult.ExpiresOn
 	if !reflect.DeepEqual(actualExpiresOn, testExpiresOn) {
 		t.Errorf("Actual expires on %v differs from expected expires on %v", actualExpiresOn, testExpiresOn)
 	}
-	actualGrantedScopes := authResult.grantedScopes
+	actualGrantedScopes := authResult.GrantedScopes
 	if !reflect.DeepEqual(actualGrantedScopes, testGrantedScopes) {
 		t.Errorf("Actual granted scopes %v differ from expected granted scopes %v", actualGrantedScopes, testGrantedScopes)
 	}
-	actualDeclinedScopes := authResult.declinedScopes
+	actualDeclinedScopes := authResult.DeclinedScopes
 	if !reflect.DeepEqual(actualDeclinedScopes, testDeclinedScopesWithoutError) {
 		t.Errorf("Actual declined scopes %v differ from expected declined scopes %v", actualDeclinedScopes, testDeclinedScopesWithoutError)
 	}
@@ -65,23 +65,5 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	}
 	if authResult != nil {
 		t.Errorf("Authentication result should be nil, not %v", authResult)
-	}
-}
-
-func TestGetAccessTokenAuthResult(t *testing.T) {
-	testAccessToken := "accessToken"
-	testAuthResult := &AuthenticationResult{accessToken: testAccessToken}
-	actualAccessToken := testAuthResult.GetAccessToken()
-	if !reflect.DeepEqual(actualAccessToken, testAccessToken) {
-		t.Errorf("Actual access token %v differs from expected access token %v", actualAccessToken, testAccessToken)
-	}
-}
-
-func TestGetAccountAuthResult(t *testing.T) {
-	testAccount := &Account{}
-	testAuthResult := &AuthenticationResult{account: testAccount}
-	actualAccount := testAuthResult.GetAccount()
-	if !reflect.DeepEqual(actualAccount, testAccount) {
-		t.Error("Actual account differs from expected account")
 	}
 }

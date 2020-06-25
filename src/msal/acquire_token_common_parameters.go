@@ -17,5 +17,5 @@ func createAcquireTokenCommonParameters(scopes []string) *acquireTokenCommonPara
 }
 
 func (p *acquireTokenCommonParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
-	authParams.SetScopes(p.scopes)
+	authParams.Scopes = p.scopes
 }

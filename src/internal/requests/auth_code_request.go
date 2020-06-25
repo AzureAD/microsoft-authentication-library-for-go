@@ -12,8 +12,8 @@ type AuthCodeRequest struct {
 	webRequestManager IWebRequestManager
 	cacheManager      msalbase.ICacheManager
 	authParameters    *msalbase.AuthParametersInternal
-	code              string
-	codeChallenge     string
+	Code              string
+	CodeChallenge     string
 }
 
 // CreateAuthCodeRequest creates an instance of AuthCodeRequest
@@ -28,24 +28,15 @@ func CreateAuthCodeRequest(
 	return req
 }
 
-//SetCode sets the authorization code of this request
-func (req *AuthCodeRequest) SetCode(code string) {
-	req.code = code
-}
-
-func (req *AuthCodeRequest) SetCodeChallenge(codeChallenge string) {
-	req.codeChallenge = codeChallenge
-}
-
 // Execute executes the auth code request and returns an access token or and error
 func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
-	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
+	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {
 		return nil, err
 	}
-	req.authParameters.SetAuthorityEndpoints(endpoints)
-	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.code, req.codeChallenge)
+	req.authParameters.Endpoints = endpoints
+	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.Code, req.CodeChallenge)
 	if err != nil {
 		return nil, err
 	}

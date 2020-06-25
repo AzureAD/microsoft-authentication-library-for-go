@@ -18,15 +18,3 @@ func CreateCloudEnvironmentInfo(preferredNetwork string, preferredCache string, 
 	c := &CloudEnvironmentInfo{preferredNetwork, preferredCache, aliasMap}
 	return c
 }
-
-func (c *CloudEnvironmentInfo) GetPreferredNetwork() string {
-	return c.preferredNetwork
-}
-
-func (c *CloudEnvironmentInfo) GetPreferredCache() string {
-	return c.preferredCache
-}
-
-func (c *CloudEnvironmentInfo) GetAliases() map[string]bool {
-	return c.aliases
-}

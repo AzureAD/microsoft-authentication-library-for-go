@@ -22,16 +22,12 @@ const (
 )
 
 type WsTrustEndpoint struct {
-	endpointVersion WsTrustEndpointVersion
-	url             string
+	EndpointVersion WsTrustEndpointVersion
+	URL             string
 }
 
 func CreateWsTrustEndpoint(endpointVersion WsTrustEndpointVersion, url string) WsTrustEndpoint {
 	return WsTrustEndpoint{endpointVersion, url}
-}
-
-func (wte *WsTrustEndpoint) GetVersion() WsTrustEndpointVersion {
-	return wte.endpointVersion
 }
 
 type wsTrustTokenRequestEnvelope struct {
@@ -124,7 +120,7 @@ func (wte *WsTrustEndpoint) buildTokenRequestMessage(authType msalbase.Authoriza
 	createdTime := time.Now().UTC()
 	expiresTime := createdTime.Add(10 * time.Minute)
 
-	if wte.endpointVersion == Trust2005 {
+	if wte.EndpointVersion == Trust2005 {
 		log.Trace("Building WS-Trust token request for v2005")
 		soapAction = trust2005Spec
 		trustNamespace = "http://schemas.xmlsoap.org/ws/2005/02/trust"
@@ -151,7 +147,7 @@ func (wte *WsTrustEndpoint) buildTokenRequestMessage(authType msalbase.Authoriza
 	envelope.Header.MessageID.Text = "urn:uuid:" + messageUUID.String()
 	envelope.Header.ReplyTo.Address.Text = "http://www.w3.org/2005/08/addressing/anonymous"
 	envelope.Header.To.MustUnderstand = "1"
-	envelope.Header.To.Text = wte.url
+	envelope.Header.To.Text = wte.URL
 
 	// note: uuid on golang: https://stackoverflow.com/questions/15130321/is-there-a-method-to-generate-a-uuid-with-go-language
 	// using "github.com/twinj/uuid"
@@ -161,7 +157,7 @@ func (wte *WsTrustEndpoint) buildTokenRequestMessage(authType msalbase.Authoriza
 		endpointUUID := uuid.NewV4()
 
 		var trustID string
-		if wte.endpointVersion == Trust2005 {
+		if wte.EndpointVersion == Trust2005 {
 			trustID = "UnPwSecTok2005-" + endpointUUID.String()
 		} else {
 			trustID = "UnPwSecTok13-" + endpointUUID.String()
@@ -199,8 +195,4 @@ func (wte *WsTrustEndpoint) BuildTokenRequestMessageWIA(cloudAudienceURN string)
 
 func (wte *WsTrustEndpoint) BuildTokenRequestMessageUsernamePassword(cloudAudienceURN string, username string, password string) (string, error) {
 	return wte.buildTokenRequestMessage(msalbase.AuthorizationTypeUsernamePassword, cloudAudienceURN, username, password)
-}
-
-func (wte *WsTrustEndpoint) GetURL() string {
-	return wte.url
 }

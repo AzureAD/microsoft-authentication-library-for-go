@@ -17,9 +17,9 @@ var urlWRM = new(requests.MockWebRequestManager)
 
 var authCodeURLParams = CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid", "user.read"}, "codeChallenge")
 
-func TestGetSpaceSeparatedScopes(t *testing.T) {
+func TestGetSeparatedScopes(t *testing.T) {
 	expectedScopes := "openid user.read"
-	actualSpaceSepScopes := authCodeURLParams.GetSpaceSeparatedScopes()
+	actualSpaceSepScopes := authCodeURLParams.getSeparatedScopes()
 	if !reflect.DeepEqual(actualSpaceSepScopes, expectedScopes) {
 		t.Errorf("Actual separated scopes %v differs from expected space separated scopes %v", actualSpaceSepScopes, expectedScopes)
 	}

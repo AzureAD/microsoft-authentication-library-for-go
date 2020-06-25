@@ -29,8 +29,7 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	webRequestManager := CreateWebRequestManager(httpManager)
 
 	// todo: check parameters for whether persistent cache is desired, or self-caching (callback to byte array read/write)
-	cacheKeyGenerator := tokencache.CreateCacheKeyGenerator()
-	storageManager := tokencache.CreateStorageManager(cacheKeyGenerator)
+	storageManager := tokencache.CreateStorageManager()
 	cacheManager := tokencache.CreateCacheManager(storageManager)
 
 	pca := &PublicClientApplication{pcaParameters, webRequestManager, cacheManager}
@@ -80,7 +79,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	deviceCodeParameters *AcquireTokenDeviceCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-	req := createDeviceCodeRequest(deviceCodeParameters.GetCancelContext(), pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
+	req := createDeviceCodeRequest(deviceCodeParameters.cancelCtx, pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 
@@ -90,8 +89,8 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateAuthCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	req.SetCode(authCodeParams.code)
-	req.SetCodeChallenge(authCodeParams.codeChallenge)
+	req.Code = authCodeParams.Code
+	req.CodeChallenge = authCodeParams.codeChallenge
 	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
 }
 

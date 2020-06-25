@@ -29,56 +29,24 @@ type clientInfoJSONPayload struct {
 
 type TokenResponse struct {
 	baseResponse   *OAuthResponseBase
-	accessToken    string
-	refreshToken   string
-	idToken        *IDToken
+	AccessToken    string
+	RefreshToken   string
+	IDToken        *IDToken
 	familyID       string
-	grantedScopes  []string
+	GrantedScopes  []string
 	declinedScopes []string
-	expiresOn      time.Time
-	extExpiresOn   time.Time
+	ExpiresOn      time.Time
+	ExtExpiresOn   time.Time
 	rawClientInfo  string
 	clientInfo     *clientInfoJSONPayload
 }
 
 func (tr *TokenResponse) HasAccessToken() bool {
-	return len(tr.accessToken) > 0
+	return len(tr.AccessToken) > 0
 }
 
 func (tr *TokenResponse) HasRefreshToken() bool {
-	return len(tr.refreshToken) > 0
-}
-
-func (tr *TokenResponse) GetAccessToken() string {
-	return tr.accessToken
-}
-
-func (tr *TokenResponse) GetRefreshToken() string {
-	return tr.refreshToken
-}
-
-func (tr *TokenResponse) GetIDToken() *IDToken {
-	return tr.idToken
-}
-
-func (tr *TokenResponse) GetGrantedScopes() []string {
-	return tr.grantedScopes
-}
-
-func (tr *TokenResponse) GetDeclinedScopes() []string {
-	return tr.declinedScopes
-}
-
-func (tr *TokenResponse) GetRawClientInfo() string {
-	return tr.rawClientInfo
-}
-
-func (tr *TokenResponse) GetExpiresOn() time.Time {
-	return tr.expiresOn
-}
-
-func (tr *TokenResponse) GetExtendedExpiresOn() time.Time {
-	return tr.extExpiresOn
+	return len(tr.RefreshToken) > 0
 }
 
 func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode int, responseData string) (*TokenResponse, error) {
@@ -124,10 +92,10 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 		// This behavior can be observed in client assertion flows, but can happen at any time, this check ensures we treat
 		// those special responses properly
 		// Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
-		grantedScopes = authParameters.GetScopes()
+		grantedScopes = authParameters.Scopes
 	} else {
 		grantedScopes = strings.Split(payload.Scope, " ")
-		declinedScopes = findDeclinedScopes(authParameters.GetScopes(), grantedScopes)
+		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
 	}
 
 	idToken, err := CreateIDToken(payload.IDToken)
@@ -137,13 +105,13 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 
 	tokenResponse := &TokenResponse{
 		baseResponse:   baseResponse,
-		accessToken:    payload.AccessToken,
-		refreshToken:   payload.RefreshToken,
-		idToken:        idToken,
+		AccessToken:    payload.AccessToken,
+		RefreshToken:   payload.RefreshToken,
+		IDToken:        idToken,
 		familyID:       payload.Foci,
-		expiresOn:      expiresOn,
-		extExpiresOn:   extExpiresOn,
-		grantedScopes:  grantedScopes,
+		ExpiresOn:      expiresOn,
+		ExtExpiresOn:   extExpiresOn,
+		GrantedScopes:  grantedScopes,
 		declinedScopes: declinedScopes}
 	return tokenResponse, nil
 }
@@ -190,6 +158,10 @@ func CreateTokenResponseFromParts(idToken *IDToken, accessToken *Credential, ref
 		refreshTokenSecret = refreshToken.GetSecret()
 	}
 
-	tokenResponse := &TokenResponse{idToken: idt, accessToken: accessTokenSecret, refreshToken: refreshTokenSecret, grantedScopes: grantedScopes}
+	tokenResponse := &TokenResponse{
+		IDToken:       idt,
+		AccessToken:   accessTokenSecret,
+		RefreshToken:  refreshTokenSecret,
+		GrantedScopes: grantedScopes}
 	return tokenResponse, nil
 }

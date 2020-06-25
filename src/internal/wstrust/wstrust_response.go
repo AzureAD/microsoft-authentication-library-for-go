@@ -37,7 +37,7 @@ func CreateWsTrustResponse(responseData string) *WsTrustResponse {
 }
 
 func (wsTrustResponse *WsTrustResponse) GetSAMLAssertion(endpoint *WsTrustEndpoint) (*SamlTokenInfo, error) {
-	switch endpoint.GetVersion() {
+	switch endpoint.EndpointVersion {
 	case Trust2005:
 		return nil, errors.New("WS Trust 2005 support is not implemented")
 	case Trust13:

@@ -58,9 +58,9 @@ func TestCreateAuthCodeURL(t *testing.T) {
 }
 
 func TestAcquireTokenByAuthCode(t *testing.T) {
-	testAuthParams.SetAuthorityEndpoints(testAuthorityEndpoints)
-	testAuthParams.SetAuthorizationType(msalbase.AuthorizationTypeAuthCode)
-	testAuthParams.SetScopes(tokenCommonParams.scopes)
+	testAuthParams.Endpoints = testAuthorityEndpoints
+	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
+	testAuthParams.Scopes = tokenCommonParams.scopes
 	authCodeParams := &AcquireTokenAuthCodeParameters{
 		commonParameters: tokenCommonParams,
 	}

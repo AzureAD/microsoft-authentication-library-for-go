@@ -27,7 +27,7 @@ const trust13Spec string = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST
 const trust2005Spec string = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
 
 type WsTrustMexDocument struct {
-	usernamePasswordEndpoint WsTrustEndpoint
+	UsernamePasswordEndpoint WsTrustEndpoint
 	windowsTransportEndpoint WsTrustEndpoint
 	policies                 map[string]WsEndpointType
 	bindings                 map[string]WsEndpointData
@@ -39,7 +39,7 @@ func updateEndpoint(cached *WsTrustEndpoint, found WsTrustEndpoint) bool {
 		*cached = found
 		return true
 	}
-	if (*cached).GetVersion() == Trust2005 && found.GetVersion() == Trust13 {
+	if (*cached).EndpointVersion == Trust2005 && found.EndpointVersion == Trust13 {
 		log.Trace("Cached endpoint is v2005, replacing with v1.3")
 		*cached = found
 		return true
@@ -134,8 +134,4 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 	doc := &WsTrustMexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
 	log.Trace("Created WsTrustMexDocument!")
 	return doc, nil
-}
-
-func (mexDoc *WsTrustMexDocument) GetWsTrustUsernamePasswordEndpoint() WsTrustEndpoint {
-	return mexDoc.usernamePasswordEndpoint
 }

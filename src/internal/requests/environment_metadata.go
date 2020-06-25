@@ -20,7 +20,7 @@ func CreateEnvironmentMetadata(webRequestManager IWebRequestManager) *Environmen
 	var aliasMap map[string]*CloudEnvironmentInfo
 
 	for _, idp := range idps {
-		for alias := range idp.GetAliases() {
+		for alias := range idp.aliases {
 			aliasMap[alias] = idp
 		}
 	}
