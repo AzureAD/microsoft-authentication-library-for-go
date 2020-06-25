@@ -37,12 +37,12 @@ func createDeviceCodeRequest(cancelCtx context.Context,
 func (req *deviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	// resolve authority endpoints
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(req.webRequestManager)
-	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
+	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {
 		return nil, err
 	}
 
-	req.authParameters.SetAuthorityEndpoints(endpoints)
+	req.authParameters.Endpoints = endpoints
 	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(req.authParameters)
 	if err != nil {
 		return nil, err

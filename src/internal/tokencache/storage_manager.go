@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-// +build macos
+// +build windows
 
 package tokencache
 
@@ -11,15 +11,15 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-type macosStorageManager struct {
+type storageManager struct {
 }
 
 func CreateStorageManager() IStorageManager {
-	mgr := &macosStorageManager{}
+	mgr := &storageManager{}
 	return mgr
 }
 
-func (m *macosStorageManager) ReadCredentials(
+func (m *storageManager) ReadCredentials(
 	correlationID string,
 	homeAccountID string,
 	environment string,
@@ -31,11 +31,11 @@ func (m *macosStorageManager) ReadCredentials(
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) WriteCredentials(correlationID string, credentials []*msalbase.Credential) (*OperationStatus, error) {
+func (m *storageManager) WriteCredentials(correlationID string, credentials []*msalbase.Credential) (*OperationStatus, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) DeleteCredentials(
+func (m *storageManager) DeleteCredentials(
 	correlationID string,
 	homeAccountID string,
 	environment string,
@@ -47,11 +47,11 @@ func (m *macosStorageManager) DeleteCredentials(
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) ReadAllAccounts(correlationID string) (*ReadAccountsResponse, error) {
+func (m *storageManager) ReadAllAccounts(correlationID string) (*ReadAccountsResponse, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) ReadAccount(
+func (m *storageManager) ReadAccount(
 	correlationID string,
 	homeAccountID string,
 	environment string,
@@ -59,11 +59,11 @@ func (m *macosStorageManager) ReadAccount(
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) WriteAccount(correlationID string, account *msalbase.Account) (*OperationStatus, error) {
+func (m *storageManager) WriteAccount(correlationID string, account *msalbase.Account) (*OperationStatus, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) DeleteAccount(
+func (m *storageManager) DeleteAccount(
 	correlationID string,
 	homeAccountID string,
 	environment string,
@@ -71,14 +71,14 @@ func (m *macosStorageManager) DeleteAccount(
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) DeleteAccounts(correlationID string, homeAccountID string, environment string) (*OperationStatus, error) {
+func (m *storageManager) DeleteAccounts(correlationID string, homeAccountID string, environment string) (*OperationStatus, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) ReadAppMetadata(environment string, clientID string) (*AppMetadata, error) {
+func (m *storageManager) ReadAppMetadata(environment string, clientID string) (*AppMetadata, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *macosStorageManager) WriteAppMetadata(appMetadata *AppMetadata) error {
+func (m *storageManager) WriteAppMetadata(appMetadata *AppMetadata) error {
 	return errors.New("not implemented")
 }

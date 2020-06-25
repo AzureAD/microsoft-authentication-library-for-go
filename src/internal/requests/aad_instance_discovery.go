@@ -42,12 +42,12 @@ func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo *msalba
 		}
 	}
 
-	instanceDiscoveryCache[authorityInfo.GetHost()] = createInstanceDiscoveryMetadata(authorityInfo.GetHost(), discoveryResponse.TenantDiscoveryEndpoint)
+	instanceDiscoveryCache[authorityInfo.Host] = createInstanceDiscoveryMetadata(authorityInfo.Host, discoveryResponse.TenantDiscoveryEndpoint)
 	return d.GetMetadataEntry(authorityInfo)
 }
 
 func (d *AadInstanceDiscovery) GetMetadataEntry(authorityInfo *msalbase.AuthorityInfo) (*instanceDiscoveryMetadata, error) {
-	if metadata, ok := instanceDiscoveryCache[authorityInfo.GetHost()]; ok {
+	if metadata, ok := instanceDiscoveryCache[authorityInfo.Host]; ok {
 		return metadata, nil
 	}
 

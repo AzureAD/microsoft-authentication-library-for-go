@@ -22,15 +22,15 @@ func TestAugmentAuthenticationParametersForUsernamePass(t *testing.T) {
 		password:         testPassword,
 	}
 	tokenUserPassParams.augmentAuthenticationParameters(testAuthParams)
-	actualScopes := testAuthParams.GetScopes()
+	actualScopes := testAuthParams.Scopes
 	if !reflect.DeepEqual(testScopes, actualScopes) {
 		t.Errorf("Actual scopes %v differ from expected scopes %v", actualScopes, testScopes)
 	}
-	actualUsername := testAuthParams.GetUsername()
+	actualUsername := testAuthParams.Username
 	if !reflect.DeepEqual(testUsername, actualUsername) {
 		t.Errorf("Actual username %v differs from expected username %v", actualUsername, testUsername)
 	}
-	actualPassword := testAuthParams.GetPassword()
+	actualPassword := testAuthParams.Password
 	if !reflect.DeepEqual(testPassword, actualPassword) {
 		t.Errorf("Actual password %v differs from expected password %v", actualPassword, testPassword)
 	}

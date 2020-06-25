@@ -31,12 +31,12 @@ func CreateUsernamePasswordRequest(
 func (req *UsernamePasswordRequest) Execute() (*msalbase.TokenResponse, error) {
 
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
-	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.GetAuthorityInfo(), "")
+	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {
 		return nil, err
 	}
 
-	req.authParameters.SetAuthorityEndpoints(endpoints)
+	req.authParameters.Endpoints = endpoints
 
 	userRealm, err := req.webRequestManager.GetUserRealm(req.authParameters)
 	if err != nil {
@@ -46,9 +46,9 @@ func (req *UsernamePasswordRequest) Execute() (*msalbase.TokenResponse, error) {
 	switch accountType := userRealm.GetAccountType(); accountType {
 	case msalbase.Federated:
 		log.Trace("FEDERATED")
-		if mexDoc, err := req.webRequestManager.GetMex(userRealm.GetFederationMetadataURL()); err == nil {
-			wsTrustEndpoint := mexDoc.GetWsTrustUsernamePasswordEndpoint()
-			if wsTrustResponse, err := req.webRequestManager.GetWsTrustResponse(req.authParameters, userRealm.GetCloudAudienceURN(), &wsTrustEndpoint); err == nil {
+		if mexDoc, err := req.webRequestManager.GetMex(userRealm.FederationMetadataURL); err == nil {
+			wsTrustEndpoint := mexDoc.UsernamePasswordEndpoint
+			if wsTrustResponse, err := req.webRequestManager.GetWsTrustResponse(req.authParameters, userRealm.CloudAudienceURN, &wsTrustEndpoint); err == nil {
 				if samlGrant, err := wsTrustResponse.GetSAMLAssertion(&wsTrustEndpoint); err == nil {
 					return req.webRequestManager.GetAccessTokenFromSamlGrant(req.authParameters, samlGrant)
 				}

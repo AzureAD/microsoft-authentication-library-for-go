@@ -63,11 +63,3 @@ func (u *UserRealm) GetAccountType() UserRealmAccountType {
 	}
 	return Unknown
 }
-
-func (u *UserRealm) GetFederationMetadataURL() string {
-	return u.FederationMetadataURL
-}
-
-func (u *UserRealm) GetCloudAudienceURN() string {
-	return u.CloudAudienceURN
-}

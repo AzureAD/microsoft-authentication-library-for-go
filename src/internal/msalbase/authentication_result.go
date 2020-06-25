@@ -12,12 +12,12 @@ import (
 // AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthenticationResult struct {
-	account        *Account
+	Account        *Account
 	idToken        *IDToken
-	accessToken    string
-	expiresOn      time.Time
-	grantedScopes  []string
-	declinedScopes []string
+	AccessToken    string
+	ExpiresOn      time.Time
+	GrantedScopes  []string
+	DeclinedScopes []string
 }
 
 func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *StorageTokenResponse) (*AuthenticationResult, error) {
@@ -54,24 +54,23 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *St
 
 // CreateAuthenticationResult creates and AuthenticationResult.  This should only be called from internal code.
 func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) (*AuthenticationResult, error) {
-	grantedScopes := tokenResponse.GetGrantedScopes()
-	declinedScopes := tokenResponse.GetDeclinedScopes()
+	grantedScopes := tokenResponse.GrantedScopes
+	declinedScopes := tokenResponse.declinedScopes
 	if len(declinedScopes) > 0 {
 		return nil, errors.New("Token response failed because declined scopes are present")
 
 	}
 
-	idToken := tokenResponse.GetIDToken()
-	accessToken := tokenResponse.GetAccessToken()
-	expiresOn := tokenResponse.GetExpiresOn()
+	idToken := tokenResponse.IDToken
+	accessToken := tokenResponse.AccessToken
+	expiresOn := tokenResponse.ExpiresOn
 
 	ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
 	return ar, nil
 }
 
-// GetAccessToken retrieves the access token string from the result.
 func (ar *AuthenticationResult) GetAccessToken() string {
-	return ar.accessToken
+	return ar.AccessToken
 }
 
 func (ar *AuthenticationResult) GetIdToken() string {
@@ -80,20 +79,4 @@ func (ar *AuthenticationResult) GetIdToken() string {
 	}
 
 	return ar.idToken.GetRaw()
-}
-
-func (ar *AuthenticationResult) GetAccount() *Account {
-	return ar.account
-}
-
-func (ar *AuthenticationResult) GetExpiresOn() time.Time {
-	return ar.expiresOn
-}
-
-func (ar *AuthenticationResult) GetGrantedScopes() []string {
-	return ar.grantedScopes
-}
-
-func (ar *AuthenticationResult) GetDeclinedScopes() []string {
-	return ar.declinedScopes
 }

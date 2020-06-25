@@ -20,36 +20,12 @@ const (
 )
 
 type AuthorityInfo struct {
-	host                  string
-	canonicalAuthorityURI string
-	authorityType         AuthorityType
+	Host                  string
+	CanonicalAuthorityURI string
+	AuthorityType         AuthorityType
 	userRealmURIPrefix    string
-	validateAuthority     bool
-	tenant                string
-}
-
-func (i *AuthorityInfo) GetHost() string {
-	return i.host
-}
-
-func (i *AuthorityInfo) GetCanonicalAuthorityURI() string {
-	return i.canonicalAuthorityURI
-}
-
-func (i *AuthorityInfo) GetAuthorityType() AuthorityType {
-	return i.authorityType
-}
-
-func (i *AuthorityInfo) GetUserRealmURIPrefix() string {
-	return i.userRealmURIPrefix
-}
-
-func (i *AuthorityInfo) GetValidateAuthority() bool {
-	return i.validateAuthority
-}
-
-func (i *AuthorityInfo) Tenant() string {
-	return i.tenant
+	ValidateAuthority     bool
+	Tenant                string
 }
 
 func canonicalizeAuthorityURI(input string) string {

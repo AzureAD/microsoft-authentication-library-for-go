@@ -20,5 +20,5 @@ func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentPara
 
 func (p *AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
-	authParams.SetAuthorizationType(msalbase.AuthorizationTypeRefreshTokenExchange)
+	authParams.AuthorizationType = msalbase.AuthorizationTypeRefreshTokenExchange
 }

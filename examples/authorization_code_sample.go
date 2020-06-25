@@ -17,7 +17,7 @@ const port = "3000"
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes, config.CodeChallenge)
-	authCodeURLParams.SetState(config.State)
+	authCodeURLParams.State = config.State
 	authURL, err := publicClientApp.CreateAuthCodeURL(authCodeURLParams)
 	if err != nil {
 		log.Fatal(err)
@@ -43,7 +43,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	code := codes[0]
 	// Getting the access token using the authorization code
 	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI, config.CodeChallenge)
-	authCodeParams.SetCode(code)
+	authCodeParams.Code = code
 	result, err := publicClientApp.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
 		log.Fatal(err)

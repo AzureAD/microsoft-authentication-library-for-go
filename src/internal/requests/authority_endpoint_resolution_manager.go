@@ -44,8 +44,8 @@ func getAdfsDomainFromUpn(userPrincipalName string) string {
 
 func (m *AuthorityEndpointResolutionManager) tryGetCachedEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) *msalbase.AuthorityEndpoints {
 
-	if cacheEntry, ok := endpointCacheEntries[authorityInfo.GetCanonicalAuthorityURI()]; ok {
-		if authorityInfo.GetAuthorityType() == msalbase.AuthorityTypeAdfs {
+	if cacheEntry, ok := endpointCacheEntries[authorityInfo.CanonicalAuthorityURI]; ok {
+		if authorityInfo.AuthorityType == msalbase.AuthorityTypeAdfs {
 			if _, ok := cacheEntry.ValidForDomainsInList[getAdfsDomainFromUpn(userPrincipalName)]; ok {
 				return cacheEntry.Endpoints
 			}
@@ -59,10 +59,10 @@ func (m *AuthorityEndpointResolutionManager) tryGetCachedEndpoints(authorityInfo
 func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string, endpoints *msalbase.AuthorityEndpoints) {
 	updatedCacheEntry := createAuthorityEndpointCacheEntry(endpoints)
 
-	if authorityInfo.GetAuthorityType() == msalbase.AuthorityTypeAdfs {
+	if authorityInfo.AuthorityType == msalbase.AuthorityTypeAdfs {
 		// Since we're here, we've made a call to the backend.  We want to ensure we're caching
 		// the latest values from the server.
-		if cacheEntry, ok := endpointCacheEntries[authorityInfo.GetCanonicalAuthorityURI()]; ok {
+		if cacheEntry, ok := endpointCacheEntries[authorityInfo.CanonicalAuthorityURI]; ok {
 			for k := range cacheEntry.ValidForDomainsInList {
 				updatedCacheEntry.ValidForDomainsInList[k] = true
 			}
@@ -71,12 +71,12 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 		updatedCacheEntry.ValidForDomainsInList[getAdfsDomainFromUpn(userPrincipalName)] = true
 	}
 
-	endpointCacheEntries[authorityInfo.GetCanonicalAuthorityURI()] = updatedCacheEntry
+	endpointCacheEntries[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
 func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error) {
 
-	if authorityInfo.GetAuthorityType() == msalbase.AuthorityTypeAdfs && len(userPrincipalName) == 0 {
+	if authorityInfo.AuthorityType == msalbase.AuthorityTypeAdfs && len(userPrincipalName) == 0 {
 		return nil, errors.New("UPN Required for Authority Validation for ADFS")
 	}
 
@@ -113,13 +113,13 @@ func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msa
 		return nil, errors.New("Issuer was not found in the openid configuration")
 	}
 
-	tenant := authorityInfo.Tenant()
+	tenant := authorityInfo.Tenant
 
 	endpoints = msalbase.CreateAuthorityEndpoints(
 		strings.Replace(tenantDiscoveryResponse.AuthorizationEndpoint, "{tenant}", tenant, -1),
 		strings.Replace(tenantDiscoveryResponse.TokenEndpoint, "{tenant}", tenant, -1),
 		strings.Replace(tenantDiscoveryResponse.Issuer, "{tenant}", tenant, -1),
-		authorityInfo.GetHost())
+		authorityInfo.Host)
 
 	m.addCachedEndpoints(authorityInfo, userPrincipalName, endpoints)
 

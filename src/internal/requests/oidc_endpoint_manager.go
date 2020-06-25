@@ -40,7 +40,7 @@ func IsInTrustedHostList(host string) bool {
 }
 
 func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
-	if authorityInfo.GetValidateAuthority() && !IsInTrustedHostList(authorityInfo.GetHost()) {
+	if authorityInfo.ValidateAuthority && !IsInTrustedHostList(authorityInfo.Host) {
 		discoveryResponse, err := m.aadInstanceDiscovery.GetMetadataEntry(authorityInfo)
 		if err != nil {
 			return "", err
@@ -49,13 +49,13 @@ func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(a
 		return discoveryResponse.TenantDiscoveryEndpoint, nil
 	}
 
-	return authorityInfo.GetCanonicalAuthorityURI() + "v2.0/.well-known/openid-configuration", nil
+	return authorityInfo.CanonicalAuthorityURI + "v2.0/.well-known/openid-configuration", nil
 }
 
 func createOpenIDConfigurationEndpointManager(authorityInfo *msalbase.AuthorityInfo) (IOpenIDConfigurationEndpointManager, error) {
-	if authorityInfo.GetAuthorityType() == msalbase.AuthorityTypeAad {
+	if authorityInfo.AuthorityType == msalbase.AuthorityTypeAad {
 		return &aadOpenIDConfigurationEndpointManager{}, nil
 	}
 
-	return nil, errors.New("Unsupported authority type for createOpenIdConfigurationEndpointManager: " + string(authorityInfo.GetAuthorityType()))
+	return nil, errors.New("Unsupported authority type for createOpenIdConfigurationEndpointManager: " + string(authorityInfo.AuthorityType))
 }
