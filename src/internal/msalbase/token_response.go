@@ -9,8 +9,6 @@ import (
 	"errors"
 	"strings"
 	"time"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type tokenResponseJSONPayload struct {
@@ -35,7 +33,7 @@ type TokenResponse struct {
 	AccessToken    string
 	RefreshToken   string
 	IDToken        *IDToken
-	familyID       string
+	FamilyID       string
 	GrantedScopes  []string
 	declinedScopes []string
 	ExpiresOn      time.Time
@@ -50,14 +48,6 @@ func (tr *TokenResponse) HasAccessToken() bool {
 
 func (tr *TokenResponse) HasRefreshToken() bool {
 	return len(tr.RefreshToken) > 0
-}
-
-func (tr *TokenResponse) GetClientInfo() *clientInfoJSONPayload {
-	return tr.clientInfo
-}
-
-func (tr *TokenResponse) GetFamilyID() string {
-	return tr.familyID
 }
 
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
@@ -120,7 +110,6 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	}
 
 	idToken, err := CreateIDToken(payload.IDToken)
-	log.Infof("%v", idToken)
 	if err != nil {
 		return nil, err
 	}
@@ -130,11 +119,14 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 		AccessToken:    payload.AccessToken,
 		RefreshToken:   payload.RefreshToken,
 		IDToken:        idToken,
-		familyID:       payload.Foci,
+		FamilyID:       payload.Foci,
 		ExpiresOn:      expiresOn,
 		ExtExpiresOn:   extExpiresOn,
 		GrantedScopes:  grantedScopes,
-		declinedScopes: declinedScopes}
+		declinedScopes: declinedScopes,
+		rawClientInfo:  rawClientInfo,
+		clientInfo:     clientInfo,
+	}
 	return tokenResponse, nil
 }
 
@@ -156,34 +148,35 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 }
 
 func CreateTokenResponseFromParts(idToken *IDToken, accessToken *Credential, refreshToken *Credential) (*TokenResponse, error) {
+	/*
+		var idt *IDToken
+		accessTokenSecret := ""
+		refreshTokenSecret := ""
+		grantedScopes := []string{}
 
-	var idt *IDToken
-	accessTokenSecret := ""
-	refreshTokenSecret := ""
-	grantedScopes := []string{}
+		if idToken != nil {
+			idt = idToken
+		} else {
+			idt, _ = CreateIDToken("")
+		}
 
-	if idToken != nil {
-		idt = idToken
-	} else {
-		idt, _ = CreateIDToken("")
-	}
+		if accessToken != nil {
+			accessTokenSecret = accessToken.GetSecret()
+			// todo: fill this in...
+			// _expiresOn = TimeUtils::ToTimePoint(accessToken->GetExpiresOn());
+			// _extendedExpiresOn = TimeUtils::ToTimePoint(accessToken->GetExtendedExpiresOn());
+			grantedScopes = strings.Split(accessToken.GetScopes(), " ")
+		}
 
-	if accessToken != nil {
-		accessTokenSecret = accessToken.GetSecret()
-		// todo: fill this in...
-		// _expiresOn = TimeUtils::ToTimePoint(accessToken->GetExpiresOn());
-		// _extendedExpiresOn = TimeUtils::ToTimePoint(accessToken->GetExtendedExpiresOn());
-		grantedScopes = strings.Split(accessToken.GetScopes(), " ")
-	}
+		if refreshToken != nil {
+			refreshTokenSecret = refreshToken.GetSecret()
+		}
 
-	if refreshToken != nil {
-		refreshTokenSecret = refreshToken.GetSecret()
-	}
-
-	tokenResponse := &TokenResponse{
-		IDToken:       idt,
-		AccessToken:   accessTokenSecret,
-		RefreshToken:  refreshTokenSecret,
-		GrantedScopes: grantedScopes}
-	return tokenResponse, nil
+		tokenResponse := &TokenResponse{
+			IDToken:       idt,
+			AccessToken:   accessTokenSecret,
+			RefreshToken:  refreshTokenSecret,
+			GrantedScopes: grantedScopes}
+		return tokenResponse, nil*/
+	return nil, nil
 }
