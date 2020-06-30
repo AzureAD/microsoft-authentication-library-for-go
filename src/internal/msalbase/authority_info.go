@@ -23,7 +23,7 @@ type AuthorityInfo struct {
 	Host                  string
 	CanonicalAuthorityURI string
 	AuthorityType         AuthorityType
-	userRealmURIPrefix    string
+	UserRealmURIPrefix    string
 	ValidateAuthority     bool
 	Tenant                string
 }

@@ -133,6 +133,7 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 	return declined
 }
 
+/*
 func CreateTokenResponseFromParts(idToken *IDToken, accessToken *Credential, refreshToken *Credential) (*TokenResponse, error) {
 
 	var idt *IDToken
@@ -164,4 +165,4 @@ func CreateTokenResponseFromParts(idToken *IDToken, accessToken *Credential, ref
 		RefreshToken:  refreshTokenSecret,
 		GrantedScopes: grantedScopes}
 	return tokenResponse, nil
-}
+}*/
