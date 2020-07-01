@@ -5,7 +5,6 @@ package msalbase
 
 import (
 	"errors"
-	"strings"
 	"time"
 )
 
@@ -21,35 +20,37 @@ type AuthenticationResult struct {
 }
 
 func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *StorageTokenResponse) (*AuthenticationResult, error) {
+	return nil, nil
+	/*
+		var account *Account
+		var idToken *IDToken
+		accessToken := ""
+		expiresOn := time.Now()
+		grantedScopes := []string{}
+		declinedScopes := []string{}
+		var err error
 
-	var account *Account
-	var idToken *IDToken
-	accessToken := ""
-	expiresOn := time.Now()
-	grantedScopes := []string{}
-	declinedScopes := []string{}
-	var err error
-
-	if storageTokenResponse.accessToken != nil {
-		accessToken = storageTokenResponse.accessToken.GetSecret()
-		expiresOn = time.Unix(storageTokenResponse.accessToken.GetExpiresOn(), 0)
-		grantedScopes = strings.Split(storageTokenResponse.accessToken.GetScopes(), " ")
-	}
-
-	if storageTokenResponse.idToken != nil {
-		idToken, err = CreateIDToken(storageTokenResponse.idToken.GetSecret())
-		if err != nil {
-			return nil, err
+		if storageTokenResponse.accessToken != nil {
+			accessToken = storageTokenResponse.accessToken.GetSecret()
+			expiresOn = time.Unix(storageTokenResponse.accessToken.GetExpiresOn(), 0)
+			grantedScopes = strings.Split(storageTokenResponse.accessToken.GetScopes(), " ")
 		}
-	} else {
-		idToken, err = CreateIDToken("")
-		if err != nil {
-			return nil, err
-		}
-	}
 
-	ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
-	return ar, nil
+		if storageTokenResponse.idToken != nil {
+			idToken, err = CreateIDToken(storageTokenResponse.idToken.GetSecret())
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			idToken, err = CreateIDToken("")
+			if err != nil {
+				return nil, err
+			}
+		}
+
+		ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
+		return ar, nil
+	*/
 }
 
 // CreateAuthenticationResult creates and AuthenticationResult.  This should only be called from internal code.
@@ -73,10 +74,13 @@ func (ar *AuthenticationResult) GetAccessToken() string {
 	return ar.AccessToken
 }
 
+func (ar *AuthenticationResult) GetAccount() *Account {
+	return ar.Account
+}
+
 func (ar *AuthenticationResult) GetIdToken() string {
 	if ar.idToken == nil {
 		return ""
 	}
-
-	return ar.idToken.GetRaw()
+	return ar.idToken.RawToken
 }

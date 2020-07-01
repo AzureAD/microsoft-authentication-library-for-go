@@ -90,3 +90,16 @@ func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
 	}
 }
+
+func TestGetAllAccounts(t *testing.T) {
+	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
+	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.AuthorityTypeAad, "USERNAME")
+	expectedAccounts := []*msalbase.Account{testAccOne, testAccTwo}
+	returnedAccounts := []IAccount{testAccOne, testAccTwo}
+	cacheManager.On("GetAllAccounts").Return(expectedAccounts)
+	actualAccounts := testPCA.GetAccounts()
+	if !reflect.DeepEqual(actualAccounts, returnedAccounts) {
+		t.Errorf("Actual accounts %v differ from expected accounts %v", actualAccounts, returnedAccounts)
+	}
+
+}
