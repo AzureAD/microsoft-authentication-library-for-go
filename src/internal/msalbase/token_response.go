@@ -105,7 +105,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 		// Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
 		grantedScopes = authParameters.Scopes
 	} else {
-		grantedScopes = strings.Split(payload.Scope, " ")
+		grantedScopes = SplitScopes(payload.Scope)
 		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
 	}
 

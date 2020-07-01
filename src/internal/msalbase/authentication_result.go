@@ -20,37 +20,36 @@ type AuthenticationResult struct {
 }
 
 func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *StorageTokenResponse) (*AuthenticationResult, error) {
-	return nil, nil
-	/*
-		var account *Account
-		var idToken *IDToken
-		accessToken := ""
-		expiresOn := time.Now()
-		grantedScopes := []string{}
-		declinedScopes := []string{}
-		var err error
+	account := storageTokenResponse.account
+	var idToken *IDToken
+	accessToken := ""
+	expiresOn := time.Now()
+	grantedScopes := []string{}
+	declinedScopes := []string{}
+	var err error
 
-		if storageTokenResponse.accessToken != nil {
-			accessToken = storageTokenResponse.accessToken.GetSecret()
-			expiresOn = time.Unix(storageTokenResponse.accessToken.GetExpiresOn(), 0)
-			grantedScopes = strings.Split(storageTokenResponse.accessToken.GetScopes(), " ")
+	if storageTokenResponse.accessToken != nil {
+		accessToken = storageTokenResponse.accessToken.GetSecret()
+		expiresOn, err = ConvertStrUnixToUTCTime(storageTokenResponse.accessToken.GetExpiresOn())
+		if err != nil {
+			return nil, err
 		}
+		grantedScopes = SplitScopes(storageTokenResponse.accessToken.GetScopes())
+	} else {
+		return nil, errors.New("No access token present")
+	}
 
-		if storageTokenResponse.idToken != nil {
-			idToken, err = CreateIDToken(storageTokenResponse.idToken.GetSecret())
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			idToken, err = CreateIDToken("")
-			if err != nil {
-				return nil, err
-			}
+	if storageTokenResponse.idToken != nil {
+		idToken, err = CreateIDToken(storageTokenResponse.idToken.GetSecret())
+		if err != nil {
+			return nil, err
 		}
+	} else {
+		return nil, errors.New("No ID token present")
+	}
 
-		ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
-		return ar, nil
-	*/
+	ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
+	return ar, nil
 }
 
 // CreateAuthenticationResult creates and AuthenticationResult.  This should only be called from internal code.

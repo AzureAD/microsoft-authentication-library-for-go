@@ -51,7 +51,6 @@ func (pca *PublicClientApplication) AcquireTokenSilent(
 	silentParameters *AcquireTokenSilentParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	silentParameters.augmentAuthenticationParameters(authParams)
-
 	storageTokenResponse, err := pca.cacheManager.TryReadCache(authParams)
 	if err != nil {
 		return nil, err
@@ -80,7 +79,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
 	req := createDeviceCodeRequest(deviceCodeParameters.cancelCtx, pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
-	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
+	return pca.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code
@@ -119,4 +118,13 @@ func (pca *PublicClientApplication) executeTokenRequestWithCacheWrite(
 		return msalbase.CreateAuthenticationResult(tokenResponse, account)
 	}
 	return nil, err
+}
+
+func (pca *PublicClientApplication) GetAccounts() []IAccount {
+	returnedAccounts := []IAccount{}
+	accounts := pca.cacheManager.GetAllAccounts()
+	for _, acc := range accounts {
+		returnedAccounts = append(returnedAccounts, acc)
+	}
+	return returnedAccounts
 }

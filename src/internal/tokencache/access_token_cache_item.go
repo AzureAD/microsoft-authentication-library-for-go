@@ -3,7 +3,12 @@
 
 package tokencache
 
-import "encoding/json"
+import (
+	"strconv"
+	"strings"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+)
 
 type accessTokenCacheItem struct {
 	HomeAccountID                  string
@@ -14,14 +19,53 @@ type accessTokenCacheItem struct {
 	ClientID                       string
 	Secret                         string
 	Scopes                         string
-	TenantID                       string
 	ExpiresOnUnixTimestamp         string
 	ExtendedExpiresOnUnixTimestamp string
 	CachedAt                       string
-	UserAssertionHash              string
-	AdditionalFields               map[string]interface{}
 }
 
+func CreateAccessTokenCacheItem(homeAccountID string,
+	environment string,
+	realm string,
+	clientID string,
+	cachedAt int64,
+	expiresOn int64,
+	extendedExpiresOn int64,
+	scopes string,
+	accessToken string) *accessTokenCacheItem {
+	at := &accessTokenCacheItem{
+		HomeAccountID:                  homeAccountID,
+		Environment:                    environment,
+		Realm:                          realm,
+		CredentialType:                 msalbase.CredentialTypeOauth2AccessToken.ToString(),
+		ClientID:                       clientID,
+		Secret:                         accessToken,
+		Scopes:                         scopes,
+		CachedAt:                       strconv.FormatInt(cachedAt, 10),
+		ExpiresOnUnixTimestamp:         strconv.FormatInt(expiresOn, 10),
+		ExtendedExpiresOnUnixTimestamp: strconv.FormatInt(extendedExpiresOn, 10),
+	}
+	return at
+}
+
+func (s *accessTokenCacheItem) CreateKey() string {
+	keyParts := []string{s.HomeAccountID, s.Environment, s.CredentialType, s.ClientID, s.Realm, s.Scopes}
+	return strings.Join(keyParts, msalbase.CacheKeySeparator)
+}
+
+func (s *accessTokenCacheItem) GetSecret() string {
+	return s.Secret
+}
+
+func (s *accessTokenCacheItem) GetExpiresOn() string {
+	return s.ExpiresOnUnixTimestamp
+}
+
+func (s *accessTokenCacheItem) GetScopes() string {
+	return s.Scopes
+}
+
+/*
 func extractExistingOrEmptyString(j map[string]interface{}, key string) string {
 	if val, ok := j[key]; ok {
 		if str, ok := val.(string); ok {
@@ -63,3 +107,4 @@ func (s *accessTokenCacheItem) MarshalJSON() ([]byte, error) {
 	j := s.toJSONMap()
 	return json.Marshal(j)
 }
+*/

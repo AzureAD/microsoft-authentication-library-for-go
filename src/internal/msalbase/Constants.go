@@ -6,3 +6,5 @@ package msalbase
 const DefaultAuthCodeResponseType = "code"
 const DefaultScopeSeparator = " "
 const IntervalAddition = 5
+const CacheKeySeparator = "-"
+const AppMetadataCacheID = "appmetadata"

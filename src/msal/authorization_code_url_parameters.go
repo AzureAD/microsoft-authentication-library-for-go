@@ -5,7 +5,6 @@ package msalgo
 
 import (
 	"net/url"
-	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
@@ -75,5 +74,5 @@ func (p *AuthorizationCodeURLParameters) CreateURL(wrm requests.IWebRequestManag
 }
 
 func (p *AuthorizationCodeURLParameters) getSeparatedScopes() string {
-	return strings.Join(p.Scopes, msalbase.DefaultScopeSeparator)
+	return msalbase.ConcatenateScopes(p.Scopes)
 }

@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
 )
 
 var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.microsoftonline.com/v2.0/authorize",
@@ -21,7 +20,7 @@ var wrm = new(MockWebRequestManager)
 
 var authCodeRequest = &AuthCodeRequest{
 	webRequestManager: wrm,
-	cacheManager:      new(tokencache.MockCacheManager),
+	cacheManager:      new(msalbase.MockCacheManager),
 	authParameters:    testAuthParams,
 	Code:              "code",
 	CodeChallenge:     "codeChallenge",

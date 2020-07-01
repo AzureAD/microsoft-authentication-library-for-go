@@ -216,10 +216,6 @@ func addClientIDQueryParam(queryParams map[string]string, authParameters *msalba
 	queryParams["client_id"] = authParameters.ClientID
 }
 
-func joinScopes(scopes []string) string {
-	return strings.Join(scopes[:], " ")
-}
-
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
 	log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
@@ -227,7 +223,7 @@ func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.
 	// offline_access required to get a refresh token
 	// profile required to get the client_info field back
 	requestedScopes = append(requestedScopes, "openid", "offline_access", "profile")
-	queryParams["scope"] = joinScopes(requestedScopes)
+	queryParams["scope"] = msalbase.ConcatenateScopes(requestedScopes)
 }
 
 func addClientInfoQueryParam(queryParams map[string]string) {

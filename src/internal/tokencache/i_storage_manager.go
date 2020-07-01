@@ -28,12 +28,6 @@ func CreateSuccessOperationStatus() *OperationStatus {
 	return status
 }
 
-type AppMetadata struct {
-	Environment string
-	ClientID    string
-	FamilyID    string
-}
-
 type ReadCredentialsResponse struct {
 	Credentials     []*msalbase.Credential
 	OperationStatus *OperationStatus
@@ -50,17 +44,18 @@ type ReadAccountResponse struct {
 }
 
 type IStorageManager interface {
-	ReadCredentials(
-		correlationID string,
+	ReadAccessToken(
 		homeAccountID string,
-		environment string,
+		envAliases []string,
 		realm string,
 		clientID string,
-		familyID string,
-		target string,
-		types map[msalbase.CredentialType]bool) (*ReadCredentialsResponse, error)
+		scopes []string) *accessTokenCacheItem
 
-	WriteCredentials(correlationID string, credentials []*msalbase.Credential) (*OperationStatus, error)
+	WriteAccessToken(accessToken *accessTokenCacheItem) error
+
+	WriteRefreshToken(refreshToken *refreshTokenCacheItem) error
+
+	WriteIDToken(idToken *idTokenCacheItem) error
 
 	DeleteCredentials(
 		correlationId string,
@@ -72,15 +67,11 @@ type IStorageManager interface {
 		target string,
 		types map[msalbase.CredentialType]bool) (*OperationStatus, error)
 
-	ReadAllAccounts(correlationID string) (*ReadAccountsResponse, error)
+	ReadAllAccounts() []*msalbase.Account
 
-	ReadAccount(
-		correlationID string,
-		homeAccountID string,
-		environment string,
-		realm string) (*ReadAccountResponse, error)
+	ReadAccount(homeAccountID string, environment string, realm string) (*msalbase.Account, error)
 
-	WriteAccount(correlationID string, account *msalbase.Account) (*OperationStatus, error)
+	WriteAccount(account *msalbase.Account) error
 
 	DeleteAccount(
 		correlationID string,

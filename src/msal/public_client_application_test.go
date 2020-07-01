@@ -75,11 +75,11 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 }
 
 func TestAcquireTokenByUsernamePassword(t *testing.T) {
-	testAuthParams.SetAuthorityEndpoints(testAuthorityEndpoints)
-	testAuthParams.SetAuthorizationType(msalbase.AuthorizationTypeUsernamePassword)
-	testAuthParams.SetScopes(tokenCommonParams.scopes)
-	testAuthParams.SetUsername("username")
-	testAuthParams.SetPassword("password")
+	testAuthParams.Endpoints = testAuthorityEndpoints
+	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeUsernamePassword
+	testAuthParams.Scopes = tokenCommonParams.scopes
+	testAuthParams.Username = "username"
+	testAuthParams.Password = "password"
 	userPassParams := &AcquireTokenUsernamePasswordParameters{
 		commonParameters: tokenCommonParams,
 		username:         "username",
@@ -111,6 +111,16 @@ func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 	errorReq := new(requests.MockTokenRequest)
 	errorReq.On("Execute").Return(nil, mockError)
 	_, err = testPCA.executeTokenRequestWithoutCacheWrite(errorReq, testAuthParams)
+	if err != mockError {
+		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
+	}
+}
+
+func TestExecuteTokenRequestWithCacheWrite(t *testing.T) {
+	mockError := errors.New("This is a mock error")
+	errorReq := new(requests.MockTokenRequest)
+	errorReq.On("Execute").Return(nil, mockError)
+	_, err := testPCA.executeTokenRequestWithCacheWrite(errorReq, testAuthParams)
 	if err != mockError {
 		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
 	}
