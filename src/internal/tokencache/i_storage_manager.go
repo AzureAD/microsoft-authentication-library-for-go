@@ -53,7 +53,28 @@ type IStorageManager interface {
 
 	WriteAccessToken(accessToken *accessTokenCacheItem) error
 
+	DeleteAccessToken(
+		homeAccountID string,
+		envAliases []string,
+		realm string,
+		clientID string,
+		scopes []string) error
+
+	ReadRefreshToken(
+		homeAccountID string,
+		envAliases []string,
+		familyID string,
+		clientID string,
+	) *refreshTokenCacheItem
+
 	WriteRefreshToken(refreshToken *refreshTokenCacheItem) error
+
+	ReadIDToken(
+		homeAccountID string,
+		envAliases []string,
+		realm string,
+		clientID string,
+	) *idTokenCacheItem
 
 	WriteIDToken(idToken *idTokenCacheItem) error
 
@@ -80,6 +101,6 @@ type IStorageManager interface {
 		realm string) (*OperationStatus, error)
 
 	DeleteAccounts(correlationID string, homeAccountID string, environment string) (*OperationStatus, error)
-	ReadAppMetadata(environment string, clientID string) (*AppMetadata, error)
+	ReadAppMetadata(envAliases []string, clientID string) *AppMetadata
 	WriteAppMetadata(appMetadata *AppMetadata) error
 }

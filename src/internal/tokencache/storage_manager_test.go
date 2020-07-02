@@ -48,7 +48,39 @@ func TestReadAllAccounts(t *testing.T) {
 }
 
 func TestReadAccessToken(t *testing.T) {
-
+	storageManager := CreateStorageManager()
+	testAccessToken := CreateAccessTokenCacheItem(
+		"hid",
+		"env",
+		"realm",
+		"cid",
+		1,
+		1,
+		1,
+		"openid user.read",
+		"secret",
+	)
+	storageManager.accessTokens[testAccessToken.CreateKey()] = testAccessToken
+	retAccessToken := storageManager.ReadAccessToken(
+		"hid",
+		[]string{"hello", "env", "test"},
+		"realm",
+		"cid",
+		[]string{"user.read", "openid"},
+	)
+	if !reflect.DeepEqual(testAccessToken, retAccessToken) {
+		t.Errorf("Returned access token %v is not the same as expected access token %v", retAccessToken, testAccessToken)
+	}
+	readAccessToken := storageManager.ReadAccessToken(
+		"this_should_break_it",
+		[]string{"hello", "env", "test"},
+		"realm",
+		"cid",
+		[]string{"user.read", "openid"},
+	)
+	if readAccessToken != nil {
+		t.Errorf("Returned access token should be nil; instead it is %v", readAccessToken)
+	}
 }
 
 func TestWriteAccessToken(t *testing.T) {
@@ -76,6 +108,20 @@ func TestWriteAccessToken(t *testing.T) {
 	}
 }
 
+func TestReadAccount(t *testing.T) {
+	storageManager := CreateStorageManager()
+	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
+	storageManager.accounts[testAcc.CreateKey()] = testAcc
+	returnedAccount := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
+	if !reflect.DeepEqual(returnedAccount, testAcc) {
+		t.Errorf("Returned account %v differs from expected account %v", returnedAccount, testAcc)
+	}
+	readAccount := storageManager.ReadAccount("this_should_break_it", []string{"hello", "env", "test"}, "realm")
+	if readAccount != nil {
+		t.Errorf("Returned account should be nil, instead it is %v", readAccount)
+	}
+}
+
 func TestWriteAccount(t *testing.T) {
 	storageManager := CreateStorageManager()
 	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
@@ -89,6 +135,20 @@ func TestWriteAccount(t *testing.T) {
 	}
 }
 
+func TestReadAppMetadata(t *testing.T) {
+	storageManager := CreateStorageManager()
+	testAppMeta := CreateAppMetadata("fid", "cid", "env")
+	storageManager.appMetadatas[testAppMeta.CreateKey()] = testAppMeta
+	returnedAppMeta := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "cid")
+	if !reflect.DeepEqual(returnedAppMeta, testAppMeta) {
+		t.Errorf("Returned app metadata %v differs from expected app metadata %v", returnedAppMeta, testAppMeta)
+	}
+	readAppMeta := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "break_this")
+	if readAppMeta != nil {
+		t.Errorf("Returned app metadata should be nil; instead it is %v", readAppMeta)
+	}
+}
+
 func TestWriteAppMetadata(t *testing.T) {
 	storageManager := CreateStorageManager()
 	testAppMeta := CreateAppMetadata("fid", "cid", "env")
@@ -99,6 +159,36 @@ func TestWriteAppMetadata(t *testing.T) {
 	}
 	if !reflect.DeepEqual(storageManager.appMetadatas[key], testAppMeta) {
 		t.Errorf("Added app metadata %v differs from expected account %v", storageManager.appMetadatas[key], testAppMeta)
+	}
+}
+
+func TestReadIDToken(t *testing.T) {
+	storageManager := CreateStorageManager()
+	testIDToken := CreateIDTokenCacheItem(
+		"hid",
+		"env",
+		"realm",
+		"cid",
+		"secret",
+	)
+	storageManager.idTokens[testIDToken.CreateKey()] = testIDToken
+	returnedIDToken := storageManager.ReadIDToken(
+		"hid",
+		[]string{"hello", "env", "test"},
+		"realm",
+		"cid",
+	)
+	if !reflect.DeepEqual(testIDToken, returnedIDToken) {
+		t.Errorf("Returned ID token %v differs from expected ID token %v", returnedIDToken, testIDToken)
+	}
+	readIDToken := storageManager.ReadIDToken(
+		"this_should_break_it",
+		[]string{"hello", "env", "test"},
+		"realm",
+		"cid",
+	)
+	if readIDToken != nil {
+		t.Errorf("Returned ID token should be nil; instead it is %v", readIDToken)
 	}
 }
 
@@ -120,6 +210,70 @@ func TestWriteIDToken(t *testing.T) {
 		t.Errorf("Added ID token %v differs from expected ID Token %v",
 			storageManager.idTokens[key],
 			testIDToken)
+	}
+}
+
+func TestReadRefreshToken(t *testing.T) {
+	storageManager := CreateStorageManager()
+	testRefreshTokenWithFID := CreateRefreshTokenCacheItem(
+		"hid",
+		"env",
+		"cid",
+		"secret",
+		"fid",
+	)
+	storageManager.refreshTokens[testRefreshTokenWithFID.CreateKey()] = testRefreshTokenWithFID
+	returnedRT := storageManager.ReadRefreshToken(
+		"hid",
+		[]string{"test", "env", "hello"},
+		"fid",
+		"cid",
+	)
+	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
+		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
+			returnedRT,
+			testRefreshTokenWithFID)
+	}
+	returnedRT = storageManager.ReadRefreshToken(
+		"hid",
+		[]string{"test", "env", "hello"},
+		"",
+		"cid",
+	)
+	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
+		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
+			returnedRT,
+			testRefreshTokenWithFID)
+	}
+	testRefreshTokenWoFID := CreateRefreshTokenCacheItem(
+		"hid",
+		"env",
+		"cid",
+		"secret",
+		"",
+	)
+	storageManager.refreshTokens[testRefreshTokenWoFID.CreateKey()] = testRefreshTokenWoFID
+	returnedRT = storageManager.ReadRefreshToken(
+		"hid",
+		[]string{"test", "env", "hello"},
+		"fid",
+		"cid",
+	)
+	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
+		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
+			returnedRT,
+			testRefreshTokenWithFID)
+	}
+	returnedRT = storageManager.ReadRefreshToken(
+		"hid",
+		[]string{"test", "env", "hello"},
+		"",
+		"cid",
+	)
+	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
+		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
+			returnedRT,
+			testRefreshTokenWithFID)
 	}
 }
 

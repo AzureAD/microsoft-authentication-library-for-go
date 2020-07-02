@@ -72,9 +72,13 @@ func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInter
 	accessToken := m.storageManager.ReadAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 	if accessToken != nil {
 		if !isAccessTokenValid(accessToken) {
+
 			accessToken = nil
 		}
 	}
+	idToken := m.storageManager.ReadIDToken(homeAccountID, metadata.Aliases, realm, clientID)
+	appMetadata := m.storageManager.ReadAppMetadata(metadata.Aliases, clientID)
+	refreshToken := m.storageManager.ReadRefreshToken(homeAccountID, metadata.Aliases, appMetadata.FamilyID, clientID)
 	/*
 		readCredentialsResponse, err := m.storageManager.ReadCredentials(
 			emptyCorrelationID,

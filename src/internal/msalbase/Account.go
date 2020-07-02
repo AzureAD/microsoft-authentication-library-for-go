@@ -6,9 +6,9 @@ package msalbase
 import "strings"
 
 type Account struct {
-	homeAccountID     string
-	environment       string
-	realm             string
+	HomeAccountID     string
+	Environment       string
+	Realm             string
 	localAccountID    string
 	authorityType     AuthorityType
 	preferredUsername string
@@ -28,9 +28,9 @@ func CreateAccount(homeAccountID string,
 	preferredUsername string,
 ) *Account {
 	a := &Account{
-		homeAccountID:     homeAccountID,
-		environment:       environment,
-		realm:             realm,
+		HomeAccountID:     homeAccountID,
+		Environment:       environment,
+		Realm:             realm,
 		localAccountID:    localAccountID,
 		authorityType:     authorityType,
 		preferredUsername: preferredUsername,
@@ -39,7 +39,7 @@ func CreateAccount(homeAccountID string,
 }
 
 func (acc *Account) CreateKey() string {
-	keyParts := []string{acc.homeAccountID, acc.environment, acc.realm}
+	keyParts := []string{acc.HomeAccountID, acc.Environment, acc.Realm}
 	return strings.Join(keyParts, CacheKeySeparator)
 }
 
@@ -48,9 +48,9 @@ func (acc *Account) GetUsername() string {
 }
 
 func (acc *Account) GetHomeAccountID() string {
-	return acc.homeAccountID
+	return acc.HomeAccountID
 }
 
 func (acc *Account) GetEnvironment() string {
-	return acc.environment
+	return acc.Environment
 }

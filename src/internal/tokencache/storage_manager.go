@@ -94,11 +94,54 @@ func (m *storageManager) WriteAccessToken(accessToken *accessTokenCacheItem) err
 	return nil
 }
 
+func (m *storageManager) ReadRefreshToken(
+	homeAccountID string,
+	envAliases []string,
+	familyID string,
+	clientID string,
+) *refreshTokenCacheItem {
+	lock.RLock()
+	for _, rt := range m.refreshTokens {
+		if rt.HomeAccountID == homeAccountID && checkAlias(rt.Environment, envAliases) {
+			if familyID != "" && rt.FamilyID != "" && familyID == rt.FamilyID {
+				lock.RUnlock()
+				return rt
+			}
+			if clientID == rt.ClientID {
+				lock.RUnlock()
+				return rt
+			}
+		}
+	}
+	lock.RUnlock()
+	return nil
+}
+
 func (m *storageManager) WriteRefreshToken(refreshToken *refreshTokenCacheItem) error {
 	lock.Lock()
 	key := refreshToken.CreateKey()
 	m.refreshTokens[key] = refreshToken
 	lock.Unlock()
+	return nil
+}
+
+func (m *storageManager) ReadIDToken(
+	homeAccountID string,
+	envAliases []string,
+	realm string,
+	clientID string,
+) *idTokenCacheItem {
+	lock.RLock()
+	for _, idt := range m.idTokens {
+		if idt.HomeAccountID == homeAccountID &&
+			checkAlias(idt.Environment, envAliases) &&
+			idt.Realm == realm &&
+			idt.ClientID == clientID {
+			lock.RUnlock()
+			return idt
+		}
+	}
+	lock.RUnlock()
 	return nil
 }
 
@@ -132,8 +175,18 @@ func (m *storageManager) ReadAllAccounts() []*msalbase.Account {
 	return accounts
 }
 
-func (m *storageManager) ReadAccount(homeAccountID string, environment string, realm string) (*msalbase.Account, error) {
-	return nil, errors.New("not implemented")
+func (m *storageManager) ReadAccount(homeAccountID string, envAliases []string, realm string) *msalbase.Account {
+	lock.RLock()
+	for _, acc := range m.accounts {
+		if acc.HomeAccountID == homeAccountID &&
+			checkAlias(acc.Environment, envAliases) &&
+			acc.Realm == realm {
+			lock.RUnlock()
+			return acc
+		}
+	}
+	lock.RUnlock()
+	return nil
 }
 
 func (m *storageManager) WriteAccount(account *msalbase.Account) error {
@@ -145,19 +198,28 @@ func (m *storageManager) WriteAccount(account *msalbase.Account) error {
 }
 
 func (m *storageManager) DeleteAccount(
-	correlationID string,
 	homeAccountID string,
 	environment string,
-	realm string) (*OperationStatus, error) {
-	return nil, errors.New("not implemented")
+	realm string) error {
+	lock.Lock()
+	lock.Unlock()
+	return errors.New("Can't find account")
 }
 
 func (m *storageManager) DeleteAccounts(correlationID string, homeAccountID string, environment string) (*OperationStatus, error) {
 	return nil, errors.New("not implemented")
 }
 
-func (m *storageManager) ReadAppMetadata(environment string, clientID string) (*AppMetadata, error) {
-	return nil, errors.New("not implemented")
+func (m *storageManager) ReadAppMetadata(envAliases []string, clientID string) *AppMetadata {
+	lock.RLock()
+	for _, app := range m.appMetadatas {
+		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
+			lock.RUnlock()
+			return app
+		}
+	}
+	lock.RUnlock()
+	return nil
 }
 
 func (m *storageManager) WriteAppMetadata(appMetadata *AppMetadata) error {
