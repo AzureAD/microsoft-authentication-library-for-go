@@ -5,7 +5,7 @@ package msalbase
 
 type StorageTokenResponse struct {
 	accessToken  IAccessToken
-	refreshToken Credential
+	RefreshToken Credential
 	idToken      Credential
 	account      *Account
 }

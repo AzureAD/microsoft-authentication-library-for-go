@@ -5,8 +5,6 @@ package tokencache
 
 import (
 	"errors"
-	"reflect"
-	"sort"
 	"sync"
 	"time"
 
@@ -48,9 +46,16 @@ func checkAlias(alias string, aliases []string) bool {
 
 func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 	newScopesTwo := msalbase.SplitScopes(scopesTwo)
-	sort.Strings(scopesOne)
-	sort.Strings(newScopesTwo)
-	return reflect.DeepEqual(scopesOne, newScopesTwo)
+	scopeCounter := 0
+	for _, scope := range scopesOne {
+		for _, otherScope := range newScopesTwo {
+			if scope == otherScope {
+				scopeCounter++
+				continue
+			}
+		}
+	}
+	return scopeCounter == len(scopesOne)
 }
 
 func (m *storageManager) ReadCredentials(

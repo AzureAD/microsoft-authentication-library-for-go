@@ -14,14 +14,14 @@ import (
 // UsernamePasswordRequest stuff
 type UsernamePasswordRequest struct {
 	webRequestManager IWebRequestManager
-	cacheManager      msalbase.ICacheManager
+	cacheManager      ICacheManager
 	authParameters    *msalbase.AuthParametersInternal
 }
 
 // CreateUsernamePasswordRequest stuff
 func CreateUsernamePasswordRequest(
 	webRequestManager IWebRequestManager,
-	cacheManager msalbase.ICacheManager,
+	cacheManager ICacheManager,
 	authParameters *msalbase.AuthParametersInternal) *UsernamePasswordRequest {
 	req := &UsernamePasswordRequest{webRequestManager, cacheManager, authParameters}
 	return req

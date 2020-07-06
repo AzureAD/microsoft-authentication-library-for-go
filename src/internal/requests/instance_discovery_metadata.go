@@ -10,6 +10,10 @@ type instanceDiscoveryMetadata struct {
 	Aliases                 []string `json:"aliases"`
 }
 
-func createInstanceDiscoveryMetadata(authorityHost string, tenantDiscoveryEndpoint string) *instanceDiscoveryMetadata {
-	return &instanceDiscoveryMetadata{authorityHost, authorityHost, tenantDiscoveryEndpoint, []string{}}
+func createInstanceDiscoveryMetadata(preferredNetwork string, preferredCache string) *instanceDiscoveryMetadata {
+	return &instanceDiscoveryMetadata{
+		PreferredNetwork: preferredNetwork,
+		PreferredCache:   preferredCache,
+		Aliases:          []string{},
+	}
 }

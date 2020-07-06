@@ -9,11 +9,11 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-var instanceDiscoveryCache = map[string]*instanceDiscoveryMetadata{}
+var instanceDiscoveryCache map[string]*instanceDiscoveryMetadata
 var instanceDiscoveryCacheInitOnce sync.Once
 
 func initInstanceDiscoveryCache() {
-
+	instanceDiscoveryCache = make(map[string]*instanceDiscoveryMetadata)
 }
 
 type IAadInstanceDiscovery interface {
@@ -24,9 +24,9 @@ type AadInstanceDiscovery struct {
 	webRequestManager IWebRequestManager
 }
 
-func CreateAadInstanceDiscovery() *AadInstanceDiscovery {
+func CreateAadInstanceDiscovery(webRequestManager IWebRequestManager) *AadInstanceDiscovery {
 	instanceDiscoveryCacheInitOnce.Do(initInstanceDiscoveryCache)
-	return &AadInstanceDiscovery{}
+	return &AadInstanceDiscovery{webRequestManager: webRequestManager}
 }
 
 func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo *msalbase.AuthorityInfo) (*instanceDiscoveryMetadata, error) {
@@ -38,19 +38,19 @@ func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo *msalba
 	for _, metadataEntry := range discoveryResponse.Metadata {
 		metadataEntry.TenantDiscoveryEndpoint = discoveryResponse.TenantDiscoveryEndpoint
 		for _, aliasedAuthority := range metadataEntry.Aliases {
-			instanceDiscoveryCache[aliasedAuthority] = &metadataEntry
+			instanceDiscoveryCache[aliasedAuthority] = metadataEntry
 		}
 	}
-
-	instanceDiscoveryCache[authorityInfo.Host] = createInstanceDiscoveryMetadata(authorityInfo.Host, discoveryResponse.TenantDiscoveryEndpoint)
-	return d.GetMetadataEntry(authorityInfo)
+	if _, ok := instanceDiscoveryCache[authorityInfo.Host]; !ok {
+		instanceDiscoveryCache[authorityInfo.Host] = createInstanceDiscoveryMetadata(authorityInfo.Host, authorityInfo.Host)
+	}
+	return instanceDiscoveryCache[authorityInfo.Host], nil
 }
 
 func (d *AadInstanceDiscovery) GetMetadataEntry(authorityInfo *msalbase.AuthorityInfo) (*instanceDiscoveryMetadata, error) {
 	if metadata, ok := instanceDiscoveryCache[authorityInfo.Host]; ok {
 		return metadata, nil
 	}
-
 	metadata, err := d.doInstanceDiscoveryAndCache(authorityInfo)
 	if err != nil {
 		return nil, err

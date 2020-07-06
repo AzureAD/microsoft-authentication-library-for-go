@@ -51,153 +51,43 @@ func (m *cacheManager) GetAllAccounts() []*msalbase.Account {
 	return m.storageManager.ReadAllAccounts()
 }
 
-func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal) (*msalbase.StorageTokenResponse, error) {
+func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal, webRequestManager requests.IWebRequestManager) (*msalbase.StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
-	//environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.UserRealmURIPrefix
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
-	/*
-		log.Tracef("Querying the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target:'%s'", homeAccountID, environment, realm, clientID, target)
-
-		if homeAccountID == "" || environment == "" || realm == "" || clientID == "" || target == "" {
-			log.Warn("Skipping the tokens cache lookup, one of the primary keys is empty")
-			return nil, errors.New("Skipping the tokens cache lookup, one of the primary keys is empty")
-		}*/
-	aadInstanceDiscovery := requests.CreateAadInstanceDiscovery()
+	aadInstanceDiscovery := requests.CreateAadInstanceDiscovery(webRequestManager)
 	metadata, err := aadInstanceDiscovery.GetMetadataEntry(authParameters.AuthorityInfo)
 	if err != nil {
 		return nil, err
 	}
+	log.Tracef("Querying the cache for homeAccountId '%s' environments '%v' realm '%s' clientId '%s' scopes:'%v'", homeAccountID, metadata.Aliases, realm, clientID, scopes)
+	if homeAccountID == "" || len(metadata.Aliases) == 0 || realm == "" || clientID == "" || len(scopes) == 0 {
+		log.Warn("Skipping the tokens cache lookup, one of the primary keys is empty")
+		return nil, errors.New("Skipping the tokens cache lookup, one of the primary keys is empty")
+	}
 	accessToken := m.storageManager.ReadAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 	if accessToken != nil {
 		if !isAccessTokenValid(accessToken) {
-
 			accessToken = nil
 		}
 	}
 	idToken := m.storageManager.ReadIDToken(homeAccountID, metadata.Aliases, realm, clientID)
+	var familyID string
 	appMetadata := m.storageManager.ReadAppMetadata(metadata.Aliases, clientID)
-	refreshToken := m.storageManager.ReadRefreshToken(homeAccountID, metadata.Aliases, appMetadata.FamilyID, clientID)
-	/*
-		readCredentialsResponse, err := m.storageManager.ReadCredentials(
-			emptyCorrelationID,
-			homeAccountID,
-			environment,
-			realm,
-			clientID,
-			emptyFamilyID,
-			target,
-			map[msalbase.CredentialType]bool{msalbase.CredentialTypeOauth2AccessToken: true, msalbase.CredentialTypeOauth2RefreshToken: true, msalbase.CredentialTypeOidcIDToken: true})
-
-		// todo: better error propagation
-		if err != nil {
-			return nil, err
-		}
-
-		opStatus := readCredentialsResponse.OperationStatus
-
-		if opStatus.StatusType != OperationStatusTypeSuccess {
-			log.Warn("Error reading credentials from the cache")
-			return nil, nil
-		}
-
-		credentials := readCredentialsResponse.Credentials
-
-		if len(credentials) == 0 {
-			log.Warn("No credentials found in the cache")
-			return nil, nil
-		}
-
-		if len(credentials) > 3 {
-			// log.Warnf("Expected to read up to 3 credentials from the cache (access token, refresh token, id token), read %s", FormatTokenTypesForLogging(credentials))
-		}
-
-		var accessToken msalbase.Credential
-		var refreshToken msalbase.Credential
-		var idToken msalbase.Credential
-
-		for _, cred := range credentials {
-
-			switch cred.GetCredentialType() {
-			case msalbase.CredentialTypeOauth2AccessToken:
-				if accessToken != nil {
-					log.Warn("More than one access token read from the cache")
-				}
-				accessToken = cred
-				break
-
-			case msalbase.CredentialTypeOauth2RefreshToken:
-				if refreshToken != nil {
-					log.Warn("More than one refresh token read from the cache")
-				}
-				refreshToken = cred
-				break
-
-			case msalbase.CredentialTypeOidcIDToken:
-				if idToken != nil {
-					log.Warn("More than one id token read from the cache")
-				}
-				idToken = cred
-				break
-
-			default:
-				log.Warn("Read an unknown credential type from the disk cache - ignoring")
-				break
-			}
-		}
-
-		if idToken == nil {
-			log.Warn("No id token found in the cache")
-		}
-
-		if accessToken == nil {
-			log.Warn("No access token found in the cache")
-		} else if !isAccessTokenValid(accessToken) {
-			m.deleteCachedAccessToken(homeAccountID, environment, realm, clientID, target)
-			accessToken = nil
-		}
-
-		if accessToken == nil && refreshToken == nil {
-			// There's no access token and no refresh token
-			log.Warn("No valid access token and no refresh token found in the cache")
-			return msalbase.CreateStorageTokenResponse(nil, nil, idToken, nil), nil
-		}
-
-		var account *msalbase.Account
-
-		// Search for an account if there's a valid access token. If there's no valid access token, we're going to make a
-		// server call anyway and to make a new account.
-		if accessToken != nil {
-			readAccountResponse, err := m.storageManager.ReadAccount(
-				emptyCorrelationID,
-				homeAccountID,
-				environment,
-				realm)
-
-			if err != nil {
-				return nil, err
-			}
-
-			if readAccountResponse.OperationStatus.StatusType != OperationStatusTypeSuccess {
-				log.Warn("Error reading an account from the cache")
-			} else {
-				account = readAccountResponse.Account
-			}
-
-			if account == nil {
-				log.Warn("No account found in cache, will still return a token if found")
-			}
-		}
-
-		return msalbase.CreateStorageTokenResponse(accessToken, refreshToken, idToken, account), nil
-	*/
-	return nil, nil
+	if appMetadata == nil {
+		familyID = ""
+	} else {
+		familyID = appMetadata.FamilyID
+	}
+	refreshToken := m.storageManager.ReadRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
+	account := m.storageManager.ReadAccount(homeAccountID, metadata.Aliases, realm)
+	return msalbase.CreateStorageTokenResponse(accessToken, refreshToken, idToken, account), nil
 }
 
 func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParametersInternal, tokenResponse *msalbase.TokenResponse) (*msalbase.Account, error) {
 	var err error
-
+	log.Infof("%v", authParameters.AuthorityInfo)
 	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
@@ -275,8 +165,6 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	if err != nil {
 		return nil, err
 	}
-
-	//m.storageManager.ReadAllAccounts(emptyCorrelationID)
 
 	return account, nil
 }

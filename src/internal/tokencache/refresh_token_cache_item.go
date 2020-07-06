@@ -46,3 +46,7 @@ func (rt *refreshTokenCacheItem) CreateKey() string {
 	keyParts := []string{rt.HomeAccountID, rt.Environment, rt.CredentialType, fourth}
 	return strings.Join(keyParts, msalbase.CacheKeySeparator)
 }
+
+func (rt *refreshTokenCacheItem) GetSecret() string {
+	return rt.Secret
+}

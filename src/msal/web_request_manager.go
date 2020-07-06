@@ -340,7 +340,7 @@ func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
 
 	queryParams := map[string]string{
 		"api-version":            "1.1",
-		"authorization_endpoint": fmt.Sprintf("https://%v/%v/auth2/v2.0/authorize", authorityInfo.Host, authorityInfo.Tenant),
+		"authorization_endpoint": fmt.Sprintf("https://%v/%v/oauth2/v2.0/authorize", authorityInfo.Host, authorityInfo.Tenant),
 	}
 
 	var discoveryHost string
@@ -351,7 +351,6 @@ func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
 	}
 
 	instanceDiscoveryEndpoint := fmt.Sprintf("https://%v/common/discovery/instance?%v", discoveryHost, encodeQueryParameters(queryParams))
-
 	httpManagerResponse, err := wrm.httpManager.Get(instanceDiscoveryEndpoint, nil)
 	if err != nil {
 		return nil, err

@@ -15,7 +15,7 @@ import (
 type PublicClientApplication struct {
 	pcaParameters     *PublicClientApplicationParameters
 	webRequestManager requests.IWebRequestManager
-	cacheManager      msalbase.ICacheManager
+	cacheManager      requests.ICacheManager
 }
 
 // CreatePublicClientApplication creates a PublicClientApplication Instance given its parameters, which include client ID and authority info
@@ -51,16 +51,15 @@ func (pca *PublicClientApplication) AcquireTokenSilent(
 	silentParameters *AcquireTokenSilentParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	silentParameters.augmentAuthenticationParameters(authParams)
-	storageTokenResponse, err := pca.cacheManager.TryReadCache(authParams)
+	storageTokenResponse, err := pca.cacheManager.TryReadCache(authParams, pca.webRequestManager)
 	if err != nil {
 		return nil, err
 	}
-
 	if storageTokenResponse != nil {
 		return msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
 	}
 
-	req := requests.CreateRefreshTokenExchangeRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	req := requests.CreateRefreshTokenExchangeRequest(pca.webRequestManager, pca.cacheManager, authParams, storageTokenResponse.RefreshToken)
 	return pca.executeTokenRequestWithCacheWrite(req, authParams)
 }
 

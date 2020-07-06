@@ -9,7 +9,7 @@ import (
 
 type NetworkedCacheManager struct {
 	webRequestManager   IWebRequestManager
-	cacheManager        msalbase.ICacheManager
+	cacheManager        ICacheManager
 	environmentMetadata *EnvironmentMetadata
 	realmMetadata       IRealmMetadata
 	authParameters      *msalbase.AuthParametersInternal
