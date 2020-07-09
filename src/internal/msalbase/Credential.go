@@ -24,7 +24,7 @@ func (c CredentialType) ToString() string {
 	case CredentialTypeOauth2RefreshToken:
 		return "RefreshToken"
 	case CredentialTypeOidcIDToken:
-		return "IDToken"
+		return "IdToken"
 	case CredentialTypeOther:
 		return "Other"
 	default:
@@ -38,7 +38,7 @@ func ToCredentialType(credTypeStr string) CredentialType {
 		return CredentialTypeOauth2AccessToken
 	case "RefreshToken":
 		return CredentialTypeOauth2RefreshToken
-	case "IDToken":
+	case "IdToken":
 		return CredentialTypeOidcIDToken
 	default:
 		return CredentialTypeOther

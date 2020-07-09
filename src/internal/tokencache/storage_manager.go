@@ -4,28 +4,26 @@
 package tokencache
 
 import (
+	"encoding/json"
 	"errors"
 	"sync"
-	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
-	"github.com/patrickmn/go-cache"
 )
 
 var lock sync.RWMutex
 
 type storageManager struct {
-	cache         *cache.Cache
 	accessTokens  map[string]*accessTokenCacheItem
 	refreshTokens map[string]*refreshTokenCacheItem
 	idTokens      map[string]*idTokenCacheItem
 	accounts      map[string]*msalbase.Account
 	appMetadatas  map[string]*AppMetadata
+	cacheContract *cacheSerializationContract
 }
 
 func CreateStorageManager() *storageManager {
 	mgr := &storageManager{
-		cache:         cache.New(cache.DefaultExpiration, time.Duration(10)),
 		accessTokens:  make(map[string]*accessTokenCacheItem),
 		refreshTokens: make(map[string]*refreshTokenCacheItem),
 		idTokens:      make(map[string]*idTokenCacheItem),
@@ -56,18 +54,6 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 		}
 	}
 	return scopeCounter == len(scopesOne)
-}
-
-func (m *storageManager) ReadCredentials(
-	correlationID string,
-	homeAccountID string,
-	environment string,
-	realm string,
-	clientID string,
-	familyID string,
-	target string,
-	types map[msalbase.CredentialType]bool) (*ReadCredentialsResponse, error) {
-	return nil, errors.New("not implemented")
 }
 
 func (m *storageManager) ReadAccessToken(
@@ -158,18 +144,6 @@ func (m *storageManager) WriteIDToken(idToken *idTokenCacheItem) error {
 	return nil
 }
 
-func (m *storageManager) DeleteCredentials(
-	correlationID string,
-	homeAccountID string,
-	environment string,
-	realm string,
-	clientID string,
-	familyID string,
-	target string,
-	types map[msalbase.CredentialType]bool) (*OperationStatus, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (m *storageManager) ReadAllAccounts() []*msalbase.Account {
 	lock.RLock()
 	accounts := []*msalbase.Account{}
@@ -211,10 +185,6 @@ func (m *storageManager) DeleteAccount(
 	return errors.New("Can't find account")
 }
 
-func (m *storageManager) DeleteAccounts(correlationID string, homeAccountID string, environment string) (*OperationStatus, error) {
-	return nil, errors.New("not implemented")
-}
-
 func (m *storageManager) ReadAppMetadata(envAliases []string, clientID string) *AppMetadata {
 	lock.RLock()
 	for _, app := range m.appMetadatas {
@@ -232,5 +202,35 @@ func (m *storageManager) WriteAppMetadata(appMetadata *AppMetadata) error {
 	key := appMetadata.CreateKey()
 	m.appMetadatas[key] = appMetadata
 	lock.Unlock()
+	return nil
+}
+
+func (m *storageManager) Serialize() (string, error) {
+	cacheContract := &cacheSerializationContract{
+		AccessTokens:  m.accessTokens,
+		RefreshTokens: m.refreshTokens,
+		IDTokens:      m.idTokens,
+		Accounts:      m.accounts,
+		AppMetadata:   m.appMetadatas,
+	}
+	res, err := json.Marshal(cacheContract)
+	if err != nil {
+		return "", err
+	}
+	return string(res), nil
+}
+
+func (m *storageManager) Deserialize(cacheData string) error {
+	m.cacheContract = createCacheSerializationContract()
+	err := m.cacheContract.UnmarshalJSON(cacheData)
+	if err != nil {
+		return err
+	}
+	lock.Lock()
+	m.accessTokens = m.cacheContract.AccessTokens
+	m.refreshTokens = m.cacheContract.RefreshTokens
+	m.idTokens = m.cacheContract.IDTokens
+	m.accounts = m.cacheContract.Accounts
+	m.appMetadatas = m.cacheContract.AppMetadata
 	return nil
 }

@@ -30,3 +30,26 @@ func TestCreateKeyForRefreshToken(t *testing.T) {
 		t.Errorf("Actual key %v differs from expected key %v", actualKey, expectedKey)
 	}
 }
+
+func TestRefreshTokenPopulateFromJSONMap(t *testing.T) {
+	jsonMap := map[string]interface{}{
+		"home_account_id": "hid",
+		"environment":     "env",
+		"extra":           "this_is_extra",
+		"secret":          "100",
+	}
+	expectedRefreshToken := &refreshTokenCacheItem{
+		HomeAccountID:    "hid",
+		Environment:      "env",
+		Secret:           "100",
+		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+	}
+	actualRefreshToken := &refreshTokenCacheItem{}
+	err := actualRefreshToken.populateFromJSONMap(jsonMap)
+	if err != nil {
+		t.Errorf("Error is supposed to be nil, but it is %v", err)
+	}
+	if !reflect.DeepEqual(actualRefreshToken, expectedRefreshToken) {
+		t.Errorf("Actual refresh token %+v differs from expected refresh token %+v", actualRefreshToken, expectedRefreshToken)
+	}
+}

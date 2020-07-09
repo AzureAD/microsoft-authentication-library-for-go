@@ -8,7 +8,7 @@ import "encoding/json"
 // InstanceDiscoveryResponse stuff
 type InstanceDiscoveryResponse struct {
 	TenantDiscoveryEndpoint string                       `json:"tenant_discovery_endpoint"`
-	Metadata                []*instanceDiscoveryMetadata `json:"metadata"`
+	Metadata                []*InstanceDiscoveryMetadata `json:"metadata"`
 }
 
 func CreateInstanceDiscoveryResponse(responseData string) (*InstanceDiscoveryResponse, error) {

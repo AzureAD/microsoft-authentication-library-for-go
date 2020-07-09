@@ -10,9 +10,10 @@ import (
 )
 
 type AppMetadata struct {
-	FamilyID    string
-	ClientID    string
-	Environment string
+	FamilyID         string
+	ClientID         string
+	Environment      string
+	additionalFields map[string]interface{}
 }
 
 func CreateAppMetadata(familyID string, clientID string, environment string) *AppMetadata {
@@ -27,4 +28,12 @@ func CreateAppMetadata(familyID string, clientID string, environment string) *Ap
 func (appMeta *AppMetadata) CreateKey() string {
 	keyParts := []string{msalbase.AppMetadataCacheID, appMeta.Environment, appMeta.ClientID}
 	return strings.Join(keyParts, msalbase.CacheKeySeparator)
+}
+
+func (appMeta *AppMetadata) populateFromJSONMap(j map[string]interface{}) error {
+	appMeta.FamilyID = msalbase.ExtractExistingOrEmptyString(j, "family_id")
+	appMeta.ClientID = msalbase.ExtractExistingOrEmptyString(j, "client_id")
+	appMeta.Environment = msalbase.ExtractExistingOrEmptyString(j, "environment")
+	appMeta.additionalFields = j
+	return nil
 }

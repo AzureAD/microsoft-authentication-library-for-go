@@ -13,7 +13,6 @@ import (
 type accessTokenCacheItem struct {
 	HomeAccountID                  string
 	Environment                    string
-	RawClientInfo                  string
 	Realm                          string
 	CredentialType                 string
 	ClientID                       string
@@ -22,6 +21,7 @@ type accessTokenCacheItem struct {
 	ExpiresOnUnixTimestamp         string
 	ExtendedExpiresOnUnixTimestamp string
 	CachedAt                       string
+	additionalFields               map[string]interface{}
 }
 
 func CreateAccessTokenCacheItem(homeAccountID string,
@@ -65,23 +65,22 @@ func (s *accessTokenCacheItem) GetScopes() string {
 	return s.Scopes
 }
 
-/*
-func extractExistingOrEmptyString(j map[string]interface{}, key string) string {
-	if val, ok := j[key]; ok {
-		if str, ok := val.(string); ok {
-			delete(j, key)
-			return str
-		}
-	}
-	return ""
-}
-
 func (s *accessTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
-	s.HomeAccountID = extractExistingOrEmptyString(j, "home_account_id")
-	s.AdditionalFields = j
+	s.HomeAccountID = msalbase.ExtractExistingOrEmptyString(j, "home_account_id")
+	s.Environment = msalbase.ExtractExistingOrEmptyString(j, "environment")
+	s.Realm = msalbase.ExtractExistingOrEmptyString(j, "realm")
+	s.CredentialType = msalbase.ExtractExistingOrEmptyString(j, "credential_type")
+	s.ClientID = msalbase.ExtractExistingOrEmptyString(j, "client_id")
+	s.Secret = msalbase.ExtractExistingOrEmptyString(j, "secret")
+	s.Scopes = msalbase.ExtractExistingOrEmptyString(j, "target")
+	s.CachedAt = msalbase.ExtractExistingOrEmptyString(j, "cached_at")
+	s.ExpiresOnUnixTimestamp = msalbase.ExtractExistingOrEmptyString(j, "expires_on")
+	s.ExtendedExpiresOnUnixTimestamp = msalbase.ExtractExistingOrEmptyString(j, "extended_expires_on")
+	s.additionalFields = j
 	return nil
 }
 
+/*
 func (s *accessTokenCacheItem) UnmarshalJSON(b []byte) error {
 	j := make(map[string]interface{})
 	err := json.Unmarshal(b, &j)

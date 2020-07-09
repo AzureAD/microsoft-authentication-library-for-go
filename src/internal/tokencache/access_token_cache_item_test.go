@@ -48,3 +48,26 @@ func TestCreateKeyForAccessToken(t *testing.T) {
 		t.Errorf("Actual key %v differs from expected key %v", actualKey, expectedKey)
 	}
 }
+
+func TestAccessTokenPopulateFromJSONMap(t *testing.T) {
+	jsonMap := map[string]interface{}{
+		"home_account_id": "hid",
+		"environment":     "env",
+		"extra":           "this_is_extra",
+		"cached_at":       "100",
+	}
+	expectedAccessToken := &accessTokenCacheItem{
+		HomeAccountID:    "hid",
+		Environment:      "env",
+		CachedAt:         "100",
+		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+	}
+	actualAccessToken := &accessTokenCacheItem{}
+	err := actualAccessToken.populateFromJSONMap(jsonMap)
+	if err != nil {
+		t.Errorf("Error is supposed to be nil, but it is %v", err)
+	}
+	if !reflect.DeepEqual(actualAccessToken, expectedAccessToken) {
+		t.Errorf("Actual access token %+v differs from expected access token %+v", actualAccessToken, expectedAccessToken)
+	}
+}

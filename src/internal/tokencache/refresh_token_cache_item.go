@@ -10,13 +10,13 @@ import (
 )
 
 type refreshTokenCacheItem struct {
-	HomeAccountID  string
-	Environment    string
-	RawClientInfo  string
-	CredentialType string
-	ClientID       string
-	FamilyID       string
-	Secret         string
+	HomeAccountID    string
+	Environment      string
+	CredentialType   string
+	ClientID         string
+	FamilyID         string
+	Secret           string
+	additionalFields map[string]interface{}
 }
 
 func CreateRefreshTokenCacheItem(homeAccountID string,
@@ -49,4 +49,15 @@ func (rt *refreshTokenCacheItem) CreateKey() string {
 
 func (rt *refreshTokenCacheItem) GetSecret() string {
 	return rt.Secret
+}
+
+func (rt *refreshTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
+	rt.HomeAccountID = msalbase.ExtractExistingOrEmptyString(j, "home_account_id")
+	rt.Environment = msalbase.ExtractExistingOrEmptyString(j, "environment")
+	rt.CredentialType = msalbase.ExtractExistingOrEmptyString(j, "credential_type")
+	rt.ClientID = msalbase.ExtractExistingOrEmptyString(j, "client_id")
+	rt.FamilyID = msalbase.ExtractExistingOrEmptyString(j, "family_id")
+	rt.Secret = msalbase.ExtractExistingOrEmptyString(j, "secret")
+	rt.additionalFields = j
+	return nil
 }

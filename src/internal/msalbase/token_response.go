@@ -22,7 +22,7 @@ type tokenResponseJSONPayload struct {
 	ClientInfo   string `json:"client_info"`
 }
 
-type clientInfoJSONPayload struct {
+type ClientInfoJSONPayload struct {
 	UID  string `json:"uid"`
 	Utid string `json:"utid"`
 }
@@ -39,7 +39,7 @@ type TokenResponse struct {
 	ExpiresOn      time.Time
 	ExtExpiresOn   time.Time
 	rawClientInfo  string
-	clientInfo     *clientInfoJSONPayload
+	ClientInfo     *ClientInfoJSONPayload
 }
 
 func (tr *TokenResponse) HasAccessToken() bool {
@@ -51,7 +51,7 @@ func (tr *TokenResponse) HasRefreshToken() bool {
 }
 
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
-	homeAccountID := tr.clientInfo.UID + "." + tr.clientInfo.Utid
+	homeAccountID := tr.ClientInfo.UID + "." + tr.ClientInfo.Utid
 	return homeAccountID
 }
 
@@ -73,7 +73,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	}
 
 	rawClientInfo := payload.ClientInfo
-	clientInfo := &clientInfoJSONPayload{}
+	clientInfo := &ClientInfoJSONPayload{}
 
 	// Client info may be empty in some flows, e.g. certificate exchange.
 	if len(rawClientInfo) > 0 {
@@ -125,7 +125,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 		GrantedScopes:  grantedScopes,
 		declinedScopes: declinedScopes,
 		rawClientInfo:  rawClientInfo,
-		clientInfo:     clientInfo,
+		ClientInfo:     clientInfo,
 	}
 	return tokenResponse, nil
 }
