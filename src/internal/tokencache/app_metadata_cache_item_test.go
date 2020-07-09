@@ -42,3 +42,22 @@ func TestAppMetadataPopulateFromJSONMap(t *testing.T) {
 		t.Errorf("Actual app metadata %+v differs from expected app metadata %+v", actualAppMetadata, expectedAppMetadata)
 	}
 }
+
+func TestAppMetadataConvertToJSONMap(t *testing.T) {
+	appMetadata := &AppMetadata{
+		Environment:      "env",
+		ClientID:         "cid",
+		additionalFields: map[string]interface{}{"extra": "this_is_extra", "cached_at": "100"},
+	}
+	jsonMap := map[string]interface{}{
+		"family_id":   "",
+		"environment": "env",
+		"client_id":   "cid",
+		"extra":       "this_is_extra",
+		"cached_at":   "100",
+	}
+	actualJSONMap := appMetadata.convertToJSONMap()
+	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
+		t.Errorf("JSON app metadata %+v differs from expected JSON app metadata %+v", actualJSONMap, jsonMap)
+	}
+}

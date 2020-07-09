@@ -53,3 +53,25 @@ func TestRefreshTokenPopulateFromJSONMap(t *testing.T) {
 		t.Errorf("Actual refresh token %+v differs from expected refresh token %+v", actualRefreshToken, expectedRefreshToken)
 	}
 }
+
+func TestRefreshTokenConvertToJSONMap(t *testing.T) {
+	refreshToken := &refreshTokenCacheItem{
+		HomeAccountID:    "hid",
+		Environment:      "env",
+		CredentialType:   "RefreshToken",
+		Secret:           "100",
+		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+	}
+	jsonMap := map[string]interface{}{
+		"home_account_id": "hid",
+		"environment":     "env",
+		"credential_type": "RefreshToken",
+		"client_id":       "",
+		"secret":          "100",
+		"extra":           "this_is_extra",
+	}
+	actualJSONMap := refreshToken.convertToJSONMap()
+	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
+		t.Errorf("JSON refresh token %+v differs from expected JSON refresh token %+v", actualJSONMap, jsonMap)
+	}
+}

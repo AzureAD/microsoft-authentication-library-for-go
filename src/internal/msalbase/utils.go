@@ -35,5 +35,6 @@ func ExtractExistingOrEmptyString(j map[string]interface{}, key string) string {
 			return str
 		}
 	}
+	delete(j, key)
 	return ""
 }

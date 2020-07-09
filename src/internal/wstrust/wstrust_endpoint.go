@@ -11,7 +11,7 @@ import (
 
 	// "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
-	uuid "github.com/twinj/uuid"
+	uuid "github.com/google/uuid"
 )
 
 type WsTrustEndpointVersion int
@@ -136,7 +136,7 @@ func (wte *WsTrustEndpoint) buildTokenRequestMessage(authType msalbase.Authoriza
 
 	var envelope wsTrustTokenRequestEnvelope
 
-	messageUUID := uuid.NewV4()
+	messageUUID := uuid.New()
 
 	envelope.S = "http://www.w3.org/2003/05/soap-envelope"
 	envelope.Wsa = "http://www.w3.org/2005/08/addressing"
@@ -149,12 +149,9 @@ func (wte *WsTrustEndpoint) buildTokenRequestMessage(authType msalbase.Authoriza
 	envelope.Header.To.MustUnderstand = "1"
 	envelope.Header.To.Text = wte.URL
 
-	// note: uuid on golang: https://stackoverflow.com/questions/15130321/is-there-a-method-to-generate-a-uuid-with-go-language
-	// using "github.com/twinj/uuid"
-
 	if authType == msalbase.AuthorizationTypeUsernamePassword {
 
-		endpointUUID := uuid.NewV4()
+		endpointUUID := uuid.New()
 
 		var trustID string
 		if wte.EndpointVersion == Trust2005 {

@@ -80,6 +80,23 @@ func (s *accessTokenCacheItem) populateFromJSONMap(j map[string]interface{}) err
 	return nil
 }
 
+func (s *accessTokenCacheItem) convertToJSONMap() map[string]interface{} {
+	jsonMap := s.additionalFields
+	jsonMap["home_account_id"] = s.HomeAccountID
+	jsonMap["environment"] = s.Environment
+	jsonMap["realm"] = s.Realm
+	jsonMap["credential_type"] = s.CredentialType
+	jsonMap["client_id"] = s.ClientID
+	jsonMap["secret"] = s.Secret
+	jsonMap["target"] = s.Scopes
+	jsonMap["cached_at"] = s.CachedAt
+	jsonMap["expires_on"] = s.ExpiresOnUnixTimestamp
+	if s.ExtendedExpiresOnUnixTimestamp != "" {
+		jsonMap["extended_expires_on"] = s.ExtendedExpiresOnUnixTimestamp
+	}
+	return jsonMap
+}
+
 /*
 func (s *accessTokenCacheItem) UnmarshalJSON(b []byte) error {
 	j := make(map[string]interface{})

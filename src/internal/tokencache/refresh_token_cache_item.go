@@ -16,6 +16,8 @@ type refreshTokenCacheItem struct {
 	ClientID         string
 	FamilyID         string
 	Secret           string
+	Realm            string
+	Target           string
 	additionalFields map[string]interface{}
 }
 
@@ -58,6 +60,27 @@ func (rt *refreshTokenCacheItem) populateFromJSONMap(j map[string]interface{}) e
 	rt.ClientID = msalbase.ExtractExistingOrEmptyString(j, "client_id")
 	rt.FamilyID = msalbase.ExtractExistingOrEmptyString(j, "family_id")
 	rt.Secret = msalbase.ExtractExistingOrEmptyString(j, "secret")
+	rt.Target = msalbase.ExtractExistingOrEmptyString(j, "target")
+	rt.Realm = msalbase.ExtractExistingOrEmptyString(j, "realm")
 	rt.additionalFields = j
 	return nil
+}
+
+func (rt *refreshTokenCacheItem) convertToJSONMap() map[string]interface{} {
+	jsonMap := rt.additionalFields
+	jsonMap["home_account_id"] = rt.HomeAccountID
+	jsonMap["environment"] = rt.Environment
+	jsonMap["credential_type"] = rt.CredentialType
+	jsonMap["client_id"] = rt.ClientID
+	if rt.FamilyID != "" {
+		jsonMap["family_id"] = rt.FamilyID
+	}
+	jsonMap["secret"] = rt.Secret
+	if rt.Target != "" {
+		jsonMap["target"] = rt.Target
+	}
+	if rt.Realm != "" {
+		jsonMap["realm"] = rt.Realm
+	}
+	return jsonMap
 }

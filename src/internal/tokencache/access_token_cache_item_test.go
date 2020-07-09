@@ -71,3 +71,29 @@ func TestAccessTokenPopulateFromJSONMap(t *testing.T) {
 		t.Errorf("Actual access token %+v differs from expected access token %+v", actualAccessToken, expectedAccessToken)
 	}
 }
+
+func TestAccessTokenConvertToJSONMap(t *testing.T) {
+	accessToken := &accessTokenCacheItem{
+		HomeAccountID:    "hid",
+		Environment:      "env",
+		CachedAt:         "100",
+		CredentialType:   "AccessToken",
+		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+	}
+	jsonMap := map[string]interface{}{
+		"home_account_id": "hid",
+		"environment":     "env",
+		"realm":           "",
+		"credential_type": "AccessToken",
+		"client_id":       "",
+		"secret":          "",
+		"target":          "",
+		"cached_at":       "100",
+		"expires_on":      "",
+		"extra":           "this_is_extra",
+	}
+	actualJSONMap := accessToken.convertToJSONMap()
+	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
+		t.Errorf("JSON access token %+v differs from expected JSON access token %+v", actualJSONMap, jsonMap)
+	}
+}

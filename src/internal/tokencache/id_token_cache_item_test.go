@@ -52,3 +52,24 @@ func TestIDTokenPopulateFromJSONMap(t *testing.T) {
 		t.Errorf("Actual ID token %+v differs from expected ID token %+v", actualIDToken, expectedIDToken)
 	}
 }
+
+func TestIDTokenConvertToJSONMap(t *testing.T) {
+	idToken := &idTokenCacheItem{
+		HomeAccountID:    "hid",
+		Environment:      "env",
+		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+	}
+	jsonMap := map[string]interface{}{
+		"home_account_id": "hid",
+		"environment":     "env",
+		"realm":           "",
+		"credential_type": "",
+		"client_id":       "",
+		"secret":          "",
+		"extra":           "this_is_extra",
+	}
+	actualJSONMap := idToken.convertToJSONMap()
+	if !reflect.DeepEqual(actualJSONMap, jsonMap) {
+		t.Errorf("JSON ID token %+v differs from expected JSON ID token %+v", actualJSONMap, jsonMap)
+	}
+}

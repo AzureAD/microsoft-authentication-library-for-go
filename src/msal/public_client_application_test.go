@@ -9,7 +9,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
 )
 
 var tokenCommonParams = &acquireTokenCommonParameters{
@@ -34,7 +33,7 @@ var tdr = &requests.TenantDiscoveryResponse{
 	Issuer:                "https://login.microsoftonline.com/v2.0",
 }
 var wrm = new(requests.MockWebRequestManager)
-var cacheManager = new(tokencache.MockCacheManager)
+var cacheManager = new(requests.MockCacheManager)
 var testPCA = &PublicClientApplication{
 	pcaParameters:     pcaParams,
 	webRequestManager: wrm,

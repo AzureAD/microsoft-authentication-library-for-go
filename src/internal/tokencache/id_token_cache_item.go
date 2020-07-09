@@ -54,3 +54,14 @@ func (id *idTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error 
 	id.additionalFields = j
 	return nil
 }
+
+func (id *idTokenCacheItem) convertToJSONMap() map[string]interface{} {
+	jsonMap := id.additionalFields
+	jsonMap["home_account_id"] = id.HomeAccountID
+	jsonMap["environment"] = id.Environment
+	jsonMap["realm"] = id.Realm
+	jsonMap["credential_type"] = id.CredentialType
+	jsonMap["client_id"] = id.ClientID
+	jsonMap["secret"] = id.Secret
+	return jsonMap
+}

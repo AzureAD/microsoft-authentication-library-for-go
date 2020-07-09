@@ -4,34 +4,97 @@
 package tokencache
 
 import (
-	"fmt"
+	"io/ioutil"
+	"os"
+	"reflect"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-func Test_cacheSerializationContract_MarshalJSON(t *testing.T) {
+const testFile = "test_serialized_cache.json"
 
+func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
+	jsonFile, err := os.Open(testFile)
+	testCache, err := ioutil.ReadAll(jsonFile)
+	jsonFile.Close()
 	contract := createCacheSerializationContract()
-	atItem := &accessTokenCacheItem{}
-	atItem.HomeAccountID = "this is a home account id"
-	contract.AccessTokens["atkey"] = atItem
-
-	bytes, err := contract.MarshalJSON()
+	err = contract.UnmarshalJSON(testCache)
 	if err != nil {
-		t.Errorf("cacheSerializationContract.MarshalJSON() error = %v", err)
-		return
+		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-
-	str := string(bytes)
-
-	t.Logf(str)
-
-	otherContract := createCacheSerializationContract()
-	err = otherContract.UnmarshalJSON(bytes)
-	if err != nil {
-		t.Errorf("cacheSerializationContract.MarshalJSON() error = %v", err)
-		return
+	expectedAccessTokens := map[string]*accessTokenCacheItem{
+		"an-entry": {
+			additionalFields: map[string]interface{}{"foo": "bar"},
+		},
+		"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
+			Environment:                    "login.windows.net",
+			CredentialType:                 "AccessToken",
+			Secret:                         "an access token",
+			Realm:                          "contoso",
+			Scopes:                         "s2 s1 s3",
+			ClientID:                       "my_client_id",
+			CachedAt:                       "1000",
+			HomeAccountID:                  "uid.utid",
+			ExpiresOnUnixTimestamp:         "4600",
+			ExtendedExpiresOnUnixTimestamp: "4600",
+			additionalFields:               make(map[string]interface{}),
+		},
 	}
-
-	str = fmt.Sprintf("%#v", otherContract)
-	t.Log(str)
+	if !reflect.DeepEqual(expectedAccessTokens, contract.AccessTokens) {
+		t.Errorf("Expected access tokens %+v differ from actual access tokens %+v", expectedAccessTokens, contract.AccessTokens)
+	}
+	expectedRefreshTokens := map[string]*refreshTokenCacheItem{
+		"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
+			Target:           "s2 s1 s3",
+			Environment:      "login.windows.net",
+			CredentialType:   "RefreshToken",
+			Secret:           "a refresh token",
+			ClientID:         "my_client_id",
+			HomeAccountID:    "uid.utid",
+			additionalFields: make(map[string]interface{}),
+		},
+	}
+	if !reflect.DeepEqual(expectedRefreshTokens, contract.RefreshTokens) {
+		t.Errorf("Expected refresh tokens %+v differ from actual refresh tokens %+v", expectedRefreshTokens, contract.RefreshTokens)
+	}
+	expectedIDTokens := map[string]*idTokenCacheItem{
+		"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
+			Realm:            "contoso",
+			Environment:      "login.windows.net",
+			CredentialType:   "IdToken",
+			Secret:           "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature",
+			ClientID:         "my_client_id",
+			HomeAccountID:    "uid.utid",
+			additionalFields: make(map[string]interface{}),
+		},
+	}
+	if !reflect.DeepEqual(expectedIDTokens, contract.IDTokens) {
+		t.Errorf("Expected ID tokens %+v differ from actual ID tokens %+v", expectedIDTokens, contract.IDTokens)
+	}
+	expectedAccounts := map[string]*msalbase.Account{
+		"uid.utid-login.windows.net-contoso": {
+			PreferredUsername: "John Doe",
+			LocalAccountID:    "object1234",
+			Realm:             "contoso",
+			Environment:       "login.windows.net",
+			HomeAccountID:     "uid.utid",
+			AuthorityType:     msalbase.AuthorityTypeAad,
+			AdditionalFields:  make(map[string]interface{}),
+		},
+	}
+	if !reflect.DeepEqual(expectedAccounts, contract.Accounts) {
+		t.Errorf("Expected accounts %+v differ from actual accounts %+v", expectedAccounts, contract.Accounts)
+	}
+	expectedMetadata := map[string]*AppMetadata{
+		"appmetadata-login.windows.net-my_client_id": {
+			Environment:      "login.windows.net",
+			FamilyID:         "",
+			ClientID:         "my_client_id",
+			additionalFields: make(map[string]interface{}),
+		},
+	}
+	if !reflect.DeepEqual(expectedMetadata, contract.AppMetadata) {
+		t.Errorf("Expected app metadatas %+v differ from actual app metadatas %+v", expectedMetadata, contract.AppMetadata)
+	}
 }

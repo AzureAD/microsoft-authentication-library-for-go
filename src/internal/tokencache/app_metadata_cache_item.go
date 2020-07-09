@@ -37,3 +37,11 @@ func (appMeta *AppMetadata) populateFromJSONMap(j map[string]interface{}) error 
 	appMeta.additionalFields = j
 	return nil
 }
+
+func (appMeta *AppMetadata) convertToJSONMap() map[string]interface{} {
+	jsonMap := appMeta.additionalFields
+	jsonMap["family_id"] = appMeta.FamilyID
+	jsonMap["client_id"] = appMeta.ClientID
+	jsonMap["environment"] = appMeta.Environment
+	return jsonMap
+}

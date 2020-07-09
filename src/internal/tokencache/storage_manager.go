@@ -220,7 +220,7 @@ func (m *storageManager) Serialize() (string, error) {
 	return string(res), nil
 }
 
-func (m *storageManager) Deserialize(cacheData string) error {
+func (m *storageManager) Deserialize(cacheData []byte) error {
 	m.cacheContract = createCacheSerializationContract()
 	err := m.cacheContract.UnmarshalJSON(cacheData)
 	if err != nil {

@@ -13,10 +13,9 @@ import (
 type AuthorityType int
 
 const (
-	AuthorityTypeNone AuthorityType = iota
-	AuthorityTypeAad
+	AuthorityTypeAad AuthorityType = iota
 	AuthorityTypeAdfs
-	AuthorityTypeB2C
+	AuthorityTypeNone
 )
 
 type AuthorityInfo struct {
@@ -26,6 +25,28 @@ type AuthorityInfo struct {
 	UserRealmURIPrefix    string
 	ValidateAuthority     bool
 	Tenant                string
+}
+
+func (a AuthorityType) ToString() string {
+	switch a {
+	case AuthorityTypeAad:
+		return "MSSTS"
+	case AuthorityTypeAdfs:
+		return "ADFS"
+	default:
+		return ""
+	}
+}
+
+func ToAuthorityType(a string) AuthorityType {
+	switch a {
+	case "MSSTS":
+		return AuthorityTypeAad
+	case "ADFS":
+		return AuthorityTypeAdfs
+	default:
+		return AuthorityTypeNone
+	}
 }
 
 func canonicalizeAuthorityURI(input string) string {
