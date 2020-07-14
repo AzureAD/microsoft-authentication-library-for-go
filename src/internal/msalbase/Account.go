@@ -63,7 +63,7 @@ func (acc *Account) PopulateFromJSONMap(j map[string]interface{}) error {
 	acc.LocalAccountID = ExtractExistingOrEmptyString(j, "local_account_id")
 	acc.AuthorityType = ToAuthorityType(ExtractExistingOrEmptyString(j, "authority_type"))
 	acc.PreferredUsername = ExtractExistingOrEmptyString(j, "username")
-	acc.AlternativeID = ExtractExistingOrEmptyString(j, "alternative_id")
+	acc.AlternativeID = ExtractExistingOrEmptyString(j, "alternative_account_id")
 	acc.GivenName = ExtractExistingOrEmptyString(j, "given_name")
 	acc.FamilyName = ExtractExistingOrEmptyString(j, "family_name")
 	acc.MiddleName = ExtractExistingOrEmptyString(j, "middle_name")
@@ -73,7 +73,7 @@ func (acc *Account) PopulateFromJSONMap(j map[string]interface{}) error {
 	return nil
 }
 
-func (acc *Account) ConvertToJSONMap() map[string]interface{} {
+func (acc *Account) ConvertToJSONMap() (map[string]interface{}, error) {
 	jsonMap := acc.AdditionalFields
 	jsonMap["home_account_id"] = acc.HomeAccountID
 	jsonMap["environment"] = acc.Environment
@@ -82,23 +82,22 @@ func (acc *Account) ConvertToJSONMap() map[string]interface{} {
 	jsonMap["authority_type"] = acc.AuthorityType.ToString()
 	jsonMap["username"] = acc.PreferredUsername
 	if acc.AlternativeID != "" {
-		jsonMap["alternative_id"] = acc.AlternativeID
-	}
-	if acc.FamilyName != "" {
-		jsonMap["family_name"] = acc.FamilyName
+		jsonMap["alternative_account_id"] = acc.AlternativeID
 	}
 	if acc.GivenName != "" {
 		jsonMap["given_name"] = acc.GivenName
 	}
-	if acc.Name != "" {
-		jsonMap["name"] = acc.Name
+	if acc.FamilyName != "" {
+		jsonMap["family_name"] = acc.FamilyName
 	}
-
 	if acc.MiddleName != "" {
 		jsonMap["middle_name"] = acc.MiddleName
+	}
+	if acc.Name != "" {
+		jsonMap["name"] = acc.Name
 	}
 	if acc.RawClientInfo != "" {
 		jsonMap["client_info"] = acc.RawClientInfo
 	}
-	return jsonMap
+	return jsonMap, nil
 }

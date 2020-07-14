@@ -62,13 +62,9 @@ func TestIDTokenConvertToJSONMap(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "hid",
 		"environment":     "env",
-		"realm":           "",
-		"credential_type": "",
-		"client_id":       "",
-		"secret":          "",
 		"extra":           "this_is_extra",
 	}
-	actualJSONMap := idToken.convertToJSONMap()
+	actualJSONMap, _ := idToken.convertToJSONMap()
 	if !reflect.DeepEqual(actualJSONMap, jsonMap) {
 		t.Errorf("JSON ID token %+v differs from expected JSON ID token %+v", actualJSONMap, jsonMap)
 	}

@@ -4,6 +4,7 @@
 package tokencache
 
 import (
+	"encoding/json"
 	"strconv"
 	"strings"
 
@@ -11,16 +12,16 @@ import (
 )
 
 type accessTokenCacheItem struct {
-	HomeAccountID                  string
-	Environment                    string
-	Realm                          string
-	CredentialType                 string
-	ClientID                       string
-	Secret                         string
-	Scopes                         string
-	ExpiresOnUnixTimestamp         string
-	ExtendedExpiresOnUnixTimestamp string
-	CachedAt                       string
+	HomeAccountID                  string `json:"home_account_id,omitempty"`
+	Environment                    string `json:"environment,omitempty"`
+	Realm                          string `json:"realm,omitempty"`
+	CredentialType                 string `json:"credential_type,omitempty"`
+	ClientID                       string `json:"client_id,omitempty"`
+	Secret                         string `json:"secret,omitempty"`
+	Scopes                         string `json:"target,omitempty"`
+	ExpiresOnUnixTimestamp         string `json:"expires_on,omitempty"`
+	ExtendedExpiresOnUnixTimestamp string `json:"extended_expires_on,omitempty"`
+	CachedAt                       string `json:"cached_at,omitempty"`
 	additionalFields               map[string]interface{}
 }
 
@@ -80,47 +81,18 @@ func (s *accessTokenCacheItem) populateFromJSONMap(j map[string]interface{}) err
 	return nil
 }
 
-func (s *accessTokenCacheItem) convertToJSONMap() map[string]interface{} {
-	jsonMap := s.additionalFields
-	jsonMap["home_account_id"] = s.HomeAccountID
-	jsonMap["environment"] = s.Environment
-	jsonMap["realm"] = s.Realm
-	jsonMap["credential_type"] = s.CredentialType
-	jsonMap["client_id"] = s.ClientID
-	jsonMap["secret"] = s.Secret
-	jsonMap["target"] = s.Scopes
-	jsonMap["cached_at"] = s.CachedAt
-	jsonMap["expires_on"] = s.ExpiresOnUnixTimestamp
-	if s.ExtendedExpiresOnUnixTimestamp != "" {
-		jsonMap["extended_expires_on"] = s.ExtendedExpiresOnUnixTimestamp
-	}
-	return jsonMap
-}
-
-/*
-func (s *accessTokenCacheItem) UnmarshalJSON(b []byte) error {
-	j := make(map[string]interface{})
-	err := json.Unmarshal(b, &j)
+func (s *accessTokenCacheItem) convertToJSONMap() (map[string]interface{}, error) {
+	accessMap, err := json.Marshal(s)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	return s.populateFromJSONMap(j)
-}
-
-func (s *accessTokenCacheItem) toJSONMap() map[string]interface{} {
-	j := make(map[string]interface{})
-	for k, v := range s.AdditionalFields {
-		j[k] = v
+	newMap := make(map[string]interface{})
+	err = json.Unmarshal(accessMap, &newMap)
+	if err != nil {
+		return nil, err
 	}
-
-	j["home_account_id"] = s.HomeAccountID
-
-	return j
+	for k, v := range s.additionalFields {
+		newMap[k] = v
+	}
+	return newMap, nil
 }
-
-func (s *accessTokenCacheItem) MarshalJSON() ([]byte, error) {
-	j := s.toJSONMap()
-	return json.Marshal(j)
-}
-*/

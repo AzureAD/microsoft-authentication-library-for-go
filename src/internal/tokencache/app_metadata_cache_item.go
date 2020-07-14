@@ -4,15 +4,16 @@
 package tokencache
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 type AppMetadata struct {
-	FamilyID         string
-	ClientID         string
-	Environment      string
+	FamilyID         string `json:"family_id,omitempty"`
+	ClientID         string `json:"client_id,omitempty"`
+	Environment      string `json:"environment,omitempty"`
 	additionalFields map[string]interface{}
 }
 
@@ -38,10 +39,18 @@ func (appMeta *AppMetadata) populateFromJSONMap(j map[string]interface{}) error 
 	return nil
 }
 
-func (appMeta *AppMetadata) convertToJSONMap() map[string]interface{} {
-	jsonMap := appMeta.additionalFields
-	jsonMap["family_id"] = appMeta.FamilyID
-	jsonMap["client_id"] = appMeta.ClientID
-	jsonMap["environment"] = appMeta.Environment
-	return jsonMap
+func (appMeta *AppMetadata) convertToJSONMap() (map[string]interface{}, error) {
+	appMap, err := json.Marshal(appMeta)
+	if err != nil {
+		return nil, err
+	}
+	newMap := make(map[string]interface{})
+	err = json.Unmarshal(appMap, &newMap)
+	if err != nil {
+		return nil, err
+	}
+	for k, v := range appMeta.additionalFields {
+		newMap[k] = v
+	}
+	return newMap, nil
 }

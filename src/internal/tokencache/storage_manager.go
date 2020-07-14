@@ -4,7 +4,6 @@
 package tokencache
 
 import (
-	"encoding/json"
 	"errors"
 	"sync"
 
@@ -29,6 +28,7 @@ func CreateStorageManager() *storageManager {
 		idTokens:      make(map[string]*idTokenCacheItem),
 		accounts:      make(map[string]*msalbase.Account),
 		appMetadatas:  make(map[string]*AppMetadata),
+		cacheContract: createCacheSerializationContract(),
 	}
 	return mgr
 }
@@ -206,22 +206,19 @@ func (m *storageManager) WriteAppMetadata(appMetadata *AppMetadata) error {
 }
 
 func (m *storageManager) Serialize() (string, error) {
-	cacheContract := &cacheSerializationContract{
-		AccessTokens:  m.accessTokens,
-		RefreshTokens: m.refreshTokens,
-		IDTokens:      m.idTokens,
-		Accounts:      m.accounts,
-		AppMetadata:   m.appMetadatas,
-	}
-	res, err := json.Marshal(cacheContract)
+	m.cacheContract.AccessTokens = m.accessTokens
+	m.cacheContract.RefreshTokens = m.refreshTokens
+	m.cacheContract.IDTokens = m.idTokens
+	m.cacheContract.Accounts = m.accounts
+	m.cacheContract.AppMetadata = m.appMetadatas
+	serializedCache, err := m.cacheContract.MarshalJSON()
 	if err != nil {
 		return "", err
 	}
-	return string(res), nil
+	return string(serializedCache), nil
 }
 
 func (m *storageManager) Deserialize(cacheData []byte) error {
-	m.cacheContract = createCacheSerializationContract()
 	err := m.cacheContract.UnmarshalJSON(cacheData)
 	if err != nil {
 		return err

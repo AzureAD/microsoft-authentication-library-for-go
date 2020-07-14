@@ -4,20 +4,21 @@
 package tokencache
 
 import (
+	"encoding/json"
 	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 type refreshTokenCacheItem struct {
-	HomeAccountID    string
-	Environment      string
-	CredentialType   string
-	ClientID         string
-	FamilyID         string
-	Secret           string
-	Realm            string
-	Target           string
+	HomeAccountID    string `json:"home_account_id,omitempty"`
+	Environment      string `json:"environment,omitempty"`
+	CredentialType   string `json:"credential_type,omitempty"`
+	ClientID         string `json:"client_id,omitempty"`
+	FamilyID         string `json:"family_id,omitempty"`
+	Secret           string `json:"secret,omitempty"`
+	Realm            string `json:"realm,omitempty"`
+	Target           string `json:"target,omitempty"`
 	additionalFields map[string]interface{}
 }
 
@@ -66,21 +67,18 @@ func (rt *refreshTokenCacheItem) populateFromJSONMap(j map[string]interface{}) e
 	return nil
 }
 
-func (rt *refreshTokenCacheItem) convertToJSONMap() map[string]interface{} {
-	jsonMap := rt.additionalFields
-	jsonMap["home_account_id"] = rt.HomeAccountID
-	jsonMap["environment"] = rt.Environment
-	jsonMap["credential_type"] = rt.CredentialType
-	jsonMap["client_id"] = rt.ClientID
-	if rt.FamilyID != "" {
-		jsonMap["family_id"] = rt.FamilyID
+func (rt *refreshTokenCacheItem) convertToJSONMap() (map[string]interface{}, error) {
+	refreshMap, err := json.Marshal(rt)
+	if err != nil {
+		return nil, err
 	}
-	jsonMap["secret"] = rt.Secret
-	if rt.Target != "" {
-		jsonMap["target"] = rt.Target
+	newMap := make(map[string]interface{})
+	err = json.Unmarshal(refreshMap, &newMap)
+	if err != nil {
+		return nil, err
 	}
-	if rt.Realm != "" {
-		jsonMap["realm"] = rt.Realm
+	for k, v := range rt.additionalFields {
+		newMap[k] = v
 	}
-	return jsonMap
+	return newMap, nil
 }

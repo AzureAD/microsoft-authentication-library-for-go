@@ -66,11 +66,10 @@ func TestRefreshTokenConvertToJSONMap(t *testing.T) {
 		"home_account_id": "hid",
 		"environment":     "env",
 		"credential_type": "RefreshToken",
-		"client_id":       "",
 		"secret":          "100",
 		"extra":           "this_is_extra",
 	}
-	actualJSONMap := refreshToken.convertToJSONMap()
+	actualJSONMap, _ := refreshToken.convertToJSONMap()
 	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
 		t.Errorf("JSON refresh token %+v differs from expected JSON refresh token %+v", actualJSONMap, jsonMap)
 	}

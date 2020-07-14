@@ -63,7 +63,7 @@ func TestAccountConvertToJSONMap(t *testing.T) {
 		"username":         "user",
 		"extra":            "extra",
 	}
-	actualJSONMap := acc.ConvertToJSONMap()
+	actualJSONMap, _ := acc.ConvertToJSONMap()
 	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
 		t.Errorf("JSON account %+v differs from expected JSON account %+v", jsonMap, actualJSONMap)
 	}

@@ -101,27 +101,45 @@ func (s *cacheSerializationContract) UnmarshalJSON(data []byte) error {
 
 func (s *cacheSerializationContract) MarshalJSON() ([]byte, error) {
 	j := s.snapshot
-	j["AccessToken"] = s.AccessTokens
-	j["RefreshToken"] = s.RefreshTokens
-	j["IdToken"] = s.IDTokens
-	j["Account"] = s.Accounts
-	j["AppMetadata"] = s.AppMetadata
-	return json.Marshal(j)
-}
-
-/*
-func (s *cacheSerializationContract) MarshalJSON() ([]byte, error) {
-	j := make(map[string]interface{})
-
-	// todo: construct a cachekeygenerator specific to the v3 json serialization format instead of using "k" from k,v below
-
 	accessTokens := make(map[string]interface{})
 	for k, v := range s.AccessTokens {
-		accessTokens[k] = v.toJSONMap()
+		jsonNode, err := v.convertToJSONMap()
+		if err == nil {
+			accessTokens[k] = jsonNode
+		}
 	}
-
 	j["AccessToken"] = accessTokens
-
+	refreshTokens := make(map[string]interface{})
+	for k, v := range s.RefreshTokens {
+		jsonNode, err := v.convertToJSONMap()
+		if err == nil {
+			refreshTokens[k] = jsonNode
+		}
+	}
+	j["RefreshToken"] = refreshTokens
+	idTokens := make(map[string]interface{})
+	for k, v := range s.IDTokens {
+		jsonNode, err := v.convertToJSONMap()
+		if err == nil {
+			idTokens[k] = jsonNode
+		}
+	}
+	j["IdToken"] = idTokens
+	accounts := make(map[string]interface{})
+	for k, v := range s.Accounts {
+		jsonNode, err := v.ConvertToJSONMap()
+		if err == nil {
+			accounts[k] = jsonNode
+		}
+	}
+	j["Account"] = accounts
+	appMetadatas := make(map[string]interface{})
+	for k, v := range s.AppMetadata {
+		jsonNode, err := v.convertToJSONMap()
+		if err == nil {
+			appMetadatas[k] = jsonNode
+		}
+	}
+	j["AppMetadata"] = appMetadatas
 	return json.Marshal(j)
 }
-*/
