@@ -83,16 +83,11 @@ func TestAccessTokenConvertToJSONMap(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "hid",
 		"environment":     "env",
-		"realm":           "",
 		"credential_type": "AccessToken",
-		"client_id":       "",
-		"secret":          "",
-		"target":          "",
 		"cached_at":       "100",
-		"expires_on":      "",
 		"extra":           "this_is_extra",
 	}
-	actualJSONMap := accessToken.convertToJSONMap()
+	actualJSONMap, _ := accessToken.convertToJSONMap()
 	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
 		t.Errorf("JSON access token %+v differs from expected JSON access token %+v", actualJSONMap, jsonMap)
 	}
