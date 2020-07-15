@@ -37,7 +37,7 @@ var cacheManager = new(requests.MockCacheManager)
 var testPCA = &PublicClientApplication{
 	pcaParameters:     pcaParams,
 	webRequestManager: wrm,
-	cacheManager:      cacheManager,
+	cacheContext:      &CacheContext{cacheManager},
 }
 
 func TestCreateAuthCodeURL(t *testing.T) {

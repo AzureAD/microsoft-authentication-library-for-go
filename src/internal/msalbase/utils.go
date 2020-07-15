@@ -38,3 +38,22 @@ func ExtractExistingOrEmptyString(j map[string]interface{}, key string) string {
 	delete(j, key)
 	return ""
 }
+
+func ExtractStringPointerForCache(j map[string]interface{}, key string) *string {
+	if val, ok := j[key]; ok {
+		if str, ok := val.(string); ok {
+			delete(j, key)
+			return &str
+		}
+	}
+	delete(j, key)
+	return nil
+}
+
+func GetStringFromPointer(pointer *string) string {
+	if pointer == nil {
+		return ""
+	} else {
+		return *pointer
+	}
+}

@@ -10,7 +10,6 @@ import (
 // RefreshTokenExchangeRequest stuff
 type RefreshTokenExchangeRequest struct {
 	webRequestManager IWebRequestManager
-	cacheManager      ICacheManager
 	authParameters    *msalbase.AuthParametersInternal
 	refreshToken      msalbase.Credential
 }
@@ -18,10 +17,9 @@ type RefreshTokenExchangeRequest struct {
 // CreateRefreshTokenExchangeRequest stuff
 func CreateRefreshTokenExchangeRequest(
 	webRequestManager IWebRequestManager,
-	cacheManager ICacheManager,
 	authParameters *msalbase.AuthParametersInternal,
 	refreshToken msalbase.Credential) *RefreshTokenExchangeRequest {
-	req := &RefreshTokenExchangeRequest{webRequestManager, cacheManager, authParameters, refreshToken}
+	req := &RefreshTokenExchangeRequest{webRequestManager, authParameters, refreshToken}
 	return req
 }
 

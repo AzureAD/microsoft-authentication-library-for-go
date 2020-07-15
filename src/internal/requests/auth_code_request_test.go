@@ -20,7 +20,6 @@ var wrm = new(MockWebRequestManager)
 
 var authCodeRequest = &AuthCodeRequest{
 	webRequestManager: wrm,
-	cacheManager:      new(MockCacheManager),
 	authParameters:    testAuthParams,
 	Code:              "code",
 	CodeChallenge:     "codeChallenge",

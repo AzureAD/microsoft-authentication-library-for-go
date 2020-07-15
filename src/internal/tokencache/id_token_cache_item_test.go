@@ -8,19 +8,27 @@ import (
 	"testing"
 )
 
+var idHid = "HID"
+var idEnv = "env"
+var idCredential = "IdToken"
+var idClient = "clientID"
+var idRealm = "realm"
+var idTokSecret = "id"
+
 var idToken = &idTokenCacheItem{
-	HomeAccountID:  "HID",
-	Environment:    "env",
-	CredentialType: "IdToken",
-	ClientID:       "clientID",
-	Realm:          "realm",
-	Secret:         "id",
+	HomeAccountID:  &idHid,
+	Environment:    &idEnv,
+	CredentialType: &idCredential,
+	ClientID:       &idClient,
+	Realm:          &idRealm,
+	Secret:         &idTokSecret,
 }
 
 func TestCreateIDTokenCacheItem(t *testing.T) {
 	actualIDToken := CreateIDTokenCacheItem("HID", "env", "realm", "clientID", "id")
-	if !reflect.DeepEqual(actualIDToken, idToken) {
-		t.Errorf("Actual ID token %v differs from expected ID token %v", actualIDToken, idToken)
+	actualHomeID := *actualIDToken.HomeAccountID
+	if !reflect.DeepEqual(actualHomeID, idHid) {
+		t.Errorf("Actual home account id %+v differs from expected home account id %+v", actualHomeID, idHid)
 	}
 }
 
@@ -34,37 +42,37 @@ func TestCreateKeyForIDToken(t *testing.T) {
 
 func TestIDTokenPopulateFromJSONMap(t *testing.T) {
 	jsonMap := map[string]interface{}{
-		"home_account_id": "hid",
+		"home_account_id": "HID",
 		"environment":     "env",
 		"extra":           "this_is_extra",
-	}
-	expectedIDToken := &idTokenCacheItem{
-		HomeAccountID:    "hid",
-		Environment:      "env",
-		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
 	actualIDToken := &idTokenCacheItem{}
 	err := actualIDToken.populateFromJSONMap(jsonMap)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualIDToken, expectedIDToken) {
-		t.Errorf("Actual ID token %+v differs from expected ID token %+v", actualIDToken, expectedIDToken)
+	actualHomeID := *actualIDToken.HomeAccountID
+	if !reflect.DeepEqual(actualHomeID, idHid) {
+		t.Errorf("Actual home account id %+v differs from expected home account id %+v", actualHomeID, idHid)
 	}
 }
 
 func TestIDTokenConvertToJSONMap(t *testing.T) {
 	idToken := &idTokenCacheItem{
-		HomeAccountID:    "hid",
-		Environment:      "env",
+		HomeAccountID:    &idHid,
+		Environment:      &idEnv,
+		Realm:            nil,
 		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
 	jsonMap := map[string]interface{}{
-		"home_account_id": "hid",
+		"home_account_id": "HID",
 		"environment":     "env",
 		"extra":           "this_is_extra",
 	}
-	actualJSONMap, _ := idToken.convertToJSONMap()
+	actualJSONMap, err := idToken.convertToJSONMap()
+	if err != nil {
+		t.Errorf("Error should be nil, but it is %v", err)
+	}
 	if !reflect.DeepEqual(actualJSONMap, jsonMap) {
 		t.Errorf("JSON ID token %+v differs from expected JSON ID token %+v", actualJSONMap, jsonMap)
 	}

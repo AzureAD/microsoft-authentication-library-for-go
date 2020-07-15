@@ -29,20 +29,29 @@ func acquireTokenDeviceCode() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
-	defer cancelFunc()
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
-	resultChannel := make(chan msalgo.IAuthenticationResult)
-	errChannel := make(chan error)
-	go func() {
-		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
-		errChannel <- err
-		resultChannel <- result
-	}()
-	err = <-errChannel
+	publicClientApp.SetCacheAccessor(cacheAccessor)
+	accounts := publicClientApp.GetAccounts()
+	silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, accounts[0])
+	result, err := publicClientApp.AcquireTokenSilent(silentParams)
 	if err != nil {
-		log.Fatal(err)
+		cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
+		defer cancelFunc()
+		deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
+		resultChannel := make(chan msalgo.IAuthenticationResult)
+		errChannel := make(chan error)
+		go func() {
+			result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
+			errChannel <- err
+			resultChannel <- result
+		}()
+		err = <-errChannel
+		if err != nil {
+			log.Fatal(err)
+		}
+		result = <-resultChannel
+		fmt.Println("Access token is " + result.GetAccessToken())
+	} else {
+		fmt.Println("Cached access token is " + result.GetAccessToken())
 	}
-	result := <-resultChannel
-	fmt.Println("Access token is " + result.GetAccessToken())
+
 }

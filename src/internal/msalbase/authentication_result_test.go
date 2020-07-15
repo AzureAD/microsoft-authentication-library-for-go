@@ -9,6 +9,21 @@ import (
 	"time"
 )
 
+func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
+	/*
+		mockAccessToken := new(MockAccessToken)
+		mockRefreshToken := new(MockCredential)
+		mockIDToken := new(MockCredential)
+		account := &Account{}
+		storageToken := &StorageTokenResponse{
+			accessToken:  mockAccessToken,
+			RefreshToken: mockRefreshToken,
+			idToken:      mockIDToken,
+			account:      account,
+		}
+		authResult, err := CreateAuthenticationResultFromStorageTokenResponse(storageToken)*/
+}
+
 func TestCreateAuthenticationResult(t *testing.T) {
 	testAccessToken := "accessToken"
 	testExpiresOn := time.Date(2020, 1, 1, 0, 0, 0, 0, time.UTC)

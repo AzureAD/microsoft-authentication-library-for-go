@@ -33,3 +33,13 @@ func (mock *MockCacheManager) GetAllAccounts() []*msalbase.Account {
 	args := mock.Called()
 	return args.Get(0).([]*msalbase.Account)
 }
+
+func (mock *MockCacheManager) Serialize() (string, error) {
+	args := mock.Called()
+	return args.String(0), args.Error(1)
+}
+
+func (mock *MockCacheManager) Deserialize(data []byte) error {
+	args := mock.Called(data)
+	return args.Error(0)
+}

@@ -8,18 +8,25 @@ import (
 	"testing"
 )
 
+var hid = "HID"
+var rtEnv = "env"
+var rtClientID = "clientID"
+var rtCredential = "RefreshToken"
+var refSecret = "secret"
+
 var rt = &refreshTokenCacheItem{
-	HomeAccountID:  "HID",
-	Environment:    "env",
-	ClientID:       "clientID",
-	CredentialType: "RefreshToken",
-	Secret:         "secret",
+	HomeAccountID:  &hid,
+	Environment:    &env,
+	ClientID:       &rtClientID,
+	CredentialType: &rtCredential,
+	Secret:         &refSecret,
 }
 
 func TestCreateRefreshTokenCacheItem(t *testing.T) {
 	actualRT := CreateRefreshTokenCacheItem("HID", "env", "clientID", "secret", "")
-	if !reflect.DeepEqual(actualRT, rt) {
-		t.Errorf("Actual refresh token %v differs from expected refresh token %v", actualRT, rt)
+	actualSecret := *actualRT.Secret
+	if !reflect.DeepEqual(actualSecret, refSecret) {
+		t.Errorf("Expected secret %s differs from actualSecret %s", actualSecret, refSecret)
 	}
 }
 
@@ -36,40 +43,37 @@ func TestRefreshTokenPopulateFromJSONMap(t *testing.T) {
 		"home_account_id": "hid",
 		"environment":     "env",
 		"extra":           "this_is_extra",
-		"secret":          "100",
-	}
-	expectedRefreshToken := &refreshTokenCacheItem{
-		HomeAccountID:    "hid",
-		Environment:      "env",
-		Secret:           "100",
-		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+		"secret":          "secret",
 	}
 	actualRefreshToken := &refreshTokenCacheItem{}
 	err := actualRefreshToken.populateFromJSONMap(jsonMap)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualRefreshToken, expectedRefreshToken) {
-		t.Errorf("Actual refresh token %+v differs from expected refresh token %+v", actualRefreshToken, expectedRefreshToken)
+	actualSecret := *actualRefreshToken.Secret
+	if !reflect.DeepEqual(actualSecret, refSecret) {
+		t.Errorf("Expected secret %s differs from actualSecret %s", actualSecret, refSecret)
 	}
 }
 
 func TestRefreshTokenConvertToJSONMap(t *testing.T) {
 	refreshToken := &refreshTokenCacheItem{
-		HomeAccountID:    "hid",
-		Environment:      "env",
-		CredentialType:   "RefreshToken",
-		Secret:           "100",
+		HomeAccountID:    nil,
+		Environment:      &rtEnv,
+		CredentialType:   &rtCredential,
+		Secret:           &refSecret,
 		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
 	jsonMap := map[string]interface{}{
-		"home_account_id": "hid",
 		"environment":     "env",
 		"credential_type": "RefreshToken",
-		"secret":          "100",
+		"secret":          "secret",
 		"extra":           "this_is_extra",
 	}
-	actualJSONMap, _ := refreshToken.convertToJSONMap()
+	actualJSONMap, err := refreshToken.convertToJSONMap()
+	if err != nil {
+		t.Errorf("Error should be nil, instead it is %v", err)
+	}
 	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
 		t.Errorf("JSON refresh token %+v differs from expected JSON refresh token %+v", actualJSONMap, jsonMap)
 	}

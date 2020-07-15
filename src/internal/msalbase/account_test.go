@@ -8,6 +8,13 @@ import (
 	"testing"
 )
 
+var accHID = "hid"
+var accEnv = "env"
+var accRealm = "realm"
+var authType = "MSSTS"
+var accLid = "lid"
+var accUser = "user"
+
 func TestAccountPopulateFromJSONMap(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "hid",
@@ -15,27 +22,34 @@ func TestAccountPopulateFromJSONMap(t *testing.T) {
 		"extra":           "this_is_extra",
 		"authority_type":  "MSSTS",
 	}
-	expectedAccount := &Account{
-		HomeAccountID:    "hid",
-		Environment:      "env",
-		AuthorityType:    AuthorityTypeAad,
-		AdditionalFields: map[string]interface{}{"extra": "this_is_extra"},
-	}
+
 	actualAccount := &Account{}
 	err := actualAccount.PopulateFromJSONMap(jsonMap)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualAccount, expectedAccount) {
-		t.Errorf("Actual account %+v differs from expected account %+v", actualAccount, expectedAccount)
+	actualHID := *actualAccount.HomeAccountID
+	if !reflect.DeepEqual(actualHID, accHID) {
+		t.Errorf("Expected home account ID %s differs from actual home account ID %s", accHID, actualHID)
+	}
+	actualEnv := *actualAccount.Environment
+	if !reflect.DeepEqual(actualEnv, accEnv) {
+		t.Errorf("Expected environment %s differs from actual environment %s", accEnv, actualEnv)
+	}
+	actualAuthTypeStr := *actualAccount.AuthorityTypeString
+	if !reflect.DeepEqual(actualAuthTypeStr, authType) {
+		t.Errorf("Expected auth type %s differs from actual auth type %s", authType, actualAuthTypeStr)
+	}
+	if !reflect.DeepEqual(actualAccount.authorityType, AuthorityTypeAad) {
+		t.Errorf("Actual auth type %v differs from expected auth type %v", actualAccount.authorityType, AuthorityTypeAad)
 	}
 }
 
 func TestAccountCreateKey(t *testing.T) {
 	acc := &Account{
-		HomeAccountID: "hid",
-		Environment:   "env",
-		Realm:         "realm",
+		HomeAccountID: &accHID,
+		Environment:   &accEnv,
+		Realm:         &accRealm,
 	}
 	expectedKey := "hid-env-realm"
 	actualKey := acc.CreateKey()
@@ -46,13 +60,14 @@ func TestAccountCreateKey(t *testing.T) {
 
 func TestAccountConvertToJSONMap(t *testing.T) {
 	acc := &Account{
-		HomeAccountID:     "hid",
-		Environment:       "env",
-		Realm:             "realm",
-		LocalAccountID:    "lid",
-		AuthorityType:     AuthorityTypeAad,
-		PreferredUsername: "user",
-		AdditionalFields:  map[string]interface{}{"extra": "extra"},
+		HomeAccountID:       &accHID,
+		Environment:         &accEnv,
+		Realm:               &accRealm,
+		LocalAccountID:      &accLid,
+		authorityType:       AuthorityTypeAad,
+		AuthorityTypeString: &authType,
+		PreferredUsername:   &accUser,
+		additionalFields:    map[string]interface{}{"extra": "extra"},
 	}
 	jsonMap := map[string]interface{}{
 		"home_account_id":  "hid",
@@ -63,7 +78,10 @@ func TestAccountConvertToJSONMap(t *testing.T) {
 		"username":         "user",
 		"extra":            "extra",
 	}
-	actualJSONMap, _ := acc.ConvertToJSONMap()
+	actualJSONMap, err := acc.ConvertToJSONMap()
+	if err != nil {
+		t.Errorf("Error should be nil, but it is %v", err)
+	}
 	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
 		t.Errorf("JSON account %+v differs from expected JSON account %+v", jsonMap, actualJSONMap)
 	}

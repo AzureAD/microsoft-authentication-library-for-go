@@ -3,22 +3,26 @@
 
 package msalbase
 
-import "strings"
+import (
+	"encoding/json"
+	"strings"
+)
 
 type Account struct {
-	HomeAccountID     string
-	Environment       string
-	Realm             string
-	LocalAccountID    string
-	AuthorityType     AuthorityType
-	PreferredUsername string
-	GivenName         string
-	FamilyName        string
-	MiddleName        string
-	Name              string
-	AlternativeID     string
-	RawClientInfo     string
-	AdditionalFields  map[string]interface{}
+	HomeAccountID       *string `json:"home_account_id,omitempty"`
+	Environment         *string `json:"environment,omitempty"`
+	Realm               *string `json:"realm,omitempty"`
+	LocalAccountID      *string `json:"local_account_id,omitempty"`
+	AuthorityTypeString *string `json:"authority_type,omitempty"`
+	authorityType       AuthorityType
+	PreferredUsername   *string `json:"username,omitempty"`
+	GivenName           *string `json:"given_name,omitempty"`
+	FamilyName          *string `json:"family_name,omitempty"`
+	MiddleName          *string `json:"middle_name,omitempty"`
+	Name                *string `json:"name,omitempty"`
+	AlternativeID       *string `json:"alternative_account_id,omitempty"`
+	RawClientInfo       *string `json:"client_info,omitempty"`
+	additionalFields    map[string]interface{}
 }
 
 func CreateAccount(homeAccountID string,
@@ -28,76 +32,77 @@ func CreateAccount(homeAccountID string,
 	authorityType AuthorityType,
 	preferredUsername string,
 ) *Account {
+	authType := authorityType.ToString()
 	a := &Account{
-		HomeAccountID:     homeAccountID,
-		Environment:       environment,
-		Realm:             realm,
-		LocalAccountID:    localAccountID,
-		AuthorityType:     authorityType,
-		PreferredUsername: preferredUsername,
+		HomeAccountID:       &homeAccountID,
+		Environment:         &environment,
+		Realm:               &realm,
+		LocalAccountID:      &localAccountID,
+		authorityType:       authorityType,
+		AuthorityTypeString: &authType,
+		PreferredUsername:   &preferredUsername,
 	}
 	return a
 }
 
 func (acc *Account) CreateKey() string {
-	keyParts := []string{acc.HomeAccountID, acc.Environment, acc.Realm}
+	keyParts := []string{*acc.HomeAccountID, *acc.Environment, *acc.Realm}
 	return strings.Join(keyParts, CacheKeySeparator)
 }
 
 func (acc *Account) GetUsername() string {
-	return acc.PreferredUsername
+	if acc.PreferredUsername == nil {
+		return ""
+	}
+	return *acc.PreferredUsername
 }
 
 func (acc *Account) GetHomeAccountID() string {
-	return acc.HomeAccountID
+	if acc.HomeAccountID == nil {
+		return ""
+	}
+	return *acc.HomeAccountID
 }
 
 func (acc *Account) GetEnvironment() string {
-	return acc.Environment
+	if acc.Environment == nil {
+		return ""
+	}
+	return *acc.Environment
 }
 
 func (acc *Account) PopulateFromJSONMap(j map[string]interface{}) error {
-	acc.HomeAccountID = ExtractExistingOrEmptyString(j, "home_account_id")
-	acc.Environment = ExtractExistingOrEmptyString(j, "environment")
-	acc.Realm = ExtractExistingOrEmptyString(j, "realm")
-	acc.LocalAccountID = ExtractExistingOrEmptyString(j, "local_account_id")
-	acc.AuthorityType = ToAuthorityType(ExtractExistingOrEmptyString(j, "authority_type"))
-	acc.PreferredUsername = ExtractExistingOrEmptyString(j, "username")
-	acc.AlternativeID = ExtractExistingOrEmptyString(j, "alternative_account_id")
-	acc.GivenName = ExtractExistingOrEmptyString(j, "given_name")
-	acc.FamilyName = ExtractExistingOrEmptyString(j, "family_name")
-	acc.MiddleName = ExtractExistingOrEmptyString(j, "middle_name")
-	acc.Name = ExtractExistingOrEmptyString(j, "name")
-	acc.RawClientInfo = ExtractExistingOrEmptyString(j, "client_info")
-	acc.AdditionalFields = j
+	acc.HomeAccountID = ExtractStringPointerForCache(j, "home_account_id")
+	acc.Environment = ExtractStringPointerForCache(j, "environment")
+	acc.Realm = ExtractStringPointerForCache(j, "realm")
+	acc.LocalAccountID = ExtractStringPointerForCache(j, "local_account_id")
+	acc.AuthorityTypeString = ExtractStringPointerForCache(j, "authority_type")
+	if acc.AuthorityTypeString != nil {
+		acc.authorityType = ToAuthorityType(*acc.AuthorityTypeString)
+	}
+	acc.PreferredUsername = ExtractStringPointerForCache(j, "username")
+	acc.AlternativeID = ExtractStringPointerForCache(j, "alternative_account_id")
+	acc.GivenName = ExtractStringPointerForCache(j, "given_name")
+	acc.FamilyName = ExtractStringPointerForCache(j, "family_name")
+	acc.MiddleName = ExtractStringPointerForCache(j, "middle_name")
+	acc.Name = ExtractStringPointerForCache(j, "name")
+	acc.RawClientInfo = ExtractStringPointerForCache(j, "client_info")
+	acc.additionalFields = j
 	return nil
 }
 
 func (acc *Account) ConvertToJSONMap() (map[string]interface{}, error) {
-	jsonMap := acc.AdditionalFields
-	jsonMap["home_account_id"] = acc.HomeAccountID
-	jsonMap["environment"] = acc.Environment
-	jsonMap["realm"] = acc.Realm
-	jsonMap["local_account_id"] = acc.LocalAccountID
-	jsonMap["authority_type"] = acc.AuthorityType.ToString()
-	jsonMap["username"] = acc.PreferredUsername
-	if acc.AlternativeID != "" {
-		jsonMap["alternative_account_id"] = acc.AlternativeID
+	accountMap, err := json.Marshal(acc)
+	if err != nil {
+		return nil, err
 	}
-	if acc.GivenName != "" {
-		jsonMap["given_name"] = acc.GivenName
+	newMap := make(map[string]interface{})
+	err = json.Unmarshal(accountMap, &newMap)
+	if err != nil {
+		return nil, err
 	}
-	if acc.FamilyName != "" {
-		jsonMap["family_name"] = acc.FamilyName
+	for k, v := range acc.additionalFields {
+		newMap[k] = v
 	}
-	if acc.MiddleName != "" {
-		jsonMap["middle_name"] = acc.MiddleName
-	}
-	if acc.Name != "" {
-		jsonMap["name"] = acc.Name
-	}
-	if acc.RawClientInfo != "" {
-		jsonMap["client_info"] = acc.RawClientInfo
-	}
-	return jsonMap, nil
+	return newMap, nil
 }

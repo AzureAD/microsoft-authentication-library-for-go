@@ -15,8 +15,7 @@ import (
 )
 
 type cacheManager struct {
-	storageManager    IStorageManager
-	cacheAccessAspect ICacheAccessAspect
+	storageManager IStorageManager
 }
 
 func CreateCacheManager(storageManager IStorageManager) *cacheManager {
@@ -25,7 +24,7 @@ func CreateCacheManager(storageManager IStorageManager) *cacheManager {
 }
 
 func isAccessTokenValid(accessToken *accessTokenCacheItem) bool {
-	cachedAt, err := strconv.ParseInt(accessToken.CachedAt, 10, 64)
+	cachedAt, err := strconv.ParseInt(*accessToken.CachedAt, 10, 64)
 	if err != nil {
 		log.Info("This access token isn't valid, it was cached at an invalid time.")
 		return false
@@ -35,7 +34,7 @@ func isAccessTokenValid(accessToken *accessTokenCacheItem) bool {
 		log.Info("This access token isn't valid, it was cached at an invalid time.")
 		return false
 	}
-	expiresOn, err := strconv.ParseInt(accessToken.ExpiresOnUnixTimestamp, 10, 64)
+	expiresOn, err := strconv.ParseInt(*accessToken.ExpiresOnUnixTimestamp, 10, 64)
 	if err != nil {
 		log.Info("This access token isn't valid, it expires at an invalid time.")
 		return false
@@ -49,6 +48,14 @@ func isAccessTokenValid(accessToken *accessTokenCacheItem) bool {
 
 func (m *cacheManager) GetAllAccounts() []*msalbase.Account {
 	return m.storageManager.ReadAllAccounts()
+}
+
+func (m *cacheManager) Serialize() (string, error) {
+	return m.storageManager.Serialize()
+}
+
+func (m *cacheManager) Deserialize(data []byte) error {
+	return m.storageManager.Deserialize(data)
 }
 
 func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal, webRequestManager requests.IWebRequestManager) (*msalbase.StorageTokenResponse, error) {
@@ -77,8 +84,10 @@ func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInter
 	appMetadata := m.storageManager.ReadAppMetadata(metadata.Aliases, clientID)
 	if appMetadata == nil {
 		familyID = ""
+	} else if appMetadata.FamilyID == nil {
+		familyID = ""
 	} else {
-		familyID = appMetadata.FamilyID
+		familyID = *appMetadata.FamilyID
 	}
 	refreshToken := m.storageManager.ReadRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
 	account := m.storageManager.ReadAccount(homeAccountID, metadata.Aliases, realm)

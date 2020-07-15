@@ -13,9 +13,7 @@ import (
 var testUPAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
 var testUPAuthParams = msalbase.CreateAuthParametersInternal("clientID", testUPAuthorityInfo)
 var upWRM = new(MockWebRequestManager)
-var upCacheManager = new(MockCacheManager)
 var usernamePassRequest = &UsernamePasswordRequest{
-	cacheManager:   upCacheManager,
 	authParameters: testUPAuthParams,
 }
 

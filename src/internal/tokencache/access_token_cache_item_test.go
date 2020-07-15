@@ -6,6 +6,7 @@ package tokencache
 import (
 	"reflect"
 	"testing"
+	"time"
 )
 
 var testHID = "testHID"
@@ -32,25 +33,24 @@ var atCacheEntity = &accessTokenCacheItem{
 	CachedAt:                       &cachedAt,
 }
 
-/*
 func TestCreateAccessTokenCacheItem(t *testing.T) {
-	expiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
-	extExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
-	cachedAt := time.Date(2020, time.June, 13, 11, 0, 0, 0, time.UTC)
+	testExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
+	testExtExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
+	testCachedAt := time.Date(2020, time.June, 13, 11, 0, 0, 0, time.UTC)
 	actualAt := CreateAccessTokenCacheItem("testHID",
 		"env",
 		"realm",
 		"clientID",
-		cachedAt.Unix(),
-		expiresOn.Unix(),
-		extExpiresOn.Unix(),
+		testCachedAt.Unix(),
+		testExpiresOn.Unix(),
+		testExtExpiresOn.Unix(),
 		"user.read",
 		"access",
 	)
-	if !reflect.DeepEqual(actualAt, atCacheEntity) {
-		t.Errorf("Actual access token %v differs from expected access token %v", actualAt.CachedAt, atCacheEntity)
+	if !reflect.DeepEqual(extExpiresOn, *actualAt.ExtendedExpiresOnUnixTimestamp) {
+		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", *actualAt.ExtendedExpiresOnUnixTimestamp, extExpiresOn)
 	}
-}*/
+}
 
 func TestCreateKeyForAccessToken(t *testing.T) {
 	expectedKey := "testHID-env-AccessToken-clientID-realm-user.read"

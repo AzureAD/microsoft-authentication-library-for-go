@@ -64,11 +64,11 @@ func (m *storageManager) ReadAccessToken(
 	scopes []string) *accessTokenCacheItem {
 	lock.RLock()
 	for _, at := range m.accessTokens {
-		if at.HomeAccountID == homeAccountID &&
-			checkAlias(at.Environment, envAliases) &&
-			at.Realm == realm &&
-			at.ClientID == clientID &&
-			isMatchingScopes(scopes, at.Scopes) {
+		if *at.HomeAccountID == homeAccountID &&
+			checkAlias(*at.Environment, envAliases) &&
+			*at.Realm == realm &&
+			*at.ClientID == clientID &&
+			isMatchingScopes(scopes, *at.Scopes) {
 			lock.RUnlock()
 			return at
 		}
@@ -91,14 +91,15 @@ func (m *storageManager) ReadRefreshToken(
 	familyID string,
 	clientID string,
 ) *refreshTokenCacheItem {
+
 	lock.RLock()
 	for _, rt := range m.refreshTokens {
-		if rt.HomeAccountID == homeAccountID && checkAlias(rt.Environment, envAliases) {
-			if familyID != "" && rt.FamilyID != "" && familyID == rt.FamilyID {
+		if *rt.HomeAccountID == homeAccountID && checkAlias(*rt.Environment, envAliases) {
+			if familyID != "" && *rt.FamilyID != "" && familyID == *rt.FamilyID {
 				lock.RUnlock()
 				return rt
 			}
-			if clientID == rt.ClientID {
+			if clientID == *rt.ClientID {
 				lock.RUnlock()
 				return rt
 			}
@@ -124,10 +125,10 @@ func (m *storageManager) ReadIDToken(
 ) *idTokenCacheItem {
 	lock.RLock()
 	for _, idt := range m.idTokens {
-		if idt.HomeAccountID == homeAccountID &&
-			checkAlias(idt.Environment, envAliases) &&
-			idt.Realm == realm &&
-			idt.ClientID == clientID {
+		if *idt.HomeAccountID == homeAccountID &&
+			checkAlias(*idt.Environment, envAliases) &&
+			*idt.Realm == realm &&
+			*idt.ClientID == clientID {
 			lock.RUnlock()
 			return idt
 		}
@@ -157,9 +158,9 @@ func (m *storageManager) ReadAllAccounts() []*msalbase.Account {
 func (m *storageManager) ReadAccount(homeAccountID string, envAliases []string, realm string) *msalbase.Account {
 	lock.RLock()
 	for _, acc := range m.accounts {
-		if acc.HomeAccountID == homeAccountID &&
-			checkAlias(acc.Environment, envAliases) &&
-			acc.Realm == realm {
+		if *acc.HomeAccountID == homeAccountID &&
+			checkAlias(*acc.Environment, envAliases) &&
+			*acc.Realm == realm {
 			lock.RUnlock()
 			return acc
 		}
@@ -188,7 +189,7 @@ func (m *storageManager) DeleteAccount(
 func (m *storageManager) ReadAppMetadata(envAliases []string, clientID string) *AppMetadata {
 	lock.RLock()
 	for _, app := range m.appMetadatas {
-		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
+		if checkAlias(*app.Environment, envAliases) && *app.ClientID == clientID {
 			lock.RUnlock()
 			return app
 		}
@@ -206,11 +207,13 @@ func (m *storageManager) WriteAppMetadata(appMetadata *AppMetadata) error {
 }
 
 func (m *storageManager) Serialize() (string, error) {
+	lock.RLock()
 	m.cacheContract.AccessTokens = m.accessTokens
 	m.cacheContract.RefreshTokens = m.refreshTokens
 	m.cacheContract.IDTokens = m.idTokens
 	m.cacheContract.Accounts = m.accounts
 	m.cacheContract.AppMetadata = m.appMetadatas
+	lock.RUnlock()
 	serializedCache, err := m.cacheContract.MarshalJSON()
 	if err != nil {
 		return "", err
@@ -229,5 +232,6 @@ func (m *storageManager) Deserialize(cacheData []byte) error {
 	m.idTokens = m.cacheContract.IDTokens
 	m.accounts = m.cacheContract.Accounts
 	m.appMetadatas = m.cacheContract.AppMetadata
+	lock.Unlock()
 	return nil
 }

@@ -81,3 +81,13 @@ func (mock *MockStorageManager) WriteAppMetadata(appMetadata *AppMetadata) error
 	args := mock.Called(appMetadata)
 	return args.Error(0)
 }
+
+func (mock *MockStorageManager) Serialize() (string, error) {
+	args := mock.Called()
+	return args.String(0), args.Error(1)
+}
+
+func (mock *MockStorageManager) Deserialize(cacheData []byte) error {
+	args := mock.Called(cacheData)
+	return args.Error(0)
+}

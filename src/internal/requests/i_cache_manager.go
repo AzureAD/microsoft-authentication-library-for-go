@@ -10,4 +10,6 @@ type ICacheManager interface {
 	CacheTokenResponse(authParameters *msalbase.AuthParametersInternal, tokenResponse *msalbase.TokenResponse) (*msalbase.Account, error)
 	DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error
 	GetAllAccounts() []*msalbase.Account
+	Serialize() (string, error)
+	Deserialize(data []byte) error
 }

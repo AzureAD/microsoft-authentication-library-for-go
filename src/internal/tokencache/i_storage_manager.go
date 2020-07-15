@@ -58,5 +58,6 @@ type IStorageManager interface {
 
 	ReadAppMetadata(envAliases []string, clientID string) *AppMetadata
 	WriteAppMetadata(appMetadata *AppMetadata) error
-	//Serialize() (string, error)
+	Serialize() (string, error)
+	Deserialize(cacheData []byte) error
 }
