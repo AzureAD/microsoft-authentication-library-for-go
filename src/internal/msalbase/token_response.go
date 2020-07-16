@@ -146,37 +146,3 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 
 	return declined
 }
-
-func CreateTokenResponseFromParts(idToken *IDToken, accessToken *Credential, refreshToken *Credential) (*TokenResponse, error) {
-	/*
-		var idt *IDToken
-		accessTokenSecret := ""
-		refreshTokenSecret := ""
-		grantedScopes := []string{}
-
-		if idToken != nil {
-			idt = idToken
-		} else {
-			idt, _ = CreateIDToken("")
-		}
-
-		if accessToken != nil {
-			accessTokenSecret = accessToken.GetSecret()
-			// todo: fill this in...
-			// _expiresOn = TimeUtils::ToTimePoint(accessToken->GetExpiresOn());
-			// _extendedExpiresOn = TimeUtils::ToTimePoint(accessToken->GetExtendedExpiresOn());
-			grantedScopes = strings.Split(accessToken.GetScopes(), " ")
-		}
-
-		if refreshToken != nil {
-			refreshTokenSecret = refreshToken.GetSecret()
-		}
-
-		tokenResponse := &TokenResponse{
-			IDToken:       idt,
-			AccessToken:   accessTokenSecret,
-			RefreshToken:  refreshTokenSecret,
-			GrantedScopes: grantedScopes}
-		return tokenResponse, nil*/
-	return nil, nil
-}
