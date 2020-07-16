@@ -49,6 +49,18 @@ func TestReadAllAccounts(t *testing.T) {
 	}
 }
 
+func TestDeleteAccounts(t *testing.T) {
+	storageManager := CreateStorageManager()
+	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
+	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.AuthorityTypeAad, "USERNAME")
+	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
+	storageManager.accounts[testAccTwo.CreateKey()] = testAccTwo
+	err := storageManager.DeleteAccounts("hid", []string{"hello", "env", "test"})
+	if err != nil {
+		t.Errorf("Error is supposed to be nil; instead it is %v", err)
+	}
+}
+
 func TestReadAccessToken(t *testing.T) {
 	storageManager := CreateStorageManager()
 	testAccessToken := CreateAccessTokenCacheItem(
@@ -240,7 +252,7 @@ func TestReadRefreshToken(t *testing.T) {
 		"hid",
 		[]string{"test", "env", "hello"},
 		"",
-		"cid",
+		"CID",
 	)
 	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
 		t.Errorf("Returned refresh token %v differs from expected refresh token %v",

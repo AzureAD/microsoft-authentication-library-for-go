@@ -43,16 +43,21 @@ func CreateRefreshTokenCacheItem(homeAccountID string,
 func (rt *refreshTokenCacheItem) CreateKey() string {
 	var fourth string
 	if rt.FamilyID == nil {
-		fourth = *rt.ClientID
+		fourth = msalbase.GetStringFromPointer(rt.ClientID)
 	} else {
-		fourth = *rt.FamilyID
+		fourth = msalbase.GetStringFromPointer(rt.FamilyID)
 	}
-	keyParts := []string{*rt.HomeAccountID, *rt.Environment, *rt.CredentialType, fourth}
+	keyParts := []string{
+		msalbase.GetStringFromPointer(rt.HomeAccountID),
+		msalbase.GetStringFromPointer(rt.Environment),
+		msalbase.GetStringFromPointer(rt.CredentialType),
+		fourth,
+	}
 	return strings.Join(keyParts, msalbase.CacheKeySeparator)
 }
 
 func (rt *refreshTokenCacheItem) GetSecret() string {
-	return *rt.Secret
+	return msalbase.GetStringFromPointer(rt.Secret)
 }
 
 func (rt *refreshTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {

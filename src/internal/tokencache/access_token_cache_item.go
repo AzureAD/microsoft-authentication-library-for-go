@@ -18,7 +18,7 @@ type accessTokenCacheItem struct {
 	CredentialType                 *string `json:"credential_type,omitempty"`
 	ClientID                       *string `json:"client_id,omitempty"`
 	Secret                         *string `json:"secret,omitempty"`
-	Scopes                         *string `json:"scopes,omitempty"`
+	Scopes                         *string `json:"target,omitempty"`
 	ExpiresOnUnixTimestamp         *string `json:"expires_on,omitempty"`
 	ExtendedExpiresOnUnixTimestamp *string `json:"extended_expires_on,omitempty"`
 	CachedAt                       *string `json:"cached_at,omitempty"`

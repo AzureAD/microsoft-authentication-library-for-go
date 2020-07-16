@@ -34,6 +34,7 @@ var tdr = &requests.TenantDiscoveryResponse{
 }
 var wrm = new(requests.MockWebRequestManager)
 var cacheManager = new(requests.MockCacheManager)
+var testAcc = &msalbase.Account{}
 var testPCA = &PublicClientApplication{
 	pcaParameters:     pcaParams,
 	webRequestManager: wrm,
@@ -67,6 +68,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
 	wrm.On("GetAccessTokenFromAuthCode", testAuthParams, "", "").Return(actualTokenResp, nil)
+	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
 	_, err := testPCA.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)

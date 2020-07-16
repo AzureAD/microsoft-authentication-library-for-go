@@ -16,13 +16,6 @@ type IStorageManager interface {
 		scopes []string) *accessTokenCacheItem
 
 	WriteAccessToken(accessToken *accessTokenCacheItem) error
-	/*
-		DeleteAccessToken(
-			homeAccountID string,
-			envAliases []string,
-			realm string,
-			clientID string,
-			scopes []string) error*/
 
 	ReadRefreshToken(
 		homeAccountID string,
@@ -48,16 +41,13 @@ type IStorageManager interface {
 
 	WriteAccount(account *msalbase.Account) error
 
-	/*
-		DeleteAccount(
-			homeAccountID string,
-			environment string,
-			realm string) error
-
-		DeleteAccounts(correlationID string, homeAccountID string, environment string) (*OperationStatus, error)*/
+	DeleteAccounts(homeAccountID string, envAliases []string) error
 
 	ReadAppMetadata(envAliases []string, clientID string) *AppMetadata
+
 	WriteAppMetadata(appMetadata *AppMetadata) error
+
 	Serialize() (string, error)
+
 	Deserialize(cacheData []byte) error
 }

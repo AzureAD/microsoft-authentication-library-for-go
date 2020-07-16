@@ -60,7 +60,7 @@ func (m *cacheManager) Deserialize(data []byte) error {
 
 func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal, webRequestManager requests.IWebRequestManager) (*msalbase.StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
-	realm := authParameters.AuthorityInfo.UserRealmURIPrefix
+	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 	aadInstanceDiscovery := requests.CreateAadInstanceDiscovery(webRequestManager)
@@ -84,10 +84,8 @@ func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInter
 	appMetadata := m.storageManager.ReadAppMetadata(metadata.Aliases, clientID)
 	if appMetadata == nil {
 		familyID = ""
-	} else if appMetadata.FamilyID == nil {
-		familyID = ""
 	} else {
-		familyID = *appMetadata.FamilyID
+		familyID = msalbase.GetStringFromPointer(appMetadata.FamilyID)
 	}
 	refreshToken := m.storageManager.ReadRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
 	account := m.storageManager.ReadAccount(homeAccountID, metadata.Aliases, realm)
@@ -99,7 +97,7 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
-	realm := authParameters.AuthorityInfo.UserRealmURIPrefix
+	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	target := msalbase.ConcatenateScopes(tokenResponse.GrantedScopes)
 

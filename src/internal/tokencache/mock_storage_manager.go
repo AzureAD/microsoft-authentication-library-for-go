@@ -72,6 +72,11 @@ func (mock *MockStorageManager) WriteAccount(account *msalbase.Account) error {
 	return args.Error(0)
 }
 
+func (mock *MockStorageManager) DeleteAccounts(homeAccountID string, envAliases []string) error {
+	args := mock.Called(homeAccountID, envAliases)
+	return args.Error(0)
+}
+
 func (mock *MockStorageManager) ReadAppMetadata(envAliases []string, clientID string) *AppMetadata {
 	args := mock.Called(envAliases, clientID)
 	return args.Get(0).(*AppMetadata)

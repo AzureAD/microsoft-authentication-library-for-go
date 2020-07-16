@@ -27,7 +27,10 @@ func CreateAppMetadata(familyID string, clientID string, environment string) *Ap
 }
 
 func (appMeta *AppMetadata) CreateKey() string {
-	keyParts := []string{msalbase.AppMetadataCacheID, *appMeta.Environment, *appMeta.ClientID}
+	keyParts := []string{msalbase.AppMetadataCacheID,
+		msalbase.GetStringFromPointer(appMeta.Environment),
+		msalbase.GetStringFromPointer(appMeta.ClientID),
+	}
 	return strings.Join(keyParts, msalbase.CacheKeySeparator)
 }
 

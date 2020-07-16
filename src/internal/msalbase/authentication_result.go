@@ -5,6 +5,7 @@ package msalbase
 
 import (
 	"errors"
+	"reflect"
 	"time"
 )
 
@@ -27,16 +28,15 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *St
 	grantedScopes := []string{}
 	declinedScopes := []string{}
 	var err error
-
-	if storageTokenResponse.accessToken != nil {
+	if !reflect.ValueOf(storageTokenResponse.accessToken).IsNil() {
 		accessToken = storageTokenResponse.accessToken.GetSecret()
 		expiresOn, err = ConvertStrUnixToUTCTime(storageTokenResponse.accessToken.GetExpiresOn())
 		if err != nil {
-			return nil, err
+			return nil, errors.New("Access token in cache expires at an invalid time")
 		}
 		grantedScopes = SplitScopes(storageTokenResponse.accessToken.GetScopes())
 	} else {
-		return nil, errors.New("No access token present")
+		return nil, errors.New("No access token present in cache")
 	}
 
 	if storageTokenResponse.idToken != nil {
@@ -45,7 +45,7 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *St
 			return nil, err
 		}
 	} else {
-		return nil, errors.New("No ID token present")
+		return nil, errors.New("No ID token present in cache")
 	}
 
 	ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}

@@ -64,11 +64,11 @@ func (m *storageManager) ReadAccessToken(
 	scopes []string) *accessTokenCacheItem {
 	lock.RLock()
 	for _, at := range m.accessTokens {
-		if *at.HomeAccountID == homeAccountID &&
-			checkAlias(*at.Environment, envAliases) &&
-			*at.Realm == realm &&
-			*at.ClientID == clientID &&
-			isMatchingScopes(scopes, *at.Scopes) {
+		if msalbase.GetStringFromPointer(at.HomeAccountID) == homeAccountID &&
+			checkAlias(msalbase.GetStringFromPointer(at.Environment), envAliases) &&
+			msalbase.GetStringFromPointer(at.Realm) == realm &&
+			msalbase.GetStringFromPointer(at.ClientID) == clientID &&
+			isMatchingScopes(scopes, msalbase.GetStringFromPointer(at.Scopes)) {
 			lock.RUnlock()
 			return at
 		}
@@ -94,14 +94,24 @@ func (m *storageManager) ReadRefreshToken(
 
 	lock.RLock()
 	for _, rt := range m.refreshTokens {
-		if *rt.HomeAccountID == homeAccountID && checkAlias(*rt.Environment, envAliases) {
-			if familyID != "" && *rt.FamilyID != "" && familyID == *rt.FamilyID {
-				lock.RUnlock()
-				return rt
-			}
-			if clientID == *rt.ClientID {
-				lock.RUnlock()
-				return rt
+		if msalbase.GetStringFromPointer(rt.HomeAccountID) == homeAccountID &&
+			checkAlias(msalbase.GetStringFromPointer(rt.Environment), envAliases) {
+			if familyID == "" {
+				if msalbase.GetStringFromPointer(rt.ClientID) == clientID {
+					lock.RUnlock()
+					return rt
+				} else if msalbase.GetStringFromPointer(rt.FamilyID) != "" {
+					lock.RUnlock()
+					return rt
+				}
+			} else {
+				if msalbase.GetStringFromPointer(rt.FamilyID) != "" {
+					lock.RUnlock()
+					return rt
+				} else if msalbase.GetStringFromPointer(rt.ClientID) == clientID {
+					lock.RUnlock()
+					return rt
+				}
 			}
 		}
 	}
@@ -125,10 +135,10 @@ func (m *storageManager) ReadIDToken(
 ) *idTokenCacheItem {
 	lock.RLock()
 	for _, idt := range m.idTokens {
-		if *idt.HomeAccountID == homeAccountID &&
-			checkAlias(*idt.Environment, envAliases) &&
-			*idt.Realm == realm &&
-			*idt.ClientID == clientID {
+		if msalbase.GetStringFromPointer(idt.HomeAccountID) == homeAccountID &&
+			checkAlias(msalbase.GetStringFromPointer(idt.Environment), envAliases) &&
+			msalbase.GetStringFromPointer(idt.Realm) == realm &&
+			msalbase.GetStringFromPointer(idt.ClientID) == clientID {
 			lock.RUnlock()
 			return idt
 		}
@@ -158,9 +168,9 @@ func (m *storageManager) ReadAllAccounts() []*msalbase.Account {
 func (m *storageManager) ReadAccount(homeAccountID string, envAliases []string, realm string) *msalbase.Account {
 	lock.RLock()
 	for _, acc := range m.accounts {
-		if *acc.HomeAccountID == homeAccountID &&
-			checkAlias(*acc.Environment, envAliases) &&
-			*acc.Realm == realm {
+		if msalbase.GetStringFromPointer(acc.HomeAccountID) == homeAccountID &&
+			checkAlias(msalbase.GetStringFromPointer(acc.Environment), envAliases) &&
+			msalbase.GetStringFromPointer(acc.Realm) == realm {
 			lock.RUnlock()
 			return acc
 		}
@@ -177,19 +187,34 @@ func (m *storageManager) WriteAccount(account *msalbase.Account) error {
 	return nil
 }
 
-func (m *storageManager) DeleteAccount(
+func (m *storageManager) DeleteAccounts(
 	homeAccountID string,
-	environment string,
-	realm string) error {
+	envAliases []string) error {
+	keys := []string{}
+	lock.RLock()
+	for key, acc := range m.accounts {
+		if msalbase.GetStringFromPointer(acc.HomeAccountID) == homeAccountID &&
+			checkAlias(msalbase.GetStringFromPointer(acc.Environment), envAliases) {
+			keys = append(keys, key)
+		}
+	}
+	lock.RUnlock()
+	if len(keys) == 0 {
+		return errors.New("Can't find account")
+	}
 	lock.Lock()
+	for _, key := range keys {
+		delete(m.accounts, key)
+	}
 	lock.Unlock()
-	return errors.New("Can't find account")
+	return nil
 }
 
 func (m *storageManager) ReadAppMetadata(envAliases []string, clientID string) *AppMetadata {
 	lock.RLock()
 	for _, app := range m.appMetadatas {
-		if checkAlias(*app.Environment, envAliases) && *app.ClientID == clientID {
+		if checkAlias(msalbase.GetStringFromPointer(app.Environment), envAliases) &&
+			msalbase.GetStringFromPointer(app.ClientID) == clientID {
 			lock.RUnlock()
 			return app
 		}

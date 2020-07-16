@@ -73,7 +73,7 @@ func (pca *PublicClientApplication) AcquireTokenSilent(
 	}
 	if storageTokenResponse != nil {
 		result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
-		if err != nil {
+		if err == nil {
 			return result, err
 		}
 		req := requests.CreateRefreshTokenExchangeRequest(pca.webRequestManager, authParams, storageTokenResponse.RefreshToken)

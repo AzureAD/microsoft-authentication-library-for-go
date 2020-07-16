@@ -57,7 +57,6 @@ func acquireByAuthorizationCodePublic() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	http.HandleFunc("/", redirectToURL)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)

@@ -38,12 +38,18 @@ func CreateIDTokenCacheItem(homeAccountID string,
 }
 
 func (id *idTokenCacheItem) CreateKey() string {
-	keyParts := []string{*id.HomeAccountID, *id.Environment, *id.CredentialType, *id.ClientID, *id.Realm}
+	keyParts := []string{
+		msalbase.GetStringFromPointer(id.HomeAccountID),
+		msalbase.GetStringFromPointer(id.Environment),
+		msalbase.GetStringFromPointer(id.CredentialType),
+		msalbase.GetStringFromPointer(id.ClientID),
+		msalbase.GetStringFromPointer(id.Realm),
+	}
 	return strings.Join(keyParts, msalbase.CacheKeySeparator)
 }
 
 func (id *idTokenCacheItem) GetSecret() string {
-	return *id.Secret
+	return msalbase.GetStringFromPointer(id.Secret)
 }
 
 func (id *idTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
