@@ -6,7 +6,6 @@ package main
 import (
 	"context"
 	"fmt"
-	"reflect"
 	"time"
 
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
@@ -22,7 +21,7 @@ func setCancelTimeout(seconds int, cancelChannel chan bool) {
 	cancelChannel <- true
 }
 
-func tryDeviceCodeFlow() {
+func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 	cancelTimeout := 100 //Change this for cancel timeout
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
 	defer cancelFunc()
@@ -30,6 +29,7 @@ func tryDeviceCodeFlow() {
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
 	go func() {
+		log.Infof("%+v", publicClientApp)
 		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
 		errChannel <- err
 		resultChannel <- result
@@ -57,15 +57,15 @@ func acquireTokenDeviceCode() {
 			userAccount = account
 		}
 	}
-	if reflect.ValueOf(userAccount).IsNil() {
+	if userAccount == nil {
 		log.Info("No valid account found")
-		tryDeviceCodeFlow()
+		tryDeviceCodeFlow(publicClientApp)
 	} else {
 		silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, userAccount)
 		result, err := publicClientApp.AcquireTokenSilent(silentParams)
 		if err != nil {
 			log.Info(err)
-			tryDeviceCodeFlow()
+			tryDeviceCodeFlow(publicClientApp)
 		} else {
 			fmt.Println("Access token is " + result.GetAccessToken())
 		}

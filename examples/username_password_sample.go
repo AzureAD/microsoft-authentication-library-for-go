@@ -11,7 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func tryUsernamePasswordFlow() {
+func tryUsernamePasswordFlow(publicClientApp *msalgo.PublicClientApplication) {
 	userNameParams := msalgo.CreateAcquireTokenUsernamePasswordParameters(config.Scopes, config.Username, config.Password)
 	result, err := publicClientApp.AcquireTokenByUsernamePassword(userNameParams)
 	if err != nil {
@@ -39,13 +39,13 @@ func acquireByUsernamePasswordPublic() {
 	}
 	if reflect.ValueOf(userAccount).IsNil() {
 		log.Info("No valid account found")
-		tryUsernamePasswordFlow()
+		tryUsernamePasswordFlow(publicClientApp)
 	} else {
 		silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, userAccount)
 		result, err := publicClientApp.AcquireTokenSilent(silentParams)
 		if err != nil {
 			log.Info(err)
-			tryUsernamePasswordFlow()
+			tryUsernamePasswordFlow(publicClientApp)
 		} else {
 			fmt.Println("Access token is " + result.GetAccessToken())
 		}
