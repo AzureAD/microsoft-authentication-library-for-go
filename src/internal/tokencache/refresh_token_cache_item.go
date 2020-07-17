@@ -80,6 +80,9 @@ func (rt *refreshTokenCacheItem) convertToJSONMap() (map[string]interface{}, err
 	}
 	newMap := make(map[string]interface{})
 	err = json.Unmarshal(refreshMap, &newMap)
+	if err != nil {
+		return nil, err
+	}
 	for k, v := range rt.additionalFields {
 		newMap[k] = v
 	}

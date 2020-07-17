@@ -29,7 +29,6 @@ func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
 	go func() {
-		log.Infof("%+v", publicClientApp)
 		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
 		errChannel <- err
 		resultChannel <- result

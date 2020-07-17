@@ -8,11 +8,13 @@ import (
 	"testing"
 )
 
-var hid = "HID"
-var rtEnv = "env"
-var rtClientID = "clientID"
-var rtCredential = "RefreshToken"
-var refSecret = "secret"
+var (
+	hid          = "HID"
+	rtEnv        = "env"
+	rtClientID   = "clientID"
+	rtCredential = "RefreshToken"
+	refSecret    = "secret"
+)
 
 var rt = &refreshTokenCacheItem{
 	HomeAccountID:  &hid,

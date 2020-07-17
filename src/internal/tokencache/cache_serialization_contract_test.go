@@ -14,22 +14,24 @@ import (
 
 const testFile = "test_serialized_cache.json"
 
-var defaultEnvironment = "login.windows.net"
-var defaultHID = "uid.utid"
-var defaultRealm = "contoso"
-var defaultScopes = "s2 s1 s3"
-var defaultClientID = "my_client_id"
-var accessTokenCred = msalbase.CredentialTypeOauth2AccessToken.ToString()
-var accessTokenSecret = "an access token"
-var atCached = "1000"
-var atExpires = "4600"
-var rtCredType = msalbase.CredentialTypeOauth2RefreshToken.ToString()
-var rtSecret = "a refresh token"
-var idCred = "IdToken"
-var idSecret = "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature"
-var accUser = "John Doe"
-var accLID = "object1234"
-var accAuth = msalbase.AuthorityTypeAad.ToString()
+var (
+	defaultEnvironment = "login.windows.net"
+	defaultHID         = "uid.utid"
+	defaultRealm       = "contoso"
+	defaultScopes      = "s2 s1 s3"
+	defaultClientID    = "my_client_id"
+	accessTokenCred    = msalbase.CredentialTypeOauth2AccessToken.ToString()
+	accessTokenSecret  = "an access token"
+	atCached           = "1000"
+	atExpires          = "4600"
+	rtCredType         = msalbase.CredentialTypeOauth2RefreshToken.ToString()
+	rtSecret           = "a refresh token"
+	idCred             = "IdToken"
+	idSecret           = "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature"
+	accUser            = "John Doe"
+	accLID             = "object1234"
+	accAuth            = msalbase.AuthorityTypeAad.ToString()
+)
 
 func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 	jsonFile, err := os.Open(testFile)

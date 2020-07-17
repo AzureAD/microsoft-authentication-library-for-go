@@ -44,7 +44,21 @@ func TestReadAllAccounts(t *testing.T) {
 	storageManager.accounts[testAccTwo.CreateKey()] = testAccTwo
 	actualAccounts := storageManager.ReadAllAccounts()
 	expectedAccounts := []*msalbase.Account{testAccOne, testAccTwo}
-	if !reflect.DeepEqual(actualAccounts, expectedAccounts) {
+	checkEqual := func(listOne []*msalbase.Account, listTwo []*msalbase.Account) bool {
+		if len(listOne) != len(listTwo) {
+			return false
+		}
+		counter := 0
+		for _, accOne := range listOne {
+			for _, accTwo := range listTwo {
+				if reflect.DeepEqual(accOne, accTwo) {
+					counter++
+				}
+			}
+		}
+		return counter == len(listOne)
+	}
+	if !checkEqual(actualAccounts, expectedAccounts) {
 		t.Errorf("Actual accounts %v differ from expected accounts %v", actualAccounts, expectedAccounts)
 	}
 }

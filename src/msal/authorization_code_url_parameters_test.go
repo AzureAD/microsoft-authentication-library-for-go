@@ -11,11 +11,12 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
-var testURLAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
-var testURLAuthParams = msalbase.CreateAuthParametersInternal("clientID", testURLAuthorityInfo)
-var urlWRM = new(requests.MockWebRequestManager)
-
-var authCodeURLParams = CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid", "user.read"}, "codeChallenge")
+var (
+	testURLAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
+	testURLAuthParams       = msalbase.CreateAuthParametersInternal("clientID", testURLAuthorityInfo)
+	urlWRM                  = new(requests.MockWebRequestManager)
+	authCodeURLParams       = CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid", "user.read"}, "codeChallenge")
+)
 
 func TestGetSeparatedScopes(t *testing.T) {
 	expectedScopes := "openid user.read"

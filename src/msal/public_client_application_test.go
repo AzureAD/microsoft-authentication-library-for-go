@@ -11,35 +11,37 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
-var tokenCommonParams = &acquireTokenCommonParameters{
-	scopes: []string{"openid"},
-}
-var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.microsoftonline.com/v2.0/authorize",
-	"https://login.microsoftonline.com/v2.0/token",
-	"https://login.microsoftonline.com/v2.0",
-	"login.microsoftonline.com")
-var testAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
-var testAuthParams = msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
-var appCommonParams = &applicationCommonParameters{
-	clientID:      "clientID",
-	authorityInfo: testAuthorityInfo,
-}
-var pcaParams = &PublicClientApplicationParameters{
-	commonParameters: appCommonParams,
-}
-var tdr = &requests.TenantDiscoveryResponse{
-	AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
-	TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
-	Issuer:                "https://login.microsoftonline.com/v2.0",
-}
-var wrm = new(requests.MockWebRequestManager)
-var cacheManager = new(requests.MockCacheManager)
-var testAcc = &msalbase.Account{}
-var testPCA = &PublicClientApplication{
-	pcaParameters:     pcaParams,
-	webRequestManager: wrm,
-	cacheContext:      &CacheContext{cacheManager},
-}
+var (
+	tokenCommonParams = &acquireTokenCommonParameters{
+		scopes: []string{"openid"},
+	}
+	testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.microsoftonline.com/v2.0/authorize",
+		"https://login.microsoftonline.com/v2.0/token",
+		"https://login.microsoftonline.com/v2.0",
+		"login.microsoftonline.com")
+	testAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
+	testAuthParams       = msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
+	appCommonParams      = &applicationCommonParameters{
+		clientID:      "clientID",
+		authorityInfo: testAuthorityInfo,
+	}
+	pcaParams = &PublicClientApplicationParameters{
+		commonParameters: appCommonParams,
+	}
+	tdr = &requests.TenantDiscoveryResponse{
+		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
+		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
+		Issuer:                "https://login.microsoftonline.com/v2.0",
+	}
+	wrm          = new(requests.MockWebRequestManager)
+	cacheManager = new(requests.MockCacheManager)
+	testAcc      = &msalbase.Account{}
+	testPCA      = &PublicClientApplication{
+		pcaParameters:     pcaParams,
+		webRequestManager: wrm,
+		cacheContext:      &CacheContext{cacheManager},
+	}
+)
 
 func TestCreateAuthCodeURL(t *testing.T) {
 	authCodeURLParams := CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid"}, "codeChallenge")
