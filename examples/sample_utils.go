@@ -8,7 +8,6 @@ import (
 	"io/ioutil"
 	"os"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -23,6 +22,7 @@ type Config struct {
 	CodeChallenge       string   `json:"code_challenge"`
 	CodeChallengeMethod string   `json:"code_challenge_method"`
 	State               string   `json:"state"`
+	ClientSecret        string   `json:"client_secret"`
 }
 
 //CreateConfig creates the Config struct from a json file
@@ -39,11 +39,4 @@ func createConfig(fileName string) *Config {
 		log.Fatal(err)
 	}
 	return config
-}
-
-//createPCAParams is used to instantiate the parameters to create the Public Client Application
-func createPCAParams(clientID string, authority string) *msalgo.PublicClientApplicationParameters {
-	pcaParams := msalgo.CreatePublicClientApplicationParameters(clientID)
-	pcaParams.SetAadAuthority(authority)
-	return pcaParams
 }

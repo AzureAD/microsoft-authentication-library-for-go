@@ -12,8 +12,6 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-const port = "3000"
-
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes, config.CodeChallenge)
@@ -53,7 +51,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func acquireByAuthorizationCodePublic() {
-	publicClientApp, err = msalgo.CreatePublicClientApplication(pcaParams)
+	publicClientApp, err = msalgo.CreatePublicClientApplication(config.ClientID, config.Authority)
 	if err != nil {
 		log.Fatal(err)
 	}

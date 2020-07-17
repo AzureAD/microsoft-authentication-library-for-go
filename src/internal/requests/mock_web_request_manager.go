@@ -43,8 +43,9 @@ func (mock *MockWebRequestManager) GetAccessTokenFromUsernamePassword(authParame
 
 func (mock *MockWebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal,
 	authCode string,
-	codeVerifier string) (*msalbase.TokenResponse, error) {
-	args := mock.Called(authParameters, authCode, codeVerifier)
+	codeVerifier string,
+	clientSecret string) (*msalbase.TokenResponse, error) {
+	args := mock.Called(authParameters, authCode, codeVerifier, clientSecret)
 	return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
 }
 

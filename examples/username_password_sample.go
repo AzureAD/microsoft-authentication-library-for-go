@@ -24,8 +24,7 @@ func tryUsernamePasswordFlow(publicClientApp *msalgo.PublicClientApplication) {
 func acquireByUsernamePasswordPublic() {
 	config := createConfig("config.json")
 	// Creating the Public Client Application
-	pcaParams := createPCAParams(config.ClientID, config.Authority)
-	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
+	publicClientApp, err := msalgo.CreatePublicClientApplication(config.ClientID, config.Authority)
 	if err != nil {
 		log.Fatal(err)
 	}

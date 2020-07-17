@@ -7,11 +7,11 @@ import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow
 type AcquireTokenAuthCodeParameters struct {
-	commonParameters    *acquireTokenCommonParameters
-	redirectURI         string
-	Code                string
-	codeChallenge       string
-	codeChallengeMethod string
+	commonParameters *acquireTokenCommonParameters
+	redirectURI      string
+	Code             string
+	codeChallenge    string
+	ClientSecret     string
 }
 
 // CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance
@@ -22,6 +22,20 @@ func CreateAcquireTokenAuthCodeParameters(scopes []string,
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		redirectURI:      redirectURI,
 		codeChallenge:    codeChallenge,
+	}
+	return p
+}
+
+// CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance
+func CreateAcquireTokenAuthCodeParametersWithClientSecret(scopes []string,
+	redirectURI string,
+	codeChallenge string,
+	clientSecret string) *AcquireTokenAuthCodeParameters {
+	p := &AcquireTokenAuthCodeParameters{
+		commonParameters: createAcquireTokenCommonParameters(scopes),
+		redirectURI:      redirectURI,
+		codeChallenge:    codeChallenge,
+		ClientSecret:     clientSecret,
 	}
 	return p
 }

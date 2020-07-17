@@ -44,8 +44,7 @@ func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 
 func acquireTokenDeviceCode() {
 	config := createConfig("config.json")
-	pcaParams := createPCAParams(config.ClientID, config.Authority)
-	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
+	publicClientApp, err := msalgo.CreatePublicClientApplication(config.ClientID, config.Authority)
 	if err != nil {
 		log.Fatal(err)
 	}

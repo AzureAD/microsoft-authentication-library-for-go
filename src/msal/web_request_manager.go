@@ -289,13 +289,18 @@ func (wrm *WebRequestManager) exchangeGrantForToken(authParameters *msalbase.Aut
 }
 
 // GetAccessTokenFromAuthCode stuff
-func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal, authCode string, codeVerifier string) (*msalbase.TokenResponse, error) {
+func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal,
+	authCode string,
+	codeVerifier string,
+	clientSecret string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":    "authorization_code",
 		"code":          authCode,
 		"code_verifier": codeVerifier,
 	}
-
+	if clientSecret != "" {
+		decodedQueryParams["client_secret"] = clientSecret
+	}
 	addRedirectURIQueryParam(decodedQueryParams, authParameters)
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)

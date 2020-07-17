@@ -5,6 +5,8 @@ package msalgo
 
 import (
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
 )
 
@@ -29,7 +31,11 @@ func TestEncodeQueryParameters(t *testing.T) {
 	testQueryParams["grant_type"] = "authorization_code"
 	encodedQuery := encodeQueryParameters(testQueryParams)
 	expectedQueryParams := "scope=openid+user.read&client_id=clientID&grant_type=authorization_code"
-	if !reflect.DeepEqual(encodedQuery, expectedQueryParams) {
+	encodedQueryList := strings.Split(encodedQuery, "&")
+	expectedQueryList := strings.Split(expectedQueryParams, "&")
+	sort.Strings(encodedQueryList)
+	sort.Strings(expectedQueryList)
+	if !reflect.DeepEqual(encodedQueryList, expectedQueryList) {
 		t.Errorf("Actual encoded query %v differs from expected query %v", encodedQuery, expectedQueryParams)
 	}
 }

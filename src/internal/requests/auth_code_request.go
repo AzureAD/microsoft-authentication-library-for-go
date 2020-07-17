@@ -13,6 +13,7 @@ type AuthCodeRequest struct {
 	authParameters    *msalbase.AuthParametersInternal
 	Code              string
 	CodeChallenge     string
+	ClientSecret      string
 }
 
 // CreateAuthCodeRequest creates an instance of AuthCodeRequest
@@ -33,7 +34,7 @@ func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 		return nil, err
 	}
 	req.authParameters.Endpoints = endpoints
-	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.Code, req.CodeChallenge)
+	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.Code, req.CodeChallenge, req.ClientSecret)
 	if err != nil {
 		return nil, err
 	}
