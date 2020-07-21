@@ -4,6 +4,9 @@
 package msalgo
 
 import (
+	"errors"
+	"reflect"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
@@ -55,11 +58,16 @@ func (client *clientApplication) acquireTokenSilent(
 		if err == nil {
 			return result, err
 		}
+		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
+			return nil, errors.New("No refresh token found")
+		}
 		req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
 			authParams, storageTokenResponse.RefreshToken)
 		return client.executeTokenRequestWithCacheWrite(req, authParams)
 	}
-
+	if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
+		return nil, errors.New("No refresh token found")
+	}
 	req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
 		authParams, storageTokenResponse.RefreshToken)
 	return client.executeTokenRequestWithCacheWrite(req, authParams)

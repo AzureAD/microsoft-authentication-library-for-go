@@ -29,7 +29,6 @@ func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 	resultChannel := make(chan msalgo.IAuthenticationResult)
 	errChannel := make(chan error)
 	go func() {
-		log.Infof("%+v", publicClientApp)
 		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
 		errChannel <- err
 		resultChannel <- result
@@ -60,7 +59,7 @@ func acquireTokenDeviceCode() {
 		log.Info("No valid account found")
 		tryDeviceCodeFlow(publicClientApp)
 	} else {
-		silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, userAccount)
+		silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
 		result, err := publicClientApp.AcquireTokenSilent(silentParams)
 		if err != nil {
 			log.Info(err)

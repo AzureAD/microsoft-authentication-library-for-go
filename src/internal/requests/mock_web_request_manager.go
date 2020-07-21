@@ -55,6 +55,12 @@ func (mock *MockWebRequestManager) GetAccessTokenFromRefreshToken(authParameters
 	return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
 }
 
+func (mock *MockWebRequestManager) GetAccessTokenWithClientSecret(authParameters *msalbase.AuthParametersInternal,
+	 clientSecret string) (*msalbase.TokenResponse, error) {
+		 args := mock.Called(authParameters, clientSecret)
+		 return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
+}
+
 func (mock *MockWebRequestManager) GetAccessTokenWithCertificate(authParameters *msalbase.AuthParametersInternal,
 	certificate *msalbase.ClientCertificate) (*msalbase.TokenResponse, error) {
 	args := mock.Called(authParameters, certificate)

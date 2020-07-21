@@ -40,7 +40,7 @@ func acquireByUsernamePasswordPublic() {
 		log.Info("No valid account found")
 		tryUsernamePasswordFlow(publicClientApp)
 	} else {
-		silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, userAccount)
+		silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
 		result, err := publicClientApp.AcquireTokenSilent(silentParams)
 		if err != nil {
 			log.Info(err)

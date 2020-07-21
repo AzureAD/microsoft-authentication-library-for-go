@@ -11,7 +11,7 @@ const (
 	AuthorizationTypeWindowsIntegratedAuth                   = iota
 	AuthorizationTypeAuthCode                                = iota
 	AuthorizationTypeInteractive                             = iota
-	AuthorizationTypeCertificate                             = iota
+	AuthorizationTypeClientCredentials                       = iota
 	AuthorizationTypeDeviceCode                              = iota
 	AuthorizationTypeRefreshTokenExchange                    = iota
 )

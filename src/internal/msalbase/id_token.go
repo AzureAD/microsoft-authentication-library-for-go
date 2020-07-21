@@ -6,6 +6,7 @@ package msalbase
 import (
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"strings"
 )
 
@@ -30,7 +31,11 @@ type IDToken struct {
 }
 
 func CreateIDToken(jwt string) (*IDToken, error) {
-	jwtPart := strings.Split(jwt, ".")[1]
+	jwtArr := strings.Split(jwt, ".")
+	if len(jwtArr) != 2 {
+		return nil, errors.New("ID Token not in correct format")
+	}
+	jwtPart := jwtArr[1]
 	if i := len(jwtPart) % 4; i != 0 {
 		jwtPart += strings.Repeat("=", 4-i)
 	}

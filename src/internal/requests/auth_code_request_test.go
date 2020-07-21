@@ -34,7 +34,7 @@ func TestAuthCodeReqExecute(t *testing.T) {
 	actualTokenResp := &msalbase.TokenResponse{}
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
-	wrm.On("GetAccessTokenFromAuthCode", authCodeRequest.authParameters, authCodeRequest.Code, authCodeRequest.CodeChallenge).Return(actualTokenResp, nil)
+	wrm.On("GetAccessTokenFromAuthCode", authCodeRequest.authParameters, authCodeRequest.Code, authCodeRequest.CodeChallenge, "").Return(actualTokenResp, nil)
 	_, err := authCodeRequest.Execute()
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, instead it is %v", err)

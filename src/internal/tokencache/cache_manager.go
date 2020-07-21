@@ -69,10 +69,7 @@ func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInter
 		return nil, err
 	}
 	log.Infof("Querying the cache for homeAccountId '%s' environments '%v' realm '%s' clientId '%s' scopes:'%v'", homeAccountID, metadata.Aliases, realm, clientID, scopes)
-	if homeAccountID == "" || len(metadata.Aliases) == 0 || realm == "" || clientID == "" || len(scopes) == 0 {
-		log.Warn("Skipping the tokens cache lookup, one of the primary keys is empty")
-		return nil, errors.New("Skipping the tokens cache lookup, one of the primary keys is empty")
-	}
+
 	accessToken := m.storageManager.ReadAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 	if accessToken != nil {
 		if !isAccessTokenValid(accessToken) {
@@ -103,10 +100,6 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 
 	log.Infof("Writing to the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target '%s'", homeAccountID, environment, realm, clientID, target)
 
-	if homeAccountID == "" || environment == "" || realm == "" || clientID == "" || target == "" {
-		return nil, errors.New("Skipping writing data to the tokens cache, one of the primary keys is empty")
-	}
-
 	cachedAt := time.Now().Unix()
 
 	if tokenResponse.HasRefreshToken() {
@@ -136,32 +129,34 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 			}
 		}
 	}
-
+	var account *msalbase.Account
 	idTokenJwt := tokenResponse.IDToken
 
-	idToken := CreateIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
-	m.storageManager.WriteIDToken(idToken)
+	if idTokenJwt != nil {
+		idToken := CreateIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
+		err = m.storageManager.WriteIDToken(idToken)
 
-	if err != nil {
-		return nil, err
-	}
+		if err != nil {
+			return nil, err
+		}
 
-	localAccountID := idTokenJwt.GetLocalAccountID()
-	authorityType := authParameters.AuthorityInfo.AuthorityType
+		localAccountID := idTokenJwt.GetLocalAccountID()
+		authorityType := authParameters.AuthorityInfo.AuthorityType
 
-	account := msalbase.CreateAccount(
-		homeAccountID,
-		environment,
-		realm,
-		localAccountID,
-		authorityType,
-		idTokenJwt.PreferredUsername,
-	)
+		account := msalbase.CreateAccount(
+			homeAccountID,
+			environment,
+			realm,
+			localAccountID,
+			authorityType,
+			idTokenJwt.PreferredUsername,
+		)
 
-	err = m.storageManager.WriteAccount(account)
+		err = m.storageManager.WriteAccount(account)
 
-	if err != nil {
-		return nil, err
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	appMetadata := CreateAppMetadata(tokenResponse.FamilyID, clientID, environment)
@@ -176,50 +171,5 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 }
 
 func (m *cacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
-	/*
-			homeAccountID := "" // todo: authParameters.GetAccountId()
-			environment := ""   // authParameters.GetAuthorityInfo().GetEnvironment()
-			clientID := authParameters.ClientID
-
-			emptyCorrelationID := ""
-			emptyRealm := ""
-			emptyFamilyID := ""
-			emptyTarget := ""
-
-			log.Infof("Deleting refresh token from the cache for homeAccountId '%s' environment '%s' clientID '%s'", homeAccountID, environment, clientID)
-
-			if homeAccountID == "" || environment == "" || clientID == "" {
-				log.Warn("Failed to delete refresh token from the cache, one of the primary keys is empty")
-				return errors.New("Failed to delete refresh token from the cache, one of the primary keys is empty")
-			}
-
-			operationStatus, err := m.storageManager.DeleteCredentials(emptyCorrelationID, homeAccountID, environment, emptyRealm, clientID, emptyFamilyID, emptyTarget, map[msalbase.CredentialType]bool{msalbase.CredentialTypeOauth2RefreshToken: true})
-			if err != nil {
-				return nil
-			}
-
-			if operationStatus.StatusType != OperationStatusTypeSuccess {
-				log.Warn("Error deleting an invalid refresh token from the cache")
-			}
-
-			return nil
-		}
-
-		func (m *cacheManager) deleteCachedAccessToken(homeAccountID string, environment string, realm string, clientID string, target string) error {
-			log.Infof("Deleting an access token from the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target '%s'", homeAccountID, environment, realm, clientID, target)
-
-			emptyCorrelationID := ""
-			emptyFamilyID := ""
-
-			operationStatus, err := m.storageManager.DeleteCredentials(emptyCorrelationID, homeAccountID, environment, realm, clientID, emptyFamilyID, target, map[msalbase.CredentialType]bool{msalbase.CredentialTypeOauth2AccessToken: true})
-
-			if err != nil {
-				return err
-			}
-
-			if operationStatus.StatusType != OperationStatusTypeSuccess {
-				log.Warn("Failure deleting an access token from the cache")
-			}
-	*/
-	return nil
+	return errors.New("Not implemented")
 }

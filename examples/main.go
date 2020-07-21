@@ -24,5 +24,7 @@ func main() {
 		acquireByUsernamePasswordPublic()
 	} else if exampleType == "4" {
 		acquireByAuthorizationCodeConfidential()
+	} else if exampleType == "5" {
+		acquireTokenClientSecret()
 	}
 }

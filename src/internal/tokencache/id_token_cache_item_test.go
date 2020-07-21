@@ -8,12 +8,14 @@ import (
 	"testing"
 )
 
-var idHid = "HID"
-var idEnv = "env"
-var idCredential = "IdToken"
-var idClient = "clientID"
-var idRealm = "realm"
-var idTokSecret = "id"
+var (
+	idHid        = "HID"
+	idEnv        = "env"
+	idCredential = "IdToken"
+	idClient     = "clientID"
+	idRealm      = "realm"
+	idTokSecret  = "id"
+)
 
 var idToken = &idTokenCacheItem{
 	HomeAccountID:  &idHid,

@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -51,8 +52,10 @@ func (tr *TokenResponse) HasRefreshToken() bool {
 }
 
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
-	homeAccountID := tr.ClientInfo.UID + "." + tr.ClientInfo.Utid
-	return homeAccountID
+	if tr.ClientInfo.UID == "" && tr.ClientInfo.Utid == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
 }
 
 func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode int, responseData string) (*TokenResponse, error) {
@@ -110,9 +113,6 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	}
 
 	idToken, err := CreateIDToken(payload.IDToken)
-	if err != nil {
-		return nil, err
-	}
 
 	tokenResponse := &TokenResponse{
 		baseResponse:   baseResponse,

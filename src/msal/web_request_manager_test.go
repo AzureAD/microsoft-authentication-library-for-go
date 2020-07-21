@@ -8,6 +8,8 @@ import (
 	"sort"
 	"strings"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 func TestAddContentTypeHeader(t *testing.T) {
@@ -40,6 +42,57 @@ func TestEncodeQueryParameters(t *testing.T) {
 	}
 }
 
-func TestExchangeGrantForToken(t *testing.T) {
-
+func TestGetUserRealm(t *testing.T) {
+	mockHTTPManager := new(MockHTTPManager)
+	wrm := &WebRequestManager{httpManager: mockHTTPManager}
+	url := "https://login.microsoftonline.com/common/UserRealm/username?api-version=1.0"
+	authParams := &msalbase.AuthParametersInternal{
+		Username:  "username",
+		Endpoints: testAuthorityEndpoints,
+	}
+	httpResp := &HTTPManagerResponse{
+		responseCode: 200,
+		responseData: `{"domain_name" : "domain", "cloud_instance_name" : "cloudInst", "cloud_audience_urn" : "URN"}`,
+	}
+	mockHTTPManager.On("Get", url, getAadHeaders(authParams)).Return(httpResp, nil)
+	userRealm := &msalbase.UserRealm{
+		DomainName:        "domain",
+		CloudAudienceURN:  "URN",
+		CloudInstanceName: "cloudInst",
+	}
+	actualRealm, err := wrm.GetUserRealm(authParams)
+	if err != nil {
+		t.Errorf("Error should be nil, instead it is %v", err)
+	}
+	if !reflect.DeepEqual(userRealm, actualRealm) {
+		t.Errorf("Actual realm %+v differs from expected realm %+v", actualRealm, userRealm)
+	}
 }
+
+/*
+func TestExchangeGrantForToken(t *testing.T) {
+	mockHTTPManager := new(MockHTTPManager)
+	wrm := &WebRequestManager{httpManager: mockHTTPManager}
+	queryParams := map[string]string{"test": "test"}
+	authParams := &msalbase.AuthParametersInternal{
+		Endpoints: testAuthorityEndpoints,
+	}
+	headers := getAadHeaders(authParams)
+	addContentTypeHeader(headers, URLEncodedUtf8)
+	tokenJSON := `{"access_token" : "secret"}`
+	actualHTTPResp := &HTTPManagerResponse{
+		responseCode: 200,
+		responseData: tokenJSON,
+	}
+	expectedTokenResponse := &msalbase.TokenResponse{
+		AccessToken: "secret",
+	}
+	mockHTTPManager.On("Post", "https://login.microsoftonline.com/v2.0/token", "test=test", headers).Return(actualHTTPResp, nil)
+	actualTokenResponse, err := wrm.exchangeGrantForToken(authParams, queryParams)
+	if err != nil {
+		t.Errorf("Error should be nil; instead, it is %v", err)
+	}
+	if !reflect.DeepEqual(actualTokenResponse, expectedTokenResponse) {
+		t.Errorf("Actual token response %+v differs from expected token response %+v", actualTokenResponse, expectedTokenResponse)
+	}
+}*/

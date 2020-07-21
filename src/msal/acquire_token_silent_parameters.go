@@ -3,7 +3,11 @@
 
 package msalgo
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+import (
+	"reflect"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+)
 
 // AcquireTokenSilentParameters stuff
 type AcquireTokenSilentParameters struct {
@@ -11,8 +15,15 @@ type AcquireTokenSilentParameters struct {
 	account          IAccount
 }
 
+func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
+	p := &AcquireTokenSilentParameters{
+		commonParameters: createAcquireTokenCommonParameters(scopes),
+	}
+	return p
+}
+
 // CreateAcquireTokenSilentParameters stuff
-func CreateAcquireTokenSilentParameters(scopes []string, account IAccount) *AcquireTokenSilentParameters {
+func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account IAccount) *AcquireTokenSilentParameters {
 	p := &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          account,
@@ -23,5 +34,9 @@ func CreateAcquireTokenSilentParameters(scopes []string, account IAccount) *Acqu
 func (p *AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.AuthorizationType = msalbase.AuthorizationTypeRefreshTokenExchange
-	authParams.HomeaccountID = p.account.GetHomeAccountID()
+	if !reflect.ValueOf(p.account).IsNil() {
+		authParams.HomeaccountID = ""
+	} else {
+		authParams.HomeaccountID = p.account.GetHomeAccountID()
+	}
 }

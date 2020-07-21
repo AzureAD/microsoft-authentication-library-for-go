@@ -217,12 +217,12 @@ func addClientIDQueryParam(queryParams map[string]string, authParameters *msalba
 }
 
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
-	log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
+	//log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
 	// openid required to get an id token
 	// offline_access required to get a refresh token
 	// profile required to get the client_info field back
-	requestedScopes = append(requestedScopes, "openid", "offline_access", "profile")
+	//requestedScopes = append(requestedScopes, "openid", "offline_access", "profile")
 	queryParams["scope"] = msalbase.ConcatenateScopes(requestedScopes)
 }
 
@@ -320,6 +320,16 @@ func (wrm *WebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msa
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
 
+	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+}
+
+func (wrm *WebRequestManager) GetAccessTokenWithClientSecret(authParameters *msalbase.AuthParametersInternal, clientSecret string) (*msalbase.TokenResponse, error) {
+	decodedQueryParams := map[string]string{
+		"grant_type":    "client_credentials",
+		"client_secret": clientSecret,
+	}
+	addClientIDQueryParam(decodedQueryParams, authParameters)
+	addScopeQueryParam(decodedQueryParams, authParameters)
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 

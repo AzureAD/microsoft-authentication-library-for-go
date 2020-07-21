@@ -8,15 +8,16 @@ import (
 	"testing"
 )
 
-var appClient = "cid"
-var appEnv = "env"
-var fam = ""
-
-var appMetadata = &AppMetadata{
-	ClientID:    &appClient,
-	Environment: &appEnv,
-	FamilyID:    nil,
-}
+var (
+	appClient   = "cid"
+	appEnv      = "env"
+	fam         = ""
+	appMetadata = &AppMetadata{
+		ClientID:    &appClient,
+		Environment: &appEnv,
+		FamilyID:    nil,
+	}
+)
 
 func TestCreateKeyForAppMetadata(t *testing.T) {
 	expectedKey := "appmetadata-env-cid"

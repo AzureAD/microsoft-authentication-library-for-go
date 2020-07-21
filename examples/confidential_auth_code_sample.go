@@ -13,19 +13,19 @@ import (
 )
 
 var (
-	confidentialAuthCodeConfig = createConfig("confidential_config.json")
+	confidentialConfig         = createConfig("confidential_config.json")
 	confidentialClientAuthCode *msalgo.ConfidentialClientApplication
 )
 
 func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(
-		confidentialAuthCodeConfig.ClientID,
-		confidentialAuthCodeConfig.RedirectURI,
-		confidentialAuthCodeConfig.Scopes,
-		confidentialAuthCodeConfig.CodeChallenge,
+		confidentialConfig.ClientID,
+		confidentialConfig.RedirectURI,
+		confidentialConfig.Scopes,
+		confidentialConfig.CodeChallenge,
 	)
-	authCodeURLParams.State = confidentialAuthCodeConfig.State
+	authCodeURLParams.State = confidentialConfig.State
 	authURL, err := confidentialClientAuthCode.CreateAuthCodeURL(authCodeURLParams)
 	if err != nil {
 		log.Fatal(err)
@@ -51,10 +51,10 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	code := codes[0]
 	// Getting the access token using the authorization code
 	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParametersWithClientSecret(
-		confidentialAuthCodeConfig.Scopes,
-		confidentialAuthCodeConfig.RedirectURI,
-		confidentialAuthCodeConfig.CodeChallenge,
-		confidentialAuthCodeConfig.ClientSecret,
+		confidentialConfig.Scopes,
+		confidentialConfig.RedirectURI,
+		confidentialConfig.CodeChallenge,
+		confidentialConfig.ClientSecret,
 	)
 	authCodeParams.Code = code
 	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(authCodeParams)
@@ -66,7 +66,7 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 }
 
 func acquireByAuthorizationCodeConfidential() {
-	confidentialClientAuthCode = msalgo.CreateConfidentialClientApplication(confidentialAuthCodeConfig.ClientID, confidentialAuthCodeConfig.Authority)
+	confidentialClientAuthCode = msalgo.CreateConfidentialClientApplication(confidentialConfig.ClientID, confidentialConfig.Authority)
 	http.HandleFunc("/", redirectToURLConfidential)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getTokenConfidential)

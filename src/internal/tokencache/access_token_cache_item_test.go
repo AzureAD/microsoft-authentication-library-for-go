@@ -9,29 +9,30 @@ import (
 	"time"
 )
 
-var testHID = "testHID"
-var env = "env"
-var credential = "AccessToken"
-var clientID = "clientID"
-var realm = "realm"
-var scopes = "user.read"
-var secret = "access"
-var expiresOn = "1592049600"
-var extExpiresOn = "1592049600"
-var cachedAt = "1592049600"
-
-var atCacheEntity = &accessTokenCacheItem{
-	HomeAccountID:                  &testHID,
-	Environment:                    &env,
-	CredentialType:                 &credential,
-	ClientID:                       &clientID,
-	Realm:                          &realm,
-	Scopes:                         &scopes,
-	Secret:                         &secret,
-	ExpiresOnUnixTimestamp:         &expiresOn,
-	ExtendedExpiresOnUnixTimestamp: &extExpiresOn,
-	CachedAt:                       &cachedAt,
-}
+var (
+	testHID       = "testHID"
+	env           = "env"
+	credential    = "AccessToken"
+	clientID      = "clientID"
+	realm         = "realm"
+	scopes        = "user.read"
+	secret        = "access"
+	expiresOn     = "1592049600"
+	extExpiresOn  = "1592049600"
+	cachedAt      = "1592049600"
+	atCacheEntity = &accessTokenCacheItem{
+		HomeAccountID:                  &testHID,
+		Environment:                    &env,
+		CredentialType:                 &credential,
+		ClientID:                       &clientID,
+		Realm:                          &realm,
+		Scopes:                         &scopes,
+		Secret:                         &secret,
+		ExpiresOnUnixTimestamp:         &expiresOn,
+		ExtendedExpiresOnUnixTimestamp: &extExpiresOn,
+		CachedAt:                       &cachedAt,
+	}
+)
 
 func TestCreateAccessTokenCacheItem(t *testing.T) {
 	testExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
