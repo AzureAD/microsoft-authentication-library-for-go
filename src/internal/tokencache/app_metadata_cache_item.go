@@ -35,9 +35,9 @@ func (appMeta *AppMetadata) CreateKey() string {
 }
 
 func (appMeta *AppMetadata) populateFromJSONMap(j map[string]interface{}) error {
-	appMeta.FamilyID = msalbase.ExtractStringPointerForCache(j, "family_id")
-	appMeta.ClientID = msalbase.ExtractStringPointerForCache(j, "client_id")
-	appMeta.Environment = msalbase.ExtractStringPointerForCache(j, "environment")
+	appMeta.FamilyID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONFamilyID)
+	appMeta.ClientID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONClientID)
+	appMeta.Environment = msalbase.ExtractStringPointerForCache(j, msalbase.JSONEnvironment)
 	appMeta.additionalFields = j
 	return nil
 }

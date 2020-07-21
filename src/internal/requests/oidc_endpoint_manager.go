@@ -53,7 +53,7 @@ func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(a
 }
 
 func createOpenIDConfigurationEndpointManager(authorityInfo *msalbase.AuthorityInfo) (IOpenIDConfigurationEndpointManager, error) {
-	if authorityInfo.AuthorityType == msalbase.AuthorityTypeAad {
+	if authorityInfo.AuthorityType == msalbase.MSSTS {
 		return &aadOpenIDConfigurationEndpointManager{}, nil
 	}
 

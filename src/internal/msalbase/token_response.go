@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -51,8 +52,7 @@ func (tr *TokenResponse) HasRefreshToken() bool {
 }
 
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
-	homeAccountID := tr.ClientInfo.UID + "." + tr.ClientInfo.Utid
-	return homeAccountID
+	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
 }
 
 func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode int, responseData string) (*TokenResponse, error) {

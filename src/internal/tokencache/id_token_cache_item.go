@@ -25,7 +25,7 @@ func CreateIDTokenCacheItem(homeAccountID string,
 	realm string,
 	clientID string,
 	idToken string) *idTokenCacheItem {
-	credentialType := msalbase.CredentialTypeOidcIDToken.ToString()
+	credentialType := msalbase.CredentialTypeIDToken
 	id := &idTokenCacheItem{
 		HomeAccountID:  &homeAccountID,
 		Environment:    &environment,
@@ -53,12 +53,12 @@ func (id *idTokenCacheItem) GetSecret() string {
 }
 
 func (id *idTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
-	id.HomeAccountID = msalbase.ExtractStringPointerForCache(j, "home_account_id")
-	id.Environment = msalbase.ExtractStringPointerForCache(j, "environment")
-	id.Realm = msalbase.ExtractStringPointerForCache(j, "realm")
-	id.CredentialType = msalbase.ExtractStringPointerForCache(j, "credential_type")
-	id.ClientID = msalbase.ExtractStringPointerForCache(j, "client_id")
-	id.Secret = msalbase.ExtractStringPointerForCache(j, "secret")
+	id.HomeAccountID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONHomeAccountID)
+	id.Environment = msalbase.ExtractStringPointerForCache(j, msalbase.JSONEnvironment)
+	id.Realm = msalbase.ExtractStringPointerForCache(j, msalbase.JSONRealm)
+	id.CredentialType = msalbase.ExtractStringPointerForCache(j, msalbase.JSONCredentialType)
+	id.ClientID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONClientID)
+	id.Secret = msalbase.ExtractStringPointerForCache(j, msalbase.JSONSecret)
 	id.additionalFields = j
 	return nil
 }

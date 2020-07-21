@@ -176,50 +176,5 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 }
 
 func (m *cacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
-	/*
-			homeAccountID := "" // todo: authParameters.GetAccountId()
-			environment := ""   // authParameters.GetAuthorityInfo().GetEnvironment()
-			clientID := authParameters.ClientID
-
-			emptyCorrelationID := ""
-			emptyRealm := ""
-			emptyFamilyID := ""
-			emptyTarget := ""
-
-			log.Infof("Deleting refresh token from the cache for homeAccountId '%s' environment '%s' clientID '%s'", homeAccountID, environment, clientID)
-
-			if homeAccountID == "" || environment == "" || clientID == "" {
-				log.Warn("Failed to delete refresh token from the cache, one of the primary keys is empty")
-				return errors.New("Failed to delete refresh token from the cache, one of the primary keys is empty")
-			}
-
-			operationStatus, err := m.storageManager.DeleteCredentials(emptyCorrelationID, homeAccountID, environment, emptyRealm, clientID, emptyFamilyID, emptyTarget, map[msalbase.CredentialType]bool{msalbase.CredentialTypeOauth2RefreshToken: true})
-			if err != nil {
-				return nil
-			}
-
-			if operationStatus.StatusType != OperationStatusTypeSuccess {
-				log.Warn("Error deleting an invalid refresh token from the cache")
-			}
-
-			return nil
-		}
-
-		func (m *cacheManager) deleteCachedAccessToken(homeAccountID string, environment string, realm string, clientID string, target string) error {
-			log.Infof("Deleting an access token from the cache for homeAccountId '%s' environment '%s' realm '%s' clientId '%s' target '%s'", homeAccountID, environment, realm, clientID, target)
-
-			emptyCorrelationID := ""
-			emptyFamilyID := ""
-
-			operationStatus, err := m.storageManager.DeleteCredentials(emptyCorrelationID, homeAccountID, environment, realm, clientID, emptyFamilyID, target, map[msalbase.CredentialType]bool{msalbase.CredentialTypeOauth2AccessToken: true})
-
-			if err != nil {
-				return err
-			}
-
-			if operationStatus.StatusType != OperationStatusTypeSuccess {
-				log.Warn("Failure deleting an access token from the cache")
-			}
-	*/
-	return nil
+	return errors.New("Not implemented")
 }

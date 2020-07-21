@@ -20,17 +20,17 @@ var (
 	defaultRealm       = "contoso"
 	defaultScopes      = "s2 s1 s3"
 	defaultClientID    = "my_client_id"
-	accessTokenCred    = msalbase.CredentialTypeOauth2AccessToken.ToString()
+	accessTokenCred    = msalbase.CredentialTypeAccessToken
 	accessTokenSecret  = "an access token"
 	atCached           = "1000"
 	atExpires          = "4600"
-	rtCredType         = msalbase.CredentialTypeOauth2RefreshToken.ToString()
+	rtCredType         = msalbase.CredentialTypeRefreshToken
 	rtSecret           = "a refresh token"
 	idCred             = "IdToken"
 	idSecret           = "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature"
 	accUser            = "John Doe"
 	accLID             = "object1234"
-	accAuth            = msalbase.AuthorityTypeAad.ToString()
+	accAuth            = string(msalbase.MSSTS)
 )
 
 func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
@@ -167,12 +167,12 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 	}
 	contract.Accounts = map[string]*msalbase.Account{
 		"uid.utid-login.windows.net-contoso": {
-			PreferredUsername:   &accUser,
-			LocalAccountID:      &accLID,
-			Realm:               &defaultRealm,
-			Environment:         &defaultEnvironment,
-			HomeAccountID:       &defaultHID,
-			AuthorityTypeString: &accAuth,
+			PreferredUsername: &accUser,
+			LocalAccountID:    &accLID,
+			Realm:             &defaultRealm,
+			Environment:       &defaultEnvironment,
+			HomeAccountID:     &defaultHID,
+			AuthorityType:     &accAuth,
 		},
 	}
 	contract.AppMetadata = map[string]*AppMetadata{

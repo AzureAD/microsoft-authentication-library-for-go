@@ -34,7 +34,7 @@ func CreateAccessTokenCacheItem(homeAccountID string,
 	extendedExpiresOn int64,
 	scopes string,
 	accessToken string) *accessTokenCacheItem {
-	credentialType := msalbase.CredentialTypeOauth2AccessToken.ToString()
+	credentialType := msalbase.CredentialTypeAccessToken
 	cachedAtString := strconv.FormatInt(cachedAt, 10)
 	expiresOnString := strconv.FormatInt(expiresOn, 10)
 	extExpiresOnString := strconv.FormatInt(extendedExpiresOn, 10)
@@ -78,16 +78,16 @@ func (s *accessTokenCacheItem) GetScopes() string {
 
 func (s *accessTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
 
-	s.HomeAccountID = msalbase.ExtractStringPointerForCache(j, "home_account_id")
-	s.Environment = msalbase.ExtractStringPointerForCache(j, "environment")
-	s.Realm = msalbase.ExtractStringPointerForCache(j, "realm")
-	s.CredentialType = msalbase.ExtractStringPointerForCache(j, "credential_type")
-	s.ClientID = msalbase.ExtractStringPointerForCache(j, "client_id")
-	s.Secret = msalbase.ExtractStringPointerForCache(j, "secret")
-	s.Scopes = msalbase.ExtractStringPointerForCache(j, "target")
-	s.CachedAt = msalbase.ExtractStringPointerForCache(j, "cached_at")
-	s.ExpiresOnUnixTimestamp = msalbase.ExtractStringPointerForCache(j, "expires_on")
-	s.ExtendedExpiresOnUnixTimestamp = msalbase.ExtractStringPointerForCache(j, "extended_expires_on")
+	s.HomeAccountID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONHomeAccountID)
+	s.Environment = msalbase.ExtractStringPointerForCache(j, msalbase.JSONEnvironment)
+	s.Realm = msalbase.ExtractStringPointerForCache(j, msalbase.JSONRealm)
+	s.CredentialType = msalbase.ExtractStringPointerForCache(j, msalbase.JSONCredentialType)
+	s.ClientID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONClientID)
+	s.Secret = msalbase.ExtractStringPointerForCache(j, msalbase.JSONSecret)
+	s.Scopes = msalbase.ExtractStringPointerForCache(j, msalbase.JSONTarget)
+	s.CachedAt = msalbase.ExtractStringPointerForCache(j, msalbase.JSONCachedAt)
+	s.ExpiresOnUnixTimestamp = msalbase.ExtractStringPointerForCache(j, msalbase.JSONExpiresOn)
+	s.ExtendedExpiresOnUnixTimestamp = msalbase.ExtractStringPointerForCache(j, msalbase.JSONExtExpiresOn)
 	s.additionalFields = j
 	return nil
 }

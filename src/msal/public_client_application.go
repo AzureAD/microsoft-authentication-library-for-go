@@ -133,11 +133,9 @@ func (pca *PublicClientApplication) executeTokenRequestWithCacheWrite(
 	if err == nil {
 		if pca.cacheAccessor != nil {
 			pca.cacheAccessor.BeforeCacheAccess(pca.cacheContext)
+			defer pca.cacheAccessor.AfterCacheAccess(pca.cacheContext)
 		}
 		account, err := pca.cacheContext.cache.CacheTokenResponse(authParams, tokenResponse)
-		if pca.cacheAccessor != nil {
-			pca.cacheAccessor.AfterCacheAccess(pca.cacheContext)
-		}
 		if err != nil {
 			return nil, err
 		}

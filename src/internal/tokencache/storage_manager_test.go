@@ -38,8 +38,8 @@ func TestIsMatchingScopes(t *testing.T) {
 
 func TestReadAllAccounts(t *testing.T) {
 	storageManager := CreateStorageManager()
-	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
-	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.AuthorityTypeAad, "USERNAME")
+	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
 	storageManager.accounts[testAccTwo.CreateKey()] = testAccTwo
 	actualAccounts := storageManager.ReadAllAccounts()
@@ -65,8 +65,8 @@ func TestReadAllAccounts(t *testing.T) {
 
 func TestDeleteAccounts(t *testing.T) {
 	storageManager := CreateStorageManager()
-	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
-	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.AuthorityTypeAad, "USERNAME")
+	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
 	storageManager.accounts[testAccTwo.CreateKey()] = testAccTwo
 	err := storageManager.DeleteAccounts("hid", []string{"hello", "env", "test"})
@@ -138,7 +138,7 @@ func TestWriteAccessToken(t *testing.T) {
 
 func TestReadAccount(t *testing.T) {
 	storageManager := CreateStorageManager()
-	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
+	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	storageManager.accounts[testAcc.CreateKey()] = testAcc
 	returnedAccount := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
 	if !reflect.DeepEqual(returnedAccount, testAcc) {
@@ -152,7 +152,7 @@ func TestReadAccount(t *testing.T) {
 
 func TestWriteAccount(t *testing.T) {
 	storageManager := CreateStorageManager()
-	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
+	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	key := testAcc.CreateKey()
 	err := storageManager.WriteAccount(testAcc)
 	if err != nil {
@@ -370,12 +370,12 @@ func TestStorageManagerSerialize(t *testing.T) {
 	}
 	manager.accounts = map[string]*msalbase.Account{
 		"uid.utid-login.windows.net-contoso": {
-			PreferredUsername:   &accUser,
-			LocalAccountID:      &accLID,
-			Realm:               &defaultRealm,
-			Environment:         &defaultEnvironment,
-			HomeAccountID:       &defaultHID,
-			AuthorityTypeString: &accAuth,
+			PreferredUsername: &accUser,
+			LocalAccountID:    &accLID,
+			Realm:             &defaultRealm,
+			Environment:       &defaultEnvironment,
+			HomeAccountID:     &defaultHID,
+			AuthorityType:     &accAuth,
 		},
 	}
 	manager.appMetadatas = map[string]*AppMetadata{

@@ -150,7 +150,7 @@ func TestTryReadCache(t *testing.T) {
 		[]string{"env", "alias2"},
 		"fid",
 		"cid").Return(testRefreshToken)
-	testAccount := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
+	testAccount := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	mockStorageManager.On("ReadAccount", "hid", []string{"env", "alias2"}, "realm").Return(testAccount)
 	expectedStorageToken := msalbase.CreateStorageTokenResponse(accessTokenCacheItem, testRefreshToken, testIDToken, testAccount)
 	actualStorageToken, err := cacheManager.TryReadCache(authParameters, mockWebRequestManager)
@@ -185,7 +185,7 @@ func TestCacheTokenResponse(t *testing.T) {
 		ExpiresOn:     expiresOn,
 		ExtExpiresOn:  time.Now(),
 	}
-	authInfo := &msalbase.AuthorityInfo{Host: "env", Tenant: "realm", AuthorityType: msalbase.AuthorityTypeAad}
+	authInfo := &msalbase.AuthorityInfo{Host: "env", Tenant: "realm", AuthorityType: msalbase.MSSTS}
 	authParams := &msalbase.AuthParametersInternal{
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
@@ -218,7 +218,7 @@ func TestCacheTokenResponse(t *testing.T) {
 		"idToken",
 	)
 	mockStorageManager.On("WriteIDToken", testIDToken).Return(nil)
-	testAccount := msalbase.CreateAccount("testUID.testUtid", "env", "realm", "lid", msalbase.AuthorityTypeAad, "username")
+	testAccount := msalbase.CreateAccount("testUID.testUtid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	mockStorageManager.On("WriteAccount", testAccount).Return(nil)
 	testAppMeta := CreateAppMetadata("fid", "cid", "env")
 	mockStorageManager.On("WriteAppMetadata", testAppMeta).Return(nil)
