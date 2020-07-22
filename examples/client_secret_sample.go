@@ -9,9 +9,7 @@ import (
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 )
 
-func acquireTokenClientSecret() {
-	confidentialClientApp := msalgo.CreateConfidentialClientApplication(
-		confidentialConfig.ClientID, confidentialConfig.Authority)
+func tryClientSecretFlow(confidentialClientApp *msalgo.ConfidentialClientApplication) {
 	clientSecretParams := msalgo.CreateAcquireTokenClientCredentialsParameters(
 		confidentialConfig.Scopes, confidentialConfig.ClientSecret)
 	result, err := confidentialClientApp.AcquireTokenByClientSecret(clientSecretParams)
@@ -20,4 +18,18 @@ func acquireTokenClientSecret() {
 	}
 	accessToken := result.GetAccessToken()
 	log.Info("Access token is: " + accessToken)
+}
+
+func acquireTokenClientSecret() {
+	confidentialClientApp := msalgo.CreateConfidentialClientApplication(
+		confidentialConfig.ClientID, confidentialConfig.Authority)
+	silentParams := msalgo.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
+	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)
+	if err != nil {
+		tryClientSecretFlow(confidentialClientApp)
+	} else {
+		accessToken := result.GetAccessToken()
+		log.Info("Access token is: " + accessToken)
+	}
+
 }

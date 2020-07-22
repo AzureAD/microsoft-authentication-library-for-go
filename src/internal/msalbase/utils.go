@@ -4,6 +4,7 @@
 package msalbase
 
 import (
+	"encoding/base64"
 	"strconv"
 	"strings"
 	"time"
@@ -56,4 +57,16 @@ func GetStringFromPointer(pointer *string) string {
 	} else {
 		return *pointer
 	}
+}
+
+// Adapted from MSAL Python and https://stackoverflow.com/a/31971780
+func DecodeJWT(data string) ([]byte, error) {
+	if i := len(data) % 4; i != 0 {
+		data += strings.Repeat("=", 4-i)
+	}
+	decodedData, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return nil, err
+	}
+	return decodedData, nil
 }

@@ -4,12 +4,12 @@
 package msalbase
 
 import (
-	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
+
+	log "github.com/sirupsen/logrus"
 )
 
 type tokenResponseJSONPayload struct {
@@ -52,9 +52,6 @@ func (tr *TokenResponse) HasRefreshToken() bool {
 }
 
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
-	if tr.ClientInfo.UID == "" && tr.ClientInfo.Utid == "" {
-		return ""
-	}
 	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
 }
 
@@ -63,7 +60,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	if err != nil {
 		return nil, err
 	}
-
+	log.Infof("Raw client %+v", responseData)
 	payload := &tokenResponseJSONPayload{}
 	err = json.Unmarshal([]byte(responseData), payload)
 	if err != nil {
@@ -79,12 +76,9 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	clientInfo := &ClientInfoJSONPayload{}
 
 	// Client info may be empty in some flows, e.g. certificate exchange.
+
 	if len(rawClientInfo) > 0 {
-		// Adapted from MSAL Python and https://stackoverflow.com/a/31971780
-		if i := len(rawClientInfo) % 4; i != 0 {
-			rawClientInfo += strings.Repeat("=", 4-i)
-		}
-		rawClientInfoDecoded, err := base64.StdEncoding.DecodeString(rawClientInfo)
+		rawClientInfoDecoded, err := DecodeJWT(rawClientInfo)
 		if err != nil {
 			return nil, err
 		}
@@ -94,7 +88,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 			return nil, err
 		}
 	}
-
+	log.Infof("Client Info %+v", clientInfo)
 	expiresOn := time.Now().Add(time.Second * time.Duration(payload.ExpiresIn))
 	extExpiresOn := time.Now().Add(time.Second * time.Duration(payload.ExtExpiresIn))
 
@@ -113,6 +107,9 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	}
 
 	idToken, err := CreateIDToken(payload.IDToken)
+	if err != nil {
+		log.Infof("ID Token error %v", err)
+	}
 
 	tokenResponse := &TokenResponse{
 		baseResponse:   baseResponse,
