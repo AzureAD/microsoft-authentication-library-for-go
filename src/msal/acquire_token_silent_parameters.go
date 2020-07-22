@@ -4,8 +4,6 @@
 package msalgo
 
 import (
-	"reflect"
-
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
@@ -18,6 +16,7 @@ type AcquireTokenSilentParameters struct {
 func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
 	p := &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
+		account:          &msalbase.Account{},
 	}
 	return p
 }
@@ -34,9 +33,5 @@ func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account IAcc
 func (p *AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.AuthorizationType = msalbase.AuthorizationTypeRefreshTokenExchange
-	if !reflect.ValueOf(p.account).IsNil() {
-		authParams.HomeaccountID = ""
-	} else {
-		authParams.HomeaccountID = p.account.GetHomeAccountID()
-	}
+	authParams.HomeaccountID = p.account.GetHomeAccountID()
 }
