@@ -43,10 +43,10 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 }
 
 func (cca *ConfidentialClientApplication) AcquireTokenByClientSecret(
-	clientCredParams *AcquireTokenClientCredentialsParameters) (IAuthenticationResult, error) {
+	clientCredParams *AcquireTokenClientSecretParameters) (IAuthenticationResult, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientCredParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateClientCredentialsRequest(
+	req := requests.CreateClientSecretRequest(
 		cca.clientApplication.webRequestManager, authParams, clientCredParams.clientSecret)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }

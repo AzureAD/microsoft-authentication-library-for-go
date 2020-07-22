@@ -47,8 +47,6 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *St
 		if err != nil {
 			return nil, err
 		}
-	} else {
-		return nil, errors.New("No ID token present in cache")
 	}
 
 	ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}

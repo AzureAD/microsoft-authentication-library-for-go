@@ -10,6 +10,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
+	log "github.com/sirupsen/logrus"
 )
 
 type clientApplication struct {
@@ -56,8 +57,10 @@ func (client *clientApplication) acquireTokenSilent(
 	if storageTokenResponse != nil {
 		result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
 		if err == nil {
+
 			return result, err
 		}
+		log.Info(err)
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
 			return nil, errors.New("No refresh token found")
 		}
@@ -102,11 +105,9 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(
 	if err == nil {
 		if client.cacheAccessor != nil {
 			client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
+			defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
 		}
 		account, err := client.cacheContext.cache.CacheTokenResponse(authParams, tokenResponse)
-		if client.cacheAccessor != nil {
-			client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-		}
 		if err != nil {
 			return nil, err
 		}

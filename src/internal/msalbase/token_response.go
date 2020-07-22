@@ -52,6 +52,9 @@ func (tr *TokenResponse) HasRefreshToken() bool {
 }
 
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
+	if tr.ClientInfo.UID == "" || tr.ClientInfo.Utid == "" {
+		return ""
+	}
 	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
 }
 

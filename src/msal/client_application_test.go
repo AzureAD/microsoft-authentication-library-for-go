@@ -9,6 +9,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
 )
 
 var (
@@ -27,6 +28,39 @@ var (
 		cacheContext:                &CacheContext{cacheManager},
 	}
 )
+
+func TestAcquireTokenSilent(t *testing.T) {
+	account := &msalbase.Account{}
+	silentParams := &AcquireTokenSilentParameters{
+		commonParameters: tokenCommonParams,
+		account:          account,
+	}
+	authParams := &msalbase.AuthParametersInternal{
+		AuthorityInfo:     testAuthorityInfo,
+		ClientID:          "clientID",
+		Scopes:            []string{"openid"},
+		AuthorizationType: msalbase.AuthorizationTypeRefreshTokenExchange,
+	}
+	at := tokencache.CreateAccessTokenCacheItem("hid", "env", "realm", "clientID", 0, 0, 0, "openid", "secret")
+	rt := tokencache.CreateRefreshTokenCacheItem("hid", "env", "clientID", "secret", "")
+	id := tokencache.CreateIDTokenCacheItem("hid", "env", "realm", "clientID", "secret")
+	storageToken := msalbase.CreateStorageTokenResponse(at, rt, id, account)
+	cacheManager.On("TryReadCache", authParams, wrm).Return(storageToken, nil)
+	wrmauthParams := &msalbase.AuthParametersInternal{
+		AuthorityInfo:     testAuthorityInfo,
+		ClientID:          "clientID",
+		Scopes:            []string{"openid"},
+		AuthorizationType: msalbase.AuthorizationTypeRefreshTokenExchange,
+		Endpoints:         testAuthorityEndpoints,
+	}
+	tokenResp := &msalbase.TokenResponse{}
+	wrm.On("GetAccessTokenFromRefreshToken", wrmauthParams, "secret").Return(tokenResp, nil)
+	cacheManager.On("CacheTokenResponse", wrmauthParams, tokenResp).Return(testAcc, nil)
+	_, err := testClientApplication.acquireTokenSilent(silentParams)
+	if err != nil {
+		t.Errorf("Error should be nil, but it is %v", err)
+	}
+}
 
 func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 	req := new(requests.MockTokenRequest)

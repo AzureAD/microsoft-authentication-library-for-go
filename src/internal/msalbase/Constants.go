@@ -50,4 +50,13 @@ const (
 	MSSTS = "MSSTS"
 	ADFS  = "ADFS"
 	B2C   = "B2C"
+
+	//Grant Types
+	PasswordGrant         = "password"
+	SAMLV1Grant           = "urn:ietf:params:oauth:grant-type:saml1_1-bearer"
+	SAMLV2Grant           = "urn:ietf:params:oauth:grant-type:saml2-bearer"
+	DeviceCodeGrant       = "device_code"
+	AuthCodeGrant         = "authorization_code"
+	RefreshTokenGrant     = "refresh_token"
+	ClientCredentialGrant = "client_credentials"
 )

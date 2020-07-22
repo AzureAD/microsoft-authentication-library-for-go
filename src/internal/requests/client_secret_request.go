@@ -7,17 +7,17 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-type ClientCredentialsRequest struct {
+type ClientSecretRequest struct {
 	webRequestManager IWebRequestManager
 	authParameters    *msalbase.AuthParametersInternal
 	clientSecret      string
 }
 
-func CreateClientCredentialsRequest(
+func CreateClientSecretRequest(
 	webRequestManager IWebRequestManager,
 	authParameters *msalbase.AuthParametersInternal,
-	clientSecret string) *ClientCredentialsRequest {
-	req := &ClientCredentialsRequest{
+	clientSecret string) *ClientSecretRequest {
+	req := &ClientSecretRequest{
 		webRequestManager: webRequestManager,
 		authParameters:    authParameters,
 		clientSecret:      clientSecret,
@@ -25,7 +25,7 @@ func CreateClientCredentialsRequest(
 	return req
 }
 
-func (req *ClientCredentialsRequest) Execute() (*msalbase.TokenResponse, error) {
+func (req *ClientSecretRequest) Execute() (*msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {

@@ -166,7 +166,6 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	if err != nil {
 		return nil, err
 	}
-
 	return account, nil
 }
 

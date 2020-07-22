@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
@@ -36,7 +35,7 @@ func acquireByUsernamePasswordPublic() {
 			userAccount = account
 		}
 	}
-	if reflect.ValueOf(userAccount).IsNil() {
+	if userAccount == nil {
 		log.Info("No valid account found")
 		tryUsernamePasswordFlow(publicClientApp)
 	} else {
