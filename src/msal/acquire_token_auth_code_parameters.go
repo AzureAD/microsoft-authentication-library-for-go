@@ -3,7 +3,10 @@
 
 package msalgo
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+import (
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+)
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow
 type AcquireTokenAuthCodeParameters struct {
@@ -12,6 +15,10 @@ type AcquireTokenAuthCodeParameters struct {
 	Code             string
 	codeChallenge    string
 	ClientSecret     string
+	CertThumbprint   string
+	CertKey          []byte
+	ClientAssertion  string
+	RequestType      requests.AuthCodeRequestType
 }
 
 // CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance
@@ -22,6 +29,7 @@ func CreateAcquireTokenAuthCodeParameters(scopes []string,
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		redirectURI:      redirectURI,
 		codeChallenge:    codeChallenge,
+		RequestType:      requests.AuthCodePublicClient,
 	}
 	return p
 }
@@ -36,6 +44,35 @@ func CreateAcquireTokenAuthCodeParametersWithClientSecret(scopes []string,
 		redirectURI:      redirectURI,
 		codeChallenge:    codeChallenge,
 		ClientSecret:     clientSecret,
+		RequestType:      requests.AuthCodeClientSecret,
+	}
+	return p
+}
+
+func CreateAcquireAuthCodeParametersWithCertificate(scopes []string,
+	redirectURI string,
+	codeChallenge string,
+	thumbprint string,
+	key []byte) *AcquireTokenAuthCodeParameters {
+	p := &AcquireTokenAuthCodeParameters{
+		commonParameters: createAcquireTokenCommonParameters(scopes),
+		redirectURI:      redirectURI,
+		codeChallenge:    codeChallenge,
+		CertThumbprint:   thumbprint,
+		CertKey:          key,
+		RequestType:      requests.AuthCodeClientAssertion,
+	}
+	return p
+}
+
+func CreateAcquireAuthCodeParametersWithAssertion(scopes []string,
+	redirectURI string, codeChallenge string, assertion string) *AcquireTokenAuthCodeParameters {
+	p := &AcquireTokenAuthCodeParameters{
+		commonParameters: createAcquireTokenCommonParameters(scopes),
+		redirectURI:      redirectURI,
+		codeChallenge:    codeChallenge,
+		RequestType:      requests.AuthCodeClientAssertion,
+		ClientAssertion:  assertion,
 	}
 	return p
 }

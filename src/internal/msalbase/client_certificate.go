@@ -4,6 +4,10 @@
 package msalbase
 
 import (
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/hex"
+	"encoding/pem"
 	"strconv"
 	"time"
 
@@ -11,40 +15,36 @@ import (
 	uuid "github.com/google/uuid"
 )
 
-type certificateHeader struct {
-	Algorithm  string `json:"alg"`
-	Type       string `json:"typ"`
-	Thumbprint string `json:"x5t"`
-}
-
 var certHeader = map[string]interface{}{
 	"alg": "RS256",
 	"typ": "JWT",
 }
 
-type certificatePayload struct {
-	Audience   string `json:"aud"`
-	Expiration string `json:"exp"`
-	Issuer     string `json:"iss"`
-	GUID       string `json:"jti"`
-	NotBefore  string `json:"nbf"`
-	Subject    string `json:"sub"`
-}
-
 type ClientCertificate struct {
-	thumbprint  string
-	key         []byte
-	certHeader  *certificateHeader
-	certPayload *certificatePayload
+	thumbprint string
+	key        []byte
+	expiresOn  int64
 }
 
-func (cert *ClientCertificate) buildJWT(authParams *AuthParametersInternal,
-	tokenEndpoint string) (string, error) {
+func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
+	cert := &ClientCertificate{
+		thumbprint: thumbprint,
+		key:        key,
+	}
+	return cert
+}
+
+func (cert *ClientCertificate) BuildJWT(authParams *AuthParametersInternal) (string, error) {
 	now := time.Now().UTC().Unix()
 	expiresOn := now + 600
-	certHeader["x5t"] = cert.thumbprint
+	cert.expiresOn = expiresOn
+	hexDecodedThumbprint, err := hex.DecodeString(cert.thumbprint)
+	if err != nil {
+		return "", err
+	}
+	certHeader["x5t"] = base64.StdEncoding.EncodeToString(hexDecodedThumbprint)
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"aud": tokenEndpoint,
+		"aud": authParams.Endpoints.TokenEndpoint,
 		"exp": strconv.FormatInt(expiresOn, 10),
 		"iss": authParams.ClientID,
 		"jti": uuid.New().String(),
@@ -52,7 +52,12 @@ func (cert *ClientCertificate) buildJWT(authParams *AuthParametersInternal,
 		"sub": authParams.ClientID,
 	})
 	token.Header = certHeader
-	tokenString, err := token.SignedString(cert.key)
+	block, _ := pem.Decode(cert.key)
+	privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
+	if err != nil {
+		return "", err
+	}
+	tokenString, err := token.SignedString(privateKey)
 	if err != nil {
 		return "", err
 	}

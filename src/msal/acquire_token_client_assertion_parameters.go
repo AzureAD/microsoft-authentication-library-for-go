@@ -3,17 +3,18 @@
 
 package msalgo
 
+import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+
 type AcquireTokenClientAssertionParameters struct {
 	commonParameters *acquireTokenCommonParameters
-	clientAssertion string
+	clientAssertion  string
 }
-
 
 func CreateAcquireTokenClientAssertionParameters(scopes []string,
 	clientAssertion string) *AcquireTokenClientAssertionParameters {
 	params := &AcquireTokenClientAssertionParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
-		clientAssertion: clientAssertion,
+		clientAssertion:  clientAssertion,
 	}
 	return params
 }

@@ -80,10 +80,20 @@ func (client *clientApplication) acquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams)
+	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.RequestType)
 	req.Code = authCodeParams.Code
 	req.CodeChallenge = authCodeParams.codeChallenge
-	req.ClientSecret = authCodeParams.ClientSecret
+	if req.RequestType == requests.AuthCodeClientSecret {
+		req.ClientSecret = authCodeParams.ClientSecret
+	}
+	if req.RequestType == requests.AuthCodeClientAssertion {
+		if authCodeParams.ClientAssertion != "" {
+			req.ClientAssertion = msalbase.CreateClientAssertionFromJWT(authCodeParams.ClientAssertion)
+		} else if authCodeParams.CertThumbprint != "" && len(authCodeParams.CertKey) != 0 {
+			req.ClientAssertion = msalbase.CreateClientAssertionFromCertificate(
+				authCodeParams.CertThumbprint, authCodeParams.CertKey)
+		}
+	}
 	return client.executeTokenRequestWithCacheWrite(req, authParams)
 }
 

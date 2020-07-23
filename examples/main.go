@@ -26,5 +26,7 @@ func main() {
 		acquireByAuthorizationCodeConfidential()
 	} else if exampleType == "5" {
 		acquireTokenClientSecret()
+	} else if exampleType == "6" {
+		acquireTokenClientCertificate()
 	}
 }

@@ -289,14 +289,14 @@ func (wrm *WebRequestManager) exchangeGrantForToken(authParameters *msalbase.Aut
 func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal,
 	authCode string,
 	codeVerifier string,
-	clientSecret string) (*msalbase.TokenResponse, error) {
+	params map[string]string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":    msalbase.AuthCodeGrant,
 		"code":          authCode,
 		"code_verifier": codeVerifier,
 	}
-	if clientSecret != "" {
-		decodedQueryParams["client_secret"] = clientSecret
+	for k, v := range params {
+		decodedQueryParams[k] = v
 	}
 	addRedirectURIQueryParam(decodedQueryParams, authParameters)
 	addClientIDQueryParam(decodedQueryParams, authParameters)
@@ -334,7 +334,7 @@ func (wrm *WebRequestManager) GetAccessTokenWithClientSecret(authParameters *msa
 func (wrm *WebRequestManager) GetAccessTokenWithAssertion(authParameters *msalbase.AuthParametersInternal, assertion string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":            msalbase.ClientCredentialGrant,
-		"client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+		"client_assertion_type": msalbase.ClientAssertionGrant,
 		"client_assertion":      assertion,
 	}
 

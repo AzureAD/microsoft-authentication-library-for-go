@@ -10,7 +10,7 @@ import (
 )
 
 func tryClientSecretFlow(confidentialClientApp *msalgo.ConfidentialClientApplication) {
-	clientSecretParams := msalgo.CreateAcquireTokenClientCredentialsParameters(
+	clientSecretParams := msalgo.CreateAcquireTokenClientSecretParameters(
 		confidentialConfig.Scopes, confidentialConfig.ClientSecret)
 	result, err := confidentialClientApp.AcquireTokenByClientSecret(clientSecretParams)
 	if err != nil {

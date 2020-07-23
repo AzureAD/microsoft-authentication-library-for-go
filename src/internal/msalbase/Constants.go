@@ -59,4 +59,5 @@ const (
 	AuthCodeGrant         = "authorization_code"
 	RefreshTokenGrant     = "refresh_token"
 	ClientCredentialGrant = "client_credentials"
+	ClientAssertionGrant  = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
 )

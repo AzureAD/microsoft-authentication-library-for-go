@@ -51,6 +51,26 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientSecret(
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
+func (cca *ConfidentialClientApplication) AcquireTokenByCertificate(
+	certParams *AcquireTokenCertificateParameters) (IAuthenticationResult, error) {
+	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
+	certParams.augmentAuthenticationParameters(authParams)
+	req := requests.CreateClientAssertionRequestWithCertificate(
+		cca.clientApplication.webRequestManager, authParams, certParams.thumbprint, certParams.privateKey,
+	)
+	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
+}
+
+func (cca *ConfidentialClientApplication) AcquireTokenByClientAssertion(
+	clientParams *AcquireTokenClientAssertionParameters) (IAuthenticationResult, error) {
+	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
+	clientParams.augmentAuthenticationParameters(authParams)
+	req := requests.CreateClientAssertionRequestWithJWT(
+		cca.clientApplication.webRequestManager, authParams, clientParams.clientAssertion,
+	)
+	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
+}
+
 func (cca *ConfidentialClientApplication) GetAccounts() []IAccount {
 	return cca.clientApplication.getAccounts()
 }

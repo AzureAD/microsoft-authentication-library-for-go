@@ -57,7 +57,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetAccessTokenFromAuthCode", testAuthParams, "", "", "").Return(actualTokenResp, nil)
+	wrm.On("GetAccessTokenFromAuthCode", testAuthParams, "", "", make(map[string]string)).Return(actualTokenResp, nil)
 	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
 	_, err := testPCA.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {

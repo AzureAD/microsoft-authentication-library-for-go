@@ -15,7 +15,7 @@ type IWebRequestManager interface {
 	GetWsTrustResponse(authParameters *msalbase.AuthParametersInternal, cloudAudienceURN string, endpoint *wstrust.WsTrustEndpoint) (*wstrust.WsTrustResponse, error)
 	GetAccessTokenFromSamlGrant(authParameters *msalbase.AuthParametersInternal, samlGrant *wstrust.SamlTokenInfo) (*msalbase.TokenResponse, error)
 	GetAccessTokenFromUsernamePassword(authParameters *msalbase.AuthParametersInternal) (*msalbase.TokenResponse, error)
-	GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal, authCode string, codeVerifier string, clientSecret string) (*msalbase.TokenResponse, error)
+	GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal, authCode string, codeVerifier string, params map[string]string) (*msalbase.TokenResponse, error)
 	GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal, refreshToken string) (*msalbase.TokenResponse, error)
 	GetAccessTokenWithClientSecret(authParameters *msalbase.AuthParametersInternal, clientSecret string) (*msalbase.TokenResponse, error)
 	GetAccessTokenWithAssertion(authParameters *msalbase.AuthParametersInternal, assertion string) (*msalbase.TokenResponse, error)
