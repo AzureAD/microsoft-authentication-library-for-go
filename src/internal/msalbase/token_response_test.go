@@ -8,6 +8,10 @@ import (
 	"testing"
 )
 
+func TestCreateTokenResponse(t *testing.T) {
+
+}
+
 func TestGetHomeAccountIDFromClientInfo(t *testing.T) {
 	clientInfo := &ClientInfoJSONPayload{
 		UID:  "uid",

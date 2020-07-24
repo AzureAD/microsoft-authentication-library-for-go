@@ -15,23 +15,12 @@ type ClientAssertionRequest struct {
 	clientAssertion   *msalbase.ClientAssertion
 }
 
-func CreateClientAssertionRequestWithJWT(webRequestManager IWebRequestManager,
-	authParameters *msalbase.AuthParametersInternal, jwt string) *ClientAssertionRequest {
+func CreateClientAssertionRequest(webRequestManager IWebRequestManager,
+	authParameters *msalbase.AuthParametersInternal, assertion *msalbase.ClientAssertion) *ClientAssertionRequest {
 	req := &ClientAssertionRequest{
 		webRequestManager: webRequestManager,
 		authParameters:    authParameters,
-		clientAssertion:   msalbase.CreateClientAssertionFromJWT(jwt),
-	}
-	return req
-}
-
-func CreateClientAssertionRequestWithCertificate(
-	webRequestManager IWebRequestManager, authParameters *msalbase.AuthParametersInternal,
-	thumbprint string, key []byte) *ClientAssertionRequest {
-	req := &ClientAssertionRequest{
-		webRequestManager: webRequestManager,
-		authParameters:    authParameters,
-		clientAssertion:   msalbase.CreateClientAssertionFromCertificate(thumbprint, key),
+		clientAssertion:   assertion,
 	}
 	return req
 }

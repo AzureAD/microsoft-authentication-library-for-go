@@ -64,6 +64,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code
 func (pca *PublicClientApplication) AcquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
+	authCodeParams.RequestType = requests.AuthCodePublicClient
 	return pca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 }
 

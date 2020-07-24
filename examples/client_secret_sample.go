@@ -10,8 +10,7 @@ import (
 )
 
 func tryClientSecretFlow(confidentialClientApp *msalgo.ConfidentialClientApplication) {
-	clientSecretParams := msalgo.CreateAcquireTokenClientSecretParameters(
-		confidentialConfig.Scopes, confidentialConfig.ClientSecret)
+	clientSecretParams := msalgo.CreateAcquireTokenClientSecretParameters(confidentialConfig.Scopes)
 	result, err := confidentialClientApp.AcquireTokenByClientSecret(clientSecretParams)
 	if err != nil {
 		log.Fatal(err)
@@ -21,8 +20,8 @@ func tryClientSecretFlow(confidentialClientApp *msalgo.ConfidentialClientApplica
 }
 
 func acquireTokenClientSecret() {
-	confidentialClientApp := msalgo.CreateConfidentialClientApplication(
-		confidentialConfig.ClientID, confidentialConfig.Authority)
+	confidentialClientApp := msalgo.CreateConfidentialClientApplicationFromSecret(
+		confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.ClientSecret)
 	confidentialClientApp.SetCacheAccessor(cacheAccessor)
 	silentParams := msalgo.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
 	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)

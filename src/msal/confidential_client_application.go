@@ -3,16 +3,56 @@
 
 package msalgo
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+import (
+	"errors"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+)
+
+type confidentialClientType int
+
+const (
+	confidentialClientSecret confidentialClientType = iota
+	confidentialClientAssertion
+)
 
 type ConfidentialClientApplication struct {
 	clientApplication *clientApplication
+	clientSecret      string
+	clientAssertion   *msalbase.ClientAssertion
+	clientType        confidentialClientType
 }
 
-func CreateConfidentialClientApplication(clientID string, authority string) *ConfidentialClientApplication {
+func CreateConfidentialClientApplicationFromSecret(
+	clientID string, authority string, clientSecret string) *ConfidentialClientApplication {
 	clientApp := createClientApplication(clientID, authority)
 	cca := &ConfidentialClientApplication{
 		clientApplication: clientApp,
+		clientSecret:      clientSecret,
+		clientType:        confidentialClientSecret,
+	}
+	return cca
+}
+
+func CreateConfidentialClientApplicationFromCertificate(
+	clientID string, authority string, thumbprint string, key []byte) *ConfidentialClientApplication {
+	clientApp := createClientApplication(clientID, authority)
+	cca := &ConfidentialClientApplication{
+		clientApplication: clientApp,
+		clientAssertion:   msalbase.CreateClientAssertionFromCertificate(thumbprint, key),
+		clientType:        confidentialClientAssertion,
+	}
+	return cca
+}
+
+func CreateConfidentialClientApplicationFromAssertion(
+	clientID string, authority string, assertion string) *ConfidentialClientApplication {
+	clientApp := createClientApplication(clientID, authority)
+	cca := &ConfidentialClientApplication{
+		clientApplication: clientApp,
+		clientAssertion:   msalbase.CreateClientAssertionFromJWT(assertion),
+		clientType:        confidentialClientAssertion,
 	}
 	return cca
 }
@@ -38,6 +78,15 @@ func (cca *ConfidentialClientApplication) AcquireTokenSilent(
 
 func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
+	if cca.clientType == confidentialClientSecret {
+		authCodeParams.RequestType = requests.AuthCodeClientSecret
+		authCodeParams.ClientSecret = cca.clientSecret
+	} else if cca.clientType == confidentialClientAssertion {
+		authCodeParams.RequestType = requests.AuthCodeClientAssertion
+		authCodeParams.ClientAssertion = cca.clientAssertion
+	} else {
+		return nil, errors.New("Need client secret or assertion")
+	}
 	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 
 }
@@ -47,17 +96,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientSecret(
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientCredParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateClientSecretRequest(
-		cca.clientApplication.webRequestManager, authParams, clientCredParams.clientSecret)
-	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
-}
-
-func (cca *ConfidentialClientApplication) AcquireTokenByCertificate(
-	certParams *AcquireTokenCertificateParameters) (IAuthenticationResult, error) {
-	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
-	certParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateClientAssertionRequestWithCertificate(
-		cca.clientApplication.webRequestManager, authParams, certParams.thumbprint, certParams.privateKey,
-	)
+		cca.clientApplication.webRequestManager, authParams, cca.clientSecret)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
@@ -65,8 +104,8 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientAssertion(
 	clientParams *AcquireTokenClientAssertionParameters) (IAuthenticationResult, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateClientAssertionRequestWithJWT(
-		cca.clientApplication.webRequestManager, authParams, clientParams.clientAssertion,
+	req := requests.CreateClientAssertionRequest(
+		cca.clientApplication.webRequestManager, authParams, cca.clientAssertion,
 	)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }

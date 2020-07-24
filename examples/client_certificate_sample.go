@@ -13,6 +13,16 @@ import (
 )
 
 func tryClientCertificateFlow(confidentialClientApp *msalgo.ConfidentialClientApplication) {
+	certificateParams := msalgo.CreateAcquireTokenClientAssertionParameters(
+		confidentialConfig.Scopes)
+	result, err := confidentialClientApp.AcquireTokenByClientAssertion(certificateParams)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Access token is " + result.GetAccessToken())
+}
+
+func acquireTokenClientCertificate() {
 	file, err := os.Open(confidentialConfig.KeyFile)
 	if err != nil {
 		log.Fatal(err)
@@ -22,18 +32,8 @@ func tryClientCertificateFlow(confidentialClientApp *msalgo.ConfidentialClientAp
 	if err != nil {
 		log.Fatal(err)
 	}
-	certificateParams := msalgo.CreateAcquireTokenCertificateParameters(
-		confidentialConfig.Scopes, confidentialConfig.Thumbprint, key)
-	result, err := confidentialClientApp.AcquireTokenByCertificate(certificateParams)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Access token is " + result.GetAccessToken())
-}
-
-func acquireTokenClientCertificate() {
-	confidentialClientApp := msalgo.CreateConfidentialClientApplication(
-		confidentialConfig.ClientID, confidentialConfig.Authority)
+	confidentialClientApp := msalgo.CreateConfidentialClientApplicationFromCertificate(
+		confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.Thumbprint, key)
 	confidentialClientApp.SetCacheAccessor(cacheAccessor)
 	silentParams := msalgo.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
 	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)

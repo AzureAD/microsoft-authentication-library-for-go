@@ -7,14 +7,11 @@ import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/
 
 type AcquireTokenClientAssertionParameters struct {
 	commonParameters *acquireTokenCommonParameters
-	clientAssertion  string
 }
 
-func CreateAcquireTokenClientAssertionParameters(scopes []string,
-	clientAssertion string) *AcquireTokenClientAssertionParameters {
+func CreateAcquireTokenClientAssertionParameters(scopes []string) *AcquireTokenClientAssertionParameters {
 	params := &AcquireTokenClientAssertionParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
-		clientAssertion:  clientAssertion,
 	}
 	return params
 }

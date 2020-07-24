@@ -29,17 +29,6 @@ func SplitScopes(scopes string) []string {
 	return strings.Split(scopes, DefaultScopeSeparator)
 }
 
-func ExtractExistingOrEmptyString(j map[string]interface{}, key string) string {
-	if val, ok := j[key]; ok {
-		if str, ok := val.(string); ok {
-			delete(j, key)
-			return str
-		}
-	}
-	delete(j, key)
-	return ""
-}
-
 func ExtractStringPointerForCache(j map[string]interface{}, key string) *string {
 	if val, ok := j[key]; ok {
 		if str, ok := val.(string); ok {
