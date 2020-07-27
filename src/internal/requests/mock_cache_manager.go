@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package tokencache
+package requests
 
 import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
@@ -12,8 +12,9 @@ type MockCacheManager struct {
 	mock.Mock
 }
 
-func (mock *MockCacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal) (*msalbase.StorageTokenResponse, error) {
-	args := mock.Called(authParameters)
+func (mock *MockCacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal,
+	webRequestManager IWebRequestManager) (*msalbase.StorageTokenResponse, error) {
+	args := mock.Called(authParameters, webRequestManager)
 	return args.Get(0).(*msalbase.StorageTokenResponse), args.Error(1)
 }
 
@@ -25,5 +26,20 @@ func (mock *MockCacheManager) CacheTokenResponse(authParameters *msalbase.AuthPa
 
 func (mock *MockCacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
 	args := mock.Called(authParameters)
+	return args.Error(0)
+}
+
+func (mock *MockCacheManager) GetAllAccounts() []*msalbase.Account {
+	args := mock.Called()
+	return args.Get(0).([]*msalbase.Account)
+}
+
+func (mock *MockCacheManager) Serialize() (string, error) {
+	args := mock.Called()
+	return args.String(0), args.Error(1)
+}
+
+func (mock *MockCacheManager) Deserialize(data []byte) error {
+	args := mock.Called(data)
 	return args.Error(0)
 }

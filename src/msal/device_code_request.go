@@ -17,7 +17,6 @@ import (
 // DeviceCodeRequest stuff
 type deviceCodeRequest struct {
 	webRequestManager  requests.IWebRequestManager
-	cacheManager       msalbase.ICacheManager
 	authParameters     *msalbase.AuthParametersInternal
 	deviceCodeCallback func(IDeviceCodeResult)
 	cancelCtx          context.Context
@@ -26,10 +25,9 @@ type deviceCodeRequest struct {
 // CreateDeviceCodeRequest stuff
 func createDeviceCodeRequest(cancelCtx context.Context,
 	webRequestManager requests.IWebRequestManager,
-	cacheManager msalbase.ICacheManager,
 	authParameters *msalbase.AuthParametersInternal,
 	deviceCodeCallback func(IDeviceCodeResult)) *deviceCodeRequest {
-	req := &deviceCodeRequest{webRequestManager, cacheManager, authParameters, deviceCodeCallback, cancelCtx}
+	req := &deviceCodeRequest{webRequestManager, authParameters, deviceCodeCallback, cancelCtx}
 	return req
 }
 

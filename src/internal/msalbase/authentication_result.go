@@ -5,6 +5,7 @@ package msalbase
 
 import (
 	"errors"
+	"reflect"
 	"time"
 )
 
@@ -20,36 +21,38 @@ type AuthenticationResult struct {
 }
 
 func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *StorageTokenResponse) (*AuthenticationResult, error) {
-	/*
-		var account *Account
-		var idToken *IDToken
-		accessToken := ""
-		expiresOn := time.Now()
-		grantedScopes := []string{}
-		declinedScopes := []string{}
-		var err error
-
-		if storageTokenResponse.accessToken != nil {
-			accessToken = storageTokenResponse.accessToken.GetSecret()
-			expiresOn = time.Unix(storageTokenResponse.accessToken.GetExpiresOn(), 0)
-			grantedScopes = strings.Split(storageTokenResponse.accessToken.GetScopes(), " ")
+	if storageTokenResponse == nil {
+		return nil, errors.New("Storage token response is nil")
+	}
+	account := storageTokenResponse.account
+	var idToken *IDToken
+	accessToken := ""
+	var expiresOn time.Time
+	grantedScopes := []string{}
+	declinedScopes := []string{}
+	var err error
+	if !reflect.ValueOf(storageTokenResponse.accessToken).IsNil() {
+		accessToken = storageTokenResponse.accessToken.GetSecret()
+		expiresOn, err = ConvertStrUnixToUTCTime(storageTokenResponse.accessToken.GetExpiresOn())
+		if err != nil {
+			return nil, errors.New("Access token in cache expires at an invalid time")
 		}
+		grantedScopes = SplitScopes(storageTokenResponse.accessToken.GetScopes())
+	} else {
+		return nil, errors.New("No access token present in cache")
+	}
 
-		if storageTokenResponse.idToken != nil {
-			idToken, err = CreateIDToken(storageTokenResponse.idToken.GetSecret())
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			idToken, err = CreateIDToken("")
-			if err != nil {
-				return nil, err
-			}
+	if !reflect.ValueOf(storageTokenResponse.idToken).IsNil() {
+		idToken, err = CreateIDToken(storageTokenResponse.idToken.GetSecret())
+		if err != nil {
+			return nil, err
 		}
+	} else {
+		return nil, errors.New("No ID token present in cache")
+	}
 
-		ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
-		return ar, nil*/
-	return nil, nil
+	ar := &AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, declinedScopes}
+	return ar, nil
 }
 
 // CreateAuthenticationResult creates and AuthenticationResult.  This should only be called from internal code.
@@ -58,7 +61,6 @@ func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) 
 	declinedScopes := tokenResponse.declinedScopes
 	if len(declinedScopes) > 0 {
 		return nil, errors.New("Token response failed because declined scopes are present")
-
 	}
 
 	idToken := tokenResponse.IDToken
@@ -70,13 +72,24 @@ func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) 
 }
 
 func (ar *AuthenticationResult) GetAccessToken() string {
-	return ar.AccessToken
+	if ar == nil {
+		return ""
+	} else {
+		return ar.AccessToken
+	}
+}
+
+func (ar *AuthenticationResult) GetAccount() *Account {
+	if ar == nil {
+		return nil
+	} else {
+		return ar.Account
+	}
 }
 
 func (ar *AuthenticationResult) GetIdToken() string {
-	if ar.idToken == nil {
+	if ar == nil || ar.idToken == nil {
 		return ""
 	}
-
 	return ar.idToken.RawToken
 }

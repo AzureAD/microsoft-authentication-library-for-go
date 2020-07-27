@@ -14,11 +14,6 @@ import (
 
 const port = "3000"
 
-var config = createConfig("config.json")
-var pcaParams = createPCAParams(config.ClientID, config.Authority)
-var publicClientApp *msalgo.PublicClientApplication
-var err error
-
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes, config.CodeChallenge)
@@ -62,7 +57,6 @@ func acquireByAuthorizationCodePublic() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
 	http.HandleFunc("/", redirectToURL)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)

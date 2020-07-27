@@ -10,19 +10,10 @@ import (
 	"strings"
 )
 
-type AuthorityType int
-
-const (
-	AuthorityTypeNone AuthorityType = iota
-	AuthorityTypeAad
-	AuthorityTypeAdfs
-	AuthorityTypeB2C
-)
-
 type AuthorityInfo struct {
 	Host                  string
 	CanonicalAuthorityURI string
-	AuthorityType         AuthorityType
+	AuthorityType         string
 	UserRealmURIPrefix    string
 	ValidateAuthority     bool
 	Tenant                string
@@ -47,7 +38,7 @@ func getFirstPathSegment(u *url.URL) (string, error) {
 	return "", errors.New("Authority does not have two segments")
 }
 
-func createAuthorityInfo(authorityType AuthorityType, authorityURI string, validateAuthority bool) (*AuthorityInfo, error) {
+func createAuthorityInfo(authorityType string, authorityURI string, validateAuthority bool) (*AuthorityInfo, error) {
 
 	u, err := url.Parse(authorityURI)
 	if err != nil {
@@ -75,7 +66,7 @@ func CreateAuthorityInfoFromAuthorityUri(authorityURI string, validateAuthority 
 	}
 
 	// todo: check for other authority types...
-	authorityType := AuthorityTypeAad
+	authorityType := MSSTS
 
 	return createAuthorityInfo(authorityType, canonicalURI, validateAuthority)
 }

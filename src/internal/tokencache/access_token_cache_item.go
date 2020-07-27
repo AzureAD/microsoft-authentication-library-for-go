@@ -3,63 +3,107 @@
 
 package tokencache
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"strconv"
+	"strings"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+)
 
 type accessTokenCacheItem struct {
-	HomeAccountID                  string
-	Environment                    string
-	RawClientInfo                  string
-	Realm                          string
-	CredentialType                 string
-	ClientID                       string
-	Secret                         string
-	Scopes                         string
-	TenantID                       string
-	ExpiresOnUnixTimestamp         string
-	ExtendedExpiresOnUnixTimestamp string
-	CachedAt                       string
-	UserAssertionHash              string
-	AdditionalFields               map[string]interface{}
+	HomeAccountID                  *string `json:"home_account_id,omitempty"`
+	Environment                    *string `json:"environment,omitempty"`
+	Realm                          *string `json:"realm,omitempty"`
+	CredentialType                 *string `json:"credential_type,omitempty"`
+	ClientID                       *string `json:"client_id,omitempty"`
+	Secret                         *string `json:"secret,omitempty"`
+	Scopes                         *string `json:"target,omitempty"`
+	ExpiresOnUnixTimestamp         *string `json:"expires_on,omitempty"`
+	ExtendedExpiresOnUnixTimestamp *string `json:"extended_expires_on,omitempty"`
+	CachedAt                       *string `json:"cached_at,omitempty"`
+	additionalFields               map[string]interface{}
 }
 
-func extractExistingOrEmptyString(j map[string]interface{}, key string) string {
-	if val, ok := j[key]; ok {
-		if str, ok := val.(string); ok {
-			delete(j, key)
-			return str
-		}
+func CreateAccessTokenCacheItem(homeAccountID string,
+	environment string,
+	realm string,
+	clientID string,
+	cachedAt int64,
+	expiresOn int64,
+	extendedExpiresOn int64,
+	scopes string,
+	accessToken string) *accessTokenCacheItem {
+	credentialType := msalbase.CredentialTypeAccessToken
+	cachedAtString := strconv.FormatInt(cachedAt, 10)
+	expiresOnString := strconv.FormatInt(expiresOn, 10)
+	extExpiresOnString := strconv.FormatInt(extendedExpiresOn, 10)
+	at := &accessTokenCacheItem{
+		HomeAccountID:                  &homeAccountID,
+		Environment:                    &environment,
+		Realm:                          &realm,
+		CredentialType:                 &credentialType,
+		ClientID:                       &clientID,
+		Secret:                         &accessToken,
+		Scopes:                         &scopes,
+		CachedAt:                       &cachedAtString,
+		ExpiresOnUnixTimestamp:         &expiresOnString,
+		ExtendedExpiresOnUnixTimestamp: &extExpiresOnString,
+		additionalFields:               make(map[string]interface{}),
 	}
-	return ""
+	return at
+}
+
+func (s *accessTokenCacheItem) CreateKey() string {
+	keyParts := []string{msalbase.GetStringFromPointer(s.HomeAccountID),
+		msalbase.GetStringFromPointer(s.Environment),
+		msalbase.GetStringFromPointer(s.CredentialType),
+		msalbase.GetStringFromPointer(s.ClientID),
+		msalbase.GetStringFromPointer(s.Realm),
+		msalbase.GetStringFromPointer(s.Scopes)}
+	return strings.Join(keyParts, msalbase.CacheKeySeparator)
+}
+
+func (s *accessTokenCacheItem) GetSecret() string {
+	return msalbase.GetStringFromPointer(s.Secret)
+}
+
+func (s *accessTokenCacheItem) GetExpiresOn() string {
+	return msalbase.GetStringFromPointer(s.ExpiresOnUnixTimestamp)
+}
+
+func (s *accessTokenCacheItem) GetScopes() string {
+	return msalbase.GetStringFromPointer(s.Scopes)
 }
 
 func (s *accessTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
-	s.HomeAccountID = extractExistingOrEmptyString(j, "home_account_id")
-	s.AdditionalFields = j
+
+	s.HomeAccountID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONHomeAccountID)
+	s.Environment = msalbase.ExtractStringPointerForCache(j, msalbase.JSONEnvironment)
+	s.Realm = msalbase.ExtractStringPointerForCache(j, msalbase.JSONRealm)
+	s.CredentialType = msalbase.ExtractStringPointerForCache(j, msalbase.JSONCredentialType)
+	s.ClientID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONClientID)
+	s.Secret = msalbase.ExtractStringPointerForCache(j, msalbase.JSONSecret)
+	s.Scopes = msalbase.ExtractStringPointerForCache(j, msalbase.JSONTarget)
+	s.CachedAt = msalbase.ExtractStringPointerForCache(j, msalbase.JSONCachedAt)
+	s.ExpiresOnUnixTimestamp = msalbase.ExtractStringPointerForCache(j, msalbase.JSONExpiresOn)
+	s.ExtendedExpiresOnUnixTimestamp = msalbase.ExtractStringPointerForCache(j, msalbase.JSONExtExpiresOn)
+	s.additionalFields = j
 	return nil
 }
 
-func (s *accessTokenCacheItem) UnmarshalJSON(b []byte) error {
-	j := make(map[string]interface{})
-	err := json.Unmarshal(b, &j)
+func (s *accessTokenCacheItem) convertToJSONMap() (map[string]interface{}, error) {
+	accessMap, err := json.Marshal(s)
 	if err != nil {
-		return err
+		return nil, err
 	}
-
-	return s.populateFromJSONMap(j)
-}
-
-func (s *accessTokenCacheItem) toJSONMap() map[string]interface{} {
-	j := make(map[string]interface{})
-	for k, v := range s.AdditionalFields {
-		j[k] = v
+	newMap := make(map[string]interface{})
+	err = json.Unmarshal(accessMap, &newMap)
+	if err != nil {
+		return nil, err
 	}
-
-	j["home_account_id"] = s.HomeAccountID
-
-	return j
-}
-
-func (s *accessTokenCacheItem) MarshalJSON() ([]byte, error) {
-	j := s.toJSONMap()
-	return json.Marshal(j)
+	for k, v := range s.additionalFields {
+		newMap[k] = v
+	}
+	return newMap, nil
 }

@@ -21,14 +21,8 @@ func setCancelTimeout(seconds int, cancelChannel chan bool) {
 	cancelChannel <- true
 }
 
-func acquireTokenDeviceCode() {
+func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 	cancelTimeout := 100 //Change this for cancel timeout
-	config := createConfig("config.json")
-	pcaParams := createPCAParams(config.ClientID, config.Authority)
-	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
-	if err != nil {
-		log.Fatal(err)
-	}
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
 	defer cancelFunc()
 	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
@@ -45,4 +39,34 @@ func acquireTokenDeviceCode() {
 	}
 	result := <-resultChannel
 	fmt.Println("Access token is " + result.GetAccessToken())
+}
+
+func acquireTokenDeviceCode() {
+	config := createConfig("config.json")
+	pcaParams := createPCAParams(config.ClientID, config.Authority)
+	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
+	if err != nil {
+		log.Fatal(err)
+	}
+	publicClientApp.SetCacheAccessor(cacheAccessor)
+	var userAccount msalgo.IAccount
+	accounts := publicClientApp.GetAccounts()
+	for _, account := range accounts {
+		if account.GetUsername() == config.Username {
+			userAccount = account
+		}
+	}
+	if userAccount == nil {
+		log.Info("No valid account found")
+		tryDeviceCodeFlow(publicClientApp)
+	} else {
+		silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, userAccount)
+		result, err := publicClientApp.AcquireTokenSilent(silentParams)
+		if err != nil {
+			log.Info(err)
+			tryDeviceCodeFlow(publicClientApp)
+		} else {
+			fmt.Println("Access token is " + result.GetAccessToken())
+		}
+	}
 }

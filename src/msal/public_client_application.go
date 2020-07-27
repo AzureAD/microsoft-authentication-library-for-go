@@ -15,7 +15,8 @@ import (
 type PublicClientApplication struct {
 	pcaParameters     *PublicClientApplicationParameters
 	webRequestManager requests.IWebRequestManager
-	cacheManager      msalbase.ICacheManager
+	cacheContext      *CacheContext
+	cacheAccessor     CacheAccessor
 }
 
 // CreatePublicClientApplication creates a PublicClientApplication Instance given its parameters, which include client ID and authority info
@@ -31,14 +32,23 @@ func CreatePublicClientApplication(pcaParameters *PublicClientApplicationParamet
 	// todo: check parameters for whether persistent cache is desired, or self-caching (callback to byte array read/write)
 	storageManager := tokencache.CreateStorageManager()
 	cacheManager := tokencache.CreateCacheManager(storageManager)
+	cacheContext := &CacheContext{cacheManager}
 
-	pca := &PublicClientApplication{pcaParameters, webRequestManager, cacheManager}
+	pca := &PublicClientApplication{
+		pcaParameters:     pcaParameters,
+		webRequestManager: webRequestManager,
+		cacheContext:      cacheContext,
+	}
 	return pca, nil
 }
 
 func (pca *PublicClientApplication) SetHTTPManager(httpManager IHTTPManager) {
 	webRequestManager := CreateWebRequestManager(httpManager)
 	pca.webRequestManager = webRequestManager
+}
+
+func (pca *PublicClientApplication) SetCacheAccessor(accessor CacheAccessor) {
+	pca.cacheAccessor = accessor
 }
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code
@@ -51,17 +61,26 @@ func (pca *PublicClientApplication) AcquireTokenSilent(
 	silentParameters *AcquireTokenSilentParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	silentParameters.augmentAuthenticationParameters(authParams)
-
-	storageTokenResponse, err := pca.cacheManager.TryReadCache(authParams)
+	if pca.cacheAccessor != nil {
+		pca.cacheAccessor.BeforeCacheAccess(pca.cacheContext)
+	}
+	storageTokenResponse, err := pca.cacheContext.cache.TryReadCache(authParams, pca.webRequestManager)
+	if pca.cacheAccessor != nil {
+		pca.cacheAccessor.AfterCacheAccess(pca.cacheContext)
+	}
 	if err != nil {
 		return nil, err
 	}
-
 	if storageTokenResponse != nil {
-		return msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
+		result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
+		if err == nil {
+			return result, err
+		}
+		req := requests.CreateRefreshTokenExchangeRequest(pca.webRequestManager, authParams, storageTokenResponse.RefreshToken)
+		return pca.executeTokenRequestWithCacheWrite(req, authParams)
 	}
 
-	req := requests.CreateRefreshTokenExchangeRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	req := requests.CreateRefreshTokenExchangeRequest(pca.webRequestManager, authParams, storageTokenResponse.RefreshToken)
 	return pca.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
@@ -70,8 +89,8 @@ func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(
 	usernamePasswordParameters *AcquireTokenUsernamePasswordParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	usernamePasswordParameters.augmentAuthenticationParameters(authParams)
-	req := requests.CreateUsernamePasswordRequest(pca.webRequestManager, pca.cacheManager, authParams)
-	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
+	req := requests.CreateUsernamePasswordRequest(pca.webRequestManager, authParams)
+	return pca.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
 // AcquireTokenByDeviceCode stuff
@@ -79,8 +98,8 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 	deviceCodeParameters *AcquireTokenDeviceCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-	req := createDeviceCodeRequest(deviceCodeParameters.cancelCtx, pca.webRequestManager, pca.cacheManager, authParams, deviceCodeParameters.deviceCodeCallback)
-	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
+	req := createDeviceCodeRequest(deviceCodeParameters.cancelCtx, pca.webRequestManager, authParams, deviceCodeParameters.deviceCodeCallback)
+	return pca.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code
@@ -88,10 +107,10 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
 	authParams := pca.pcaParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateAuthCodeRequest(pca.webRequestManager, pca.cacheManager, authParams)
+	req := requests.CreateAuthCodeRequest(pca.webRequestManager, authParams)
 	req.Code = authCodeParams.Code
 	req.CodeChallenge = authCodeParams.codeChallenge
-	return pca.executeTokenRequestWithoutCacheWrite(req, authParams)
+	return pca.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
 // executeTokenRequestWithoutCacheWrite stuff
@@ -112,11 +131,30 @@ func (pca *PublicClientApplication) executeTokenRequestWithCacheWrite(
 	authParams *msalbase.AuthParametersInternal) (IAuthenticationResult, error) {
 	tokenResponse, err := req.Execute()
 	if err == nil {
-		account, err := pca.cacheManager.CacheTokenResponse(authParams, tokenResponse)
+		if pca.cacheAccessor != nil {
+			pca.cacheAccessor.BeforeCacheAccess(pca.cacheContext)
+			defer pca.cacheAccessor.AfterCacheAccess(pca.cacheContext)
+		}
+		account, err := pca.cacheContext.cache.CacheTokenResponse(authParams, tokenResponse)
 		if err != nil {
 			return nil, err
 		}
 		return msalbase.CreateAuthenticationResult(tokenResponse, account)
 	}
 	return nil, err
+}
+
+func (pca *PublicClientApplication) GetAccounts() []IAccount {
+	returnedAccounts := []IAccount{}
+	if pca.cacheAccessor != nil {
+		pca.cacheAccessor.BeforeCacheAccess(pca.cacheContext)
+	}
+	accounts := pca.cacheContext.cache.GetAllAccounts()
+	if pca.cacheAccessor != nil {
+		pca.cacheAccessor.AfterCacheAccess(pca.cacheContext)
+	}
+	for _, acc := range accounts {
+		returnedAccounts = append(returnedAccounts, acc)
+	}
+	return returnedAccounts
 }

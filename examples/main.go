@@ -2,7 +2,16 @@ package main
 
 import (
 	"os"
+
+	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 )
+
+var config = createConfig("config.json")
+var pcaParams = createPCAParams(config.ClientID, config.Authority)
+var publicClientApp *msalgo.PublicClientApplication
+var err error
+var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
+var cacheAccessor = &SampleCacheAccessor{"examples/serialized_cache.json"}
 
 func main() {
 	exampleType := os.Args[1]

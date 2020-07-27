@@ -216,10 +216,6 @@ func addClientIDQueryParam(queryParams map[string]string, authParameters *msalba
 	queryParams["client_id"] = authParameters.ClientID
 }
 
-func joinScopes(scopes []string) string {
-	return strings.Join(scopes[:], " ")
-}
-
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
 	log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
@@ -227,7 +223,7 @@ func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.
 	// offline_access required to get a refresh token
 	// profile required to get the client_info field back
 	requestedScopes = append(requestedScopes, "openid", "offline_access", "profile")
-	queryParams["scope"] = joinScopes(requestedScopes)
+	queryParams["scope"] = msalbase.ConcatenateScopes(requestedScopes)
 }
 
 func addClientInfoQueryParam(queryParams map[string]string) {
@@ -344,7 +340,7 @@ func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
 
 	queryParams := map[string]string{
 		"api-version":            "1.1",
-		"authorization_endpoint": fmt.Sprintf("https://%v/%v/auth2/v2.0/authorize", authorityInfo.Host, authorityInfo.Tenant),
+		"authorization_endpoint": fmt.Sprintf("https://%v/%v/oauth2/v2.0/authorize", authorityInfo.Host, authorityInfo.Tenant),
 	}
 
 	var discoveryHost string
@@ -355,7 +351,6 @@ func (wrm *WebRequestManager) GetAadinstanceDiscoveryResponse(
 	}
 
 	instanceDiscoveryEndpoint := fmt.Sprintf("https://%v/common/discovery/instance?%v", discoveryHost, encodeQueryParameters(queryParams))
-
 	httpManagerResponse, err := wrm.httpManager.Get(instanceDiscoveryEndpoint, nil)
 	if err != nil {
 		return nil, err

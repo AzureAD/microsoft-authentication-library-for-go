@@ -8,6 +8,19 @@ import (
 	"testing"
 )
 
+func TestGetHomeAccountIDFromClientInfo(t *testing.T) {
+	clientInfo := &ClientInfoJSONPayload{
+		UID:  "uid",
+		Utid: "utid",
+	}
+	tokenResponse := &TokenResponse{ClientInfo: clientInfo}
+	expectedHid := "uid.utid"
+	actualHid := tokenResponse.GetHomeAccountIDFromClientInfo()
+	if !reflect.DeepEqual(actualHid, expectedHid) {
+		t.Errorf("Actual home account ID %s differs from expected home account ID %s", actualHid, expectedHid)
+	}
+}
+
 func TestFindDeclinedScopes(t *testing.T) {
 	requestedScopes := []string{"user.read", "openid"}
 	grantedScopes := []string{"user.read"}

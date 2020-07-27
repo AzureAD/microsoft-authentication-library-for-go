@@ -7,88 +7,47 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-type OperationStatusType int
-
-const (
-	OperationStatusTypeSuccess OperationStatusType = iota
-	OperationStatusTypeFailure
-	OperationStatusTypeRetriableError
-)
-
-type OperationStatus struct {
-	StatusType        OperationStatusType
-	Code              int
-	StatusDescription string
-	PlatformCode      int
-	PlatformDomain    string
-}
-
-func CreateSuccessOperationStatus() *OperationStatus {
-	status := &OperationStatus{StatusType: OperationStatusTypeSuccess}
-	return status
-}
-
-type AppMetadata struct {
-	Environment string
-	ClientID    string
-	FamilyID    string
-}
-
-type ReadCredentialsResponse struct {
-	Credentials     []*msalbase.Credential
-	OperationStatus *OperationStatus
-}
-
-type ReadAccountsResponse struct {
-	Accounts        []*msalbase.Account
-	OperationStatus *OperationStatus
-}
-
-type ReadAccountResponse struct {
-	Account         *msalbase.Account
-	OperationStatus *OperationStatus
-}
-
 type IStorageManager interface {
-	ReadCredentials(
-		correlationID string,
+	ReadAccessToken(
 		homeAccountID string,
-		environment string,
+		envAliases []string,
 		realm string,
 		clientID string,
+		scopes []string) *accessTokenCacheItem
+
+	WriteAccessToken(accessToken *accessTokenCacheItem) error
+
+	ReadRefreshToken(
+		homeAccountID string,
+		envAliases []string,
 		familyID string,
-		target string,
-		types map[msalbase.CredentialType]bool) (*ReadCredentialsResponse, error)
+		clientID string,
+	) *refreshTokenCacheItem
 
-	WriteCredentials(correlationID string, credentials []*msalbase.Credential) (*OperationStatus, error)
+	WriteRefreshToken(refreshToken *refreshTokenCacheItem) error
 
-	DeleteCredentials(
-		correlationId string,
-		homeAccountId string,
-		environment string,
+	ReadIDToken(
+		homeAccountID string,
+		envAliases []string,
 		realm string,
 		clientID string,
-		familyID string,
-		target string,
-		types map[msalbase.CredentialType]bool) (*OperationStatus, error)
+	) *idTokenCacheItem
 
-	ReadAllAccounts(correlationID string) (*ReadAccountsResponse, error)
+	WriteIDToken(idToken *idTokenCacheItem) error
 
-	ReadAccount(
-		correlationID string,
-		homeAccountID string,
-		environment string,
-		realm string) (*ReadAccountResponse, error)
+	ReadAllAccounts() []*msalbase.Account
 
-	WriteAccount(correlationID string, account *msalbase.Account) (*OperationStatus, error)
+	ReadAccount(homeAccountID string, envAliases []string, realm string) *msalbase.Account
 
-	DeleteAccount(
-		correlationID string,
-		homeAccountID string,
-		environment string,
-		realm string) (*OperationStatus, error)
+	WriteAccount(account *msalbase.Account) error
 
-	DeleteAccounts(correlationID string, homeAccountID string, environment string) (*OperationStatus, error)
-	ReadAppMetadata(environment string, clientID string) (*AppMetadata, error)
+	DeleteAccounts(homeAccountID string, envAliases []string) error
+
+	ReadAppMetadata(envAliases []string, clientID string) *AppMetadata
+
 	WriteAppMetadata(appMetadata *AppMetadata) error
+
+	Serialize() (string, error)
+
+	Deserialize(cacheData []byte) error
 }

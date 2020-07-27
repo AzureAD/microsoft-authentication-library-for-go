@@ -10,7 +10,6 @@ import (
 // AuthCodeRequest stores the values required to request a token from the authority using an authorization code
 type AuthCodeRequest struct {
 	webRequestManager IWebRequestManager
-	cacheManager      msalbase.ICacheManager
 	authParameters    *msalbase.AuthParametersInternal
 	Code              string
 	CodeChallenge     string
@@ -19,11 +18,9 @@ type AuthCodeRequest struct {
 // CreateAuthCodeRequest creates an instance of AuthCodeRequest
 func CreateAuthCodeRequest(
 	webRequestManager IWebRequestManager,
-	cacheManager msalbase.ICacheManager,
 	authParameters *msalbase.AuthParametersInternal) *AuthCodeRequest {
 	req := &AuthCodeRequest{
 		webRequestManager: webRequestManager,
-		cacheManager:      cacheManager,
 		authParameters:    authParameters}
 	return req
 }

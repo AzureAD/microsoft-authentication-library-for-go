@@ -45,7 +45,7 @@ func getAdfsDomainFromUpn(userPrincipalName string) string {
 func (m *AuthorityEndpointResolutionManager) tryGetCachedEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) *msalbase.AuthorityEndpoints {
 
 	if cacheEntry, ok := endpointCacheEntries[authorityInfo.CanonicalAuthorityURI]; ok {
-		if authorityInfo.AuthorityType == msalbase.AuthorityTypeAdfs {
+		if authorityInfo.AuthorityType == msalbase.ADFS {
 			if _, ok := cacheEntry.ValidForDomainsInList[getAdfsDomainFromUpn(userPrincipalName)]; ok {
 				return cacheEntry.Endpoints
 			}
@@ -59,7 +59,7 @@ func (m *AuthorityEndpointResolutionManager) tryGetCachedEndpoints(authorityInfo
 func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string, endpoints *msalbase.AuthorityEndpoints) {
 	updatedCacheEntry := createAuthorityEndpointCacheEntry(endpoints)
 
-	if authorityInfo.AuthorityType == msalbase.AuthorityTypeAdfs {
+	if authorityInfo.AuthorityType == msalbase.ADFS {
 		// Since we're here, we've made a call to the backend.  We want to ensure we're caching
 		// the latest values from the server.
 		if cacheEntry, ok := endpointCacheEntries[authorityInfo.CanonicalAuthorityURI]; ok {
@@ -76,7 +76,7 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 
 func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error) {
 
-	if authorityInfo.AuthorityType == msalbase.AuthorityTypeAdfs && len(userPrincipalName) == 0 {
+	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {
 		return nil, errors.New("UPN Required for Authority Validation for ADFS")
 	}
 

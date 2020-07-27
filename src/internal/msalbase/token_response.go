@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"strings"
 	"time"
 )
@@ -22,23 +23,24 @@ type tokenResponseJSONPayload struct {
 	ClientInfo   string `json:"client_info"`
 }
 
-type clientInfoJSONPayload struct {
-	uid  string `json:"uid"`
-	utid string `json:"utid"`
+type ClientInfoJSONPayload struct {
+	UID  string `json:"uid"`
+	Utid string `json:"utid"`
 }
 
+//TokenResponse
 type TokenResponse struct {
 	baseResponse   *OAuthResponseBase
 	AccessToken    string
 	RefreshToken   string
 	IDToken        *IDToken
-	familyID       string
+	FamilyID       string
 	GrantedScopes  []string
 	declinedScopes []string
 	ExpiresOn      time.Time
 	ExtExpiresOn   time.Time
 	rawClientInfo  string
-	clientInfo     *clientInfoJSONPayload
+	ClientInfo     *ClientInfoJSONPayload
 }
 
 func (tr *TokenResponse) HasAccessToken() bool {
@@ -47,6 +49,10 @@ func (tr *TokenResponse) HasAccessToken() bool {
 
 func (tr *TokenResponse) HasRefreshToken() bool {
 	return len(tr.RefreshToken) > 0
+}
+
+func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
+	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
 }
 
 func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode int, responseData string) (*TokenResponse, error) {
@@ -67,14 +73,19 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	}
 
 	rawClientInfo := payload.ClientInfo
-	clientInfo := &clientInfoJSONPayload{}
+	clientInfo := &ClientInfoJSONPayload{}
 
+	// Client info may be empty in some flows, e.g. certificate exchange.
 	if len(rawClientInfo) > 0 {
-		// Client info may be empty in some flows, e.g. certificate exchange.
-		rawClientInfoDecoded, err := base64.RawStdEncoding.DecodeString(rawClientInfo)
+		// Adapted from MSAL Python and https://stackoverflow.com/a/31971780
+		if i := len(rawClientInfo) % 4; i != 0 {
+			rawClientInfo += strings.Repeat("=", 4-i)
+		}
+		rawClientInfoDecoded, err := base64.StdEncoding.DecodeString(rawClientInfo)
 		if err != nil {
 			return nil, err
 		}
+
 		err = json.Unmarshal(rawClientInfoDecoded, clientInfo)
 		if err != nil {
 			return nil, err
@@ -94,7 +105,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 		// Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
 		grantedScopes = authParameters.Scopes
 	} else {
-		grantedScopes = strings.Split(payload.Scope, " ")
+		grantedScopes = SplitScopes(payload.Scope)
 		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
 	}
 
@@ -108,11 +119,14 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 		AccessToken:    payload.AccessToken,
 		RefreshToken:   payload.RefreshToken,
 		IDToken:        idToken,
-		familyID:       payload.Foci,
+		FamilyID:       payload.Foci,
 		ExpiresOn:      expiresOn,
 		ExtExpiresOn:   extExpiresOn,
 		GrantedScopes:  grantedScopes,
-		declinedScopes: declinedScopes}
+		declinedScopes: declinedScopes,
+		rawClientInfo:  rawClientInfo,
+		ClientInfo:     clientInfo,
+	}
 	return tokenResponse, nil
 }
 
@@ -132,37 +146,3 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 
 	return declined
 }
-
-/*
-func CreateTokenResponseFromParts(idToken *IDToken, accessToken *Credential, refreshToken *Credential) (*TokenResponse, error) {
-
-	var idt *IDToken
-	accessTokenSecret := ""
-	refreshTokenSecret := ""
-	grantedScopes := []string{}
-
-	if idToken != nil {
-		idt = idToken
-	} else {
-		idt, _ = CreateIDToken("")
-	}
-
-	if accessToken != nil {
-		accessTokenSecret = accessToken.GetSecret()
-		// todo: fill this in...
-		// _expiresOn = TimeUtils::ToTimePoint(accessToken->GetExpiresOn());
-		// _extendedExpiresOn = TimeUtils::ToTimePoint(accessToken->GetExtendedExpiresOn());
-		grantedScopes = strings.Split(accessToken.GetScopes(), " ")
-	}
-
-	if refreshToken != nil {
-		refreshTokenSecret = refreshToken.GetSecret()
-	}
-
-	tokenResponse := &TokenResponse{
-		IDToken:       idt,
-		AccessToken:   accessTokenSecret,
-		RefreshToken:  refreshTokenSecret,
-		GrantedScopes: grantedScopes}
-	return tokenResponse, nil
-}*/

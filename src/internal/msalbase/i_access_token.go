@@ -3,7 +3,8 @@
 
 package msalbase
 
-type Credential interface {
-	CreateKey() string
+type IAccessToken interface {
 	GetSecret() string
+	GetExpiresOn() string
+	GetScopes() string
 }
