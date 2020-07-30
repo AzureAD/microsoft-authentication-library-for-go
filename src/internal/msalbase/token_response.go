@@ -63,7 +63,6 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	if err != nil {
 		return nil, err
 	}
-	log.Infof("Raw client %+v", responseData)
 	payload := &tokenResponseJSONPayload{}
 	err = json.Unmarshal([]byte(responseData), payload)
 	if err != nil {
@@ -91,7 +90,6 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 			return nil, err
 		}
 	}
-	log.Infof("Client Info %+v", clientInfo)
 	expiresOn := time.Now().Add(time.Second * time.Duration(payload.ExpiresIn))
 	extExpiresOn := time.Now().Add(time.Second * time.Duration(payload.ExtExpiresIn))
 
@@ -111,7 +109,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 
 	idToken, err := CreateIDToken(payload.IDToken)
 	if err != nil {
-		log.Infof("ID Token error %v", err)
+		log.Infof("ID Token error: %v", err)
 	}
 
 	tokenResponse := &TokenResponse{

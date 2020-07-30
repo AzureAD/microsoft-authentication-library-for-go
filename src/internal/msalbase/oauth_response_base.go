@@ -18,7 +18,7 @@ type OAuthResponseBase struct {
 }
 
 var httpFailureCodes = map[int]string{
-	404: "HTTP 400",
+	404: "HTTP 404",
 	500: "HTTP 500",
 }
 
@@ -38,6 +38,5 @@ func CreateOAuthResponseBase(httpStatusCode int, responseData string) (*OAuthRes
 		// todo: bring in error description, etc.
 		return nil, errors.New(payload.Error)
 	}
-
 	return payload, nil
 }

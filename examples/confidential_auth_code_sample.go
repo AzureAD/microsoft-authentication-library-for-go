@@ -6,7 +6,9 @@ package main
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
+	"os"
 
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
@@ -65,8 +67,20 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 }
 
 func acquireByAuthorizationCodeConfidential() {
-	confidentialClientAuthCode = msalgo.CreateConfidentialClientApplicationFromSecret(
-		confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.ClientSecret)
+	// Uncomment this to use client secret
+	/*confidentialClientAuthCode = msalgo.CreateConfidentialClientApplicationFromSecret(
+	confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.ClientSecret)*/
+	file, err := os.Open(confidentialConfig.KeyFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+	defer file.Close()
+	key, err := ioutil.ReadAll(file)
+	if err != nil {
+		log.Fatal(err)
+	}
+	confidentialClientAuthCode = msalgo.CreateConfidentialClientApplicationFromCertificate(
+		confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.Thumbprint, key)
 	http.HandleFunc("/", redirectToURLConfidential)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getTokenConfidential)

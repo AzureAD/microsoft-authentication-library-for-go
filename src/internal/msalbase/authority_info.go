@@ -47,7 +47,6 @@ func createAuthorityInfo(authorityType string, authorityURI string, validateAuth
 
 	host := u.Hostname()
 	userRealmURIPrefix := fmt.Sprintf("https://%v/common/userrealm/", host)
-
 	tenant, err := getFirstPathSegment(u)
 	if err != nil {
 		return nil, err

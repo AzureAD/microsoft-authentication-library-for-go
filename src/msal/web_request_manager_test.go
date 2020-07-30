@@ -68,31 +68,3 @@ func TestGetUserRealm(t *testing.T) {
 		t.Errorf("Actual realm %+v differs from expected realm %+v", actualRealm, userRealm)
 	}
 }
-
-/*
-func TestExchangeGrantForToken(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
-	wrm := &WebRequestManager{httpManager: mockHTTPManager}
-	queryParams := map[string]string{"test": "test"}
-	authParams := &msalbase.AuthParametersInternal{
-		Endpoints: testAuthorityEndpoints,
-	}
-	headers := getAadHeaders(authParams)
-	addContentTypeHeader(headers, URLEncodedUtf8)
-	tokenJSON := `{"access_token" : "secret"}`
-	actualHTTPResp := &HTTPManagerResponse{
-		responseCode: 200,
-		responseData: tokenJSON,
-	}
-	expectedTokenResponse := &msalbase.TokenResponse{
-		AccessToken: "secret",
-	}
-	mockHTTPManager.On("Post", "https://login.microsoftonline.com/v2.0/token", "test=test", headers).Return(actualHTTPResp, nil)
-	actualTokenResponse, err := wrm.exchangeGrantForToken(authParams, queryParams)
-	if err != nil {
-		t.Errorf("Error should be nil; instead, it is %v", err)
-	}
-	if !reflect.DeepEqual(actualTokenResponse, expectedTokenResponse) {
-		t.Errorf("Actual token response %+v differs from expected token response %+v", actualTokenResponse, expectedTokenResponse)
-	}
-}*/
