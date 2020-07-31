@@ -89,7 +89,7 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 				} else if specVersion == trust2005Spec {
 					bindings[bindingName] = WsEndpointData{Trust2005, policy}
 				} else {
-					return nil, errors.New("Found unknown spec version in mex document")
+					return nil, errors.New("found unknown spec version in mex document")
 				}
 			}
 		}
@@ -126,7 +126,7 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 				}
 				break
 			default:
-				return nil, errors.New("Found unknown port type in MEX document")
+				return nil, errors.New("found unknown port type in MEX document")
 			}
 		}
 	}

@@ -85,7 +85,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 		authCodeParams.RequestType = requests.AuthCodeClientAssertion
 		authCodeParams.ClientAssertion = cca.clientAssertion
 	} else {
-		return nil, errors.New("Need client secret or assertion")
+		return nil, errors.New("need client secret or assertion")
 	}
 	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 

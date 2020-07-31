@@ -59,7 +59,7 @@ func (client *clientApplication) acquireTokenSilent(
 		if err != nil {
 			log.Error(err)
 			if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
-				return nil, errors.New("No refresh token found")
+				return nil, errors.New("no refresh token found")
 			}
 			req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
 				authParams, storageTokenResponse.RefreshToken)
@@ -68,7 +68,7 @@ func (client *clientApplication) acquireTokenSilent(
 		return result, nil
 	}
 	if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
-		return nil, errors.New("No refresh token found")
+		return nil, errors.New("no refresh token found")
 	}
 	req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
 		authParams, storageTokenResponse.RefreshToken)
