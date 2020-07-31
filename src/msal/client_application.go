@@ -56,17 +56,16 @@ func (client *clientApplication) acquireTokenSilent(
 	}
 	if storageTokenResponse != nil {
 		result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
-		if err == nil {
-
-			return result, err
+		if err != nil {
+			log.Error(err)
+			if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
+				return nil, errors.New("No refresh token found")
+			}
+			req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
+				authParams, storageTokenResponse.RefreshToken)
+			return client.executeTokenRequestWithCacheWrite(req, authParams)
 		}
-		log.Info(err)
-		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
-			return nil, errors.New("No refresh token found")
-		}
-		req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
-			authParams, storageTokenResponse.RefreshToken)
-		return client.executeTokenRequestWithCacheWrite(req, authParams)
+		return result, nil
 	}
 	if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
 		return nil, errors.New("No refresh token found")
@@ -96,29 +95,28 @@ func (client *clientApplication) executeTokenRequestWithoutCacheWrite(
 	req requests.TokenRequester,
 	authParams *msalbase.AuthParametersInternal) (IAuthenticationResult, error) {
 	tokenResponse, err := req.Execute()
-	if err == nil {
-		// todo: is account being nil proper here?
-		return msalbase.CreateAuthenticationResult(tokenResponse, nil)
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	return msalbase.CreateAuthenticationResult(tokenResponse, nil)
 }
 
 func (client *clientApplication) executeTokenRequestWithCacheWrite(
 	req requests.TokenRequester,
 	authParams *msalbase.AuthParametersInternal) (IAuthenticationResult, error) {
 	tokenResponse, err := req.Execute()
-	if err == nil {
-		if client.cacheAccessor != nil {
-			client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
-			defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-		}
-		account, err := client.cacheContext.cache.CacheTokenResponse(authParams, tokenResponse)
-		if err != nil {
-			return nil, err
-		}
-		return msalbase.CreateAuthenticationResult(tokenResponse, account)
+	if err != nil {
+		return nil, err
 	}
-	return nil, err
+	if client.cacheAccessor != nil {
+		client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
+		defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
+	}
+	account, err := client.cacheContext.cache.CacheTokenResponse(authParams, tokenResponse)
+	if err != nil {
+		return nil, err
+	}
+	return msalbase.CreateAuthenticationResult(tokenResponse, account)
 }
 
 func (client *clientApplication) getAccounts() []IAccount {

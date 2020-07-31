@@ -109,7 +109,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 
 	idToken, err := CreateIDToken(payload.IDToken)
 	if err != nil {
-		log.Infof("ID Token error: %v", err)
+		log.Errorf("ID Token error: %v", err)
 	}
 
 	tokenResponse := &TokenResponse{
