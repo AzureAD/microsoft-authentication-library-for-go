@@ -34,7 +34,7 @@ func (req *ClientAssertionRequest) Execute() (*msalbase.TokenResponse, error) {
 	req.authParameters.Endpoints = endpoints
 	if req.clientAssertion.ClientAssertionJWT == "" {
 		if req.clientAssertion.ClientCertificate == nil {
-			return nil, errors.New("No assertion or certificate found")
+			return nil, errors.New("no assertion or certificate found")
 		}
 		jwt, err := req.clientAssertion.ClientCertificate.BuildJWT(
 			req.authParameters)

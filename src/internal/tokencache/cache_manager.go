@@ -170,5 +170,5 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 }
 
 func (m *cacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
-	return errors.New("Not implemented")
+	return errors.New("not implemented")
 }

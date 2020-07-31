@@ -35,7 +35,7 @@ func getFirstPathSegment(u *url.URL) (string, error) {
 		return pathParts[1], nil
 	}
 
-	return "", errors.New("Authority does not have two segments")
+	return "", errors.New("authority does not have two segments")
 }
 
 func createAuthorityInfo(authorityType string, authorityURI string, validateAuthority bool) (*AuthorityInfo, error) {

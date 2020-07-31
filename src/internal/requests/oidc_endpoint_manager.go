@@ -57,5 +57,5 @@ func createOpenIDConfigurationEndpointManager(authorityInfo *msalbase.AuthorityI
 		return &aadOpenIDConfigurationEndpointManager{}, nil
 	}
 
-	return nil, errors.New("Unsupported authority type for createOpenIdConfigurationEndpointManager: " + string(authorityInfo.AuthorityType))
+	return nil, errors.New("unsupported authority type for createOpenIdConfigurationEndpointManager: " + string(authorityInfo.AuthorityType))
 }

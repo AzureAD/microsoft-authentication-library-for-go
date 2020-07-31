@@ -22,7 +22,7 @@ type AuthenticationResult struct {
 
 func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *StorageTokenResponse) (*AuthenticationResult, error) {
 	if storageTokenResponse == nil {
-		return nil, errors.New("Storage token response is nil")
+		return nil, errors.New("storage token response is nil")
 	}
 	account := storageTokenResponse.account
 	var idToken *IDToken
@@ -35,11 +35,11 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *St
 		accessToken = storageTokenResponse.accessToken.GetSecret()
 		expiresOn, err = ConvertStrUnixToUTCTime(storageTokenResponse.accessToken.GetExpiresOn())
 		if err != nil {
-			return nil, errors.New("Access token in cache expires at an invalid time")
+			return nil, errors.New("access token in cache expires at an invalid time")
 		}
 		grantedScopes = SplitScopes(storageTokenResponse.accessToken.GetScopes())
 	} else {
-		return nil, errors.New("No access token present in cache")
+		return nil, errors.New("no access token present in cache")
 	}
 
 	if !reflect.ValueOf(storageTokenResponse.idToken).IsNil() {
@@ -58,7 +58,7 @@ func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) 
 	grantedScopes := tokenResponse.GrantedScopes
 	declinedScopes := tokenResponse.declinedScopes
 	if len(declinedScopes) > 0 {
-		return nil, errors.New("Token response failed because declined scopes are present")
+		return nil, errors.New("token response failed because declined scopes are present")
 	}
 
 	idToken := tokenResponse.IDToken

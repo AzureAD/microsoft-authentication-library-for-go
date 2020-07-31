@@ -55,7 +55,7 @@ func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	} else if req.RequestType == AuthCodeClientAssertion {
 		if req.ClientAssertion.ClientAssertionJWT == "" {
 			if req.ClientAssertion.ClientCertificate == nil {
-				return nil, errors.New("No client assertion found")
+				return nil, errors.New("no client assertion found")
 			}
 			jwt, err := req.ClientAssertion.ClientCertificate.BuildJWT(req.authParameters)
 			if err != nil {
