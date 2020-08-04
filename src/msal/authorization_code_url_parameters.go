@@ -10,6 +10,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
+//AuthorizationCodeURLParameters has the parameters to create the URL to generate an authorization code
 type AuthorizationCodeURLParameters struct {
 	ClientID            string
 	RedirectURI         string
@@ -24,6 +25,7 @@ type AuthorizationCodeURLParameters struct {
 	Scopes              []string
 }
 
+//CreateAuthorizationCodeURLParameters creates an AuthorizationCodeURLParameters instance
 func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, scopes []string, codeChallenge string) *AuthorizationCodeURLParameters {
 	p := &AuthorizationCodeURLParameters{
 		ClientID:      clientID,
@@ -35,7 +37,8 @@ func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, s
 	return p
 }
 
-func (p *AuthorizationCodeURLParameters) CreateURL(wrm requests.IWebRequestManager, authParams *msalbase.AuthParametersInternal) (string, error) {
+//CreateURL creates the URL required to generate an authorization code from the parameters
+func (p *AuthorizationCodeURLParameters) CreateURL(wrm requests.WebRequestManager, authParams *msalbase.AuthParametersInternal) (string, error) {
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(wrm)
 	endpoints, err := resolutionManager.ResolveEndpoints(authParams.AuthorityInfo, "")
 	if err != nil {

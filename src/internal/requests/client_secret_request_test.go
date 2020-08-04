@@ -9,14 +9,14 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-var secret = "secret"
-var clientSecretRequest = &ClientSecretRequest{
-	webRequestManager: wrm,
-	authParameters:    testAuthParams,
-	clientSecret:      secret,
-}
-
 func TestClientSecretReqExecute(t *testing.T) {
+	var secret = "secret"
+	wrm := new(MockWebRequestManager)
+	var clientSecretRequest = &ClientSecretRequest{
+		webRequestManager: wrm,
+		authParameters:    testAuthParams,
+		clientSecret:      secret,
+	}
 	tdr := &TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
 		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",

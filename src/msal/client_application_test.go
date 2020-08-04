@@ -63,6 +63,7 @@ func TestAcquireTokenSilent(t *testing.T) {
 }
 
 func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
+	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 	req := new(requests.MockTokenRequest)
 	actualTokenResp := &msalbase.TokenResponse{}
 	req.On("Execute").Return(actualTokenResp, nil)
@@ -80,6 +81,7 @@ func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 }
 
 func TestExecuteTokenRequestWithCacheWrite(t *testing.T) {
+	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 	mockError := errors.New("This is a mock error")
 	errorReq := new(requests.MockTokenRequest)
 	errorReq.On("Execute").Return(nil, mockError)

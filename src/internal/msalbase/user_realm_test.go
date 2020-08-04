@@ -32,3 +32,50 @@ func TestCreateUserRealm(t *testing.T) {
 		t.Errorf("Actual user realm %+v differs from expected user realm %+v", actualRealm, expectedUserRealm)
 	}
 }
+
+func TestCreateUserRealmWithErrors(t *testing.T) {
+	realm := `{"account_type" : "Federated",
+				"domain_name" : "domain",
+				"cloud_instance_name" : "cloud",
+				"cloud_audience_urn" : "urn",
+				"federation_metadata_url" : "fed_meta"}`
+	_, err := CreateUserRealm(realm)
+	if !reflect.DeepEqual(err.Error(), "Federation protocol of user realm is missing") {
+		t.Errorf("Actual error %s differs from expected error %s",
+			err.Error(), "Federation protocol of user realm is missing")
+	}
+	realm = `{"account_type" : "Federated",
+				"domain_name" : "domain",
+				"cloud_instance_name" : "cloud",
+				"cloud_audience_urn" : "urn",
+				"federation_protocol" : "fed_prot"}`
+	_, err = CreateUserRealm(realm)
+	if !reflect.DeepEqual(err.Error(), "Federation metadata URL of user realm is missing") {
+		t.Errorf("Actual error %s differs from expected error %s",
+			err.Error(), "Federation metadata URL of user realm is missing")
+	}
+	realm = `{"account_type" : "Managed",
+				"cloud_instance_name" : "cloud",
+				"cloud_audience_urn" : "urn"}`
+	_, err = CreateUserRealm(realm)
+	if !reflect.DeepEqual(err.Error(), "Domain name of user realm is missing") {
+		t.Errorf("Actual error %s differs from expected error %s",
+			err.Error(), "Domain name of user realm is missing")
+	}
+	realm = `{"account_type" : "Managed",
+				"domain_name" : "domain",
+				"cloud_audience_urn" : "urn"}`
+	_, err = CreateUserRealm(realm)
+	if !reflect.DeepEqual(err.Error(), "Cloud instance name of user realm is missing") {
+		t.Errorf("Actual error %s differs from expected error %s",
+			err.Error(), "Cloud instance name of user realm is missing")
+	}
+	realm = `{"account_type" : "Managed",
+				"domain_name" : "domain",
+				"cloud_instance_name" : "cloud"}`
+	_, err = CreateUserRealm(realm)
+	if !reflect.DeepEqual(err.Error(), "Cloud Instance URN is missing") {
+		t.Errorf("Actual error %s differs from expected error %s",
+			err.Error(), "Cloud Instance URN is missing")
+	}
+}

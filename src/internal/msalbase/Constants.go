@@ -3,8 +3,9 @@
 
 package msalbase
 
-//DefaultAuthCodeResponseType is the response type for authorization code requests
+//List of all constants used throughout MSAL Go
 const (
+	//DefaultAuthCodeResponseType is the response type for authorization code requests
 	DefaultAuthCodeResponseType = "code"
 
 	//DefaultScopeSeparator is used to convert a list of scopes to a string
@@ -12,6 +13,9 @@ const (
 
 	//IntervalAddition is used in device code requests to increase the polling interval if there is a slow down error
 	IntervalAddition = 5
+
+	//CertificateExpirationTime is used when building an assertion JWT from a client certificate
+	CertificateExpirationTime = 600
 
 	//CacheKeySeparator is used in creating the keys of the cache
 	CacheKeySeparator = "-"
@@ -60,4 +64,12 @@ const (
 	RefreshTokenGrant     = "refresh_token"
 	ClientCredentialGrant = "client_credentials"
 	ClientAssertionGrant  = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+
+	//Endpoints
+	AuthorizationEndpoint     = "https://%v/%v/oauth2/v2.0/authorize"
+	InstanceDiscoveryEndpoint = "https://%v/common/discovery/instance?%v"
+	DefaultHost               = "login.microsoftonline.com"
+
+	SoapActionWSTrust2005 = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
+	SoapActionDefault     = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue"
 )

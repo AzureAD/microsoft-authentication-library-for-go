@@ -17,6 +17,7 @@ const (
 	confidentialClientAssertion
 )
 
+//ConfidentialClientApplication is the struct used to acquire tokens for confidential client apps
 type ConfidentialClientApplication struct {
 	clientApplication *clientApplication
 	clientSecret      string
@@ -24,6 +25,7 @@ type ConfidentialClientApplication struct {
 	clientType        confidentialClientType
 }
 
+//CreateConfidentialClientApplicationFromSecret creates a ConfidentialClientApplication with a client secret
 func CreateConfidentialClientApplicationFromSecret(
 	clientID string, authority string, clientSecret string) *ConfidentialClientApplication {
 	clientApp := createClientApplication(clientID, authority)
@@ -35,6 +37,7 @@ func CreateConfidentialClientApplicationFromSecret(
 	return cca
 }
 
+//CreateConfidentialClientApplicationFromCertificate creates a ConfidentialClientApplication with a certificate (private key and thumbprint)
 func CreateConfidentialClientApplicationFromCertificate(
 	clientID string, authority string, thumbprint string, key []byte) *ConfidentialClientApplication {
 	clientApp := createClientApplication(clientID, authority)
@@ -46,6 +49,7 @@ func CreateConfidentialClientApplicationFromCertificate(
 	return cca
 }
 
+//CreateConfidentialClientApplicationFromAssertion creates a ConfidentialClientApplication with an assertion string
 func CreateConfidentialClientApplicationFromAssertion(
 	clientID string, authority string, assertion string) *ConfidentialClientApplication {
 	clientApp := createClientApplication(clientID, authority)
@@ -57,11 +61,13 @@ func CreateConfidentialClientApplicationFromAssertion(
 	return cca
 }
 
-func (cca *ConfidentialClientApplication) SetHTTPManager(httpManager IHTTPManager) {
-	webRequestManager := CreateWebRequestManager(httpManager)
+//SetHTTPManager allows users to use their own implementation of HTTPManager
+func (cca *ConfidentialClientApplication) SetHTTPManager(httpManager HTTPManager) {
+	webRequestManager := createWebRequestManager(httpManager)
 	cca.clientApplication.webRequestManager = webRequestManager
 }
 
+//SetCacheAccessor allows users to use an implementation of CacheAccessor to handle cache persistence
 func (cca *ConfidentialClientApplication) SetCacheAccessor(accessor CacheAccessor) {
 	cca.clientApplication.cacheAccessor = accessor
 }
@@ -71,13 +77,15 @@ func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameter
 	return cca.clientApplication.createAuthCodeURL(authCodeURLParameters)
 }
 
+//AcquireTokenSilent acquires a token from either the cache or using a refresh token
 func (cca *ConfidentialClientApplication) AcquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (IAuthenticationResult, error) {
+	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultInterfacer, error) {
 	return cca.clientApplication.acquireTokenSilent(silentParameters)
 }
 
+//AcquireTokenByAuthCode acquires a security token from the authority, using an authorization code
 func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
-	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
+	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultInterfacer, error) {
 	if cca.clientType == confidentialClientSecret {
 		authCodeParams.RequestType = requests.AuthCodeClientSecret
 		authCodeParams.ClientSecret = cca.clientSecret
@@ -91,8 +99,9 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 
 }
 
+//AcquireTokenByClientSecret acquires a security token from the authority using a client secret
 func (cca *ConfidentialClientApplication) AcquireTokenByClientSecret(
-	clientCredParams *AcquireTokenClientSecretParameters) (IAuthenticationResult, error) {
+	clientCredParams *AcquireTokenClientSecretParameters) (AuthenticationResultInterfacer, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientCredParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateClientSecretRequest(
@@ -100,8 +109,9 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientSecret(
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
+//AcquireTokenByClientAssertion acquires a security token from the authority using a assertion, which can be either a JWT or certificate
 func (cca *ConfidentialClientApplication) AcquireTokenByClientAssertion(
-	clientParams *AcquireTokenClientAssertionParameters) (IAuthenticationResult, error) {
+	clientParams *AcquireTokenClientAssertionParameters) (AuthenticationResultInterfacer, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateClientAssertionRequest(
@@ -110,6 +120,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientAssertion(
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
-func (cca *ConfidentialClientApplication) GetAccounts() []IAccount {
+//GetAccounts gets all the accounts in the cache
+func (cca *ConfidentialClientApplication) GetAccounts() []AccountInterfacer {
 	return cca.clientApplication.getAccounts()
 }

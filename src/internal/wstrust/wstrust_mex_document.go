@@ -104,7 +104,7 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 
 		index := strings.Index(bindingName, ":")
 		if index != -1 {
-			bindingName = bindingName[index+1 : len(bindingName)]
+			bindingName = bindingName[index+1:]
 		}
 
 		if binding, ok := bindings[bindingName]; ok {

@@ -20,12 +20,14 @@ var certHeader = map[string]interface{}{
 	"typ": "JWT",
 }
 
+//ClientCertificate consists of the parameters to create a assertion from certificate parameters, which include a thumbprint and private key
 type ClientCertificate struct {
 	thumbprint string
 	key        []byte
 	expiresOn  int64
 }
 
+//CreateClientCertificate creates a ClientCertificate instance from the thumbprint and private key
 func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
 	cert := &ClientCertificate{
 		thumbprint: thumbprint,
@@ -34,10 +36,13 @@ func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
 	return cert
 }
 
+//BuildJWT builds a JWT assertion using the client certificate parameters
+//The parameters of the JWT are described in https://docs.microsoft.com/en-us/azure/active-directory/develop/active-directory-certificate-credentials
 func (cert *ClientCertificate) BuildJWT(authParams *AuthParametersInternal) (string, error) {
 	now := time.Now().UTC().Unix()
-	expiresOn := now + 600
+	expiresOn := now + CertificateExpirationTime
 	cert.expiresOn = expiresOn
+	//The thumbprint is hex encoded, so we need to encode this to base64
 	hexDecodedThumbprint, err := hex.DecodeString(cert.thumbprint)
 	if err != nil {
 		return "", err
@@ -52,11 +57,14 @@ func (cert *ClientCertificate) BuildJWT(authParams *AuthParametersInternal) (str
 		"sub": authParams.ClientID,
 	})
 	token.Header = certHeader
+	//Decoding the byte array of the private key to a PEM formatted block
 	block, _ := pem.Decode(cert.key)
+	//Parses a private key that can be used to sign the claims from the PEM block
 	privateKey, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
 		return "", err
 	}
+	//Signing the claims using the private key
 	tokenString, err := token.SignedString(privateKey)
 	if err != nil {
 		return "", err

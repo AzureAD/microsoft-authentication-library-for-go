@@ -14,12 +14,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type cacheManager struct {
-	storageManager IStorageManager
+type defaultCacheManager struct {
+	storageManager StorageManager
 }
 
-func CreateCacheManager(storageManager IStorageManager) *cacheManager {
-	cache := &cacheManager{storageManager: storageManager}
+func CreateCacheManager(storageManager StorageManager) requests.CacheManager {
+	cache := &defaultCacheManager{storageManager: storageManager}
 	return cache
 }
 
@@ -46,19 +46,19 @@ func isAccessTokenValid(accessToken *accessTokenCacheItem) bool {
 	return true
 }
 
-func (m *cacheManager) GetAllAccounts() []*msalbase.Account {
+func (m *defaultCacheManager) GetAllAccounts() []*msalbase.Account {
 	return m.storageManager.ReadAllAccounts()
 }
 
-func (m *cacheManager) Serialize() (string, error) {
+func (m *defaultCacheManager) Serialize() (string, error) {
 	return m.storageManager.Serialize()
 }
 
-func (m *cacheManager) Deserialize(data []byte) error {
+func (m *defaultCacheManager) Deserialize(data []byte) error {
 	return m.storageManager.Deserialize(data)
 }
 
-func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal, webRequestManager requests.IWebRequestManager) (*msalbase.StorageTokenResponse, error) {
+func (m *defaultCacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (*msalbase.StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -89,7 +89,7 @@ func (m *cacheManager) TryReadCache(authParameters *msalbase.AuthParametersInter
 	return msalbase.CreateStorageTokenResponse(accessToken, refreshToken, idToken, account), nil
 }
 
-func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParametersInternal, tokenResponse *msalbase.TokenResponse) (*msalbase.Account, error) {
+func (m *defaultCacheManager) CacheTokenResponse(authParameters *msalbase.AuthParametersInternal, tokenResponse *msalbase.TokenResponse) (*msalbase.Account, error) {
 	var err error
 	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
 	homeAccountID := authParameters.HomeaccountID
@@ -169,6 +169,6 @@ func (m *cacheManager) CacheTokenResponse(authParameters *msalbase.AuthParameter
 	return account, nil
 }
 
-func (m *cacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
+func (m *defaultCacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
 	return errors.New("Not implemented")
 }

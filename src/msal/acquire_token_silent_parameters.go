@@ -7,12 +7,13 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-// AcquireTokenSilentParameters stuff
+// AcquireTokenSilentParameters contains the parameters to acquire a token silently
 type AcquireTokenSilentParameters struct {
 	commonParameters *acquireTokenCommonParameters
-	account          IAccount
+	account          AccountInterfacer
 }
 
+//CreateAcquireTokenSilentParameters creates an AcquireTokenSilentParameters instance with an empty account
 func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
 	p := &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
@@ -21,8 +22,8 @@ func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentPara
 	return p
 }
 
-// CreateAcquireTokenSilentParameters stuff
-func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account IAccount) *AcquireTokenSilentParameters {
+// CreateAcquireTokenSilentParametersWithAccount creates an AcquireTokenSilentParameters instance from an account
+func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account AccountInterfacer) *AcquireTokenSilentParameters {
 	p := &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          account,

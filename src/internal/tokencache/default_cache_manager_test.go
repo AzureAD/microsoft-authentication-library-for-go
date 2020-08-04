@@ -73,7 +73,7 @@ func TestGetAllAccounts(t *testing.T) {
 	}
 	expectedAccounts := []*msalbase.Account{account1, account2}
 	mockStorageManager := new(MockStorageManager)
-	cacheManager := &cacheManager{storageManager: mockStorageManager}
+	cacheManager := &defaultCacheManager{storageManager: mockStorageManager}
 	mockStorageManager.On("ReadAllAccounts").Return(expectedAccounts)
 	actualAccounts := cacheManager.GetAllAccounts()
 	if !reflect.DeepEqual(expectedAccounts, actualAccounts) {
@@ -84,7 +84,7 @@ func TestGetAllAccounts(t *testing.T) {
 func TestTryReadCache(t *testing.T) {
 	mockStorageManager := new(MockStorageManager)
 	mockWebRequestManager := new(requests.MockWebRequestManager)
-	cacheManager := &cacheManager{storageManager: mockStorageManager}
+	cacheManager := &defaultCacheManager{storageManager: mockStorageManager}
 	authInfo := &msalbase.AuthorityInfo{
 		Host:   "env",
 		Tenant: "realm",
@@ -164,7 +164,7 @@ func TestTryReadCache(t *testing.T) {
 
 func TestCacheTokenResponse(t *testing.T) {
 	mockStorageManager := new(MockStorageManager)
-	cacheManager := &cacheManager{storageManager: mockStorageManager}
+	cacheManager := &defaultCacheManager{storageManager: mockStorageManager}
 	clientInfo := &msalbase.ClientInfoJSONPayload{
 		UID:  "testUID",
 		Utid: "testUtid",

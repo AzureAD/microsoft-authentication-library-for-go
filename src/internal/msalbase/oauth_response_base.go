@@ -8,6 +8,7 @@ import (
 	"errors"
 )
 
+//OAuthResponseBase stores common information when sending a request to get a token
 type OAuthResponseBase struct {
 	Error            string `json:"error"`
 	SubError         string `json:"suberror"`
@@ -22,6 +23,7 @@ var httpFailureCodes = map[int]string{
 	500: "HTTP 500",
 }
 
+//CreateOAuthResponseBase creates a OAuthResponseBase instance from the HTTP client's response
 func CreateOAuthResponseBase(httpStatusCode int, responseData string) (*OAuthResponseBase, error) {
 
 	if failMessage, ok := httpFailureCodes[httpStatusCode]; ok {

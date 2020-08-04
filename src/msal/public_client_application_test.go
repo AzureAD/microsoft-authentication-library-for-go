@@ -19,7 +19,6 @@ var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.mi
 	"https://login.microsoftonline.com/v2.0",
 	"login.microsoftonline.com")
 var testAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
-var testAuthParams = msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 
 var tdr = &requests.TenantDiscoveryResponse{
 	AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
@@ -48,6 +47,7 @@ func TestCreateAuthCodeURL(t *testing.T) {
 }
 
 func TestAcquireTokenByAuthCode(t *testing.T) {
+	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 	testAuthParams.Endpoints = testAuthorityEndpoints
 	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
 	testAuthParams.Scopes = tokenCommonParams.scopes
@@ -66,6 +66,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 }
 
 func TestAcquireTokenByUsernamePassword(t *testing.T) {
+	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 	testAuthParams.Endpoints = testAuthorityEndpoints
 	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeUsernamePassword
 	testAuthParams.Scopes = tokenCommonParams.scopes
@@ -94,11 +95,33 @@ func TestGetAllAccounts(t *testing.T) {
 	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	expectedAccounts := []*msalbase.Account{testAccOne, testAccTwo}
-	returnedAccounts := []IAccount{testAccOne, testAccTwo}
+	returnedAccounts := []AccountInterfacer{testAccOne, testAccTwo}
 	cacheManager.On("GetAllAccounts").Return(expectedAccounts)
 	actualAccounts := testPCA.GetAccounts()
 	if !reflect.DeepEqual(actualAccounts, returnedAccounts) {
 		t.Errorf("Actual accounts %v differ from expected accounts %v", actualAccounts, returnedAccounts)
 	}
+}
 
+func TestAcquireTokenByDeviceCode(t *testing.T) {
+	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
+	testAuthParams.Endpoints = testAuthorityEndpoints
+	testAuthParams.Scopes = tokenCommonParams.scopes
+	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeDeviceCode
+	callback := func(dcr IDeviceCodeResult) {}
+	devCodeParams := &AcquireTokenDeviceCodeParameters{
+		commonParameters:   tokenCommonParams,
+		deviceCodeCallback: callback,
+	}
+	wrm.On("GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
+	actualTokenResp := &msalbase.TokenResponse{}
+	devCodeResult := &msalbase.DeviceCodeResult{}
+	wrm.On("GetDeviceCodeResult", testAuthParams).Return(devCodeResult, nil)
+	wrm.On("GetAccessTokenFromDeviceCodeResult", testAuthParams, devCodeResult).Return(actualTokenResp, nil)
+	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
+	_, err := testPCA.AcquireTokenByDeviceCode(devCodeParams)
+	if err != nil {
+		t.Errorf("Error should be nil, but it is %v", err)
+	}
 }

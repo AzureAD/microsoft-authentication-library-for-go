@@ -8,6 +8,7 @@ import (
 	"strings"
 )
 
+//Account represents a user's account with information from an ID token
 type Account struct {
 	HomeAccountID     *string `json:"home_account_id,omitempty"`
 	Environment       *string `json:"environment,omitempty"`
@@ -24,6 +25,7 @@ type Account struct {
 	additionalFields  map[string]interface{}
 }
 
+//CreateAccount creates an account
 func CreateAccount(homeAccountID string,
 	environment string,
 	realm string,
@@ -42,6 +44,7 @@ func CreateAccount(homeAccountID string,
 	return a
 }
 
+//CreateKey creates the key for storing accounts in the cache
 func (acc *Account) CreateKey() string {
 	keyParts := []string{
 		GetStringFromPointer(acc.HomeAccountID),
@@ -51,18 +54,22 @@ func (acc *Account) CreateKey() string {
 	return strings.Join(keyParts, CacheKeySeparator)
 }
 
+//GetUsername returns the username of an account
 func (acc *Account) GetUsername() string {
 	return GetStringFromPointer(acc.PreferredUsername)
 }
 
+//GetHomeAccountID returns the home account ID of an account
 func (acc *Account) GetHomeAccountID() string {
 	return GetStringFromPointer(acc.HomeAccountID)
 }
 
+//GetEnvironment returns the environment of an account
 func (acc *Account) GetEnvironment() string {
 	return GetStringFromPointer(acc.Environment)
 }
 
+//PopulateFromJSONMap populates an account object from a map (used for cache deserialization)
 func (acc *Account) PopulateFromJSONMap(j map[string]interface{}) error {
 	acc.HomeAccountID = ExtractStringPointerForCache(j, JSONHomeAccountID)
 	acc.Environment = ExtractStringPointerForCache(j, JSONEnvironment)
@@ -80,6 +87,7 @@ func (acc *Account) PopulateFromJSONMap(j map[string]interface{}) error {
 	return nil
 }
 
+//ConvertToJSONMap converts an account object to a map (used for cache serialization)
 func (acc *Account) ConvertToJSONMap() (map[string]interface{}, error) {
 	accountMap, err := json.Marshal(acc)
 	if err != nil {

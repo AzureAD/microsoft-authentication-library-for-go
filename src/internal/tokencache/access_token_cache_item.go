@@ -25,6 +25,7 @@ type accessTokenCacheItem struct {
 	additionalFields               map[string]interface{}
 }
 
+//CreateAccessTokenCacheItem
 func CreateAccessTokenCacheItem(homeAccountID string,
 	environment string,
 	realm string,

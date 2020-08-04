@@ -23,12 +23,13 @@ type tokenResponseJSONPayload struct {
 	ClientInfo   string `json:"client_info"`
 }
 
+//ClientInfoJSONPayload is used to create a Home Account ID for an account
 type ClientInfoJSONPayload struct {
 	UID  string `json:"uid"`
 	Utid string `json:"utid"`
 }
 
-//TokenResponse
+//TokenResponse is the information that is returned from a token endpoint during a token acquisition flow
 type TokenResponse struct {
 	baseResponse   *OAuthResponseBase
 	AccessToken    string
@@ -43,14 +44,17 @@ type TokenResponse struct {
 	ClientInfo     *ClientInfoJSONPayload
 }
 
+//HasAccessToken checks if the TokenResponse has an access token secret
 func (tr *TokenResponse) HasAccessToken() bool {
 	return len(tr.AccessToken) > 0
 }
 
+//HasRefreshToken checks if the TokenResponse has an refresh token secret
 func (tr *TokenResponse) HasRefreshToken() bool {
 	return len(tr.RefreshToken) > 0
 }
 
+//GetHomeAccountIDFromClientInfo creates the home account ID for an account from the client info parameter
 func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
 	if tr.ClientInfo.UID == "" || tr.ClientInfo.Utid == "" {
 		return ""
@@ -58,6 +62,7 @@ func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
 	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
 }
 
+//CreateTokenResponse creates a TokenResponse instance from the response from the token endpoint
 func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode int, responseData string) (*TokenResponse, error) {
 	baseResponse, err := CreateOAuthResponseBase(responseCode, responseData)
 	if err != nil {
@@ -70,15 +75,13 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 	}
 
 	if payload.AccessToken == "" {
-		// AccessToken is required, error out
+		// Access token is required in a token response
 		return nil, errors.New("response is missing access_token")
 	}
 
 	rawClientInfo := payload.ClientInfo
 	clientInfo := &ClientInfoJSONPayload{}
-
 	// Client info may be empty in some flows, e.g. certificate exchange.
-
 	if len(rawClientInfo) > 0 {
 		rawClientInfoDecoded, err := DecodeJWT(rawClientInfo)
 		if err != nil {
@@ -90,6 +93,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 			return nil, err
 		}
 	}
+
 	expiresOn := time.Now().Add(time.Second * time.Duration(payload.ExpiresIn))
 	extExpiresOn := time.Now().Add(time.Second * time.Duration(payload.ExtExpiresIn))
 
@@ -130,17 +134,15 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 
 func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []string {
 	declined := []string{}
-
 	grantedMap := map[string]bool{}
 	for _, s := range grantedScopes {
 		grantedMap[s] = true
 	}
-
+	//Comparing the requested scopes with the granted scopes to see if there are any scopes that have been declined
 	for _, r := range requestedScopes {
 		if !grantedMap[r] {
 			declined = append(declined, r)
 		}
 	}
-
 	return declined
 }

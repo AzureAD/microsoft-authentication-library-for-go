@@ -13,7 +13,7 @@ type MockCacheManager struct {
 }
 
 func (mock *MockCacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal,
-	webRequestManager IWebRequestManager) (*msalbase.StorageTokenResponse, error) {
+	webRequestManager WebRequestManager) (*msalbase.StorageTokenResponse, error) {
 	args := mock.Called(authParameters, webRequestManager)
 	return args.Get(0).(*msalbase.StorageTokenResponse), args.Error(1)
 }

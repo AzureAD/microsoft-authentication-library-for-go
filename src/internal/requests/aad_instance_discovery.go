@@ -21,10 +21,10 @@ type IAadInstanceDiscovery interface {
 }
 
 type AadInstanceDiscovery struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 }
 
-func CreateAadInstanceDiscovery(webRequestManager IWebRequestManager) *AadInstanceDiscovery {
+func CreateAadInstanceDiscovery(webRequestManager WebRequestManager) *AadInstanceDiscovery {
 	instanceDiscoveryCacheInitOnce.Do(initInstanceDiscoveryCache)
 	return &AadInstanceDiscovery{webRequestManager: webRequestManager}
 }

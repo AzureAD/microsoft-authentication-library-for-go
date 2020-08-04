@@ -15,6 +15,12 @@ var authType = "MSSTS"
 var accLid = "lid"
 var accUser = "user"
 
+var testAccount = &Account{
+	HomeAccountID:     &accHID,
+	PreferredUsername: &accUser,
+	Environment:       &accEnv,
+}
+
 func TestAccountPopulateFromJSONMap(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "hid",
@@ -79,5 +85,26 @@ func TestAccountConvertToJSONMap(t *testing.T) {
 	}
 	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
 		t.Errorf("JSON account %+v differs from expected JSON account %+v", jsonMap, actualJSONMap)
+	}
+}
+
+func TestGetHomeAccountIDForAccount(t *testing.T) {
+	if !reflect.DeepEqual(testAccount.GetHomeAccountID(), accHID) {
+		t.Errorf("Actual home account ID %s differs from expected home account ID %s",
+			testAccount.GetHomeAccountID(), accHID)
+	}
+}
+
+func TestGetUsernameForAccount(t *testing.T) {
+	if !reflect.DeepEqual(testAccount.GetUsername(), accUser) {
+		t.Errorf("Actual username %s differs from expected username %s",
+			testAccount.GetUsername(), accUser)
+	}
+}
+
+func TestGetEnvironmentForAccount(t *testing.T) {
+	if !reflect.DeepEqual(testAccount.GetEnvironment(), accEnv) {
+		t.Errorf("Actual environment %s differs from expected environment %s",
+			testAccount.GetEnvironment(), accEnv)
 	}
 }

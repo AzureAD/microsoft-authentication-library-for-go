@@ -3,7 +3,7 @@
 
 package msalgo
 
-type IAccount interface {
+type AccountInterfacer interface {
 	GetUsername() string
 	GetHomeAccountID() string
 	GetEnvironment() string

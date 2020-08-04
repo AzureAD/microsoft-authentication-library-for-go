@@ -29,25 +29,32 @@ type IAuthorityEndpointResolutionManager interface {
 }
 
 type AuthorityEndpointResolutionManager struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 }
 
-func CreateAuthorityEndpointResolutionManager(webRequestManager IWebRequestManager) IAuthorityEndpointResolutionManager {
+func CreateAuthorityEndpointResolutionManager(webRequestManager WebRequestManager) IAuthorityEndpointResolutionManager {
 	m := &AuthorityEndpointResolutionManager{webRequestManager}
 	return m
 }
 
-func getAdfsDomainFromUpn(userPrincipalName string) string {
+func getAdfsDomainFromUpn(userPrincipalName string) (string, error) {
 	// todo: func should return error so we can handle not having a @ in the string...
-	return strings.Split(userPrincipalName, "@")[1]
+	parts := strings.Split(userPrincipalName, "@")
+	if len(parts) < 2 {
+		return "", errors.New("no @ present in user principal name")
+	}
+	return parts[1], nil
 }
 
 func (m *AuthorityEndpointResolutionManager) tryGetCachedEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) *msalbase.AuthorityEndpoints {
 
 	if cacheEntry, ok := endpointCacheEntries[authorityInfo.CanonicalAuthorityURI]; ok {
 		if authorityInfo.AuthorityType == msalbase.ADFS {
-			if _, ok := cacheEntry.ValidForDomainsInList[getAdfsDomainFromUpn(userPrincipalName)]; ok {
-				return cacheEntry.Endpoints
+			domain, err := getAdfsDomainFromUpn(userPrincipalName)
+			if err == nil {
+				if _, ok := cacheEntry.ValidForDomainsInList[domain]; ok {
+					return cacheEntry.Endpoints
+				}
 			}
 		} else {
 			return cacheEntry.Endpoints
@@ -67,8 +74,10 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 				updatedCacheEntry.ValidForDomainsInList[k] = true
 			}
 		}
-
-		updatedCacheEntry.ValidForDomainsInList[getAdfsDomainFromUpn(userPrincipalName)] = true
+		domain, err := getAdfsDomainFromUpn(userPrincipalName)
+		if err == nil {
+			updatedCacheEntry.ValidForDomainsInList[domain] = true
+		}
 	}
 
 	endpointCacheEntries[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry

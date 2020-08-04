@@ -26,7 +26,7 @@ func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
 	defer cancelFunc()
 	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
-	resultChannel := make(chan msalgo.IAuthenticationResult)
+	resultChannel := make(chan msalgo.AuthenticationResultInterfacer)
 	errChannel := make(chan error)
 	go func() {
 		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
@@ -48,7 +48,7 @@ func acquireTokenDeviceCode() {
 		log.Fatal(err)
 	}
 	publicClientApp.SetCacheAccessor(cacheAccessor)
-	var userAccount msalgo.IAccount
+	var userAccount msalgo.AccountInterfacer
 	accounts := publicClientApp.GetAccounts()
 	for _, account := range accounts {
 		if account.GetUsername() == config.Username {

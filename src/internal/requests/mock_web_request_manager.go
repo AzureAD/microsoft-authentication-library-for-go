@@ -25,9 +25,9 @@ func (mock *MockWebRequestManager) GetMex(federationMetadataURL string) (*wstrus
 
 func (mock *MockWebRequestManager) GetWsTrustResponse(authParameters *msalbase.AuthParametersInternal,
 	cloudAudienceURN string,
-	endpoint *wstrust.WsTrustEndpoint) (*wstrust.WsTrustResponse, error) {
+	endpoint *wstrust.WsTrustEndpoint) (*wstrust.Response, error) {
 	args := mock.Called(authParameters, cloudAudienceURN, endpoint)
-	return args.Get(0).(*wstrust.WsTrustResponse), args.Error(1)
+	return args.Get(0).(*wstrust.Response), args.Error(1)
 }
 
 func (mock *MockWebRequestManager) GetAccessTokenFromSamlGrant(authParameters *msalbase.AuthParametersInternal,

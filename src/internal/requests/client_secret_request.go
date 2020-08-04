@@ -7,14 +7,16 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
+//ClientSecretRequest stores the values required to request a token from the authority using an secret (confidential client)
 type ClientSecretRequest struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 	authParameters    *msalbase.AuthParametersInternal
 	clientSecret      string
 }
 
+//CreateClientSecretRequest creates a ClientSecretRequest instance
 func CreateClientSecretRequest(
-	webRequestManager IWebRequestManager,
+	webRequestManager WebRequestManager,
 	authParameters *msalbase.AuthParametersInternal,
 	clientSecret string) *ClientSecretRequest {
 	req := &ClientSecretRequest{
@@ -25,6 +27,7 @@ func CreateClientSecretRequest(
 	return req
 }
 
+//Execute executes the token acquisition requests and returns a token response or an error
 func (req *ClientSecretRequest) Execute() (*msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")

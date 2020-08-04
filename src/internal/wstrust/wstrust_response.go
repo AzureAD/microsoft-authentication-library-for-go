@@ -11,12 +11,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type WsTrustResponse struct {
+type Response struct {
 	responseData string
 }
 
-func CreateWsTrustResponse(responseData string) *WsTrustResponse {
-	response := &WsTrustResponse{responseData}
+func CreateWsTrustResponse(responseData string) *Response {
+	response := &Response{responseData}
 	return response
 
 	// todo: return error here
@@ -36,7 +36,7 @@ func CreateWsTrustResponse(responseData string) *WsTrustResponse {
 	// }
 }
 
-func (wsTrustResponse *WsTrustResponse) GetSAMLAssertion(endpoint *WsTrustEndpoint) (*SamlTokenInfo, error) {
+func (wsTrustResponse *Response) GetSAMLAssertion(endpoint *WsTrustEndpoint) (*SamlTokenInfo, error) {
 	switch endpoint.EndpointVersion {
 	case Trust2005:
 		return nil, errors.New("WS Trust 2005 support is not implemented")
@@ -45,6 +45,7 @@ func (wsTrustResponse *WsTrustResponse) GetSAMLAssertion(endpoint *WsTrustEndpoi
 			log.Trace("Extracting assertion from WS-Trust 1.3 token:")
 
 			samldefinitions := &samldefinitions{}
+			log.Info(wsTrustResponse.responseData)
 			var err = xml.Unmarshal([]byte(wsTrustResponse.responseData), samldefinitions)
 			if err != nil {
 				return nil, err

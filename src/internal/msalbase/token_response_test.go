@@ -43,6 +43,19 @@ func TestCreateTokenResponse(t *testing.T) {
 	}
 }
 
+func TestCreateTokenResponseWithErrors(t *testing.T) {
+	scopes := []string{"openid", "profile"}
+	testAuthParams := &AuthParametersInternal{
+		Scopes: scopes,
+	}
+	testTokenResponseErrors := `{"expires_in": 86399, "ext_expires_in": 86399}`
+	_, err := CreateTokenResponse(testAuthParams, 200, testTokenResponseErrors)
+	if !reflect.DeepEqual(err.Error(), "response is missing access_token") {
+		t.Errorf("Actual error %s differs from expected error %s",
+			err.Error(), "response is missing access_token")
+	}
+}
+
 func TestGetHomeAccountIDFromClientInfo(t *testing.T) {
 	clientInfo := &ClientInfoJSONPayload{
 		UID:  "uid",

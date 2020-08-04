@@ -9,14 +9,14 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-var clientAssertion = &msalbase.ClientAssertion{ClientAssertionJWT: "hello"}
-var clientAssertionReq = &ClientAssertionRequest{
-	webRequestManager: wrm,
-	authParameters:    testAuthParams,
-	clientAssertion:   clientAssertion,
-}
-
 func TestClientAssertionReqExecute(t *testing.T) {
+	var clientAssertion = &msalbase.ClientAssertion{ClientAssertionJWT: "hello"}
+	wrm := new(MockWebRequestManager)
+	var clientAssertionReq = &ClientAssertionRequest{
+		webRequestManager: wrm,
+		authParameters:    testAuthParams,
+		clientAssertion:   clientAssertion,
+	}
 	tdr := &TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
 		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",

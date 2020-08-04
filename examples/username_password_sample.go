@@ -28,7 +28,7 @@ func acquireByUsernamePasswordPublic() {
 		log.Fatal(err)
 	}
 	publicClientApp.SetCacheAccessor(cacheAccessor)
-	var userAccount msalgo.IAccount
+	var userAccount msalgo.AccountInterfacer
 	accounts := publicClientApp.GetAccounts()
 	for _, account := range accounts {
 		if account.GetUsername() == config.Username {

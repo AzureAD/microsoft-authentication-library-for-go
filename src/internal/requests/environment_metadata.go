@@ -6,11 +6,11 @@ package requests
 import "strings"
 
 type EnvironmentMetadata struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 	aliasMap          map[string]*CloudEnvironmentInfo
 }
 
-func CreateEnvironmentMetadata(webRequestManager IWebRequestManager) *EnvironmentMetadata {
+func CreateEnvironmentMetadata(webRequestManager WebRequestManager) *EnvironmentMetadata {
 
 	idps := []*CloudEnvironmentInfo{}
 
