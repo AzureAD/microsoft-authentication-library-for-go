@@ -71,9 +71,9 @@ func (wsTrustResponse *Response) GetSAMLAssertion(endpoint *WsTrustEndpoint) (*S
 				}
 			}
 
-			return nil, errors.New("Couldn't find SAML assertion")
+			return nil, errors.New("couldn't find SAML assertion")
 		}
 	default:
-		return nil, errors.New("Unknown WS-Trust version")
+		return nil, errors.New("unknown WS-Trust version")
 	}
 }

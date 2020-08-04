@@ -17,6 +17,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/wstrust"
+	log "github.com/sirupsen/logrus"
 )
 
 // defaultWebRequestManager handles the HTTP calls and request building in MSAL
@@ -208,7 +209,7 @@ func addClientIDQueryParam(queryParams map[string]string, authParameters *msalba
 }
 
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
-	//log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
+	log.Info("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
 	// openid required to get an id token
 	// offline_access required to get a refresh token

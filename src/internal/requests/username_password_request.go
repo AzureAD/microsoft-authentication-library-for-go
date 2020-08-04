@@ -54,6 +54,6 @@ func (req *UsernamePasswordRequest) Execute() (*msalbase.TokenResponse, error) {
 	case msalbase.Managed:
 		return req.webRequestManager.GetAccessTokenFromUsernamePassword(req.authParameters)
 	default:
-		return nil, errors.New("Unknown account type")
+		return nil, errors.New("unknown account type")
 	}
 }

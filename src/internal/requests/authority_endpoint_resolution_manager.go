@@ -86,7 +86,7 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error) {
 
 	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {
-		return nil, errors.New("UPN Required for Authority Validation for ADFS")
+		return nil, errors.New("UPN required for authority validation for ADFS")
 	}
 
 	endpoints := m.tryGetCachedEndpoints(authorityInfo, userPrincipalName)
@@ -113,13 +113,13 @@ func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msa
 	}
 
 	if !tenantDiscoveryResponse.HasAuthorizationEndpoint() {
-		return nil, errors.New("Authorize endpoint was not found in the openid configuration")
+		return nil, errors.New("authorize endpoint was not found in the openid configuration")
 	}
 	if !tenantDiscoveryResponse.HasTokenEndpoint() {
-		return nil, errors.New("Token endpoint was not found in the openid configuration")
+		return nil, errors.New("token endpoint was not found in the openid configuration")
 	}
 	if !tenantDiscoveryResponse.HasIssuer() {
-		return nil, errors.New("Issuer was not found in the openid configuration")
+		return nil, errors.New("issuer was not found in the openid configuration")
 	}
 
 	tenant := authorityInfo.Tenant

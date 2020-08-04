@@ -40,11 +40,19 @@ func (req *ClientAssertionRequest) Execute() (*msalbase.TokenResponse, error) {
 	if req.clientAssertion.ClientAssertionJWT == "" {
 		// If no JWT exists, checking if there is a certificate
 		if req.clientAssertion.ClientCertificate == nil {
-			return nil, errors.New("No assertion or certificate found")
+			return nil, errors.New("no assertion or certificate found")
 		}
 		//Building a JWT from a certificate instance
 		jwt, err := req.clientAssertion.ClientCertificate.BuildJWT(
 			req.authParameters)
+		if err != nil {
+			return nil, err
+		}
+		req.clientAssertion.ClientAssertionJWT = jwt
+		// Check if the assertion is built from an expired certificate
+	} else if req.clientAssertion.ClientCertificate != nil &&
+		req.clientAssertion.ClientCertificate.IsExpired() {
+		jwt, err := req.clientAssertion.ClientCertificate.BuildJWT(req.authParameters)
 		if err != nil {
 			return nil, err
 		}

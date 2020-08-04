@@ -56,7 +56,7 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 		select {
 		// If this request needs to be canceled, this context is used
 		case <-req.cancelCtx.Done():
-			return nil, errors.New("Token request canceled")
+			return nil, errors.New("token request canceled")
 		default:
 			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
 			if err != nil {
@@ -76,5 +76,5 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 			time.Sleep(time.Duration(interval) * time.Second)
 		}
 	}
-	return nil, errors.New("Verification code expired before contacting the server")
+	return nil, errors.New("verification code expired before contacting the server")
 }

@@ -67,9 +67,6 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 }
 
 func acquireByAuthorizationCodeConfidential() {
-	// Uncomment this to use client secret
-	/*confidentialClientAuthCode = msalgo.CreateConfidentialClientApplicationFromSecret(
-	confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.ClientSecret)*/
 	file, err := os.Open(confidentialConfig.KeyFile)
 	if err != nil {
 		log.Fatal(err)
@@ -79,8 +76,9 @@ func acquireByAuthorizationCodeConfidential() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientAuthCode = msalgo.CreateConfidentialClientApplicationFromCertificate(
-		confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.Thumbprint, key)
+	certificate := msalgo.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
+	confidentialClientAuthCode = msalgo.CreateConfidentialClientApplication(
+		confidentialConfig.ClientID, confidentialConfig.Authority, certificate)
 	http.HandleFunc("/", redirectToURLConfidential)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getTokenConfidential)

@@ -35,7 +35,7 @@ type IDToken struct {
 func CreateIDToken(jwt string) (*IDToken, error) {
 	jwtArr := strings.Split(jwt, ".")
 	if len(jwtArr) < 2 {
-		return nil, errors.New("ID Token not in correct format")
+		return nil, errors.New("id token returned from server is invalid")
 	}
 	jwtPart := jwtArr[1]
 	jwtDecoded, err := DecodeJWT(jwtPart)

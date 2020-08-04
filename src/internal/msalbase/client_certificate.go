@@ -36,6 +36,10 @@ func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
 	return cert
 }
 
+func (cert *ClientCertificate) IsExpired() bool {
+	return time.Now().UTC().Unix() < cert.expiresOn
+}
+
 //BuildJWT builds a JWT assertion using the client certificate parameters
 //The parameters of the JWT are described in https://docs.microsoft.com/en-us/azure/active-directory/develop/active-directory-certificate-credentials
 func (cert *ClientCertificate) BuildJWT(authParams *AuthParametersInternal) (string, error) {
