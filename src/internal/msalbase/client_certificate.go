@@ -34,6 +34,10 @@ func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
 	return cert
 }
 
+func (cert *ClientCertificate) IsExpired() bool {
+	return time.Now().UTC().Unix() < cert.expiresOn
+}
+
 func (cert *ClientCertificate) BuildJWT(authParams *AuthParametersInternal) (string, error) {
 	now := time.Now().UTC().Unix()
 	expiresOn := now + 600

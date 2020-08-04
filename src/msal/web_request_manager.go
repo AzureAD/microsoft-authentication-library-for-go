@@ -214,7 +214,7 @@ func addClientIDQueryParam(queryParams map[string]string, authParameters *msalba
 }
 
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
-	//log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
+	log.Info("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
 	// openid required to get an id token
 	// offline_access required to get a refresh token

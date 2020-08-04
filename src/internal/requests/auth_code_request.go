@@ -62,6 +62,14 @@ func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 				return nil, err
 			}
 			req.ClientAssertion.ClientAssertionJWT = jwt
+			// Check if the assertion is built from an expired certificate
+		} else if req.ClientAssertion.ClientCertificate != nil &&
+			req.ClientAssertion.ClientCertificate.IsExpired() {
+			jwt, err := req.ClientAssertion.ClientCertificate.BuildJWT(req.authParameters)
+			if err != nil {
+				return nil, err
+			}
+			req.ClientAssertion.ClientAssertionJWT = jwt
 		}
 		params["client_assertion"] = req.ClientAssertion.ClientAssertionJWT
 		params["client_assertion_type"] = msalbase.ClientAssertionGrant

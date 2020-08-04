@@ -32,8 +32,9 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientApp := msalgo.CreateConfidentialClientApplicationFromCertificate(
-		confidentialConfig.ClientID, confidentialConfig.Authority, confidentialConfig.Thumbprint, key)
+	certificate := msalgo.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
+	confidentialClientApp := msalgo.CreateConfidentialClientApplication(
+		confidentialConfig.ClientID, confidentialConfig.Authority, certificate)
 	confidentialClientApp.SetCacheAccessor(cacheAccessor)
 	silentParams := msalgo.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
 	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)

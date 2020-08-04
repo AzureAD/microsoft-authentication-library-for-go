@@ -42,6 +42,14 @@ func (req *ClientAssertionRequest) Execute() (*msalbase.TokenResponse, error) {
 			return nil, err
 		}
 		req.clientAssertion.ClientAssertionJWT = jwt
+		// Check if the assertion is built from an expired certificate
+	} else if req.clientAssertion.ClientCertificate != nil &&
+		req.clientAssertion.ClientCertificate.IsExpired() {
+		jwt, err := req.clientAssertion.ClientCertificate.BuildJWT(req.authParameters)
+		if err != nil {
+			return nil, err
+		}
+		req.clientAssertion.ClientAssertionJWT = jwt
 	}
 	tokenResponse, err := req.webRequestManager.GetAccessTokenWithAssertion(req.authParameters, req.clientAssertion.ClientAssertionJWT)
 	if err != nil {

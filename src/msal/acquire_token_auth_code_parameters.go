@@ -14,9 +14,9 @@ type AcquireTokenAuthCodeParameters struct {
 	redirectURI      string
 	Code             string
 	codeChallenge    string
-	ClientSecret     string
-	ClientAssertion  *msalbase.ClientAssertion
-	RequestType      requests.AuthCodeRequestType
+	clientSecret     string
+	clientAssertion  *msalbase.ClientAssertion
+	requestType      requests.AuthCodeRequestType
 }
 
 // CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance

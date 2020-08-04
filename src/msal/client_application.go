@@ -79,14 +79,14 @@ func (client *clientApplication) acquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.RequestType)
+	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
 	req.Code = authCodeParams.Code
 	req.CodeChallenge = authCodeParams.codeChallenge
 	if req.RequestType == requests.AuthCodeClientSecret {
-		req.ClientSecret = authCodeParams.ClientSecret
+		req.ClientSecret = authCodeParams.clientSecret
 	}
 	if req.RequestType == requests.AuthCodeClientAssertion {
-		req.ClientAssertion = authCodeParams.ClientAssertion
+		req.ClientAssertion = authCodeParams.clientAssertion
 	}
 	return client.executeTokenRequestWithCacheWrite(req, authParams)
 }
