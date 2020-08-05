@@ -113,6 +113,7 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 
 	idToken, err := CreateIDToken(payload.IDToken)
 	if err != nil {
+		//ID tokens aren't always returned, so the error is just logged
 		log.Errorf("ID Token error: %v", err)
 	}
 

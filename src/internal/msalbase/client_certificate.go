@@ -36,6 +36,7 @@ func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
 	return cert
 }
 
+//IsExpired checks if the JWT created from the certificate is expired
 func (cert *ClientCertificate) IsExpired() bool {
 	return time.Now().UTC().Unix() < cert.expiresOn
 }
@@ -51,7 +52,9 @@ func (cert *ClientCertificate) BuildJWT(authParams *AuthParametersInternal) (str
 	if err != nil {
 		return "", err
 	}
+	//Updating the headers of the JWT
 	certHeader["x5t"] = base64.StdEncoding.EncodeToString(hexDecodedThumbprint)
+	//Adding the claims to the JWT
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
 		"exp": strconv.FormatInt(expiresOn, 10),

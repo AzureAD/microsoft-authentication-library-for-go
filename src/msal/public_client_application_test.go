@@ -18,7 +18,7 @@ var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.mi
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
 	"login.microsoftonline.com")
-var testAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
+var testAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
 
 var tdr = &requests.TenantDiscoveryResponse{
 	AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",

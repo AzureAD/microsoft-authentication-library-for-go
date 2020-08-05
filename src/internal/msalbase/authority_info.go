@@ -10,6 +10,7 @@ import (
 	"strings"
 )
 
+//AuthorityInfo consists of information about the authority
 type AuthorityInfo struct {
 	Host                  string
 	CanonicalAuthorityURI string
@@ -57,7 +58,8 @@ func createAuthorityInfo(authorityType string, authorityURI string, validateAuth
 	return &AuthorityInfo{host, canonicalAuthorityURI, authorityType, userRealmURIPrefix, validateAuthority, tenant}, nil
 }
 
-func CreateAuthorityInfoFromAuthorityUri(authorityURI string, validateAuthority bool) (*AuthorityInfo, error) {
+//CreateAuthorityInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided
+func CreateAuthorityInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (*AuthorityInfo, error) {
 	canonicalURI := canonicalizeAuthorityURI(authorityURI)
 	err := validateAuthorityURI(canonicalURI)
 	if err != nil {

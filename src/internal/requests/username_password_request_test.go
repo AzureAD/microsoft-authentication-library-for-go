@@ -11,7 +11,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/wstrust"
 )
 
-var testUPAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
+var testUPAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
 var testUPAuthParams = msalbase.CreateAuthParametersInternal("clientID", testUPAuthorityInfo)
 var upWRM = new(MockWebRequestManager)
 var usernamePassRequest = &UsernamePasswordRequest{

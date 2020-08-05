@@ -19,7 +19,7 @@ func createApplicationCommonParameters(clientID string) *applicationCommonParame
 }
 
 func (p *applicationCommonParameters) SetAadAuthority(authorityURI string) error {
-	authorityInfo, err := msalbase.CreateAuthorityInfoFromAuthorityUri(authorityURI, true)
+	authorityInfo, err := msalbase.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return err
 	}

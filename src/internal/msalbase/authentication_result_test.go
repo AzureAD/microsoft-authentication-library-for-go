@@ -69,8 +69,8 @@ func TestCreateAuthenticationResult(t *testing.T) {
 }
 
 func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
-	at := new(MockAccessToken)
-	id := new(MockCredential)
+	at := new(mockAccessToken)
+	id := new(mockCredential)
 	acc := &Account{}
 	atSecret := "secret"
 	storageToken := &StorageTokenResponse{

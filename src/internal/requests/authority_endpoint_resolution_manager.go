@@ -21,18 +21,15 @@ func createAuthorityEndpointCacheEntry(endpoints *msalbase.AuthorityEndpoints) *
 	return &authorityEndpointCacheEntry{endpoints, make(map[string]bool)}
 }
 
-// package global static
 var endpointCacheEntries = map[string]*authorityEndpointCacheEntry{}
 
-type IAuthorityEndpointResolutionManager interface {
-	ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error)
-}
-
+//AuthorityEndpointResolutionManager handles getting the correct endpoints from the authority for auth and token acquisition
 type AuthorityEndpointResolutionManager struct {
 	webRequestManager WebRequestManager
 }
 
-func CreateAuthorityEndpointResolutionManager(webRequestManager WebRequestManager) IAuthorityEndpointResolutionManager {
+//CreateAuthorityEndpointResolutionManager creates a AuthorityEndpointResolutionManager instance
+func CreateAuthorityEndpointResolutionManager(webRequestManager WebRequestManager) *AuthorityEndpointResolutionManager {
 	m := &AuthorityEndpointResolutionManager{webRequestManager}
 	return m
 }
@@ -82,7 +79,7 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 	endpointCacheEntries[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
-//ResolveEndpoints creates an AuthorityEndpoints instance and gets the authorization and token endpoints
+//ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
 func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error) {
 
 	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {

@@ -12,7 +12,7 @@ import (
 )
 
 var (
-	testURLAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
+	testURLAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
 	testURLAuthParams       = msalbase.CreateAuthParametersInternal("clientID", testURLAuthorityInfo)
 	urlWRM                  = new(requests.MockWebRequestManager)
 	authCodeURLParams       = CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid", "user.read"}, "codeChallenge")

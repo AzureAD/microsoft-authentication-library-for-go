@@ -25,7 +25,7 @@ var httpFailureCodes = map[int]string{
 
 //CreateOAuthResponseBase creates a OAuthResponseBase instance from the HTTP client's response
 func CreateOAuthResponseBase(httpStatusCode int, responseData string) (*OAuthResponseBase, error) {
-
+	// if the status code corresponds to an error, throw the error
 	if failMessage, ok := httpFailureCodes[httpStatusCode]; ok {
 		return nil, errors.New(failMessage)
 	}
@@ -35,9 +35,8 @@ func CreateOAuthResponseBase(httpStatusCode int, responseData string) (*OAuthRes
 	if err != nil {
 		return nil, err
 	}
-
+	//If the response consists of an error, throw that error
 	if payload.Error != "" {
-		// todo: bring in error description, etc.
 		return nil, errors.New(payload.Error)
 	}
 	return payload, nil

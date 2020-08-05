@@ -58,6 +58,7 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse *St
 func CreateAuthenticationResult(tokenResponse *TokenResponse, account *Account) (*AuthenticationResult, error) {
 	grantedScopes := tokenResponse.GrantedScopes
 	declinedScopes := tokenResponse.declinedScopes
+	//Checking if there are any scopes that were declined, this would lead to an invalid access token
 	if len(declinedScopes) > 0 {
 		return nil, errors.New("token response failed because declined scopes are present")
 	}

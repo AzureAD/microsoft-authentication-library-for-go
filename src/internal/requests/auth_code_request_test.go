@@ -13,7 +13,7 @@ var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.mi
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
 	"https://login.microsoftonline.com")
-var testAuthorityInfo, err = msalbase.CreateAuthorityInfoFromAuthorityUri("https://login.microsoftonline.com/v2.0/", true)
+var testAuthorityInfo, err = msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
 var testAuthParams = msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 
 func TestAuthCodeReqExecutePublic(t *testing.T) {
