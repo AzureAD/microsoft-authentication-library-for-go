@@ -8,7 +8,7 @@ import (
 	"testing"
 )
 
-var expDevCodeResp = &deviceCodeResponse{
+var expDevCodeResp = &DeviceCodeResponse{
 	UserCode:        "user",
 	DeviceCode:      "dev",
 	VerificationURL: "url",
@@ -33,5 +33,3 @@ func TestCreateDeviceCodeResponse(t *testing.T) {
 		t.Errorf("Actual device code response %+v differs from expected device code response %+v", actualDCR, expDevCodeResp)
 	}
 }
-
-func TestToDeviceCodeResult(t *testing.T) {}

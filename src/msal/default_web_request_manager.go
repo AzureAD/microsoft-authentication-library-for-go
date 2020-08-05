@@ -6,7 +6,6 @@ package msalgo
 import (
 	"bytes"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"net/url"
@@ -380,22 +379,4 @@ func (wrm *defaultWebRequestManager) GetTenantDiscoveryResponse(
 	}
 
 	return requests.CreateTenantDiscoveryResponse(httpManagerResponse.GetResponseCode(), httpManagerResponse.GetResponseData())
-}
-
-func (wrm *defaultWebRequestManager) GetProviderConfigurationInformation(authParameters *msalbase.AuthParametersInternal) (*requests.ProviderConfigurationInformation, error) {
-
-	// TODO: load from web and parse...
-	configInfoJSON := ""
-
-	configInfo := &requests.ProviderConfigurationInformation{}
-	err := json.Unmarshal([]byte(configInfoJSON), configInfo)
-	if err != nil {
-		return nil, err
-	}
-
-	if configInfo.AuthorizationEndpoint == "" {
-		return nil, fmt.Errorf("Server response did not contain 'authorization_endpoint' as a string: '%v'", configInfoJSON)
-	}
-
-	return configInfo, nil
 }

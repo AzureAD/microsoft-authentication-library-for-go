@@ -38,7 +38,6 @@ func CreateAuthorityEndpointResolutionManager(webRequestManager WebRequestManage
 }
 
 func getAdfsDomainFromUpn(userPrincipalName string) (string, error) {
-	// todo: func should return error so we can handle not having a @ in the string...
 	parts := strings.Split(userPrincipalName, "@")
 	if len(parts) < 2 {
 		return "", errors.New("no @ present in user principal name")
@@ -83,6 +82,7 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 	endpointCacheEntries[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
+//ResolveEndpoints creates an AuthorityEndpoints instance and gets the authorization and token endpoints
 func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error) {
 
 	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {

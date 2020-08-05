@@ -8,6 +8,7 @@ import (
 	"github.com/stretchr/testify/mock"
 )
 
+//MockCacheManager is used in testing where the CacheManager interface is required
 type MockCacheManager struct {
 	mock.Mock
 }

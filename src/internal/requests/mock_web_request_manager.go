@@ -87,8 +87,3 @@ func (mock *MockWebRequestManager) GetAadinstanceDiscoveryResponse(authorityInfo
 	args := mock.Called(authorityInfo)
 	return args.Get(0).(*InstanceDiscoveryResponse), args.Error(1)
 }
-
-func (mock *MockWebRequestManager) GetProviderConfigurationInformation(authParameters *msalbase.AuthParametersInternal) (*ProviderConfigurationInformation, error) {
-	args := mock.Called(authParameters)
-	return args.Get(0).(*ProviderConfigurationInformation), args.Error(1)
-}

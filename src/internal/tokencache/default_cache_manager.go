@@ -18,6 +18,7 @@ type defaultCacheManager struct {
 	storageManager StorageManager
 }
 
+//CreateCacheManager creates a defaultCacheManager instance
 func CreateCacheManager(storageManager StorageManager) requests.CacheManager {
 	cache := &defaultCacheManager{storageManager: storageManager}
 	return cache
@@ -143,7 +144,7 @@ func (m *defaultCacheManager) CacheTokenResponse(authParameters *msalbase.AuthPa
 		localAccountID := idTokenJwt.GetLocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
-		account := msalbase.CreateAccount(
+		account = msalbase.CreateAccount(
 			homeAccountID,
 			environment,
 			realm,
@@ -151,7 +152,6 @@ func (m *defaultCacheManager) CacheTokenResponse(authParameters *msalbase.AuthPa
 			authorityType,
 			idTokenJwt.PreferredUsername,
 		)
-
 		err = m.storageManager.WriteAccount(account)
 
 		if err != nil {
