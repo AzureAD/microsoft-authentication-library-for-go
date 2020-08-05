@@ -5,7 +5,7 @@ The MSAL library for Go is part of the [Microsoft identity platform for develope
 Quick links:
 
 | [Getting Started](https://docs.microsoft.com/en-us/azure/active-directory/develop/#quickstarts) | [Docs](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki) | [Samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/examples) | [Support](README.md#community-help-and-support) |
-| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | 
 
 ## Installation
 
@@ -18,11 +18,40 @@ To install Go, visit [this link](https://golang.org/dl/).
 ## Usage
 Before using MSAL Go, you will need to [register your application with the Microsoft identity platform](https://docs.microsoft.com/azure/active-directory/develop/quickstart-v2-register-an-app).
 
+Acquiring tokens with MSAL Go follows this general three step pattern. There might be some slight differences for other token acquisition flows. Here is a basic example:
+1. MSAL separates [public and confidential client applications](https://tools.ietf.org/html/rfc6749#section-2.1). So, you would create an instance of a `PublicClientApplication` and `ConfidentialClientApplication` and use this throughout the lifetime of your application.
+```go
+publicClientApp, err := msalgo.CreatePublicClientApplication("your_client_id",
+    "https://login.microsoftonline.com/Enter_the_Tenant_Name_Here")
+```
+
+2. MSAL comes packaged with an in-memory cache. Utilizing the cache is optional, but we would highly recommend it.
+```go
+accounts := publicClientApp.GetAccounts()
+// Assuming the user wanted the first account
+userAccount := accounts[0]
+scopes := []string{"your_scope"}
+silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(scopes, userAccount)
+result, err := publicClientApp.AcquireTokenSilent(silentParams)
+```
+
+3. If there is no suitable token in the cache, or you choose to skip this step, now we can send a request to AAD to obtain a token. There are many different token acquisition flows; here we can see the username-password flow as an example.
+```go
+if err != nil {
+    userNameParams := msalgo.CreateAcquireTokenUsernamePasswordParameters(scopes, "your_username", "your_password")
+    result, err := publicClientApp.AcquireTokenByUsernamePassword(userNameParams)
+    if err != nil {
+        log.Fatal(err)
+    }
+}
+accessToken := result.GetAccessToken()
+```
+
 You can view the [samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/examples) on how to use MSAL Go with various application types in various scenarios. For more detailed information, please refer to the [wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki).
 
 ## Roadmap
 
-No roadmap is currently available, but it can be found soon in the [Wiki pages](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki), along with release notes.
+This is a preview library. Details of the roadmap will come soon in the [Wiki pages](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki), along with release notes.
 
 
 ## Community Help and Support

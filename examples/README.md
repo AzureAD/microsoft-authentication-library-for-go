@@ -17,7 +17,7 @@ To run one of the examples of uses of MSAL Go, you need to first create a `confi
 }
 ```
 
-To find permissible scopes, visit this [link](https://docs.microsoft.com/en-us/graph/permissions-reference). PKCE is explained [here](https://tools.ietf.org/html/rfc7636#section-4.1).
+The samples in this repo get tokens for the MS Graph API. To find permissible scopes for MS Graph, visit this [link](https://docs.microsoft.com/en-us/graph/permissions-reference). PKCE is explained [here](https://tools.ietf.org/html/rfc7636#section-4.1).
 
 To run one of the examples, run the command `go run src/examples/*.go <example-arg>`. The example arguments are as follows:
 * 1 - `device_code_flow_sample.go` 
