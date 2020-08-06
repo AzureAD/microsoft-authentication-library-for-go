@@ -5,18 +5,18 @@ package msalgo
 
 import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
-type AcquireTokenClientSecretParameters struct {
+type AcquireTokenClientCredentialParameters struct {
 	commonParameters *acquireTokenCommonParameters
 }
 
-func CreateAcquireTokenClientSecretParameters(scopes []string) *AcquireTokenClientSecretParameters {
-	params := &AcquireTokenClientSecretParameters{
+func CreateAcquireTokenClientCredentialParameters(scopes []string) *AcquireTokenClientCredentialParameters {
+	params := &AcquireTokenClientCredentialParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 	}
 	return params
 }
 
-func (p *AcquireTokenClientSecretParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
+func (p *AcquireTokenClientCredentialParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.AuthorizationType = msalbase.AuthorizationTypeClientCredentials
 }

@@ -52,7 +52,7 @@ func TestUsernamePassExecuteWithAcctError(t *testing.T) {
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	newUpWRM.On("GetUserRealm", usernamePassRequest.authParameters).Return(errorUserRealm, nil)
 	_, acctError := usernamePassRequest.Execute()
-	expectedErrorMessage := "Unknown account type"
+	expectedErrorMessage := "unknown account type"
 	if acctError == nil {
 		t.Errorf("Error is nil, should be %v", errors.New(expectedErrorMessage))
 	}

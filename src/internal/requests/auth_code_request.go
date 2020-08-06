@@ -4,17 +4,14 @@
 package requests
 
 import (
-	"errors"
-
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 type AuthCodeRequestType int
 
 const (
-	AuthCodePublicClient AuthCodeRequestType = iota
-	AuthCodeClientSecret
-	AuthCodeClientAssertion
+	AuthCodePublic AuthCodeRequestType = iota
+	AuthCodeConfidential
 )
 
 // AuthCodeRequest stores the values required to request a token from the authority using an authorization code
@@ -23,8 +20,7 @@ type AuthCodeRequest struct {
 	authParameters    *msalbase.AuthParametersInternal
 	Code              string
 	CodeChallenge     string
-	ClientSecret      string
-	ClientAssertion   *msalbase.ClientAssertion
+	ClientCredential  *msalbase.ClientCredential
 	RequestType       AuthCodeRequestType
 }
 
@@ -50,29 +46,17 @@ func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	}
 	req.authParameters.Endpoints = endpoints
 	params := make(map[string]string)
-	if req.RequestType == AuthCodeClientSecret {
-		params["client_secret"] = req.ClientSecret
-	} else if req.RequestType == AuthCodeClientAssertion {
-		if req.ClientAssertion.ClientAssertionJWT == "" {
-			if req.ClientAssertion.ClientCertificate == nil {
-				return nil, errors.New("no client assertion found")
-			}
-			jwt, err := req.ClientAssertion.ClientCertificate.BuildJWT(req.authParameters)
+	if req.RequestType == AuthCodeConfidential {
+		if req.ClientCredential.GetCredentialType() == msalbase.ClientCredentialSecret {
+			params["client_secret"] = req.ClientCredential.GetSecret()
+		} else {
+			jwt, err := req.ClientCredential.GetAssertion().GetJWT(req.authParameters)
 			if err != nil {
 				return nil, err
 			}
-			req.ClientAssertion.ClientAssertionJWT = jwt
-			// Check if the assertion is built from an expired certificate
-		} else if req.ClientAssertion.ClientCertificate != nil &&
-			req.ClientAssertion.ClientCertificate.IsExpired() {
-			jwt, err := req.ClientAssertion.ClientCertificate.BuildJWT(req.authParameters)
-			if err != nil {
-				return nil, err
-			}
-			req.ClientAssertion.ClientAssertionJWT = jwt
+			params["client_assertion"] = jwt
+			params["client_assertion_type"] = msalbase.ClientAssertionGrant
 		}
-		params["client_assertion"] = req.ClientAssertion.ClientAssertionJWT
-		params["client_assertion_type"] = msalbase.ClientAssertionGrant
 	}
 	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.Code, req.CodeChallenge, params)
 	if err != nil {

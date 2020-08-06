@@ -4,24 +4,39 @@
 package msalgo
 
 import (
-	"errors"
-
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
 type ConfidentialClientApplication struct {
 	clientApplication *clientApplication
-	clientCredential  *ClientCredential
+	clientCredential  *msalbase.ClientCredential
 }
 
 func CreateConfidentialClientApplication(
-	clientID string, authority string, clientCredential *ClientCredential,
-) *ConfidentialClientApplication {
+	clientID string, authority string, clientCredential ClientCredentialInterfacer,
+) (*ConfidentialClientApplication, error) {
+	cred, err := createInternalClientCredential(clientCredential)
+	if err != nil {
+		return nil, err
+	}
 	clientApp := createClientApplication(clientID, authority)
 	return &ConfidentialClientApplication{
 		clientApplication: clientApp,
-		clientCredential:  clientCredential,
+		clientCredential:  cred,
+	}, nil
+}
+
+func createInternalClientCredential(interfaceCred ClientCredentialInterfacer) (*msalbase.ClientCredential, error) {
+	if interfaceCred.GetCredentialType() == msalbase.ClientCredentialSecret {
+		return msalbase.CreateClientCredentialFromSecret(interfaceCred.GetSecret())
+
 	}
+	if interfaceCred.GetAssertion().ClientCertificate != nil {
+		return msalbase.CreateClientCredentialFromCertificateObject(
+			interfaceCred.GetAssertion().ClientCertificate), nil
+	}
+	return msalbase.CreateClientCredentialFromAssertion(interfaceCred.GetAssertion().ClientAssertionJWT)
 }
 
 func (cca *ConfidentialClientApplication) SetHTTPManager(httpManager IHTTPManager) {
@@ -40,40 +55,24 @@ func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameter
 
 func (cca *ConfidentialClientApplication) AcquireTokenSilent(
 	silentParameters *AcquireTokenSilentParameters) (IAuthenticationResult, error) {
+	silentParameters.requestType = requests.RefreshTokenConfidential
+	silentParameters.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenSilent(silentParameters)
 }
 
 func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
-	if cca.clientCredential.credentialType == clientSecret {
-		authCodeParams.requestType = requests.AuthCodeClientSecret
-		authCodeParams.clientSecret = cca.clientCredential.clientSecret
-	} else if cca.clientCredential.credentialType == clientAssertion {
-		authCodeParams.requestType = requests.AuthCodeClientAssertion
-		authCodeParams.clientAssertion = cca.clientCredential.clientAssertion
-	} else {
-		return nil, errors.New("need client secret or assertion")
-	}
+	authCodeParams.requestType = requests.AuthCodeConfidential
+	authCodeParams.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 
 }
 
-func (cca *ConfidentialClientApplication) AcquireTokenByClientSecret(
-	clientCredParams *AcquireTokenClientSecretParameters) (IAuthenticationResult, error) {
+func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
+	clientCredParams *AcquireTokenClientCredentialParameters) (IAuthenticationResult, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientCredParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateClientSecretRequest(
-		cca.clientApplication.webRequestManager, authParams, cca.clientCredential.clientSecret)
-	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
-}
-
-func (cca *ConfidentialClientApplication) AcquireTokenByClientAssertion(
-	clientParams *AcquireTokenClientAssertionParameters) (IAuthenticationResult, error) {
-	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
-	clientParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateClientAssertionRequest(
-		cca.clientApplication.webRequestManager, authParams, cca.clientCredential.clientAssertion,
-	)
+	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 

@@ -54,7 +54,7 @@ func TestAcquireTokenSilent(t *testing.T) {
 		Endpoints:         testAuthorityEndpoints,
 	}
 	tokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetAccessTokenFromRefreshToken", wrmauthParams, "secret").Return(tokenResp, nil)
+	wrm.On("GetAccessTokenFromRefreshToken", wrmauthParams, "secret", make(map[string]string)).Return(tokenResp, nil)
 	cacheManager.On("CacheTokenResponse", wrmauthParams, tokenResp).Return(testAcc, nil)
 	_, err := testClientApplication.acquireTokenSilent(silentParams)
 	if err != nil {

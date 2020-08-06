@@ -307,12 +307,15 @@ func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbas
 }
 
 // GetAccessTokenFromRefreshToken stuff
-func (wrm *WebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal, refreshToken string) (*msalbase.TokenResponse, error) {
+func (wrm *WebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal,
+	refreshToken string, params map[string]string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":    msalbase.RefreshTokenGrant,
 		"refresh_token": refreshToken,
 	}
-
+	for k, v := range params {
+		decodedQueryParams[k] = v
+	}
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)

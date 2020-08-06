@@ -5,12 +5,15 @@ package msalgo
 
 import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
 // AcquireTokenSilentParameters stuff
 type AcquireTokenSilentParameters struct {
 	commonParameters *acquireTokenCommonParameters
 	account          IAccount
+	requestType      requests.RefreshTokenReqType
+	clientCredential *msalbase.ClientCredential
 }
 
 func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
