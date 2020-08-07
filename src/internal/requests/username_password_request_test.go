@@ -39,8 +39,8 @@ func TestUsernamePassExecuteWithFederated(t *testing.T) {
 	upWRM.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	upWRM.On("GetUserRealm", usernamePassRequest.authParameters).Return(federatedUserRealm, nil)
-	wsEndpoint := wstrust.WsTrustEndpoint{EndpointVersion: wstrust.Trust2005, URL: "upEndpoint"}
-	mexDoc := &wstrust.WsTrustMexDocument{
+	wsEndpoint := wstrust.Endpoint{EndpointVersion: wstrust.Trust2005, URL: "upEndpoint"}
+	mexDoc := &wstrust.MexDocument{
 		UsernamePasswordEndpoint: wsEndpoint,
 	}
 	upWRM.On("GetMex", "fedMetaURL").Return(mexDoc, nil)

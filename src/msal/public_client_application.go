@@ -42,6 +42,7 @@ func (pca *PublicClientApplication) CreateAuthCodeURL(authCodeURLParameters *Aut
 //AcquireTokenSilent acquires a token from either the cache or using a refresh token
 func (pca *PublicClientApplication) AcquireTokenSilent(
 	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultInterfacer, error) {
+	silentParameters.requestType = requests.RefreshTokenPublic
 	return pca.clientApplication.acquireTokenSilent(silentParameters)
 }
 
@@ -66,7 +67,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code
 func (pca *PublicClientApplication) AcquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultInterfacer, error) {
-	authCodeParams.requestType = requests.AuthCodePublicClient
+	authCodeParams.requestType = requests.AuthCodePublic
 	return pca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 }
 

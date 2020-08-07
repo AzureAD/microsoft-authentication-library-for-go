@@ -3,6 +3,8 @@
 
 package msalbase
 
+import "errors"
+
 //ClientAssertion holds the assertion parameters required for token acquisition flows needing a client assertion.
 //This can be either a JWT or certificate.
 type ClientAssertion struct {
@@ -20,4 +22,34 @@ func CreateClientAssertionFromCertificate(thumbprint string, key []byte) *Client
 	cert := CreateClientCertificate(thumbprint, key)
 	assertion := &ClientAssertion{ClientCertificate: cert}
 	return assertion
+}
+
+//CreateClientAssertionFromCertificateObject creates a ClientAssertion instance from a ClientCertificate Instance
+func CreateClientAssertionFromCertificateObject(cert *ClientCertificate) *ClientAssertion {
+	assertion := &ClientAssertion{ClientCertificate: cert}
+	return assertion
+}
+
+//GetJWT gets the assertion JWT from either the certificate or the JWT passed in
+func (assertion *ClientAssertion) GetJWT(authParams *AuthParametersInternal) (string, error) {
+	if assertion.ClientAssertionJWT == "" {
+		if assertion.ClientCertificate == nil {
+			return "", errors.New("no assertion or certificate found")
+		}
+		jwt, err := assertion.ClientCertificate.BuildJWT(
+			authParams)
+		if err != nil {
+			return "", err
+		}
+		assertion.ClientAssertionJWT = jwt
+		// Check if the assertion is built from an expired certificate
+	} else if assertion.ClientCertificate != nil &&
+		assertion.ClientCertificate.IsExpired() {
+		jwt, err := assertion.ClientCertificate.BuildJWT(authParams)
+		if err != nil {
+			return "", err
+		}
+		assertion.ClientAssertionJWT = jwt
+	}
+	return assertion.ClientAssertionJWT, nil
 }

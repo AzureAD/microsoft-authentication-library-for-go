@@ -5,14 +5,14 @@ package msalgo
 
 import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
-// AcquireTokenUsernamePasswordParameters stuff
+// AcquireTokenUsernamePasswordParameters contains the parameters required to acquire an access token using a username and password
 type AcquireTokenUsernamePasswordParameters struct {
 	commonParameters *acquireTokenCommonParameters
 	username         string
 	password         string
 }
 
-// CreateAcquireTokenUsernamePasswordParameters stuff
+// CreateAcquireTokenUsernamePasswordParameters creates an AcquireTokenUsernamePasswordParameters instance
 func CreateAcquireTokenUsernamePasswordParameters(scopes []string, username string, password string) *AcquireTokenUsernamePasswordParameters {
 	p := &AcquireTokenUsernamePasswordParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),

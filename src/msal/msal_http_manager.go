@@ -18,7 +18,7 @@ type msalHTTPManager struct {
 }
 
 // CreateHTTPManager creates a http.Client object and wraps it in a msalHTTPManager
-func CreateHTTPManager() HTTPManager {
+func createHTTPManager() HTTPManager {
 	tr := &http.Transport{
 		DialContext: (&net.Dialer{
 			Timeout:   30 * time.Second,
@@ -48,7 +48,7 @@ func (mgr *msalHTTPManager) performRequest(
 	return CreateHTTPManagerResponse(resp)
 }
 
-// Get stuff
+// Get sends a get request to the appropriate URL
 func (mgr *msalHTTPManager) Get(url string, requestHeaders map[string]string) (HTTPManagerResponse, error) {
 	log.Info("<------------------")
 	log.Infof("   GET to %v", url)
@@ -61,7 +61,7 @@ func (mgr *msalHTTPManager) Get(url string, requestHeaders map[string]string) (H
 	return mgr.performRequest(req, requestHeaders)
 }
 
-// Post stuff
+// Post sends a post request to the appropriate URL
 func (mgr *msalHTTPManager) Post(url string, body string, requestHeaders map[string]string) (HTTPManagerResponse, error) {
 	log.Info("<------------------")
 	log.Infof("   POST to %v", url)

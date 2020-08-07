@@ -14,7 +14,7 @@ type cacheSerializationContract struct {
 	RefreshTokens map[string]*refreshTokenCacheItem `json:"RefreshToken"`
 	IDTokens      map[string]*idTokenCacheItem      `json:"IdToken"`
 	Accounts      map[string]*msalbase.Account      `json:"Account"`
-	AppMetadata   map[string]*AppMetadata           `json:"AppMetadata"`
+	AppMetadata   map[string]*appMetadata           `json:"AppMetadata"`
 	snapshot      map[string]interface{}
 }
 
@@ -23,7 +23,7 @@ func createCacheSerializationContract() *cacheSerializationContract {
 	rt := make(map[string]*refreshTokenCacheItem)
 	id := make(map[string]*idTokenCacheItem)
 	ac := make(map[string]*msalbase.Account)
-	app := make(map[string]*AppMetadata)
+	app := make(map[string]*appMetadata)
 	c := &cacheSerializationContract{
 		AccessTokens:  at,
 		RefreshTokens: rt,
@@ -86,7 +86,7 @@ func (s *cacheSerializationContract) UnmarshalJSON(data []byte) error {
 			if appMetadatas, ok := j["AppMetadata"].(map[string]interface{}); ok {
 				for k, v := range appMetadatas {
 					if item, ok := v.(map[string]interface{}); ok {
-						appMetadata := &AppMetadata{}
+						appMetadata := &appMetadata{}
 						appMetadata.populateFromJSONMap(item)
 						s.AppMetadata[k] = appMetadata
 					}

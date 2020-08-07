@@ -27,7 +27,7 @@ var idToken = &idTokenCacheItem{
 }
 
 func TestCreateIDTokenCacheItem(t *testing.T) {
-	actualIDToken := CreateIDTokenCacheItem("HID", "env", "realm", "clientID", "id")
+	actualIDToken := createIDTokenCacheItem("HID", "env", "realm", "clientID", "id")
 	actualHomeID := *actualIDToken.HomeAccountID
 	if !reflect.DeepEqual(actualHomeID, idHid) {
 		t.Errorf("Actual home account id %+v differs from expected home account id %+v", actualHomeID, idHid)

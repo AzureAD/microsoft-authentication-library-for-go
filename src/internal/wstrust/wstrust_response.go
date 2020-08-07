@@ -36,7 +36,7 @@ func CreateWsTrustResponse(responseData string) *Response {
 	// }
 }
 
-func (wsTrustResponse *Response) GetSAMLAssertion(endpoint *WsTrustEndpoint) (*SamlTokenInfo, error) {
+func (wsTrustResponse *Response) GetSAMLAssertion(endpoint *Endpoint) (*SamlTokenInfo, error) {
 	switch endpoint.EndpointVersion {
 	case Trust2005:
 		return nil, errors.New("WS Trust 2005 support is not implemented")
@@ -45,7 +45,6 @@ func (wsTrustResponse *Response) GetSAMLAssertion(endpoint *WsTrustEndpoint) (*S
 			log.Trace("Extracting assertion from WS-Trust 1.3 token:")
 
 			samldefinitions := &samldefinitions{}
-			log.Info(wsTrustResponse.responseData)
 			var err = xml.Unmarshal([]byte(wsTrustResponse.responseData), samldefinitions)
 			if err != nil {
 				return nil, err
@@ -60,11 +59,11 @@ func (wsTrustResponse *Response) GetSAMLAssertion(endpoint *WsTrustEndpoint) (*S
 					samlVersion := token.Assertion.Saml
 					if samlVersion == "urn:oasis:names:tc:SAML:1.0:assertion" {
 						log.Trace("Retrieved WS-Trust 1.3 / SAML V1 assertion")
-						return CreateSamlTokenInfo(SamlV1, assertion), nil
+						return createSamlTokenInfo(SamlV1, assertion), nil
 					}
 					if samlVersion == "urn:oasis:names:tc:SAML:2.0:assertion" {
 						log.Trace("Retrieved WS-Trust 1.3 / SAML V2 assertion")
-						return CreateSamlTokenInfo(SamlV2, assertion), nil
+						return createSamlTokenInfo(SamlV2, assertion), nil
 					}
 
 					return nil, fmt.Errorf("Couldn't parse SAML assertion, version unknown: '%s'", samlVersion)

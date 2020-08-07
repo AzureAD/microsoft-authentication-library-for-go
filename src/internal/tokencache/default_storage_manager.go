@@ -17,17 +17,18 @@ type defaultStorageManager struct {
 	refreshTokens map[string]*refreshTokenCacheItem
 	idTokens      map[string]*idTokenCacheItem
 	accounts      map[string]*msalbase.Account
-	appMetadatas  map[string]*AppMetadata
+	appMetadatas  map[string]*appMetadata
 	cacheContract *cacheSerializationContract
 }
 
-func CreateStorageManager() *defaultStorageManager {
+//CreateStorageManager creates an instance of defaultStorageManager as a StorageManager interface
+func CreateStorageManager() StorageManager {
 	mgr := &defaultStorageManager{
 		accessTokens:  make(map[string]*accessTokenCacheItem),
 		refreshTokens: make(map[string]*refreshTokenCacheItem),
 		idTokens:      make(map[string]*idTokenCacheItem),
 		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*AppMetadata),
+		appMetadatas:  make(map[string]*appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
 	return mgr
@@ -220,7 +221,7 @@ func (m *defaultStorageManager) DeleteAccounts(
 	return nil
 }
 
-func (m *defaultStorageManager) ReadAppMetadata(envAliases []string, clientID string) *AppMetadata {
+func (m *defaultStorageManager) ReadAppMetadata(envAliases []string, clientID string) *appMetadata {
 	lock.RLock()
 	defer lock.RUnlock()
 	for _, app := range m.appMetadatas {
@@ -232,7 +233,7 @@ func (m *defaultStorageManager) ReadAppMetadata(envAliases []string, clientID st
 	return nil
 }
 
-func (m *defaultStorageManager) WriteAppMetadata(appMetadata *AppMetadata) error {
+func (m *defaultStorageManager) WriteAppMetadata(appMetadata *appMetadata) error {
 	lock.Lock()
 	key := appMetadata.CreateKey()
 	m.appMetadatas[key] = appMetadata

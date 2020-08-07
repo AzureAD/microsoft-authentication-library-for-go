@@ -4,24 +4,43 @@
 package msalgo
 
 import (
-	"errors"
-
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
+//ConfidentialClientApplication is used to acquire tokens in applications that run on servers
+//They can be trusted to keep secrets
 type ConfidentialClientApplication struct {
 	clientApplication *clientApplication
-	clientCredential  *ClientCredential
+	clientCredential  *msalbase.ClientCredential
 }
 
+//CreateConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority and client credential
 func CreateConfidentialClientApplication(
-	clientID string, authority string, clientCredential *ClientCredential,
-) *ConfidentialClientApplication {
+	clientID string, authority string, clientCredential ClientCredentialInterfacer,
+) (*ConfidentialClientApplication, error) {
+	cred, err := createInternalClientCredential(clientCredential)
+	if err != nil {
+		return nil, err
+	}
 	clientApp := createClientApplication(clientID, authority)
 	return &ConfidentialClientApplication{
 		clientApplication: clientApp,
-		clientCredential:  clientCredential,
+		clientCredential:  cred,
+	}, nil
+}
+
+//This is used to convert the user-facing client credential interface to the internal representation of a client credential
+func createInternalClientCredential(interfaceCred ClientCredentialInterfacer) (*msalbase.ClientCredential, error) {
+	if interfaceCred.GetCredentialType() == msalbase.ClientCredentialSecret {
+		return msalbase.CreateClientCredentialFromSecret(interfaceCred.GetSecret())
+
 	}
+	if interfaceCred.GetAssertion().ClientCertificate != nil {
+		return msalbase.CreateClientCredentialFromCertificateObject(
+			interfaceCred.GetAssertion().ClientCertificate), nil
+	}
+	return msalbase.CreateClientCredentialFromAssertion(interfaceCred.GetAssertion().ClientAssertionJWT)
 }
 
 //SetHTTPManager allows users to use their own implementation of HTTPManager
@@ -43,43 +62,26 @@ func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameter
 //AcquireTokenSilent acquires a token from either the cache or using a refresh token
 func (cca *ConfidentialClientApplication) AcquireTokenSilent(
 	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultInterfacer, error) {
+	silentParameters.requestType = requests.RefreshTokenConfidential
+	silentParameters.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenSilent(silentParameters)
 }
 
 //AcquireTokenByAuthCode acquires a security token from the authority, using an authorization code
 func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultInterfacer, error) {
-	if cca.clientCredential.credentialType == clientSecret {
-		authCodeParams.requestType = requests.AuthCodeClientSecret
-		authCodeParams.clientSecret = cca.clientCredential.clientSecret
-	} else if cca.clientCredential.credentialType == clientAssertion {
-		authCodeParams.requestType = requests.AuthCodeClientAssertion
-		authCodeParams.clientAssertion = cca.clientCredential.clientAssertion
-	} else {
-		return nil, errors.New("need client secret or assertion")
-	}
+	authCodeParams.requestType = requests.AuthCodeConfidential
+	authCodeParams.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 
 }
 
-//AcquireTokenByClientSecret acquires a security token from the authority using a client secret
-func (cca *ConfidentialClientApplication) AcquireTokenByClientSecret(
-	clientCredParams *AcquireTokenClientSecretParameters) (AuthenticationResultInterfacer, error) {
+//AcquireTokenByClientCredential acquires a security token from the authority, using the client credentials grant
+func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
+	clientCredParams *AcquireTokenClientCredentialParameters) (AuthenticationResultInterfacer, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientCredParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateClientSecretRequest(
-		cca.clientApplication.webRequestManager, authParams, cca.clientCredential.clientSecret)
-	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
-}
-
-//AcquireTokenByClientAssertion acquires a security token from the authority using a assertion, which can be either a JWT or certificate
-func (cca *ConfidentialClientApplication) AcquireTokenByClientAssertion(
-	clientParams *AcquireTokenClientAssertionParameters) (AuthenticationResultInterfacer, error) {
-	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
-	clientParams.augmentAuthenticationParameters(authParams)
-	req := requests.CreateClientAssertionRequest(
-		cca.clientApplication.webRequestManager, authParams, cca.clientCredential.clientAssertion,
-	)
+	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 

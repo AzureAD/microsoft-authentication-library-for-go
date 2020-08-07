@@ -9,25 +9,24 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	// "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	uuid "github.com/google/uuid"
 )
 
-type WsTrustEndpointVersion int
+type EndpointVersion int
 
 const (
-	Trust2005 WsTrustEndpointVersion = iota
+	Trust2005 EndpointVersion = iota
 	Trust13
 )
 
-type WsTrustEndpoint struct {
-	EndpointVersion WsTrustEndpointVersion
+type Endpoint struct {
+	EndpointVersion EndpointVersion
 	URL             string
 }
 
-func CreateWsTrustEndpoint(endpointVersion WsTrustEndpointVersion, url string) WsTrustEndpoint {
-	return WsTrustEndpoint{endpointVersion, url}
+func createWsTrustEndpoint(endpointVersion EndpointVersion, url string) Endpoint {
+	return Endpoint{endpointVersion, url}
 }
 
 type wsTrustTokenRequestEnvelope struct {
@@ -111,7 +110,7 @@ func buildTimeString(t time.Time) string {
 	return t.Format("2006-01-02T15:04:05.000Z")
 }
 
-func (wte *WsTrustEndpoint) buildTokenRequestMessage(authType msalbase.AuthorizationType, cloudAudienceURN string, username string, password string) (string, error) {
+func (wte *Endpoint) buildTokenRequestMessage(authType msalbase.AuthorizationType, cloudAudienceURN string, username string, password string) (string, error) {
 	var soapAction string
 	var trustNamespace string
 	var keyType string
@@ -181,15 +180,13 @@ func (wte *WsTrustEndpoint) buildTokenRequestMessage(authType msalbase.Authoriza
 		return "", err
 	}
 
-	log.Trace(string(output))
-
 	return string(output), nil
 }
 
-func (wte *WsTrustEndpoint) BuildTokenRequestMessageWIA(cloudAudienceURN string) (string, error) {
+func (wte *Endpoint) BuildTokenRequestMessageWIA(cloudAudienceURN string) (string, error) {
 	return wte.buildTokenRequestMessage(msalbase.AuthorizationTypeWindowsIntegratedAuth, cloudAudienceURN, "", "")
 }
 
-func (wte *WsTrustEndpoint) BuildTokenRequestMessageUsernamePassword(cloudAudienceURN string, username string, password string) (string, error) {
+func (wte *Endpoint) BuildTokenRequestMessageUsernamePassword(cloudAudienceURN string, username string, password string) (string, error) {
 	return wte.buildTokenRequestMessage(msalbase.AuthorizationTypeUsernamePassword, cloudAudienceURN, username, password)
 }

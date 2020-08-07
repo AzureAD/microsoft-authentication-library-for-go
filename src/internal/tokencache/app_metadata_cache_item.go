@@ -10,15 +10,15 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-type AppMetadata struct {
+type appMetadata struct {
 	FamilyID         *string `json:"family_id,omitempty"`
 	ClientID         *string `json:"client_id,omitempty"`
 	Environment      *string `json:"environment,omitempty"`
 	additionalFields map[string]interface{}
 }
 
-func CreateAppMetadata(familyID string, clientID string, environment string) *AppMetadata {
-	metadata := &AppMetadata{
+func createAppMetadata(familyID string, clientID string, environment string) *appMetadata {
+	metadata := &appMetadata{
 		FamilyID:    &familyID,
 		ClientID:    &clientID,
 		Environment: &environment,
@@ -26,7 +26,7 @@ func CreateAppMetadata(familyID string, clientID string, environment string) *Ap
 	return metadata
 }
 
-func (appMeta *AppMetadata) CreateKey() string {
+func (appMeta *appMetadata) CreateKey() string {
 	keyParts := []string{msalbase.AppMetadataCacheID,
 		msalbase.GetStringFromPointer(appMeta.Environment),
 		msalbase.GetStringFromPointer(appMeta.ClientID),
@@ -34,7 +34,7 @@ func (appMeta *AppMetadata) CreateKey() string {
 	return strings.Join(keyParts, msalbase.CacheKeySeparator)
 }
 
-func (appMeta *AppMetadata) populateFromJSONMap(j map[string]interface{}) error {
+func (appMeta *appMetadata) populateFromJSONMap(j map[string]interface{}) error {
 	appMeta.FamilyID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONFamilyID)
 	appMeta.ClientID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONClientID)
 	appMeta.Environment = msalbase.ExtractStringPointerForCache(j, msalbase.JSONEnvironment)
@@ -42,7 +42,7 @@ func (appMeta *AppMetadata) populateFromJSONMap(j map[string]interface{}) error 
 	return nil
 }
 
-func (appMeta *AppMetadata) convertToJSONMap() (map[string]interface{}, error) {
+func (appMeta *appMetadata) convertToJSONMap() (map[string]interface{}, error) {
 	appMap, err := json.Marshal(appMeta)
 	if err != nil {
 		return nil, err

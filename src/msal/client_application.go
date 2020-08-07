@@ -22,8 +22,8 @@ type clientApplication struct {
 
 func createClientApplication(clientID string, authority string) *clientApplication {
 	params := createClientApplicationParameters(clientID)
-	params.SetAadAuthority(authority)
-	httpManager := CreateHTTPManager()
+	params.setAadAuthority(authority)
+	httpManager := createHTTPManager()
 	webRequestManager := createWebRequestManager(httpManager)
 	storageManager := tokencache.CreateStorageManager()
 	cacheManager := tokencache.CreateCacheManager(storageManager)
@@ -37,7 +37,7 @@ func createClientApplication(clientID string, authority string) *clientApplicati
 }
 
 func (client *clientApplication) createAuthCodeURL(authCodeURLParameters *AuthorizationCodeURLParameters) (string, error) {
-	return authCodeURLParameters.CreateURL(client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
+	return authCodeURLParameters.createURL(client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
 }
 
 func (client *clientApplication) acquireTokenSilent(
@@ -62,17 +62,15 @@ func (client *clientApplication) acquireTokenSilent(
 				return nil, errors.New("no refresh token found")
 			}
 			req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
-				authParams, storageTokenResponse.RefreshToken)
+				authParams, storageTokenResponse.RefreshToken, silentParameters.requestType)
+			if req.RequestType == requests.RefreshTokenConfidential {
+				req.ClientCredential = silentParameters.clientCredential
+			}
 			return client.executeTokenRequestWithCacheWrite(req, authParams)
 		}
 		return result, nil
 	}
-	if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
-		return nil, errors.New("no refresh token found")
-	}
-	req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
-		authParams, storageTokenResponse.RefreshToken)
-	return client.executeTokenRequestWithCacheWrite(req, authParams)
+	return nil, errors.New("no cache entry found")
 }
 
 func (client *clientApplication) acquireTokenByAuthCode(
@@ -82,11 +80,8 @@ func (client *clientApplication) acquireTokenByAuthCode(
 	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
 	req.Code = authCodeParams.Code
 	req.CodeChallenge = authCodeParams.codeChallenge
-	if req.RequestType == requests.AuthCodeClientSecret {
-		req.ClientSecret = authCodeParams.clientSecret
-	}
-	if req.RequestType == requests.AuthCodeClientAssertion {
-		req.ClientAssertion = authCodeParams.clientAssertion
+	if req.RequestType == requests.AuthCodeConfidential {
+		req.ClientCredential = authCodeParams.clientCredential
 	}
 	return client.executeTokenRequestWithCacheWrite(req, authParams)
 }

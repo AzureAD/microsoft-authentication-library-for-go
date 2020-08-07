@@ -13,9 +13,9 @@ import (
 )
 
 func tryClientCertificateFlow(confidentialClientApp *msalgo.ConfidentialClientApplication) {
-	certificateParams := msalgo.CreateAcquireTokenClientAssertionParameters(
+	certificateParams := msalgo.CreateAcquireTokenClientCredentialParameters(
 		confidentialConfig.Scopes)
-	result, err := confidentialClientApp.AcquireTokenByClientAssertion(certificateParams)
+	result, err := confidentialClientApp.AcquireTokenByClientCredential(certificateParams)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -32,9 +32,15 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	certificate := msalgo.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
-	confidentialClientApp := msalgo.CreateConfidentialClientApplication(
+	certificate, err := msalgo.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
+	if err != nil {
+		log.Fatal(err)
+	}
+	confidentialClientApp, err := msalgo.CreateConfidentialClientApplication(
 		confidentialConfig.ClientID, confidentialConfig.Authority, certificate)
+	if err != nil {
+		log.Fatal(err)
+	}
 	confidentialClientApp.SetCacheAccessor(cacheAccessor)
 	silentParams := msalgo.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
 	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)

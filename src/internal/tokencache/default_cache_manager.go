@@ -104,7 +104,7 @@ func (m *defaultCacheManager) CacheTokenResponse(authParameters *msalbase.AuthPa
 	cachedAt := time.Now().Unix()
 
 	if tokenResponse.HasRefreshToken() {
-		refreshToken := CreateRefreshTokenCacheItem(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
+		refreshToken := createRefreshTokenCacheItem(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
 		err = m.storageManager.WriteRefreshToken(refreshToken)
 		if err != nil {
 			return nil, err
@@ -114,7 +114,7 @@ func (m *defaultCacheManager) CacheTokenResponse(authParameters *msalbase.AuthPa
 	if tokenResponse.HasAccessToken() {
 		expiresOn := tokenResponse.ExpiresOn.Unix()
 		extendedExpiresOn := tokenResponse.ExtExpiresOn.Unix()
-		accessToken := CreateAccessTokenCacheItem(homeAccountID,
+		accessToken := createAccessTokenCacheItem(homeAccountID,
 			environment,
 			realm,
 			clientID,
@@ -134,7 +134,7 @@ func (m *defaultCacheManager) CacheTokenResponse(authParameters *msalbase.AuthPa
 	idTokenJwt := tokenResponse.IDToken
 
 	if idTokenJwt != nil {
-		idToken := CreateIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
+		idToken := createIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
 		err = m.storageManager.WriteIDToken(idToken)
 
 		if err != nil {
@@ -159,7 +159,7 @@ func (m *defaultCacheManager) CacheTokenResponse(authParameters *msalbase.AuthPa
 		}
 	}
 
-	appMetadata := CreateAppMetadata(tokenResponse.FamilyID, clientID, environment)
+	appMetadata := createAppMetadata(tokenResponse.FamilyID, clientID, environment)
 
 	err = m.storageManager.WriteAppMetadata(appMetadata)
 

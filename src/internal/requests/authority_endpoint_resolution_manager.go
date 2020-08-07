@@ -109,13 +109,13 @@ func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msa
 		return nil, err
 	}
 
-	if !tenantDiscoveryResponse.HasAuthorizationEndpoint() {
+	if !tenantDiscoveryResponse.hasAuthorizationEndpoint() {
 		return nil, errors.New("authorize endpoint was not found in the openid configuration")
 	}
-	if !tenantDiscoveryResponse.HasTokenEndpoint() {
+	if !tenantDiscoveryResponse.hasTokenEndpoint() {
 		return nil, errors.New("token endpoint was not found in the openid configuration")
 	}
-	if !tenantDiscoveryResponse.HasIssuer() {
+	if !tenantDiscoveryResponse.hasIssuer() {
 		return nil, errors.New("issuer was not found in the openid configuration")
 	}
 

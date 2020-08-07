@@ -42,13 +42,14 @@ func TestAuthCodeReqExecutePublic(t *testing.T) {
 
 func TestAuthCodeReqExecuteAssertion(t *testing.T) {
 	var wrm = new(MockWebRequestManager)
+	cred, _ := msalbase.CreateClientCredentialFromAssertion("hello")
 	var authCodeRequest = &AuthCodeRequest{
 		webRequestManager: wrm,
 		authParameters:    testAuthParams,
 		Code:              "code",
 		CodeChallenge:     "codeChallenge",
-		RequestType:       AuthCodeClientAssertion,
-		ClientAssertion:   msalbase.CreateClientAssertionFromJWT("hello"),
+		RequestType:       AuthCodeConfidential,
+		ClientCredential:  cred,
 	}
 	tdr := &TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
@@ -71,13 +72,14 @@ func TestAuthCodeReqExecuteAssertion(t *testing.T) {
 
 func TestAuthCodeReqExecuteSecret(t *testing.T) {
 	var wrm = new(MockWebRequestManager)
+	cred, _ := msalbase.CreateClientCredentialFromSecret("secret")
 	var authCodeRequest = &AuthCodeRequest{
 		webRequestManager: wrm,
 		authParameters:    testAuthParams,
 		Code:              "code",
 		CodeChallenge:     "codeChallenge",
-		RequestType:       AuthCodeClientSecret,
-		ClientSecret:      "secret",
+		RequestType:       AuthCodeConfidential,
+		ClientCredential:  cred,
 	}
 	tdr := &TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",

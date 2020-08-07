@@ -12,13 +12,8 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func deviceCodeCallback(deviceCodeResult msalgo.IDeviceCodeResult) {
+func deviceCodeCallback(deviceCodeResult msalgo.DeviceCodeResultInterfacer) {
 	log.Infof(deviceCodeResult.GetMessage())
-}
-
-func setCancelTimeout(seconds int, cancelChannel chan bool) {
-	time.Sleep(time.Duration(seconds) * time.Second)
-	cancelChannel <- true
 }
 
 func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {

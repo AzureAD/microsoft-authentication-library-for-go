@@ -4,8 +4,10 @@
 package msalgo
 
 import (
+	"context"
 	"reflect"
 	"testing"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
@@ -85,6 +87,7 @@ func TestAcquireTokenByUsernamePassword(t *testing.T) {
 	wrm.On("GetUserRealm", testAuthParams).Return(managedUserRealm, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
 	wrm.On("GetAccessTokenFromUsernamePassword", testAuthParams).Return(actualTokenResp, nil)
+	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
 	_, err := testPCA.AcquireTokenByUsernamePassword(userPassParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
@@ -108,15 +111,19 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 	testAuthParams.Endpoints = testAuthorityEndpoints
 	testAuthParams.Scopes = tokenCommonParams.scopes
 	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeDeviceCode
-	callback := func(dcr IDeviceCodeResult) {}
+	callback := func(dcr DeviceCodeResultInterfacer) {}
+	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
+	defer cancelFunc()
 	devCodeParams := &AcquireTokenDeviceCodeParameters{
 		commonParameters:   tokenCommonParams,
 		deviceCodeCallback: callback,
+		cancelCtx:          cancelCtx,
 	}
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
-	devCodeResult := &msalbase.DeviceCodeResult{}
+	devCodeResp := &requests.DeviceCodeResponse{ExpiresIn: 10}
+	devCodeResult := devCodeResp.ToDeviceCodeResult("clientID", testAuthParams.Scopes)
 	wrm.On("GetDeviceCodeResult", testAuthParams).Return(devCodeResult, nil)
 	wrm.On("GetAccessTokenFromDeviceCodeResult", testAuthParams, devCodeResult).Return(actualTokenResp, nil)
 	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)

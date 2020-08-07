@@ -9,7 +9,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/tokencache"
 )
 
 var (
@@ -41,9 +40,9 @@ func TestAcquireTokenSilent(t *testing.T) {
 		Scopes:            []string{"openid"},
 		AuthorizationType: msalbase.AuthorizationTypeRefreshTokenExchange,
 	}
-	at := tokencache.CreateAccessTokenCacheItem("hid", "env", "realm", "clientID", 0, 0, 0, "openid", "secret")
-	rt := tokencache.CreateRefreshTokenCacheItem("hid", "env", "clientID", "secret", "")
-	id := tokencache.CreateIDTokenCacheItem("hid", "env", "realm", "clientID", "secret")
+	at := new(msalbase.MockAccessToken)
+	rt := new(msalbase.MockCredential)
+	id := new(msalbase.MockCredential)
 	storageToken := msalbase.CreateStorageTokenResponse(at, rt, id, account)
 	cacheManager.On("TryReadCache", authParams, wrm).Return(storageToken, nil)
 	wrmauthParams := &msalbase.AuthParametersInternal{
@@ -54,8 +53,13 @@ func TestAcquireTokenSilent(t *testing.T) {
 		Endpoints:         testAuthorityEndpoints,
 	}
 	tokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetAccessTokenFromRefreshToken", wrmauthParams, "secret").Return(tokenResp, nil)
+	wrm.On("GetAccessTokenFromRefreshToken", wrmauthParams, "secret", make(map[string]string)).Return(tokenResp, nil)
 	cacheManager.On("CacheTokenResponse", wrmauthParams, tokenResp).Return(testAcc, nil)
+	at.On("GetSecret").Return("secret")
+	at.On("GetExpiresOn").Return("0")
+	at.On("GetScopes").Return("openid")
+	rt.On("GetSecret").Return("secret")
+	id.On("GetSecret").Return("secret")
 	_, err := testClientApplication.acquireTokenSilent(silentParams)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)

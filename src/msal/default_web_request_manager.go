@@ -63,7 +63,7 @@ func (wrm *defaultWebRequestManager) GetUserRealm(authParameters *msalbase.AuthP
 }
 
 // GetMex stuff
-func (wrm *defaultWebRequestManager) GetMex(federationMetadataURL string) (*wstrust.WsTrustMexDocument, error) {
+func (wrm *defaultWebRequestManager) GetMex(federationMetadataURL string) (*wstrust.MexDocument, error) {
 	httpManagerResponse, err := wrm.httpManager.Get(federationMetadataURL, nil)
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (wrm *defaultWebRequestManager) GetMex(federationMetadataURL string) (*wstr
 func (wrm *defaultWebRequestManager) GetWsTrustResponse(
 	authParameters *msalbase.AuthParametersInternal,
 	cloudAudienceURN string,
-	endpoint *wstrust.WsTrustEndpoint) (*wstrust.Response, error) {
+	endpoint *wstrust.Endpoint) (*wstrust.Response, error) {
 	var wsTrustRequestMessage string
 	var err error
 
@@ -189,7 +189,8 @@ func (wrm *defaultWebRequestManager) GetDeviceCodeResult(authParameters *msalbas
 }
 
 // GetAccessTokenFromDeviceCodeResult stuff
-func (wrm *defaultWebRequestManager) GetAccessTokenFromDeviceCodeResult(authParameters *msalbase.AuthParametersInternal, deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
+func (wrm *defaultWebRequestManager) GetAccessTokenFromDeviceCodeResult(
+	authParameters *msalbase.AuthParametersInternal, deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":  msalbase.DeviceCodeGrant,
 		"device_code": deviceCodeResult.GetDeviceCode(),
@@ -304,12 +305,15 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromAuthCode(authParameters *
 }
 
 // GetAccessTokenFromRefreshToken stuff
-func (wrm *defaultWebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal, refreshToken string) (*msalbase.TokenResponse, error) {
+func (wrm *defaultWebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal,
+	refreshToken string, params map[string]string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":    msalbase.RefreshTokenGrant,
 		"refresh_token": refreshToken,
 	}
-
+	for k, v := range params {
+		decodedQueryParams[k] = v
+	}
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
@@ -327,7 +331,7 @@ func (wrm *defaultWebRequestManager) GetAccessTokenWithClientSecret(authParamete
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// GetAccessTokenWithCertificate stuff
+// GetAccessTokenWithAssertion stuff
 func (wrm *defaultWebRequestManager) GetAccessTokenWithAssertion(authParameters *msalbase.AuthParametersInternal, assertion string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":            msalbase.ClientCredentialGrant,

@@ -5,21 +5,21 @@ package msalbase
 
 import "github.com/stretchr/testify/mock"
 
-type mockAccessToken struct {
+type MockAccessToken struct {
 	mock.Mock
 }
 
-func (mock *mockAccessToken) GetSecret() string {
+func (mock *MockAccessToken) GetSecret() string {
 	args := mock.Called()
 	return args.String(0)
 }
 
-func (mock *mockAccessToken) GetExpiresOn() string {
+func (mock *MockAccessToken) GetExpiresOn() string {
 	args := mock.Called()
 	return args.String(0)
 }
 
-func (mock *mockAccessToken) GetScopes() string {
+func (mock *MockAccessToken) GetScopes() string {
 	args := mock.Called()
 	return args.String(0)
 }

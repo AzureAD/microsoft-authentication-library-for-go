@@ -5,8 +5,8 @@ package msalgo
 
 import "time"
 
-// IDeviceCodeResult is an interface for DeviceCodeResult
-type IDeviceCodeResult interface {
+// DeviceCodeResultInterfacer is an interface for DeviceCodeResult that can be returned to users
+type DeviceCodeResultInterfacer interface {
 	GetMessage() string
 	String() string
 	GetUserCode() string

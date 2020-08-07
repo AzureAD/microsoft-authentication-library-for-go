@@ -18,14 +18,14 @@ func (mock *MockWebRequestManager) GetUserRealm(authParameters *msalbase.AuthPar
 	return args.Get(0).(*msalbase.UserRealm), args.Error(1)
 }
 
-func (mock *MockWebRequestManager) GetMex(federationMetadataURL string) (*wstrust.WsTrustMexDocument, error) {
+func (mock *MockWebRequestManager) GetMex(federationMetadataURL string) (*wstrust.MexDocument, error) {
 	args := mock.Called(federationMetadataURL)
-	return args.Get(0).(*wstrust.WsTrustMexDocument), args.Error(1)
+	return args.Get(0).(*wstrust.MexDocument), args.Error(1)
 }
 
 func (mock *MockWebRequestManager) GetWsTrustResponse(authParameters *msalbase.AuthParametersInternal,
 	cloudAudienceURN string,
-	endpoint *wstrust.WsTrustEndpoint) (*wstrust.Response, error) {
+	endpoint *wstrust.Endpoint) (*wstrust.Response, error) {
 	args := mock.Called(authParameters, cloudAudienceURN, endpoint)
 	return args.Get(0).(*wstrust.Response), args.Error(1)
 }
@@ -50,8 +50,9 @@ func (mock *MockWebRequestManager) GetAccessTokenFromAuthCode(authParameters *ms
 }
 
 func (mock *MockWebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal,
-	refreshToken string) (*msalbase.TokenResponse, error) {
-	args := mock.Called(authParameters, refreshToken)
+	refreshToken string,
+	params map[string]string) (*msalbase.TokenResponse, error) {
+	args := mock.Called(authParameters, refreshToken, params)
 	return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
 }
 

@@ -7,6 +7,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
+//StorageManager is an interface representing the read/write operations of the cache
 type StorageManager interface {
 	ReadAccessToken(
 		homeAccountID string,
@@ -43,9 +44,9 @@ type StorageManager interface {
 
 	DeleteAccounts(homeAccountID string, envAliases []string) error
 
-	ReadAppMetadata(envAliases []string, clientID string) *AppMetadata
+	ReadAppMetadata(envAliases []string, clientID string) *appMetadata
 
-	WriteAppMetadata(appMetadata *AppMetadata) error
+	WriteAppMetadata(appMetadata *appMetadata) error
 
 	Serialize() (string, error)
 

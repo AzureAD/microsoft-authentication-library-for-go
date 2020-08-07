@@ -92,18 +92,7 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 	if !reflect.DeepEqual(expectedIDTokens, contract.IDTokens) {
 		t.Errorf("Expected ID tokens %+v differ from actual ID tokens %+v", expectedIDTokens, contract.IDTokens)
 	}
-	/*
-		expectedAccounts := map[string]*msalbase.Account{
-			"uid.utid-login.windows.net-contoso": {
-				PreferredUsername:   &accUser,
-				LocalAccountID:      &accLID,
-				Realm:               &defaultRealm,
-				Environment:         &defaultEnvironment,
-				HomeAccountID:       &defaultHID,
-				AuthorityTypeString: &accAuth,
-			},
-		}*/
-	expectedMetadata := map[string]*AppMetadata{
+	expectedMetadata := map[string]*appMetadata{
 		"appmetadata-login.windows.net-my_client_id": {
 			Environment:      &defaultEnvironment,
 			FamilyID:         nil,
@@ -175,7 +164,7 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 			AuthorityType:     &accAuth,
 		},
 	}
-	contract.AppMetadata = map[string]*AppMetadata{
+	contract.AppMetadata = map[string]*appMetadata{
 		"appmetadata-login.windows.net-my_client_id": {
 			Environment:      &defaultEnvironment,
 			FamilyID:         nil,

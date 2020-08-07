@@ -22,7 +22,7 @@ type refreshTokenCacheItem struct {
 	additionalFields map[string]interface{}
 }
 
-func CreateRefreshTokenCacheItem(homeAccountID string,
+func createRefreshTokenCacheItem(homeAccountID string,
 	environment string,
 	clientID string,
 	refreshToken string,

@@ -16,10 +16,6 @@ func initInstanceDiscoveryCache() {
 	instanceDiscoveryCache = make(map[string]*InstanceDiscoveryMetadata)
 }
 
-type IAadInstanceDiscovery interface {
-	GetMetadataEntry(authorityInfo *msalbase.AuthorityInfo) (*InstanceDiscoveryMetadata, error)
-}
-
 type AadInstanceDiscovery struct {
 	webRequestManager WebRequestManager
 }

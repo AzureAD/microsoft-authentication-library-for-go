@@ -20,7 +20,7 @@ type idTokenCacheItem struct {
 	additionalFields map[string]interface{}
 }
 
-func CreateIDTokenCacheItem(homeAccountID string,
+func createIDTokenCacheItem(homeAccountID string,
 	environment string,
 	realm string,
 	clientID string,

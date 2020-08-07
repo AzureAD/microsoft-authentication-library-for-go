@@ -9,15 +9,15 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
-type IOpenIDConfigurationEndpointManager interface {
+type openIDConfigurationEndpointManager interface {
 	getOpenIDConfigurationEndpoint(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (string, error)
 }
 
 type aadOpenIDConfigurationEndpointManager struct {
-	aadInstanceDiscovery IAadInstanceDiscovery
+	aadInstanceDiscovery *AadInstanceDiscovery
 }
 
-func createAadOpenIDConfigurationEndpointManager(aadInstanceDiscovery IAadInstanceDiscovery) IOpenIDConfigurationEndpointManager {
+func createAadOpenIDConfigurationEndpointManager(aadInstanceDiscovery *AadInstanceDiscovery) openIDConfigurationEndpointManager {
 	m := &aadOpenIDConfigurationEndpointManager{aadInstanceDiscovery}
 	return m
 }
@@ -32,6 +32,7 @@ var aadTrustedHostList = map[string]bool{
 	"login.cloudgovapi.us":         true, // Microsoft Azure US Government
 }
 
+//IsInTrustedHostList checks if an AAD host is trusted/valid
 func IsInTrustedHostList(host string) bool {
 	if _, ok := aadTrustedHostList[host]; ok {
 		return true
@@ -52,7 +53,7 @@ func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(a
 	return authorityInfo.CanonicalAuthorityURI + "v2.0/.well-known/openid-configuration", nil
 }
 
-func createOpenIDConfigurationEndpointManager(authorityInfo *msalbase.AuthorityInfo) (IOpenIDConfigurationEndpointManager, error) {
+func createOpenIDConfigurationEndpointManager(authorityInfo *msalbase.AuthorityInfo) (openIDConfigurationEndpointManager, error) {
 	if authorityInfo.AuthorityType == msalbase.MSSTS {
 		return &aadOpenIDConfigurationEndpointManager{}, nil
 	}
