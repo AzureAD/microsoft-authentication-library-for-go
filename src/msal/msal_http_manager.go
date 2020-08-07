@@ -45,7 +45,7 @@ func (mgr *msalHTTPManager) performRequest(
 		return nil, err
 	}
 
-	return CreateHTTPManagerResponse(resp)
+	return createHTTPManagerResponse(resp)
 }
 
 // Get sends a get request to the appropriate URL

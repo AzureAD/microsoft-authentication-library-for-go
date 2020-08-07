@@ -32,14 +32,11 @@ func isErrorSlowDown(err error) bool {
 	return err.Error() == "slow_down"
 }
 
-// ContentType stuff
-type ContentType int
+type contentType int
 
 const (
-	// SoapXMLUtf8 stuff
-	SoapXMLUtf8 ContentType = iota
-	// URLEncodedUtf8 stuff
-	URLEncodedUtf8
+	soapXMLUtf8 contentType = iota
+	urlEncodedUtf8
 )
 
 func createWebRequestManager(httpManager HTTPManager) requests.WebRequestManager {
@@ -110,7 +107,7 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(
 		"SOAPAction": soapAction,
 	}
 
-	addContentTypeHeader(headers, SoapXMLUtf8)
+	addContentTypeHeader(headers, soapXMLUtf8)
 
 	response, err := wrm.httpManager.Post(endpoint.URL, wsTrustRequestMessage, headers)
 	if err != nil {
@@ -173,7 +170,7 @@ func (wrm *defaultWebRequestManager) GetDeviceCodeResult(authParameters *msalbas
 	deviceCodeEndpoint := strings.Replace(authParameters.Endpoints.TokenEndpoint, "token", "devicecode", -1)
 
 	headers := getAadHeaders(authParameters)
-	addContentTypeHeader(headers, URLEncodedUtf8)
+	addContentTypeHeader(headers, urlEncodedUtf8)
 
 	response, err := wrm.httpManager.Post(
 		deviceCodeEndpoint, encodeQueryParameters(decodedQueryParams), headers)
@@ -227,14 +224,14 @@ func addRedirectURIQueryParam(queryParams map[string]string, authParameters *msa
 	queryParams["redirect_uri"] = authParameters.Redirecturi
 }
 
-func addContentTypeHeader(headers map[string]string, contentType ContentType) {
+func addContentTypeHeader(headers map[string]string, contentType contentType) {
 	contentTypeKey := "Content-Type"
 	switch contentType {
-	case SoapXMLUtf8:
+	case soapXMLUtf8:
 		headers[contentTypeKey] = "application/soap+xml; charset=utf-8"
 		return
 
-	case URLEncodedUtf8:
+	case urlEncodedUtf8:
 		headers[contentTypeKey] = "application/x-www-form-urlencoded; charset=utf-8"
 		return
 	}
@@ -274,7 +271,7 @@ func encodeQueryParameters(queryParameters map[string]string) string {
 
 func (wrm *defaultWebRequestManager) exchangeGrantForToken(authParameters *msalbase.AuthParametersInternal, queryParams map[string]string) (*msalbase.TokenResponse, error) {
 	headers := getAadHeaders(authParameters)
-	addContentTypeHeader(headers, URLEncodedUtf8)
+	addContentTypeHeader(headers, urlEncodedUtf8)
 
 	response, err := wrm.httpManager.Post(authParameters.Endpoints.TokenEndpoint, encodeQueryParameters(queryParams), headers)
 	if err != nil {

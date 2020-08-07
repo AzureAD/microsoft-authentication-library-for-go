@@ -32,9 +32,7 @@ func (r *msalHTTPManagerResponse) GetHeaders() map[string]string {
 	return r.headers
 }
 
-// CreateHTTPManagerResponse wraps the http.Response object into a HTTPManagerResponse object
-func CreateHTTPManagerResponse(resp *http.Response) (HTTPManagerResponse, error) {
-
+func createHTTPManagerResponse(resp *http.Response) (HTTPManagerResponse, error) {
 	defer resp.Body.Close()
 	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
@@ -48,7 +46,6 @@ func CreateHTTPManagerResponse(resp *http.Response) (HTTPManagerResponse, error)
 	for k, v := range resp.Header {
 		headers[k] = v[0] // todo: broken?
 	}
-
 	r := &msalHTTPManagerResponse{responseCode: resp.StatusCode, responseData: string(body), headers: headers}
 	return r, nil
 }

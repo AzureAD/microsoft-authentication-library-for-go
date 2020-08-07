@@ -3,7 +3,8 @@
 
 package msalgo
 
-//AccountInterfacer is an interface returned to users that helps with accessing the cache
+//AccountInterfacer is an interface representing an account that is returned to users.
+//This can help with accessing the cache for tokens.
 type AccountInterfacer interface {
 	GetUsername() string
 	GetHomeAccountID() string

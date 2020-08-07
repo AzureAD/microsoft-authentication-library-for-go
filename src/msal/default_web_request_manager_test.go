@@ -33,12 +33,12 @@ var testHeadersWURLUTF8 = map[string]string{
 
 func TestAddContentTypeHeader(t *testing.T) {
 	testHeaders := make(map[string]string)
-	addContentTypeHeader(testHeaders, SoapXMLUtf8)
+	addContentTypeHeader(testHeaders, soapXMLUtf8)
 	expectedContentHeader := "application/soap+xml; charset=utf-8"
 	if !reflect.DeepEqual(expectedContentHeader, testHeaders["Content-Type"]) {
 		t.Errorf("Actual content type header %v differs from expected content type header %v", testHeaders["Content-Type"], expectedContentHeader)
 	}
-	addContentTypeHeader(testHeaders, URLEncodedUtf8)
+	addContentTypeHeader(testHeaders, urlEncodedUtf8)
 	expectedContentHeader = "application/x-www-form-urlencoded; charset=utf-8"
 	if !reflect.DeepEqual(expectedContentHeader, testHeaders["Content-Type"]) {
 		t.Errorf("Actual content type header %v differs from expected content type header %v", testHeaders["Content-Type"], expectedContentHeader)
@@ -62,7 +62,7 @@ func TestEncodeQueryParameters(t *testing.T) {
 }
 
 func TestGetUserRealm(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	url := "https://login.microsoftonline.com/common/UserRealm/username?api-version=1.0"
 	authParams := &msalbase.AuthParametersInternal{
@@ -89,7 +89,7 @@ func TestGetUserRealm(t *testing.T) {
 }
 
 func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authParams := &msalbase.AuthParametersInternal{
 		Username:  "username",
@@ -128,7 +128,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 }
 
 func TestGetAccessTokenFromSAMLGrant(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authParams := &msalbase.AuthParametersInternal{
 		Username:  "username",
@@ -165,7 +165,7 @@ func TestGetAccessTokenFromSAMLGrant(t *testing.T) {
 }
 
 func TestGetDeviceCodeResult(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authParams := &msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
@@ -185,7 +185,7 @@ func TestGetDeviceCodeResult(t *testing.T) {
 }
 
 func TestGetAccessTokenFromAuthCode(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authParams := &msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
@@ -216,7 +216,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 }
 
 func TestGetAccessTokenFromRefreshToken(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authParams := &msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
@@ -246,7 +246,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 }
 
 func TestGetAccessTokenWithClientSecret(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authParams := &msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
@@ -276,7 +276,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 }
 
 func TestGetAccessTokenWithAssertion(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authParams := &msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
@@ -307,7 +307,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 }
 
 func TestGetAadInstanceDiscoveryResponse(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	authInfo := &msalbase.AuthorityInfo{
 		Host:   "login.microsoftonline.com",
@@ -334,7 +334,7 @@ func TestGetAadInstanceDiscoveryResponse(t *testing.T) {
 }
 
 func TestGetTenantDiscoveryResponse(t *testing.T) {
-	mockHTTPManager := new(MockHTTPManager)
+	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	respData := `{}`
 	response := &msalHTTPManagerResponse{

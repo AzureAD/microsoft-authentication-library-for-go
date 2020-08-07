@@ -10,7 +10,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
-//AuthorizationCodeURLParameters has the parameters to create the URL to generate an authorization code
+//AuthorizationCodeURLParameters has the parameters to create the URL to generate an authorization code.
 type AuthorizationCodeURLParameters struct {
 	ClientID            string
 	RedirectURI         string
@@ -25,7 +25,8 @@ type AuthorizationCodeURLParameters struct {
 	Scopes              []string
 }
 
-//CreateAuthorizationCodeURLParameters creates an AuthorizationCodeURLParameters instance
+//CreateAuthorizationCodeURLParameters creates an AuthorizationCodeURLParameters instance. These are the basic required parameters to create this URL.
+//However, if you want other parameters to be in the URL, you can just set the fields of the struct.
 func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, scopes []string, codeChallenge string) *AuthorizationCodeURLParameters {
 	p := &AuthorizationCodeURLParameters{
 		ClientID:      clientID,
