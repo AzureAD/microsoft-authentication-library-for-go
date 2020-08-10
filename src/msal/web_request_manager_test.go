@@ -5,7 +5,11 @@ package msalgo
 
 import (
 	"reflect"
+	"sort"
+	"strings"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
 func TestAddContentTypeHeader(t *testing.T) {
@@ -29,11 +33,38 @@ func TestEncodeQueryParameters(t *testing.T) {
 	testQueryParams["grant_type"] = "authorization_code"
 	encodedQuery := encodeQueryParameters(testQueryParams)
 	expectedQueryParams := "scope=openid+user.read&client_id=clientID&grant_type=authorization_code"
-	if !reflect.DeepEqual(encodedQuery, expectedQueryParams) {
+	encodedQueryList := strings.Split(encodedQuery, "&")
+	expectedQueryList := strings.Split(expectedQueryParams, "&")
+	sort.Strings(encodedQueryList)
+	sort.Strings(expectedQueryList)
+	if !reflect.DeepEqual(encodedQueryList, expectedQueryList) {
 		t.Errorf("Actual encoded query %v differs from expected query %v", encodedQuery, expectedQueryParams)
 	}
 }
 
-func TestExchangeGrantForToken(t *testing.T) {
-
+func TestGetUserRealm(t *testing.T) {
+	mockHTTPManager := new(MockHTTPManager)
+	wrm := &WebRequestManager{httpManager: mockHTTPManager}
+	url := "https://login.microsoftonline.com/common/UserRealm/username?api-version=1.0"
+	authParams := &msalbase.AuthParametersInternal{
+		Username:  "username",
+		Endpoints: testAuthorityEndpoints,
+	}
+	httpResp := &HTTPManagerResponse{
+		responseCode: 200,
+		responseData: `{"domain_name" : "domain", "cloud_instance_name" : "cloudInst", "cloud_audience_urn" : "URN"}`,
+	}
+	mockHTTPManager.On("Get", url, getAadHeaders(authParams)).Return(httpResp, nil)
+	userRealm := &msalbase.UserRealm{
+		DomainName:        "domain",
+		CloudAudienceURN:  "URN",
+		CloudInstanceName: "cloudInst",
+	}
+	actualRealm, err := wrm.GetUserRealm(authParams)
+	if err != nil {
+		t.Errorf("Error should be nil, instead it is %v", err)
+	}
+	if !reflect.DeepEqual(userRealm, actualRealm) {
+		t.Errorf("Actual realm %+v differs from expected realm %+v", actualRealm, userRealm)
+	}
 }

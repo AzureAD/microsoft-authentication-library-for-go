@@ -6,8 +6,9 @@ import (
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 )
 
+const port = "3000"
+
 var config = createConfig("config.json")
-var pcaParams = createPCAParams(config.ClientID, config.Authority)
 var publicClientApp *msalgo.PublicClientApplication
 var err error
 var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
@@ -21,5 +22,11 @@ func main() {
 		acquireByAuthorizationCodePublic()
 	} else if exampleType == "3" {
 		acquireByUsernamePasswordPublic()
+	} else if exampleType == "4" {
+		acquireByAuthorizationCodeConfidential()
+	} else if exampleType == "5" {
+		acquireTokenClientSecret()
+	} else if exampleType == "6" {
+		acquireTokenClientCertificate()
 	}
 }

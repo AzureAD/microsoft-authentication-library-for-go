@@ -21,7 +21,8 @@ type DeviceCodeResult struct {
 }
 
 //CreateDeviceCodeResult creates a DeviceCodeResult instance
-func CreateDeviceCodeResult(userCode string, deviceCode string, verificationURL string, expiresOn time.Time, interval int, message string, clientID string, scopes []string) *DeviceCodeResult {
+func CreateDeviceCodeResult(userCode string, deviceCode string, verificationURL string,
+	expiresOn time.Time, interval int, message string, clientID string, scopes []string) *DeviceCodeResult {
 	return &DeviceCodeResult{userCode, deviceCode, verificationURL, expiresOn, interval, message, clientID, scopes}
 }
 

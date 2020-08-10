@@ -43,8 +43,7 @@ func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 
 func acquireTokenDeviceCode() {
 	config := createConfig("config.json")
-	pcaParams := createPCAParams(config.ClientID, config.Authority)
-	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
+	publicClientApp, err := msalgo.CreatePublicClientApplication(config.ClientID, config.Authority)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -60,7 +59,7 @@ func acquireTokenDeviceCode() {
 		log.Info("No valid account found")
 		tryDeviceCodeFlow(publicClientApp)
 	} else {
-		silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, userAccount)
+		silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
 		result, err := publicClientApp.AcquireTokenSilent(silentParams)
 		if err != nil {
 			log.Info(err)

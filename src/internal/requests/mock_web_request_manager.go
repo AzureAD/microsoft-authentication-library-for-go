@@ -43,20 +43,28 @@ func (mock *MockWebRequestManager) GetAccessTokenFromUsernamePassword(authParame
 
 func (mock *MockWebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal,
 	authCode string,
-	codeVerifier string) (*msalbase.TokenResponse, error) {
-	args := mock.Called(authParameters, authCode, codeVerifier)
+	codeVerifier string,
+	params map[string]string) (*msalbase.TokenResponse, error) {
+	args := mock.Called(authParameters, authCode, codeVerifier, params)
 	return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
 }
 
 func (mock *MockWebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal,
-	refreshToken string) (*msalbase.TokenResponse, error) {
-	args := mock.Called(authParameters, refreshToken)
+	refreshToken string,
+	params map[string]string) (*msalbase.TokenResponse, error) {
+	args := mock.Called(authParameters, refreshToken, params)
 	return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
 }
 
-func (mock *MockWebRequestManager) GetAccessTokenWithCertificate(authParameters *msalbase.AuthParametersInternal,
-	certificate *msalbase.ClientCertificate) (*msalbase.TokenResponse, error) {
-	args := mock.Called(authParameters, certificate)
+func (mock *MockWebRequestManager) GetAccessTokenWithClientSecret(authParameters *msalbase.AuthParametersInternal,
+	clientSecret string) (*msalbase.TokenResponse, error) {
+	args := mock.Called(authParameters, clientSecret)
+	return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
+}
+
+func (mock *MockWebRequestManager) GetAccessTokenWithAssertion(authParameters *msalbase.AuthParametersInternal,
+	assertion string) (*msalbase.TokenResponse, error) {
+	args := mock.Called(authParameters, assertion)
 	return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
 }
 

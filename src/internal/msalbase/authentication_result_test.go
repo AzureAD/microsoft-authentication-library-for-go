@@ -67,3 +67,37 @@ func TestCreateAuthenticationResult(t *testing.T) {
 		t.Errorf("Authentication result should be nil, not %v", authResult)
 	}
 }
+
+func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
+	at := new(MockAccessToken)
+	id := new(MockCredential)
+	acc := &Account{}
+	atSecret := "secret"
+	storageToken := &StorageTokenResponse{
+		accessToken: at,
+		idToken:     id,
+		account:     acc,
+	}
+	at.On("GetSecret").Return(atSecret)
+	at.On("GetExpiresOn").Return("1592049600")
+	at.On("GetScopes").Return("profile openid user.read")
+	id.On("GetSecret").Return("x.e30")
+	expAuthResult := &AuthenticationResult{
+		Account:       acc,
+		AccessToken:   atSecret,
+		idToken:       &IDToken{},
+		ExpiresOn:     time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC),
+		GrantedScopes: []string{"profile", "openid", "user.read"},
+	}
+	actualAuthResult, err := CreateAuthenticationResultFromStorageTokenResponse(storageToken)
+	if err != nil {
+		t.Errorf("Error should be nil but it is %v", err)
+	}
+	if !reflect.DeepEqual(actualAuthResult.Account, acc) &&
+		!reflect.DeepEqual(actualAuthResult.AccessToken, atSecret) &&
+		!reflect.DeepEqual(actualAuthResult.idToken, &IDToken{}) &&
+		!reflect.DeepEqual(actualAuthResult.ExpiresOn, time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)) &&
+		!reflect.DeepEqual(actualAuthResult.GrantedScopes, []string{"profile", "openid", "user.read"}) {
+		t.Errorf("Actual authentication result %+v differs from expected authentication result %+v", actualAuthResult, expAuthResult)
+	}
+}

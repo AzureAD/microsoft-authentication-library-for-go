@@ -4,6 +4,7 @@
 package msalbase
 
 import (
+	"encoding/base64"
 	"strconv"
 	"strings"
 	"time"
@@ -28,17 +29,6 @@ func SplitScopes(scopes string) []string {
 	return strings.Split(scopes, DefaultScopeSeparator)
 }
 
-func ExtractExistingOrEmptyString(j map[string]interface{}, key string) string {
-	if val, ok := j[key]; ok {
-		if str, ok := val.(string); ok {
-			delete(j, key)
-			return str
-		}
-	}
-	delete(j, key)
-	return ""
-}
-
 func ExtractStringPointerForCache(j map[string]interface{}, key string) *string {
 	if val, ok := j[key]; ok {
 		if str, ok := val.(string); ok {
@@ -56,4 +46,16 @@ func GetStringFromPointer(pointer *string) string {
 	} else {
 		return *pointer
 	}
+}
+
+// Adapted from MSAL Python and https://stackoverflow.com/a/31971780
+func DecodeJWT(data string) ([]byte, error) {
+	if i := len(data) % 4; i != 0 {
+		data += strings.Repeat("=", 4-i)
+	}
+	decodedData, err := base64.StdEncoding.DecodeString(data)
+	if err != nil {
+		return nil, err
+	}
+	return decodedData, nil
 }

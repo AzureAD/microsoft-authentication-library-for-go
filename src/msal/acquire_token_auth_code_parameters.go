@@ -3,15 +3,19 @@
 
 package msalgo
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+import (
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+)
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow
 type AcquireTokenAuthCodeParameters struct {
-	commonParameters    *acquireTokenCommonParameters
-	redirectURI         string
-	Code                string
-	codeChallenge       string
-	codeChallengeMethod string
+	commonParameters *acquireTokenCommonParameters
+	redirectURI      string
+	Code             string
+	codeChallenge    string
+	clientCredential *msalbase.ClientCredential
+	requestType      requests.AuthCodeRequestType
 }
 
 // CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance

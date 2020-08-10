@@ -6,8 +6,6 @@ package requests
 import (
 	"errors"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
@@ -43,7 +41,6 @@ func (req *UsernamePasswordRequest) Execute() (*msalbase.TokenResponse, error) {
 
 	switch accountType := userRealm.GetAccountType(); accountType {
 	case msalbase.Federated:
-		log.Trace("FEDERATED")
 		if mexDoc, err := req.webRequestManager.GetMex(userRealm.FederationMetadataURL); err == nil {
 			wsTrustEndpoint := mexDoc.UsernamePasswordEndpoint
 			if wsTrustResponse, err := req.webRequestManager.GetWsTrustResponse(req.authParameters, userRealm.CloudAudienceURN, &wsTrustEndpoint); err == nil {
@@ -55,9 +52,8 @@ func (req *UsernamePasswordRequest) Execute() (*msalbase.TokenResponse, error) {
 		// todo: check for ui interaction in api result...
 		return nil, err
 	case msalbase.Managed:
-		log.Trace("MANAGED")
 		return req.webRequestManager.GetAccessTokenFromUsernamePassword(req.authParameters)
 	default:
-		return nil, errors.New("Unknown account type")
+		return nil, errors.New("unknown account type")
 	}
 }

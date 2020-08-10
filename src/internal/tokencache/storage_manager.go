@@ -210,7 +210,7 @@ func (m *storageManager) DeleteAccounts(
 	}
 	lock.RUnlock()
 	if len(keys) == 0 {
-		return errors.New("Can't find account")
+		return errors.New("can't find account")
 	}
 	lock.Lock()
 	for _, key := range keys {

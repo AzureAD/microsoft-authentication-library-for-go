@@ -52,10 +52,7 @@ func CreateWebRequestManager(httpManager IHTTPManager) requests.IWebRequestManag
 
 // GetUserRealm stuff
 func (wrm *WebRequestManager) GetUserRealm(authParameters *msalbase.AuthParametersInternal) (*msalbase.UserRealm, error) {
-	log.Trace("GetUserRealm entered")
 	url := authParameters.Endpoints.GetUserRealmEndpoint(authParameters.Username)
-
-	log.Trace("user realm endpoint: " + url)
 	httpManagerResponse, err := wrm.httpManager.Get(url, getAadHeaders(authParameters))
 	if err != nil {
 		return nil, err
@@ -131,17 +128,17 @@ func (wrm *WebRequestManager) GetWsTrustResponse(
 // GetAccessTokenFromSamlGrant stuff
 func (wrm *WebRequestManager) GetAccessTokenFromSamlGrant(authParameters *msalbase.AuthParametersInternal, samlGrant *wstrust.SamlTokenInfo) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
-		"grant_type": "password",
+		"grant_type": msalbase.PasswordGrant,
 		"username":   authParameters.Username,
 		"password":   authParameters.Password,
 	}
 
 	switch samlGrant.AssertionType {
 	case wstrust.SamlV1:
-		decodedQueryParams["grant_type"] = "urn:ietf:params:oauth:grant-type:saml1_1-bearer"
+		decodedQueryParams["grant_type"] = msalbase.SAMLV1Grant
 		break
 	case wstrust.SamlV2:
-		decodedQueryParams["grant_type"] = "urn:ietf:params:oauth:grant-type:saml2-bearer"
+		decodedQueryParams["grant_type"] = msalbase.SAMLV2Grant
 		break
 	default:
 		return nil, errors.New("GetAccessTokenFromSamlGrant returned unknown saml assertion type: " + string(samlGrant.AssertionType))
@@ -160,7 +157,7 @@ func (wrm *WebRequestManager) GetAccessTokenFromSamlGrant(authParameters *msalba
 func (wrm *WebRequestManager) GetAccessTokenFromUsernamePassword(
 	authParameters *msalbase.AuthParametersInternal) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
-		"grant_type": "password",
+		"grant_type": msalbase.PasswordGrant,
 		"username":   authParameters.Username,
 		"password":   authParameters.Password,
 	}
@@ -200,7 +197,7 @@ func (wrm *WebRequestManager) GetDeviceCodeResult(authParameters *msalbase.AuthP
 // GetAccessTokenFromDeviceCodeResult stuff
 func (wrm *WebRequestManager) GetAccessTokenFromDeviceCodeResult(authParameters *msalbase.AuthParametersInternal, deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
-		"grant_type":  "device_code",
+		"grant_type":  msalbase.DeviceCodeGrant,
 		"device_code": deviceCodeResult.GetDeviceCode(),
 	}
 
@@ -217,7 +214,7 @@ func addClientIDQueryParam(queryParams map[string]string, authParameters *msalba
 }
 
 func addScopeQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
-	log.Trace("Adding scopes 'openid', 'offline_access', 'profile'")
+	log.Info("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
 	// openid required to get an id token
 	// offline_access required to get a refresh token
@@ -289,13 +286,18 @@ func (wrm *WebRequestManager) exchangeGrantForToken(authParameters *msalbase.Aut
 }
 
 // GetAccessTokenFromAuthCode stuff
-func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal, authCode string, codeVerifier string) (*msalbase.TokenResponse, error) {
+func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal,
+	authCode string,
+	codeVerifier string,
+	params map[string]string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
-		"grant_type":    "authorization_code",
+		"grant_type":    msalbase.AuthCodeGrant,
 		"code":          authCode,
 		"code_verifier": codeVerifier,
 	}
-
+	for k, v := range params {
+		decodedQueryParams[k] = v
+	}
 	addRedirectURIQueryParam(decodedQueryParams, authParameters)
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
@@ -305,12 +307,15 @@ func (wrm *WebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbas
 }
 
 // GetAccessTokenFromRefreshToken stuff
-func (wrm *WebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal, refreshToken string) (*msalbase.TokenResponse, error) {
+func (wrm *WebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal,
+	refreshToken string, params map[string]string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
-		"grant_type":    "refresh_token",
+		"grant_type":    msalbase.RefreshTokenGrant,
 		"refresh_token": refreshToken,
 	}
-
+	for k, v := range params {
+		decodedQueryParams[k] = v
+	}
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
@@ -318,14 +323,21 @@ func (wrm *WebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msa
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// GetAccessTokenWithCertificate stuff
-func (wrm *WebRequestManager) GetAccessTokenWithCertificate(authParameters *msalbase.AuthParametersInternal, certificate *msalbase.ClientCertificate) (*msalbase.TokenResponse, error) {
-
-	assertion := "GetClientCertForAudience()" // todo: string assertion = GetClientCertificateAssertionForAudience(authParameters, certificate);
-
+func (wrm *WebRequestManager) GetAccessTokenWithClientSecret(authParameters *msalbase.AuthParametersInternal, clientSecret string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
-		"grant_type":            "client_credentials",
-		"client_assertion_type": "urn:ietf:params:oauth:client-assertion-type:jwt-bearer",
+		"grant_type":    msalbase.ClientCredentialGrant,
+		"client_secret": clientSecret,
+	}
+	addClientIDQueryParam(decodedQueryParams, authParameters)
+	addScopeQueryParam(decodedQueryParams, authParameters)
+	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+}
+
+// GetAccessTokenWithCertificate stuff
+func (wrm *WebRequestManager) GetAccessTokenWithAssertion(authParameters *msalbase.AuthParametersInternal, assertion string) (*msalbase.TokenResponse, error) {
+	decodedQueryParams := map[string]string{
+		"grant_type":            msalbase.ClientCredentialGrant,
+		"client_assertion_type": msalbase.ClientAssertionGrant,
 		"client_assertion":      assertion,
 	}
 

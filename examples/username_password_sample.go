@@ -5,7 +5,6 @@ package main
 
 import (
 	"fmt"
-	"reflect"
 
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
@@ -24,8 +23,7 @@ func tryUsernamePasswordFlow(publicClientApp *msalgo.PublicClientApplication) {
 func acquireByUsernamePasswordPublic() {
 	config := createConfig("config.json")
 	// Creating the Public Client Application
-	pcaParams := createPCAParams(config.ClientID, config.Authority)
-	publicClientApp, err := msalgo.CreatePublicClientApplication(pcaParams)
+	publicClientApp, err := msalgo.CreatePublicClientApplication(config.ClientID, config.Authority)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -37,11 +35,11 @@ func acquireByUsernamePasswordPublic() {
 			userAccount = account
 		}
 	}
-	if reflect.ValueOf(userAccount).IsNil() {
+	if userAccount == nil {
 		log.Info("No valid account found")
 		tryUsernamePasswordFlow(publicClientApp)
 	} else {
-		silentParams := msalgo.CreateAcquireTokenSilentParameters(config.Scopes, userAccount)
+		silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
 		result, err := publicClientApp.AcquireTokenSilent(silentParams)
 		if err != nil {
 			log.Info(err)
