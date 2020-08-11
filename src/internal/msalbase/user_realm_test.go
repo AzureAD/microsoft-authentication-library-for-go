@@ -4,6 +4,7 @@
 package msalbase
 
 import (
+	"errors"
 	"reflect"
 	"testing"
 )
@@ -16,6 +17,11 @@ var testRealm = `{"account_type" : "Federated",
 					"federation_metadata_url" : "fed_meta"}`
 
 func TestCreateUserRealm(t *testing.T) {
+	type testData struct {
+		input string
+		err   error
+		realm *UserRealm
+	}
 	expectedUserRealm := &UserRealm{
 		AccountType:           "Federated",
 		DomainName:            "domain",
@@ -24,58 +30,42 @@ func TestCreateUserRealm(t *testing.T) {
 		FederationProtocol:    "fed_prot",
 		FederationMetadataURL: "fed_meta",
 	}
-	actualRealm, err := CreateUserRealm(testRealm)
-	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
-	}
-	if !reflect.DeepEqual(actualRealm, expectedUserRealm) {
-		t.Errorf("Actual user realm %+v differs from expected user realm %+v", actualRealm, expectedUserRealm)
-	}
-}
-
-func TestCreateUserRealmWithErrors(t *testing.T) {
-	realm := `{"account_type" : "Federated",
+	fedProtRealm := `{"account_type" : "Federated",
 				"domain_name" : "domain",
 				"cloud_instance_name" : "cloud",
 				"cloud_audience_urn" : "urn",
 				"federation_metadata_url" : "fed_meta"}`
-	_, err := CreateUserRealm(realm)
-	if !reflect.DeepEqual(err.Error(), "federation protocol of user realm is missing") {
-		t.Errorf("Actual error %s differs from expected error %s",
-			err.Error(), "federation protocol of user realm is missing")
-	}
-	realm = `{"account_type" : "Federated",
+	fedMetaRealm := `{"account_type" : "Federated",
 				"domain_name" : "domain",
 				"cloud_instance_name" : "cloud",
 				"cloud_audience_urn" : "urn",
 				"federation_protocol" : "fed_prot"}`
-	_, err = CreateUserRealm(realm)
-	if !reflect.DeepEqual(err.Error(), "federation metadata URL of user realm is missing") {
-		t.Errorf("Actual error %s differs from expected error %s",
-			err.Error(), "federation metadata URL of user realm is missing")
-	}
-	realm = `{"account_type" : "Managed",
+	domainRealm := `{"account_type" : "Managed",
 				"cloud_instance_name" : "cloud",
 				"cloud_audience_urn" : "urn"}`
-	_, err = CreateUserRealm(realm)
-	if !reflect.DeepEqual(err.Error(), "domain name of user realm is missing") {
-		t.Errorf("Actual error %s differs from expected error %s",
-			err.Error(), "domain name of user realm is missing")
+	cloudNameRealm := `{"account_type" : "Managed",
+						"domain_name" : "domain",
+						"cloud_audience_urn" : "urn"}`
+	cloudURNRealm := `{"account_type" : "Managed",
+						"domain_name" : "domain",
+						"cloud_instance_name" : "cloud"}`
+	tests := []testData{
+		{input: testRealm, err: nil, realm: expectedUserRealm},
+		{input: fedProtRealm, err: errors.New("federation protocol of user realm is missing"), realm: nil},
+		{input: fedMetaRealm, err: errors.New("federation metadata URL of user realm is missing"), realm: nil},
+		{input: domainRealm, err: errors.New("domain name of user realm is missing"), realm: nil},
+		{input: cloudNameRealm, err: errors.New("cloud instance name of user realm is missing"), realm: nil},
+		{input: cloudURNRealm, err: errors.New("cloud Instance URN is missing"), realm: nil},
 	}
-	realm = `{"account_type" : "Managed",
-				"domain_name" : "domain",
-				"cloud_audience_urn" : "urn"}`
-	_, err = CreateUserRealm(realm)
-	if !reflect.DeepEqual(err.Error(), "cloud instance name of user realm is missing") {
-		t.Errorf("Actual error %s differs from expected error %s",
-			err.Error(), "cloud instance name of user realm is missing")
-	}
-	realm = `{"account_type" : "Managed",
-				"domain_name" : "domain",
-				"cloud_instance_name" : "cloud"}`
-	_, err = CreateUserRealm(realm)
-	if !reflect.DeepEqual(err.Error(), "cloud Instance URN is missing") {
-		t.Errorf("Actual error %s differs from expected error %s",
-			err.Error(), "cloud Instance URN is missing")
+	for _, test := range tests {
+		actualRealm, err := CreateUserRealm(test.input)
+		if err != test.err {
+			if err == nil || !reflect.DeepEqual(err.Error(), test.err.Error()) {
+				t.Errorf("Actual error %v differs from expected error %v", err, test.err)
+			}
+		}
+		if !reflect.DeepEqual(actualRealm, test.realm) {
+			t.Errorf("Actual user realm %+v differs from expected user realm %+v", actualRealm, test.realm)
+		}
 	}
 }
