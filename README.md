@@ -35,11 +35,12 @@ silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(scopes, use
 result, err := publicClientApp.AcquireTokenSilent(silentParams)
 ```
 
-3. If there is no suitable token in the cache, or you choose to skip this step, now we can send a request to AAD to obtain a token. There are many different token acquisition flows; here we can see the username-password flow as an example.
+3. If there is no suitable token in the cache, or you choose to skip this step, now we can send a request to AAD to obtain a token. 
 ```go
 if err != nil {
-    userNameParams := msalgo.CreateAcquireTokenUsernamePasswordParameters(scopes, "your_username", "your_password")
-    result, err := publicClientApp.AcquireTokenByUsernamePassword(userNameParams)
+    // Based on the flow, you create the type of parameters
+    tokenParams := msalgo.CreateAcquireTokenxxxParameters(scopes, ...)
+    result, err := publicClientApp.AcquireTokenByxxx(tokenParams)
     if err != nil {
         log.Fatal(err)
     }
