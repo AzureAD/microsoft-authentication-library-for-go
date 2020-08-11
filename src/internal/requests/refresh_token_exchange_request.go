@@ -40,7 +40,7 @@ func CreateRefreshTokenExchangeRequest(
 	return req
 }
 
-// Execute executes the token acquisition request and returns a token response or an error
+//Execute performs the token acquisition request and returns a token response or an error
 func (req *RefreshTokenExchangeRequest) Execute() (*msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")

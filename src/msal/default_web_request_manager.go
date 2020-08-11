@@ -44,7 +44,6 @@ func createWebRequestManager(httpManager HTTPManager) requests.WebRequestManager
 	return m
 }
 
-// GetUserRealm stuff
 func (wrm *defaultWebRequestManager) GetUserRealm(authParameters *msalbase.AuthParametersInternal) (*msalbase.UserRealm, error) {
 	url := authParameters.Endpoints.GetUserRealmEndpoint(authParameters.Username)
 	httpManagerResponse, err := wrm.httpManager.Get(url, getAadHeaders(authParameters))
@@ -59,7 +58,6 @@ func (wrm *defaultWebRequestManager) GetUserRealm(authParameters *msalbase.AuthP
 	return msalbase.CreateUserRealm(httpManagerResponse.GetResponseData())
 }
 
-// GetMex stuff
 func (wrm *defaultWebRequestManager) GetMex(federationMetadataURL string) (*wstrust.MexDocument, error) {
 	httpManagerResponse, err := wrm.httpManager.Get(federationMetadataURL, nil)
 	if err != nil {
@@ -73,7 +71,6 @@ func (wrm *defaultWebRequestManager) GetMex(federationMetadataURL string) (*wstr
 	return wstrust.CreateWsTrustMexDocument(httpManagerResponse.GetResponseData())
 }
 
-// GetWsTrustResponse stuff
 func (wrm *defaultWebRequestManager) GetWsTrustResponse(
 	authParameters *msalbase.AuthParametersInternal,
 	cloudAudienceURN string,
@@ -117,7 +114,6 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(
 	return wstrust.CreateWsTrustResponse(response.GetResponseData()), nil
 }
 
-// GetAccessTokenFromSamlGrant stuff
 func (wrm *defaultWebRequestManager) GetAccessTokenFromSamlGrant(authParameters *msalbase.AuthParametersInternal, samlGrant *wstrust.SamlTokenInfo) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type": msalbase.PasswordGrant,
@@ -145,7 +141,6 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromSamlGrant(authParameters 
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// GetAccessTokenFromUsernamePassword stuff
 func (wrm *defaultWebRequestManager) GetAccessTokenFromUsernamePassword(
 	authParameters *msalbase.AuthParametersInternal) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
@@ -160,7 +155,6 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromUsernamePassword(
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// GetDeviceCodeResult stuff
 func (wrm *defaultWebRequestManager) GetDeviceCodeResult(authParameters *msalbase.AuthParametersInternal) (*msalbase.DeviceCodeResult, error) {
 	decodedQueryParams := map[string]string{}
 
@@ -185,7 +179,6 @@ func (wrm *defaultWebRequestManager) GetDeviceCodeResult(authParameters *msalbas
 	return dcResponse.ToDeviceCodeResult(authParameters.ClientID, authParameters.Scopes), nil
 }
 
-// GetAccessTokenFromDeviceCodeResult stuff
 func (wrm *defaultWebRequestManager) GetAccessTokenFromDeviceCodeResult(
 	authParameters *msalbase.AuthParametersInternal, deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
@@ -200,7 +193,6 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromDeviceCodeResult(
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// addClientIdQueryParam stuff
 func addClientIDQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
 	queryParams["client_id"] = authParameters.ClientID
 }
@@ -219,7 +211,6 @@ func addClientInfoQueryParam(queryParams map[string]string) {
 	queryParams["client_info"] = "1"
 }
 
-// addRedirectUriQueryParam stuff
 func addRedirectURIQueryParam(queryParams map[string]string, authParameters *msalbase.AuthParametersInternal) {
 	queryParams["redirect_uri"] = authParameters.Redirecturi
 }
@@ -280,7 +271,6 @@ func (wrm *defaultWebRequestManager) exchangeGrantForToken(authParameters *msalb
 	return msalbase.CreateTokenResponse(authParameters, response.GetResponseCode(), response.GetResponseData())
 }
 
-// GetAccessTokenFromAuthCode stuff
 func (wrm *defaultWebRequestManager) GetAccessTokenFromAuthCode(authParameters *msalbase.AuthParametersInternal,
 	authCode string,
 	codeVerifier string,
@@ -301,7 +291,6 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromAuthCode(authParameters *
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// GetAccessTokenFromRefreshToken stuff
 func (wrm *defaultWebRequestManager) GetAccessTokenFromRefreshToken(authParameters *msalbase.AuthParametersInternal,
 	refreshToken string, params map[string]string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
@@ -328,7 +317,6 @@ func (wrm *defaultWebRequestManager) GetAccessTokenWithClientSecret(authParamete
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// GetAccessTokenWithAssertion stuff
 func (wrm *defaultWebRequestManager) GetAccessTokenWithAssertion(authParameters *msalbase.AuthParametersInternal, assertion string) (*msalbase.TokenResponse, error) {
 	decodedQueryParams := map[string]string{
 		"grant_type":            msalbase.ClientCredentialGrant,
@@ -341,7 +329,6 @@ func (wrm *defaultWebRequestManager) GetAccessTokenWithAssertion(authParameters 
 	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
 }
 
-// GetAadinstanceDiscoveryResponse stuff
 func (wrm *defaultWebRequestManager) GetAadinstanceDiscoveryResponse(
 	authorityInfo *msalbase.AuthorityInfo) (*requests.InstanceDiscoveryResponse, error) {
 
@@ -370,7 +357,6 @@ func (wrm *defaultWebRequestManager) GetAadinstanceDiscoveryResponse(
 	return requests.CreateInstanceDiscoveryResponse(httpManagerResponse.GetResponseData())
 }
 
-// GetTenantDiscoveryResponse stuff
 func (wrm *defaultWebRequestManager) GetTenantDiscoveryResponse(
 	openIDConfigurationEndpoint string) (*requests.TenantDiscoveryResponse, error) {
 
