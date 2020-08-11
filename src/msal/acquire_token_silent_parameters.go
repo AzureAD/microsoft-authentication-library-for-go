@@ -11,7 +11,7 @@ import (
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
 	commonParameters *acquireTokenCommonParameters
-	account          AccountInterfacer
+	account          AccountProvider
 	requestType      requests.RefreshTokenReqType
 	clientCredential *msalbase.ClientCredential
 }
@@ -28,7 +28,7 @@ func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentPara
 
 // CreateAcquireTokenSilentParametersWithAccount creates an AcquireTokenSilentParameters instance from an account.
 // This account can be pulled from the cache.
-func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account AccountInterfacer) *AcquireTokenSilentParameters {
+func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account AccountProvider) *AcquireTokenSilentParameters {
 	p := &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          account,

@@ -98,7 +98,7 @@ func TestGetAllAccounts(t *testing.T) {
 	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	expectedAccounts := []*msalbase.Account{testAccOne, testAccTwo}
-	returnedAccounts := []AccountInterfacer{testAccOne, testAccTwo}
+	returnedAccounts := []AccountProvider{testAccOne, testAccTwo}
 	cacheManager.On("GetAllAccounts").Return(expectedAccounts)
 	actualAccounts := testPCA.GetAccounts()
 	if !reflect.DeepEqual(actualAccounts, returnedAccounts) {
@@ -111,7 +111,7 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 	testAuthParams.Endpoints = testAuthorityEndpoints
 	testAuthParams.Scopes = tokenCommonParams.scopes
 	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeDeviceCode
-	callback := func(dcr DeviceCodeResultInterfacer) {}
+	callback := func(dcr DeviceCodeResultProvider) {}
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
 	defer cancelFunc()
 	devCodeParams := &AcquireTokenDeviceCodeParameters{

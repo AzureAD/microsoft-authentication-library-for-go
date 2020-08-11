@@ -12,7 +12,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-func deviceCodeCallback(deviceCodeResult msalgo.DeviceCodeResultInterfacer) {
+func deviceCodeCallback(deviceCodeResult msalgo.DeviceCodeResultProvider) {
 	log.Infof(deviceCodeResult.GetMessage())
 }
 
@@ -21,7 +21,7 @@ func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
 	defer cancelFunc()
 	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
-	resultChannel := make(chan msalgo.AuthenticationResultInterfacer)
+	resultChannel := make(chan msalgo.AuthenticationResultProvider)
 	errChannel := make(chan error)
 	go func() {
 		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
@@ -43,7 +43,7 @@ func acquireTokenDeviceCode() {
 		log.Fatal(err)
 	}
 	publicClientApp.SetCacheAccessor(cacheAccessor)
-	var userAccount msalgo.AccountInterfacer
+	var userAccount msalgo.AccountProvider
 	accounts := publicClientApp.GetAccounts()
 	for _, account := range accounts {
 		if account.GetUsername() == config.Username {

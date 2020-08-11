@@ -5,14 +5,14 @@ package msalbase
 
 //StorageTokenResponse mimics a token response that was pulled from the cache
 type StorageTokenResponse struct {
-	accessToken  accessTokenInterfacer
+	accessToken  accessTokenProvider
 	RefreshToken Credential
 	idToken      Credential
 	account      *Account
 }
 
 //CreateStorageTokenResponse creates a token response from cache
-func CreateStorageTokenResponse(accessToken accessTokenInterfacer, refreshToken Credential, idToken Credential, account *Account) *StorageTokenResponse {
+func CreateStorageTokenResponse(accessToken accessTokenProvider, refreshToken Credential, idToken Credential, account *Account) *StorageTokenResponse {
 	tr := &StorageTokenResponse{accessToken, refreshToken, idToken, account}
 	return tr
 }

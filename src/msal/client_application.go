@@ -41,7 +41,7 @@ func (client *clientApplication) createAuthCodeURL(authCodeURLParameters *Author
 }
 
 func (client *clientApplication) acquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultInterfacer, error) {
+	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	silentParameters.augmentAuthenticationParameters(authParams)
 	if client.cacheAccessor != nil {
@@ -74,7 +74,7 @@ func (client *clientApplication) acquireTokenSilent(
 }
 
 func (client *clientApplication) acquireTokenByAuthCode(
-	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultInterfacer, error) {
+	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
@@ -88,7 +88,7 @@ func (client *clientApplication) acquireTokenByAuthCode(
 
 func (client *clientApplication) executeTokenRequestWithoutCacheWrite(
 	req requests.TokenRequester,
-	authParams *msalbase.AuthParametersInternal) (AuthenticationResultInterfacer, error) {
+	authParams *msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
 	tokenResponse, err := req.Execute()
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (client *clientApplication) executeTokenRequestWithoutCacheWrite(
 
 func (client *clientApplication) executeTokenRequestWithCacheWrite(
 	req requests.TokenRequester,
-	authParams *msalbase.AuthParametersInternal) (AuthenticationResultInterfacer, error) {
+	authParams *msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
 	tokenResponse, err := req.Execute()
 	if err != nil {
 		return nil, err
@@ -114,8 +114,8 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(
 	return msalbase.CreateAuthenticationResult(tokenResponse, account)
 }
 
-func (client *clientApplication) getAccounts() []AccountInterfacer {
-	returnedAccounts := []AccountInterfacer{}
+func (client *clientApplication) getAccounts() []AccountProvider {
+	returnedAccounts := []AccountProvider{}
 	if client.cacheAccessor != nil {
 		client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
 	}

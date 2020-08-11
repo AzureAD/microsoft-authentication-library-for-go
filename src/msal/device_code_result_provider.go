@@ -5,9 +5,9 @@ package msalgo
 
 import "time"
 
-// DeviceCodeResultInterfacer is an interface for DeviceCodeResult that can be returned to users.
+// DeviceCodeResultProvider is an interface for DeviceCodeResult that can be returned to users.
 // You can use these functions to show the user different parameters of the device code result.
-type DeviceCodeResultInterfacer interface {
+type DeviceCodeResultProvider interface {
 	GetMessage() string
 	String() string
 	GetUserCode() string

@@ -19,7 +19,7 @@ type ConfidentialClientApplication struct {
 
 //CreateConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
 func CreateConfidentialClientApplication(
-	clientID string, authority string, clientCredential ClientCredentialInterfacer,
+	clientID string, authority string, clientCredential ClientCredentialProvider,
 ) (*ConfidentialClientApplication, error) {
 	cred, err := createInternalClientCredential(clientCredential)
 	if err != nil {
@@ -33,7 +33,7 @@ func CreateConfidentialClientApplication(
 }
 
 //This is used to convert the user-facing client credential interface to the internal representation of a client credential
-func createInternalClientCredential(interfaceCred ClientCredentialInterfacer) (*msalbase.ClientCredential, error) {
+func createInternalClientCredential(interfaceCred ClientCredentialProvider) (*msalbase.ClientCredential, error) {
 	if interfaceCred.GetCredentialType() == msalbase.ClientCredentialSecret {
 		return msalbase.CreateClientCredentialFromSecret(interfaceCred.GetSecret())
 
@@ -64,7 +64,7 @@ func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameter
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token
 // Users need to create an AcquireTokenSilentParameters instance and pass it in.
 func (cca *ConfidentialClientApplication) AcquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultInterfacer, error) {
+	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
 	silentParameters.requestType = requests.RefreshTokenConfidential
 	silentParameters.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenSilent(silentParameters)
@@ -73,7 +73,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenSilent(
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // Users need to create an AcquireTokenAuthCodeParameters instance and pass it in.
 func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
-	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultInterfacer, error) {
+	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
 	authCodeParams.requestType = requests.AuthCodeConfidential
 	authCodeParams.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
@@ -83,7 +83,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 //AcquireTokenByClientCredential acquires a security token from the authority, using the client credentials grant.
 // Users need to create an AcquireTokenClientCredentialParameters instance and pass it in.
 func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
-	clientCredParams *AcquireTokenClientCredentialParameters) (AuthenticationResultInterfacer, error) {
+	clientCredParams *AcquireTokenClientCredentialParameters) (AuthenticationResultProvider, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	clientCredParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
@@ -91,6 +91,6 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
 }
 
 //GetAccounts gets all the accounts in the cache.
-func (cca *ConfidentialClientApplication) GetAccounts() []AccountInterfacer {
+func (cca *ConfidentialClientApplication) GetAccounts() []AccountProvider {
 	return cca.clientApplication.getAccounts()
 }
