@@ -7,10 +7,8 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"net"
 	"net/http"
 	"os"
-	"time"
 
 	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
 	log "github.com/sirupsen/logrus"
@@ -20,21 +18,16 @@ var (
 	accessToken                string
 	confidentialConfig         = createConfig("confidential_config.json")
 	confidentialClientAuthCode *msalgo.ConfidentialClientApplication
-	graphURL                   = "http://localhost:3000/graph"
-	graphEndpoint              = "https://graph.microsoft.com/v1.0/users"
 )
 
 func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
-	if accessToken != "" {
-		http.Redirect(w, r, graphURL, http.StatusMovedPermanently)
-	}
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(
 		confidentialConfig.ClientID,
 		confidentialConfig.RedirectURI,
 		confidentialConfig.Scopes,
-		confidentialConfig.CodeChallenge,
 	)
+	authCodeURLParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeURLParams.State = confidentialConfig.State
 	authURL, err := confidentialClientAuthCode.CreateAuthCodeURL(authCodeURLParams)
 	if err != nil {
@@ -63,8 +56,8 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(
 		confidentialConfig.Scopes,
 		confidentialConfig.RedirectURI,
-		confidentialConfig.CodeChallenge,
 	)
+	authCodeParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeParams.Code = code
 	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
@@ -74,35 +67,6 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Access token is "+result.GetAccessToken())
 	accessToken = result.GetAccessToken()
 	//http.Redirect(w, r, graphURL, http.StatusMovedPermanently)
-}
-
-func callGraph(w http.ResponseWriter, r *http.Request) {
-	tr := &http.Transport{
-		DialContext: (&net.Dialer{
-			Timeout:   30 * time.Second,
-			KeepAlive: 30 * time.Second,
-			DualStack: false,
-		}).DialContext,
-	}
-	client := &http.Client{}
-	client.Transport = tr
-	req, err := http.NewRequest("GET", graphEndpoint, nil)
-	if err != nil {
-		log.Fatal(err)
-	}
-	bearer := fmt.Sprintf("Bearer %s", accessToken)
-	req.Header.Add("Authorization", bearer)
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Fprintf(w, string(body))
-	return
 }
 
 func acquireByAuthorizationCodeConfidential() {
@@ -143,6 +107,5 @@ func acquireByAuthorizationCodeConfidential() {
 	http.HandleFunc("/", redirectToURLConfidential)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getTokenConfidential)
-	http.HandleFunc("/graph", callGraph)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }

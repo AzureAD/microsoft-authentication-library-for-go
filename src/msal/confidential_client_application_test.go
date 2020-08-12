@@ -8,6 +8,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+	"github.com/stretchr/testify/mock"
 )
 
 func TestAcquireTokenByClientCredential(t *testing.T) {
@@ -22,15 +23,11 @@ func TestAcquireTokenByClientCredential(t *testing.T) {
 		},
 		clientCredential: cred,
 	}
-	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
-	testAuthParams.Endpoints = testAuthorityEndpoints
-	testAuthParams.Scopes = tokenCommonParams.scopes
-	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeClientCredentials
 	testWrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
-	testWrm.On("GetAccessTokenWithClientSecret", testAuthParams, "client_secret").Return(actualTokenResp, nil)
-	testCacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
+	testWrm.On("GetAccessTokenWithClientSecret", mock.AnythingOfType("*msalbase.AuthParametersInternal"), "client_secret").Return(actualTokenResp, nil)
+	testCacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
 	clientCredParams := &AcquireTokenClientCredentialParameters{tokenCommonParams}
 	_, err := cca.AcquireTokenByClientCredential(clientCredParams)
 	if err != nil {

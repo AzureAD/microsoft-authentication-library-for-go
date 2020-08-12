@@ -9,8 +9,8 @@ import (
 	"strings"
 )
 
-//IDToken consists of all the information used to validate a user
-//https://docs.microsoft.com/en-us/azure/active-directory/develop/id-tokens
+// IDToken consists of all the information used to validate a user
+// https://docs.microsoft.com/azure/active-directory/develop/id-tokens
 type IDToken struct {
 	PreferredUsername string `json:"preferred_username,omitempty"`
 	GivenName         string `json:"given_name,omitempty"`
@@ -31,7 +31,7 @@ type IDToken struct {
 	RawToken          string
 }
 
-//CreateIDToken creates an ID token instance from a JWT
+// CreateIDToken creates an ID token instance from a JWT
 func CreateIDToken(jwt string) (*IDToken, error) {
 	jwtArr := strings.Split(jwt, ".")
 	if len(jwtArr) < 2 {
@@ -51,7 +51,7 @@ func CreateIDToken(jwt string) (*IDToken, error) {
 	return idToken, nil
 }
 
-//GetLocalAccountID extracts an account's local account ID from an ID token
+// GetLocalAccountID extracts an account's local account ID from an ID token
 func (idToken *IDToken) GetLocalAccountID() string {
 	if idToken.Oid != "" {
 		return idToken.Oid

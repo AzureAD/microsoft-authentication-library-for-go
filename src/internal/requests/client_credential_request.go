@@ -37,6 +37,9 @@ func (req *ClientCredentialRequest) Execute() (*msalbase.TokenResponse, error) {
 			return nil, err
 		}
 		tokenResponse, err = req.webRequestManager.GetAccessTokenWithAssertion(req.authParameters, jwt)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err != nil {
 		return nil, err

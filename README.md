@@ -4,7 +4,7 @@ The MSAL library for Go is part of the [Microsoft identity platform for develope
 
 Quick links:
 
-| [Conceptual documentation](https://aka.ms/msalnet) | [Getting Started](https://docs.microsoft.com/en-us/azure/active-directory/develop/#quickstarts) | [Sample Code](https://aka.ms/aaddevsamplesv2) | [Library Reference](https://docs.microsoft.com/dotnet/api/microsoft.identity.client?view=azure-go) | [Support](README.md#community-help-and-support) |
+| [Conceptual documentation](https://aka.ms/msalnet) | [Getting Started](https://docs.microsoft.com/azure/active-directory/develop/#quickstarts) | [Sample Code](https://aka.ms/aaddevsamplesv2) | [Library Reference](https://docs.microsoft.com/dotnet/api/microsoft.identity.client?view=azure-go) | [Support](README.md#community-help-and-support) |
 | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------- |
 
 ## packages
@@ -33,7 +33,7 @@ MSAL Go is in early development
 
 ## Using Go
 
-- The conceptual documentation is currently available from the [Microsoft identity platform documentation](https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-overview) and our [Wiki pages](https://aka.ms/msal-go)
+- The conceptual documentation is currently available from the [Microsoft identity platform documentation](https://docs.microsoft.com/azure/active-directory/develop/msal-overview) and our [Wiki pages](https://aka.ms/msal-go)
 
 TBD
 

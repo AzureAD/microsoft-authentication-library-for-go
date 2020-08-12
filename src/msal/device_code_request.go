@@ -28,7 +28,7 @@ func createDeviceCodeRequest(cancelCtx context.Context,
 	return req
 }
 
-//Execute performs the token acquisition request and returns a token response or an error
+// Execute performs the token acquisition request and returns a token response or an error
 func (req *deviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	// Resolve authority endpoints
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(req.webRequestManager)

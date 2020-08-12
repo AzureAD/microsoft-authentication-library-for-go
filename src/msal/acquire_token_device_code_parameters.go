@@ -17,9 +17,11 @@ type AcquireTokenDeviceCodeParameters struct {
 }
 
 // CreateAcquireTokenDeviceCodeParameters creates an AcquireTokenDeviceCodeParameters instance.
-// Pass in the scopes required, a context object that can be use to signal when the request should be canceled,
-// as well as a function that can take in a DeviceCodeResultProvider as a parameter. This function should
-// be doing something with this DeviceCodeProvider so that the user can enter the device code at the URL.
+// This flow is designed for devices that do not have access to a browser or have input constraints.
+// The authorization server issues a DeviceCode object with a verification code, an end-user code, and the end-user verification URI.
+// The DeviceCode object is provided through the DeviceCodeResultProvider callback, and the end-user should be instructed to use
+// another device to navigate to the verification URI to input credentials. Since the client cannot receive incoming requests,
+// MSAL polls the authorization server repeatedly until the end-user completes input of credentials. Use cancelCtx to cancel the polling.
 func CreateAcquireTokenDeviceCodeParameters(cancelCtx context.Context, scopes []string,
 	deviceCodeCallback func(DeviceCodeResultProvider)) *AcquireTokenDeviceCodeParameters {
 	p := &AcquireTokenDeviceCodeParameters{

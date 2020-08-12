@@ -79,7 +79,7 @@ func (client *clientApplication) acquireTokenByAuthCode(
 	authCodeParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
 	req.Code = authCodeParams.Code
-	req.CodeChallenge = authCodeParams.codeChallenge
+	req.CodeChallenge = authCodeParams.CodeChallenge
 	if req.RequestType == requests.AuthCodeConfidential {
 		req.ClientCredential = authCodeParams.clientCredential
 	}

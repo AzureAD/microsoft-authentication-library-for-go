@@ -3,6 +3,8 @@
 
 package msalbase
 
+import "github.com/google/uuid"
+
 //AuthorizationType represents the type of token flow
 type AuthorizationType int
 
@@ -34,6 +36,7 @@ type AuthParametersInternal struct {
 
 //CreateAuthParametersInternal creates an authorization parameters object
 func CreateAuthParametersInternal(clientID string, authorityInfo *AuthorityInfo) *AuthParametersInternal {
-	p := &AuthParametersInternal{ClientID: clientID, AuthorityInfo: authorityInfo}
+	corrID := uuid.New().String()
+	p := &AuthParametersInternal{ClientID: clientID, AuthorityInfo: authorityInfo, CorrelationID: corrID}
 	return p
 }

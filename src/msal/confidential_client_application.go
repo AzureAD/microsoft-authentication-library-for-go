@@ -8,16 +8,16 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
-//ConfidentialClientApplication is a representation of confidential client applications.
-//These are apps that run on servers (web apps, web API apps, or even service/daemon apps).
-// They're considered difficult to access, and for that reason capable of keeping an application secret.
-//For more information, visit https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-client-applications.
+// ConfidentialClientApplication is a representation of confidential client applications.
+// These are apps that run on servers (web apps, web API apps, or even service/daemon apps),
+// and are capable of safely storing an application secret.
+// For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type ConfidentialClientApplication struct {
 	clientApplication *clientApplication
 	clientCredential  *msalbase.ClientCredential
 }
 
-//CreateConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
+// CreateConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
 func CreateConfidentialClientApplication(
 	clientID string, authority string, clientCredential ClientCredentialProvider,
 ) (*ConfidentialClientApplication, error) {
@@ -32,7 +32,7 @@ func CreateConfidentialClientApplication(
 	}, nil
 }
 
-//This is used to convert the user-facing client credential interface to the internal representation of a client credential
+// This is used to convert the user-facing client credential interface to the internal representation of a client credential
 func createInternalClientCredential(interfaceCred ClientCredentialProvider) (*msalbase.ClientCredential, error) {
 	if interfaceCred.GetCredentialType() == msalbase.ClientCredentialSecret {
 		return msalbase.CreateClientCredentialFromSecret(interfaceCred.GetSecret())
@@ -45,13 +45,13 @@ func createInternalClientCredential(interfaceCred ClientCredentialProvider) (*ms
 	return msalbase.CreateClientCredentialFromAssertion(interfaceCred.GetAssertion().ClientAssertionJWT)
 }
 
-//SetHTTPManager allows users to use their own implementation of HTTPManager.
+// SetHTTPManager allows users to use their own implementation of HTTPManager.
 func (cca *ConfidentialClientApplication) SetHTTPManager(httpManager HTTPManager) {
 	webRequestManager := createWebRequestManager(httpManager)
 	cca.clientApplication.webRequestManager = webRequestManager
 }
 
-//SetCacheAccessor allows users to use an implementation of CacheAccessor to handle cache persistence.
+// SetCacheAccessor allows users to use an implementation of CacheAccessor to handle cache persistence.
 func (cca *ConfidentialClientApplication) SetCacheAccessor(accessor CacheAccessor) {
 	cca.clientApplication.cacheAccessor = accessor
 }
@@ -80,7 +80,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 
 }
 
-//AcquireTokenByClientCredential acquires a security token from the authority, using the client credentials grant.
+// AcquireTokenByClientCredential acquires a security token from the authority, using the client credentials grant.
 // Users need to create an AcquireTokenClientCredentialParameters instance and pass it in.
 func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
 	clientCredParams *AcquireTokenClientCredentialParameters) (AuthenticationResultProvider, error) {
@@ -90,7 +90,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
-//GetAccounts gets all the accounts in the cache.
+// GetAccounts gets all the accounts in the token cache.
 func (cca *ConfidentialClientApplication) GetAccounts() []AccountProvider {
 	return cca.clientApplication.getAccounts()
 }

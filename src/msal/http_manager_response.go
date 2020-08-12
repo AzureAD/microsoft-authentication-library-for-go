@@ -3,7 +3,7 @@
 
 package msalgo
 
-//HTTPManagerResponse is an interface representing MSAL's HTTP Response object.
+// HTTPManagerResponse is an interface representing MSAL's HTTP Response object.
 type HTTPManagerResponse interface {
 	GetResponseCode() int
 	GetResponseData() string

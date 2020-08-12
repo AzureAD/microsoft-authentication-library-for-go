@@ -9,7 +9,7 @@ import (
 
 // PublicClientApplication is a representation of public client applications.
 // These are apps that run on devices or desktop computers or in a web browser and are not trusted to safely keep application secrets.
-// For more information, visit https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-client-applications.
+// For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications.
 type PublicClientApplication struct {
 	clientApplication *clientApplication
 }
@@ -76,7 +76,7 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(
 	return pca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 }
 
-//GetAccounts gets all the accounts in the cache.
+// GetAccounts gets all the accounts in the token cache.
 func (pca *PublicClientApplication) GetAccounts() []AccountProvider {
 	return pca.clientApplication.getAccounts()
 }

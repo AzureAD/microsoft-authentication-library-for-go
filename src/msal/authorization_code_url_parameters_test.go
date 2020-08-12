@@ -15,7 +15,7 @@ var (
 	testURLAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
 	testURLAuthParams       = msalbase.CreateAuthParametersInternal("clientID", testURLAuthorityInfo)
 	urlWRM                  = new(requests.MockWebRequestManager)
-	authCodeURLParams       = CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid", "user.read"}, "codeChallenge")
+	authCodeURLParams       = CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid", "user.read"})
 )
 
 func TestGetSeparatedScopes(t *testing.T) {
@@ -27,6 +27,7 @@ func TestGetSeparatedScopes(t *testing.T) {
 }
 
 func TestCreateURL(t *testing.T) {
+	authCodeURLParams.CodeChallenge = "codeChallenge"
 	tdr := &requests.TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
 		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",

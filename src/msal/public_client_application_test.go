@@ -11,6 +11,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+	"github.com/stretchr/testify/mock"
 )
 
 var tokenCommonParams = &acquireTokenCommonParameters{
@@ -34,7 +35,8 @@ var testPCA = &PublicClientApplication{
 }
 
 func TestCreateAuthCodeURL(t *testing.T) {
-	authCodeURLParams := CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid"}, "codeChallenge")
+	authCodeURLParams := CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid"})
+	authCodeURLParams.CodeChallenge = "codeChallenge"
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	url, err := testPCA.CreateAuthCodeURL(authCodeURLParams)
@@ -49,18 +51,14 @@ func TestCreateAuthCodeURL(t *testing.T) {
 }
 
 func TestAcquireTokenByAuthCode(t *testing.T) {
-	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
-	testAuthParams.Endpoints = testAuthorityEndpoints
-	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
-	testAuthParams.Scopes = tokenCommonParams.scopes
 	authCodeParams := &AcquireTokenAuthCodeParameters{
 		commonParameters: tokenCommonParams,
 	}
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetAccessTokenFromAuthCode", testAuthParams, "", "", make(map[string]string)).Return(actualTokenResp, nil)
-	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
+	wrm.On("GetAccessTokenFromAuthCode", mock.AnythingOfType("*msalbase.AuthParametersInternal"), "", "", make(map[string]string)).Return(actualTokenResp, nil)
+	cacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
 	_, err := testPCA.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
@@ -68,12 +66,6 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 }
 
 func TestAcquireTokenByUsernamePassword(t *testing.T) {
-	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
-	testAuthParams.Endpoints = testAuthorityEndpoints
-	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeUsernamePassword
-	testAuthParams.Scopes = tokenCommonParams.scopes
-	testAuthParams.Username = "username"
-	testAuthParams.Password = "password"
 	userPassParams := &AcquireTokenUsernamePasswordParameters{
 		commonParameters: tokenCommonParams,
 		username:         "username",
@@ -84,10 +76,10 @@ func TestAcquireTokenByUsernamePassword(t *testing.T) {
 	}
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
-	wrm.On("GetUserRealm", testAuthParams).Return(managedUserRealm, nil)
+	wrm.On("GetUserRealm", mock.AnythingOfType("*msalbase.AuthParametersInternal")).Return(managedUserRealm, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetAccessTokenFromUsernamePassword", testAuthParams).Return(actualTokenResp, nil)
-	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
+	wrm.On("GetAccessTokenFromUsernamePassword", mock.AnythingOfType("*msalbase.AuthParametersInternal")).Return(actualTokenResp, nil)
+	cacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
 	_, err := testPCA.AcquireTokenByUsernamePassword(userPassParams)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
@@ -107,10 +99,6 @@ func TestGetAllAccounts(t *testing.T) {
 }
 
 func TestAcquireTokenByDeviceCode(t *testing.T) {
-	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
-	testAuthParams.Endpoints = testAuthorityEndpoints
-	testAuthParams.Scopes = tokenCommonParams.scopes
-	testAuthParams.AuthorizationType = msalbase.AuthorizationTypeDeviceCode
 	callback := func(dcr DeviceCodeResultProvider) {}
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
 	defer cancelFunc()
@@ -123,10 +111,10 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
 	actualTokenResp := &msalbase.TokenResponse{}
 	devCodeResp := &requests.DeviceCodeResponse{ExpiresIn: 10}
-	devCodeResult := devCodeResp.ToDeviceCodeResult("clientID", testAuthParams.Scopes)
-	wrm.On("GetDeviceCodeResult", testAuthParams).Return(devCodeResult, nil)
-	wrm.On("GetAccessTokenFromDeviceCodeResult", testAuthParams, devCodeResult).Return(actualTokenResp, nil)
-	cacheManager.On("CacheTokenResponse", testAuthParams, actualTokenResp).Return(testAcc, nil)
+	devCodeResult := devCodeResp.ToDeviceCodeResult("clientID", tokenCommonParams.scopes)
+	wrm.On("GetDeviceCodeResult", mock.AnythingOfType("*msalbase.AuthParametersInternal")).Return(devCodeResult, nil)
+	wrm.On("GetAccessTokenFromDeviceCodeResult", mock.AnythingOfType("*msalbase.AuthParametersInternal"), devCodeResult).Return(actualTokenResp, nil)
+	cacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
 	_, err := testPCA.AcquireTokenByDeviceCode(devCodeParams)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)

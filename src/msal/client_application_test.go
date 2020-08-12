@@ -9,6 +9,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
+	"github.com/stretchr/testify/mock"
 )
 
 var (
@@ -34,27 +35,16 @@ func TestAcquireTokenSilent(t *testing.T) {
 		commonParameters: tokenCommonParams,
 		account:          account,
 	}
-	authParams := &msalbase.AuthParametersInternal{
-		AuthorityInfo:     testAuthorityInfo,
-		ClientID:          "clientID",
-		Scopes:            []string{"openid"},
-		AuthorizationType: msalbase.AuthorizationTypeRefreshTokenExchange,
-	}
 	at := new(msalbase.MockAccessToken)
 	rt := new(msalbase.MockCredential)
 	id := new(msalbase.MockCredential)
 	storageToken := msalbase.CreateStorageTokenResponse(at, rt, id, account)
-	cacheManager.On("TryReadCache", authParams, wrm).Return(storageToken, nil)
-	wrmauthParams := &msalbase.AuthParametersInternal{
-		AuthorityInfo:     testAuthorityInfo,
-		ClientID:          "clientID",
-		Scopes:            []string{"openid"},
-		AuthorizationType: msalbase.AuthorizationTypeRefreshTokenExchange,
-		Endpoints:         testAuthorityEndpoints,
-	}
+	cacheManager.On("TryReadCache", mock.AnythingOfType("*msalbase.AuthParametersInternal"), wrm).Return(storageToken, nil)
 	tokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetAccessTokenFromRefreshToken", wrmauthParams, "secret", make(map[string]string)).Return(tokenResp, nil)
-	cacheManager.On("CacheTokenResponse", wrmauthParams, tokenResp).Return(testAcc, nil)
+	wrm.On("GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
+	wrm.On("GetAccessTokenFromRefreshToken", mock.AnythingOfType("*msalbase.AuthParametersInternal"), "secret", make(map[string]string)).Return(tokenResp, nil)
+	cacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), tokenResp).Return(testAcc, nil)
 	at.On("GetSecret").Return("secret")
 	at.On("GetExpiresOn").Return("0")
 	at.On("GetScopes").Return("openid")
