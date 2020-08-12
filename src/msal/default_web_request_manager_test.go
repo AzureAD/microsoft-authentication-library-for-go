@@ -4,7 +4,6 @@
 package msalgo
 
 import (
-	"fmt"
 	"reflect"
 	"runtime"
 	"sort"
@@ -18,14 +17,14 @@ import (
 )
 
 var testHeaders = map[string]string{
-	"x-client-SKU":             fmt.Sprintf("MSAL.golang.%s", runtime.GOOS),
-	"x-client-OS":              msalbase.GetOSVersion(),
+	"x-client-SKU":             "MSAL.Go",
+	"x-client-OS":              runtime.GOOS,
 	"client-request-id":        "",
 	"return-client-request-id": "false",
 }
 var testHeadersWURLUTF8 = map[string]string{
-	"x-client-SKU":             fmt.Sprintf("MSAL.golang.%s", runtime.GOOS),
-	"x-client-OS":              msalbase.GetOSVersion(),
+	"x-client-SKU":             "MSAL.Go",
+	"x-client-OS":              runtime.GOOS,
 	"client-request-id":        "",
 	"return-client-request-id": "false",
 	"Content-Type":             "application/x-www-form-urlencoded; charset=utf-8",

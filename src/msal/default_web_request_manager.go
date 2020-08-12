@@ -231,11 +231,11 @@ func addContentTypeHeader(headers map[string]string, contentType contentType) {
 func getAadHeaders(authParameters *msalbase.AuthParametersInternal) map[string]string {
 	headers := make(map[string]string)
 
-	headers["x-client-SKU"] = fmt.Sprintf("MSAL.golang.%s", runtime.GOOS)
-	headers["x-client-OS"] = msalbase.GetOSVersion()
+	headers[msalbase.ProductHeaderName] = msalbase.ProductHeaderValue
+	headers[msalbase.OSHeaderName] = runtime.GOOS
 	// headers["x-client-Ver"] = todo: client version here;
-	headers["client-request-id"] = authParameters.CorrelationID
-	headers["return-client-request-id"] = "false"
+	headers[msalbase.CorrelationIDHeaderName] = authParameters.CorrelationID
+	headers[msalbase.ReqCorrelationIDInResponseHeaderName] = "false"
 	return headers
 }
 

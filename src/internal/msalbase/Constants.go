@@ -72,4 +72,11 @@ const (
 
 	SoapActionWSTrust2005 = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
 	SoapActionDefault     = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue"
+
+	//HTTP Headers
+	ProductHeaderName                    = "x-client-SKU"
+	ProductHeaderValue                   = "MSAL.Go"
+	OSHeaderName                         = "x-client-OS"
+	CorrelationIDHeaderName              = "client-request-id"
+	ReqCorrelationIDInResponseHeaderName = "return-client-request-id"
 )
