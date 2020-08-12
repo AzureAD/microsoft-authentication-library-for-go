@@ -12,7 +12,7 @@ import (
 
 func TestCreateAcquireTokenCommonParameters(t *testing.T) {
 	expectedScopes := []string{"user.read"}
-	params := createAcquireTokenCommonParameters(expectedScopes)
+	params := createAcquireTokenCommonParameters([]string{"User.Read"})
 	if params == nil {
 		t.Error("Parameters cannot be nil.")
 	}
