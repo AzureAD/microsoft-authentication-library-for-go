@@ -21,33 +21,36 @@ func createAuthorityEndpointCacheEntry(endpoints *msalbase.AuthorityEndpoints) *
 	return &authorityEndpointCacheEntry{endpoints, make(map[string]bool)}
 }
 
-// package global static
 var endpointCacheEntries = map[string]*authorityEndpointCacheEntry{}
 
-type IAuthorityEndpointResolutionManager interface {
-	ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error)
-}
-
+//AuthorityEndpointResolutionManager handles getting the correct endpoints from the authority for auth and token acquisition
 type AuthorityEndpointResolutionManager struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 }
 
-func CreateAuthorityEndpointResolutionManager(webRequestManager IWebRequestManager) IAuthorityEndpointResolutionManager {
+//CreateAuthorityEndpointResolutionManager creates a AuthorityEndpointResolutionManager instance
+func CreateAuthorityEndpointResolutionManager(webRequestManager WebRequestManager) *AuthorityEndpointResolutionManager {
 	m := &AuthorityEndpointResolutionManager{webRequestManager}
 	return m
 }
 
-func getAdfsDomainFromUpn(userPrincipalName string) string {
-	// todo: func should return error so we can handle not having a @ in the string...
-	return strings.Split(userPrincipalName, "@")[1]
+func getAdfsDomainFromUpn(userPrincipalName string) (string, error) {
+	parts := strings.Split(userPrincipalName, "@")
+	if len(parts) < 2 {
+		return "", errors.New("no @ present in user principal name")
+	}
+	return parts[1], nil
 }
 
 func (m *AuthorityEndpointResolutionManager) tryGetCachedEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) *msalbase.AuthorityEndpoints {
 
 	if cacheEntry, ok := endpointCacheEntries[authorityInfo.CanonicalAuthorityURI]; ok {
 		if authorityInfo.AuthorityType == msalbase.ADFS {
-			if _, ok := cacheEntry.ValidForDomainsInList[getAdfsDomainFromUpn(userPrincipalName)]; ok {
-				return cacheEntry.Endpoints
+			domain, err := getAdfsDomainFromUpn(userPrincipalName)
+			if err == nil {
+				if _, ok := cacheEntry.ValidForDomainsInList[domain]; ok {
+					return cacheEntry.Endpoints
+				}
 			}
 		} else {
 			return cacheEntry.Endpoints
@@ -67,13 +70,16 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo *m
 				updatedCacheEntry.ValidForDomainsInList[k] = true
 			}
 		}
-
-		updatedCacheEntry.ValidForDomainsInList[getAdfsDomainFromUpn(userPrincipalName)] = true
+		domain, err := getAdfsDomainFromUpn(userPrincipalName)
+		if err == nil {
+			updatedCacheEntry.ValidForDomainsInList[domain] = true
+		}
 	}
 
 	endpointCacheEntries[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
+//ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
 func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (*msalbase.AuthorityEndpoints, error) {
 
 	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {
@@ -103,13 +109,13 @@ func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo *msa
 		return nil, err
 	}
 
-	if !tenantDiscoveryResponse.HasAuthorizationEndpoint() {
+	if !tenantDiscoveryResponse.hasAuthorizationEndpoint() {
 		return nil, errors.New("authorize endpoint was not found in the openid configuration")
 	}
-	if !tenantDiscoveryResponse.HasTokenEndpoint() {
+	if !tenantDiscoveryResponse.hasTokenEndpoint() {
 		return nil, errors.New("token endpoint was not found in the openid configuration")
 	}
-	if !tenantDiscoveryResponse.HasIssuer() {
+	if !tenantDiscoveryResponse.hasIssuer() {
 		return nil, errors.New("issuer was not found in the openid configuration")
 	}
 

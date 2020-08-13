@@ -5,19 +5,22 @@ package requests
 
 import "github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 
+//ClientCredentialRequest stores the values required to acquire a token from the authority using a client credentials grant
 type ClientCredentialRequest struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 	authParameters    *msalbase.AuthParametersInternal
 	clientCredential  *msalbase.ClientCredential
 }
 
+//CreateClientCredentialRequest creates an instance of ClientCredentialRequest
 func CreateClientCredentialRequest(
-	wrm IWebRequestManager,
+	wrm WebRequestManager,
 	authParams *msalbase.AuthParametersInternal,
 	clientCred *msalbase.ClientCredential) *ClientCredentialRequest {
 	return &ClientCredentialRequest{wrm, authParams, clientCred}
 }
 
+//Execute performs the token acquisition request and returns a token response or an error
 func (req *ClientCredentialRequest) Execute() (*msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
@@ -34,6 +37,9 @@ func (req *ClientCredentialRequest) Execute() (*msalbase.TokenResponse, error) {
 			return nil, err
 		}
 		tokenResponse, err = req.webRequestManager.GetAccessTokenWithAssertion(req.authParameters, jwt)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err != nil {
 		return nil, err

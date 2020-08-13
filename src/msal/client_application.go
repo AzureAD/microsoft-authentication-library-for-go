@@ -14,7 +14,7 @@ import (
 )
 
 type clientApplication struct {
-	webRequestManager           requests.IWebRequestManager
+	webRequestManager           requests.WebRequestManager
 	clientApplicationParameters *clientApplicationParameters
 	cacheContext                *CacheContext
 	cacheAccessor               CacheAccessor
@@ -22,9 +22,9 @@ type clientApplication struct {
 
 func createClientApplication(clientID string, authority string) *clientApplication {
 	params := createClientApplicationParameters(clientID)
-	params.SetAadAuthority(authority)
-	httpManager := CreateHTTPManager()
-	webRequestManager := CreateWebRequestManager(httpManager)
+	params.setAadAuthority(authority)
+	httpManager := createHTTPManager()
+	webRequestManager := createWebRequestManager(httpManager)
 	storageManager := tokencache.CreateStorageManager()
 	cacheManager := tokencache.CreateCacheManager(storageManager)
 	cacheContext := &CacheContext{cacheManager}
@@ -37,11 +37,11 @@ func createClientApplication(clientID string, authority string) *clientApplicati
 }
 
 func (client *clientApplication) createAuthCodeURL(authCodeURLParameters *AuthorizationCodeURLParameters) (string, error) {
-	return authCodeURLParameters.CreateURL(client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
+	return authCodeURLParameters.createURL(client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
 }
 
 func (client *clientApplication) acquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (IAuthenticationResult, error) {
+	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	silentParameters.augmentAuthenticationParameters(authParams)
 	if client.cacheAccessor != nil {
@@ -74,12 +74,12 @@ func (client *clientApplication) acquireTokenSilent(
 }
 
 func (client *clientApplication) acquireTokenByAuthCode(
-	authCodeParams *AcquireTokenAuthCodeParameters) (IAuthenticationResult, error) {
+	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
 	req.Code = authCodeParams.Code
-	req.CodeChallenge = authCodeParams.codeChallenge
+	req.CodeChallenge = authCodeParams.CodeChallenge
 	if req.RequestType == requests.AuthCodeConfidential {
 		req.ClientCredential = authCodeParams.clientCredential
 	}
@@ -88,7 +88,7 @@ func (client *clientApplication) acquireTokenByAuthCode(
 
 func (client *clientApplication) executeTokenRequestWithoutCacheWrite(
 	req requests.TokenRequester,
-	authParams *msalbase.AuthParametersInternal) (IAuthenticationResult, error) {
+	authParams *msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
 	tokenResponse, err := req.Execute()
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (client *clientApplication) executeTokenRequestWithoutCacheWrite(
 
 func (client *clientApplication) executeTokenRequestWithCacheWrite(
 	req requests.TokenRequester,
-	authParams *msalbase.AuthParametersInternal) (IAuthenticationResult, error) {
+	authParams *msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
 	tokenResponse, err := req.Execute()
 	if err != nil {
 		return nil, err
@@ -114,8 +114,8 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(
 	return msalbase.CreateAuthenticationResult(tokenResponse, account)
 }
 
-func (client *clientApplication) getAccounts() []IAccount {
-	returnedAccounts := []IAccount{}
+func (client *clientApplication) getAccounts() []AccountProvider {
+	returnedAccounts := []AccountProvider{}
 	if client.cacheAccessor != nil {
 		client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
 	}

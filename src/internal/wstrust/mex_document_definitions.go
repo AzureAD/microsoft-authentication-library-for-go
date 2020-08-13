@@ -48,7 +48,7 @@ type definitions struct {
 							Text   string `xml:",chardata"`
 							Policy struct {
 								Text       string `xml:",chardata"`
-								HttpsToken struct {
+								HTTPSToken struct {
 									Text                     string `xml:",chardata"`
 									RequireClientCertificate string `xml:"RequireClientCertificate,attr"`
 								} `xml:"HttpsToken"`

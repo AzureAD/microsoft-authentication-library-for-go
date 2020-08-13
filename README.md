@@ -4,7 +4,7 @@ The MSAL library for Go is part of the [Microsoft identity platform for develope
 
 Quick links:
 
-| [Getting Started](https://docs.microsoft.com/en-us/azure/active-directory/develop/#quickstarts) | [Docs](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki) | [Samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/examples) | [Support](README.md#community-help-and-support) |
+| [Getting Started](https://docs.microsoft.com/azure/active-directory/develop/#quickstarts) | [Docs](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki) | [Samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/examples) | [Support](README.md#community-help-and-support) |
 | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | 
 
 ## Installation
@@ -53,7 +53,6 @@ You can view the [samples](https://github.com/AzureAD/microsoft-authentication-l
 ## Roadmap
 
 This is a preview library. Details of the roadmap will come soon in the [Wiki pages](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki), along with release notes.
-
 
 ## Community Help and Support
 

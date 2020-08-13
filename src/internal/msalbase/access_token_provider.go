@@ -3,7 +3,7 @@
 
 package msalbase
 
-type IAccessToken interface {
+type accessTokenProvider interface {
 	GetSecret() string
 	GetExpiresOn() string
 	GetScopes() string

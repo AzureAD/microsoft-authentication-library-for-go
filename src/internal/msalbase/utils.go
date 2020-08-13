@@ -29,6 +29,8 @@ func SplitScopes(scopes string) []string {
 	return strings.Split(scopes, DefaultScopeSeparator)
 }
 
+//ExtractStringPointerForCache checks a map to see if the key required exists
+//If it does, returns a pointer to the string value, if not, returns nil
 func ExtractStringPointerForCache(j map[string]interface{}, key string) *string {
 	if val, ok := j[key]; ok {
 		if str, ok := val.(string); ok {
@@ -40,15 +42,17 @@ func ExtractStringPointerForCache(j map[string]interface{}, key string) *string 
 	return nil
 }
 
+//GetStringFromPointer checks if a pointer to a string is nil
+//If it's not, the pointer is dereferenced; otherwise, an empty string is returned
 func GetStringFromPointer(pointer *string) string {
 	if pointer == nil {
 		return ""
-	} else {
-		return *pointer
 	}
+	return *pointer
 }
 
-// Adapted from MSAL Python and https://stackoverflow.com/a/31971780
+//DecodeJWT decodes a JWT and converts it to a byte array representing a JSON object
+//Adapted from MSAL Python and https://stackoverflow.com/a/31971780
 func DecodeJWT(data string) ([]byte, error) {
 	if i := len(data) % 4; i != 0 {
 		data += strings.Repeat("=", 4-i)

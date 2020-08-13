@@ -8,24 +8,26 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/requests"
 )
 
-// AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow
+// AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
+// To use PKCE, set the CodeChallengeParameter.
+// Code challenges are used to secure authorization code grants; for more information, visit
+// https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
 	commonParameters *acquireTokenCommonParameters
 	redirectURI      string
 	Code             string
-	codeChallenge    string
+	CodeChallenge    string
 	clientCredential *msalbase.ClientCredential
 	requestType      requests.AuthCodeRequestType
 }
 
-// CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance
+// CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance.
+// Pass in the scopes required, the redirect URI for your application.
 func CreateAcquireTokenAuthCodeParameters(scopes []string,
-	redirectURI string,
-	codeChallenge string) *AcquireTokenAuthCodeParameters {
+	redirectURI string) *AcquireTokenAuthCodeParameters {
 	p := &AcquireTokenAuthCodeParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		redirectURI:      redirectURI,
-		codeChallenge:    codeChallenge,
 	}
 	return p
 }

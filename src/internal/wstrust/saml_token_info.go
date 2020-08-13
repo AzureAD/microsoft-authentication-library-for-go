@@ -15,7 +15,7 @@ type SamlTokenInfo struct {
 	Assertion     string
 }
 
-func CreateSamlTokenInfo(assertionType SamlAssertionType, assertion string) *SamlTokenInfo {
+func createSamlTokenInfo(assertionType SamlAssertionType, assertion string) *SamlTokenInfo {
 	tokenInfo := &SamlTokenInfo{assertionType, assertion}
 	return tokenInfo
 }

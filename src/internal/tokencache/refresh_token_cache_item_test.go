@@ -25,7 +25,7 @@ var rt = &refreshTokenCacheItem{
 }
 
 func TestCreateRefreshTokenCacheItem(t *testing.T) {
-	actualRT := CreateRefreshTokenCacheItem("HID", "env", "clientID", "secret", "")
+	actualRT := createRefreshTokenCacheItem("HID", "env", "clientID", "secret", "")
 	actualSecret := *actualRT.Secret
 	if !reflect.DeepEqual(actualSecret, refSecret) {
 		t.Errorf("Expected secret %s differs from actualSecret %s", actualSecret, refSecret)

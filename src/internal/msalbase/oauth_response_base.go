@@ -8,6 +8,7 @@ import (
 	"errors"
 )
 
+//OAuthResponseBase stores common information when sending a request to get a token
 type OAuthResponseBase struct {
 	Error            string `json:"error"`
 	SubError         string `json:"suberror"`
@@ -22,8 +23,9 @@ var httpFailureCodes = map[int]string{
 	500: "HTTP 500",
 }
 
+//CreateOAuthResponseBase creates a OAuthResponseBase instance from the HTTP client's response
 func CreateOAuthResponseBase(httpStatusCode int, responseData string) (*OAuthResponseBase, error) {
-
+	// if the status code corresponds to an error, throw the error
 	if failMessage, ok := httpFailureCodes[httpStatusCode]; ok {
 		return nil, errors.New(failMessage)
 	}
@@ -33,9 +35,8 @@ func CreateOAuthResponseBase(httpStatusCode int, responseData string) (*OAuthRes
 	if err != nil {
 		return nil, err
 	}
-
+	//If the response consists of an error, throw that error
 	if payload.Error != "" {
-		// todo: bring in error description, etc.
 		return nil, errors.New(payload.Error)
 	}
 	return payload, nil

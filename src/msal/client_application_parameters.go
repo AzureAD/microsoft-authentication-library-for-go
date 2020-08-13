@@ -15,8 +15,8 @@ func createClientApplicationParameters(clientID string) *clientApplicationParame
 	return p
 }
 
-func (p *clientApplicationParameters) SetAadAuthority(authorityURI string) {
-	p.commonParameters.SetAadAuthority(authorityURI)
+func (p *clientApplicationParameters) setAadAuthority(authorityURI string) {
+	p.commonParameters.setAadAuthority(authorityURI)
 }
 
 func (p *clientApplicationParameters) validate() error {

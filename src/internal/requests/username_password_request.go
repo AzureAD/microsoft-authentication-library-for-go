@@ -11,13 +11,13 @@ import (
 
 // UsernamePasswordRequest stuff
 type UsernamePasswordRequest struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 	authParameters    *msalbase.AuthParametersInternal
 }
 
 // CreateUsernamePasswordRequest stuff
 func CreateUsernamePasswordRequest(
-	webRequestManager IWebRequestManager,
+	webRequestManager WebRequestManager,
 	authParameters *msalbase.AuthParametersInternal) *UsernamePasswordRequest {
 	req := &UsernamePasswordRequest{webRequestManager, authParameters}
 	return req

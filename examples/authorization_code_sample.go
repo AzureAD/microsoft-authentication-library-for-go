@@ -14,7 +14,8 @@ import (
 
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
-	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes, config.CodeChallenge)
+	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes)
+	authCodeURLParams.CodeChallenge = config.CodeChallenge
 	authCodeURLParams.State = config.State
 	authURL, err := publicClientApp.CreateAuthCodeURL(authCodeURLParams)
 	if err != nil {
@@ -40,8 +41,9 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI, config.CodeChallenge)
+	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI)
 	authCodeParams.Code = code
+	authCodeParams.CodeChallenge = config.CodeChallenge
 	result, err := publicClientApp.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
 		log.Fatal(err)

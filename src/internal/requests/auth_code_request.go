@@ -7,8 +7,10 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
+//AuthCodeRequestType is whether the authorization code flow is for a public or confidential client
 type AuthCodeRequestType int
 
+//These are the different values for AuthCodeRequestType
 const (
 	AuthCodePublic AuthCodeRequestType = iota
 	AuthCodeConfidential
@@ -16,7 +18,7 @@ const (
 
 // AuthCodeRequest stores the values required to request a token from the authority using an authorization code
 type AuthCodeRequest struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 	authParameters    *msalbase.AuthParametersInternal
 	Code              string
 	CodeChallenge     string
@@ -26,7 +28,7 @@ type AuthCodeRequest struct {
 
 // CreateAuthCodeRequest creates an instance of AuthCodeRequest
 func CreateAuthCodeRequest(
-	webRequestManager IWebRequestManager,
+	webRequestManager WebRequestManager,
 	authParameters *msalbase.AuthParametersInternal,
 	reqType AuthCodeRequestType) *AuthCodeRequest {
 	req := &AuthCodeRequest{
@@ -37,7 +39,7 @@ func CreateAuthCodeRequest(
 	return req
 }
 
-// Execute executes the auth code request and returns an access token or and error
+//Execute performs the token acquisition request and returns a token response or an error
 func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")

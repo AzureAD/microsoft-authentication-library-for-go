@@ -18,7 +18,7 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 		Tenant:                "common",
 		ValidateAuthority:     true,
 	}
-	actualAuthorityURI, err := CreateAuthorityInfoFromAuthorityUri(authorityURI, true)
+	actualAuthorityURI, err := CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

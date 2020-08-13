@@ -9,10 +9,10 @@ import (
 )
 
 var (
-	appClient   = "cid"
-	appEnv      = "env"
-	fam         = ""
-	appMetadata = &AppMetadata{
+	appClient = "cid"
+	appEnv    = "env"
+	fam       = ""
+	appMeta   = &appMetadata{
 		ClientID:    &appClient,
 		Environment: &appEnv,
 		FamilyID:    nil,
@@ -21,7 +21,7 @@ var (
 
 func TestCreateKeyForAppMetadata(t *testing.T) {
 	expectedKey := "appmetadata-env-cid"
-	actualKey := appMetadata.CreateKey()
+	actualKey := appMeta.CreateKey()
 	if !reflect.DeepEqual(expectedKey, actualKey) {
 		t.Errorf("Actual key %v differs from expected key %v", actualKey, expectedKey)
 	}
@@ -35,7 +35,7 @@ func TestAppMetadataPopulateFromJSONMap(t *testing.T) {
 		"client_id":   "cid",
 		"family_id":   nil,
 	}
-	actualAppMetadata := &AppMetadata{}
+	actualAppMetadata := &appMetadata{}
 	err := actualAppMetadata.populateFromJSONMap(jsonMap)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
@@ -56,7 +56,7 @@ func TestAppMetadataPopulateFromJSONMap(t *testing.T) {
 }
 
 func TestAppMetadataConvertToJSONMap(t *testing.T) {
-	appMetadata := &AppMetadata{
+	appMetadata := &appMetadata{
 		Environment:      nil,
 		ClientID:         &appClient,
 		FamilyID:         &fam,

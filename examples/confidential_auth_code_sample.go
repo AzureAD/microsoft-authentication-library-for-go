@@ -15,6 +15,7 @@ import (
 )
 
 var (
+	accessToken                string
 	confidentialConfig         = createConfig("confidential_config.json")
 	confidentialClientAuthCode *msalgo.ConfidentialClientApplication
 )
@@ -25,8 +26,8 @@ func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 		confidentialConfig.ClientID,
 		confidentialConfig.RedirectURI,
 		confidentialConfig.Scopes,
-		confidentialConfig.CodeChallenge,
 	)
+	authCodeURLParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeURLParams.State = confidentialConfig.State
 	authURL, err := confidentialClientAuthCode.CreateAuthCodeURL(authCodeURLParams)
 	if err != nil {
@@ -55,8 +56,8 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(
 		confidentialConfig.Scopes,
 		confidentialConfig.RedirectURI,
-		confidentialConfig.CodeChallenge,
 	)
+	authCodeParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeParams.Code = code
 	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(authCodeParams)
 	if err != nil {
@@ -64,6 +65,7 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	}
 	// Prints the access token on the webpage
 	fmt.Fprintf(w, "Access token is "+result.GetAccessToken())
+	accessToken = result.GetAccessToken()
 }
 
 func acquireByAuthorizationCodeConfidential() {
@@ -86,10 +88,10 @@ func acquireByAuthorizationCodeConfidential() {
 		log.Fatal(err)
 	}
 	confidentialClientAuthCode.SetCacheAccessor(cacheAccessor)
-	var userAccount msalgo.IAccount
+	var userAccount msalgo.AccountProvider
 	accounts := confidentialClientAuthCode.GetAccounts()
 	for _, account := range accounts {
-		if account.GetUsername() == config.Username {
+		if account.GetUsername() == confidentialConfig.Username {
 			userAccount = account
 		}
 	}
@@ -98,7 +100,7 @@ func acquireByAuthorizationCodeConfidential() {
 		result, err := confidentialClientAuthCode.AcquireTokenSilent(silentParams)
 		if err == nil {
 			fmt.Printf("Access token is " + result.GetAccessToken())
-			return
+			accessToken = result.GetAccessToken()
 		}
 	}
 	http.HandleFunc("/", redirectToURLConfidential)

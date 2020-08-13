@@ -8,14 +8,17 @@ import (
 	"errors"
 )
 
+//UserRealmAccountType refers to the type of user realm
 type UserRealmAccountType int
 
+//These are the different types of user realms
 const (
 	Unknown UserRealmAccountType = iota
 	Federated
 	Managed
 )
 
+//UserRealm is used for the username password request to determine user type
 type UserRealm struct {
 	AccountType       string `json:"account_type"`
 	DomainName        string `json:"domain_name"`
@@ -27,7 +30,7 @@ type UserRealm struct {
 	FederationMetadataURL string `json:"federation_metadata_url"`
 }
 
-// CreateUserRealm stuff
+// CreateUserRealm creates a UserRealm instance from the HTTP response
 func CreateUserRealm(responseData string) (*UserRealm, error) {
 	userRealm := &UserRealm{}
 	err := json.Unmarshal([]byte(responseData), userRealm)
@@ -54,6 +57,7 @@ func CreateUserRealm(responseData string) (*UserRealm, error) {
 	return userRealm, nil
 }
 
+//GetAccountType gets the type of user account
 func (u *UserRealm) GetAccountType() UserRealmAccountType {
 	if u.AccountType == "Federated" {
 		return Federated

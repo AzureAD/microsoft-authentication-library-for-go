@@ -18,16 +18,16 @@ func (mock *MockWebRequestManager) GetUserRealm(authParameters *msalbase.AuthPar
 	return args.Get(0).(*msalbase.UserRealm), args.Error(1)
 }
 
-func (mock *MockWebRequestManager) GetMex(federationMetadataURL string) (*wstrust.WsTrustMexDocument, error) {
+func (mock *MockWebRequestManager) GetMex(federationMetadataURL string) (*wstrust.MexDocument, error) {
 	args := mock.Called(federationMetadataURL)
-	return args.Get(0).(*wstrust.WsTrustMexDocument), args.Error(1)
+	return args.Get(0).(*wstrust.MexDocument), args.Error(1)
 }
 
 func (mock *MockWebRequestManager) GetWsTrustResponse(authParameters *msalbase.AuthParametersInternal,
 	cloudAudienceURN string,
-	endpoint *wstrust.WsTrustEndpoint) (*wstrust.WsTrustResponse, error) {
+	endpoint *wstrust.Endpoint) (*wstrust.Response, error) {
 	args := mock.Called(authParameters, cloudAudienceURN, endpoint)
-	return args.Get(0).(*wstrust.WsTrustResponse), args.Error(1)
+	return args.Get(0).(*wstrust.Response), args.Error(1)
 }
 
 func (mock *MockWebRequestManager) GetAccessTokenFromSamlGrant(authParameters *msalbase.AuthParametersInternal,
@@ -87,9 +87,4 @@ func (mock *MockWebRequestManager) GetTenantDiscoveryResponse(openIDConfiguratio
 func (mock *MockWebRequestManager) GetAadinstanceDiscoveryResponse(authorityInfo *msalbase.AuthorityInfo) (*InstanceDiscoveryResponse, error) {
 	args := mock.Called(authorityInfo)
 	return args.Get(0).(*InstanceDiscoveryResponse), args.Error(1)
-}
-
-func (mock *MockWebRequestManager) GetProviderConfigurationInformation(authParameters *msalbase.AuthParametersInternal) (*ProviderConfigurationInformation, error) {
-	args := mock.Called(authParameters)
-	return args.Get(0).(*ProviderConfigurationInformation), args.Error(1)
 }

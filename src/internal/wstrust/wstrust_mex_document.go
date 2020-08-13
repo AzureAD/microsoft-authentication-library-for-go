@@ -11,29 +11,29 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type WsEndpointType int
+type wsEndpointType int
 
 const (
-	WsEndpointTypeUsernamePassword WsEndpointType = iota
-	WsEndpointTypeWindowsTransport
+	wsEndpointTypeUsernamePassword wsEndpointType = iota
+	wsEndpointTypeWindowsTransport
 )
 
-type WsEndpointData struct {
-	Version      WsTrustEndpointVersion
-	EndpointType WsEndpointType
+type wsEndpointData struct {
+	Version      EndpointVersion
+	EndpointType wsEndpointType
 }
 
 const trust13Spec string = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue"
 const trust2005Spec string = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
 
-type WsTrustMexDocument struct {
-	UsernamePasswordEndpoint WsTrustEndpoint
-	windowsTransportEndpoint WsTrustEndpoint
-	policies                 map[string]WsEndpointType
-	bindings                 map[string]WsEndpointData
+type MexDocument struct {
+	UsernamePasswordEndpoint Endpoint
+	windowsTransportEndpoint Endpoint
+	policies                 map[string]wsEndpointType
+	bindings                 map[string]wsEndpointData
 }
 
-func updateEndpoint(cached *WsTrustEndpoint, found WsTrustEndpoint) bool {
+func updateEndpoint(cached *Endpoint, found Endpoint) bool {
 	if cached == nil {
 		log.Trace("No endpoint cached, using found endpoint")
 		*cached = found
@@ -47,35 +47,34 @@ func updateEndpoint(cached *WsTrustEndpoint, found WsTrustEndpoint) bool {
 	return false
 }
 
-func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) {
+func CreateWsTrustMexDocument(responseData string) (*MexDocument, error) {
 	definitions := &definitions{}
 	var err = xml.Unmarshal([]byte(responseData), definitions)
 	if err != nil {
 		return nil, err
 	}
 
-	policies := make(map[string]WsEndpointType)
+	policies := make(map[string]wsEndpointType)
 
 	for _, policy := range definitions.Policy {
 		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
 			log.Trace("Found Policy with UsernamePassword 1.3: " + policy.ID)
-			policies["#"+policy.ID] = WsEndpointTypeUsernamePassword
+			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
 		}
 		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
 			log.Trace("Found Policy with UsernamePassword 2005: " + policy.ID)
-			policies["#"+policy.ID] = WsEndpointTypeUsernamePassword
+			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
 		}
 		if policy.ExactlyOne.All.NegotiateAuthentication.XMLName.Local != "" {
 			log.Trace("Found policy with WindowsTransport: " + policy.ID)
-			policies["#"+policy.ID] = WsEndpointTypeWindowsTransport
+			policies["#"+policy.ID] = wsEndpointTypeWindowsTransport
 		}
 	}
 
-	bindings := make(map[string]WsEndpointData)
+	bindings := make(map[string]wsEndpointData)
 
 	for _, binding := range definitions.Binding {
 		policyName := binding.PolicyReference.URI
-		log.Trace(policyName)
 		transport := binding.Binding.Transport
 
 		if transport == "http://schemas.xmlsoap.org/soap/http" {
@@ -85,9 +84,9 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 				log.Tracef("Found binding %v Spec %v", bindingName, specVersion)
 
 				if specVersion == trust13Spec {
-					bindings[bindingName] = WsEndpointData{Trust13, policy}
+					bindings[bindingName] = wsEndpointData{Trust13, policy}
 				} else if specVersion == trust2005Spec {
-					bindings[bindingName] = WsEndpointData{Trust2005, policy}
+					bindings[bindingName] = wsEndpointData{Trust2005, policy}
 				} else {
 					return nil, errors.New("found unknown spec version in mex document")
 				}
@@ -95,8 +94,8 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 		}
 	}
 
-	var usernamePasswordEndpoint WsTrustEndpoint
-	var windowsTransportEndpoint WsTrustEndpoint
+	var usernamePasswordEndpoint Endpoint
+	var windowsTransportEndpoint Endpoint
 
 	for _, port := range definitions.Service.Port {
 		bindingName := port.Binding
@@ -104,23 +103,23 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 
 		index := strings.Index(bindingName, ":")
 		if index != -1 {
-			bindingName = bindingName[index+1 : len(bindingName)]
+			bindingName = bindingName[index+1:]
 		}
 
 		if binding, ok := bindings[bindingName]; ok {
 			url := port.EndpointReference.Address.Text
 			url = strings.Trim(url, " ")
 
-			endpoint := CreateWsTrustEndpoint(binding.Version, url)
+			endpoint := createWsTrustEndpoint(binding.Version, url)
 
 			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
 			switch binding.EndpointType {
-			case WsEndpointTypeUsernamePassword:
+			case wsEndpointTypeUsernamePassword:
 				if updateEndpoint(&usernamePasswordEndpoint, endpoint) {
 					log.Tracef("Updated cached username/password endpoint to binding '%v'", bindingName)
 				}
 				break
-			case WsEndpointTypeWindowsTransport:
+			case wsEndpointTypeWindowsTransport:
 				if updateEndpoint(&windowsTransportEndpoint, endpoint) {
 					log.Tracef("Updated cached windows transport endpoint to binding '%v'", bindingName)
 				}
@@ -131,7 +130,7 @@ func CreateWsTrustMexDocument(responseData string) (*WsTrustMexDocument, error) 
 		}
 	}
 
-	doc := &WsTrustMexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
+	doc := &MexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
 	log.Trace("Created WsTrustMexDocument!")
 	return doc, nil
 }

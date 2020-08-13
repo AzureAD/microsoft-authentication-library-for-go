@@ -7,25 +7,27 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
 )
 
+//RefreshTokenReqType is whether the refresh token flow is for a public or confidential client
 type RefreshTokenReqType int
 
+//These are the different values for RefreshTokenReqType
 const (
 	RefreshTokenPublic RefreshTokenReqType = iota
 	RefreshTokenConfidential
 )
 
-// RefreshTokenExchangeRequest stuff
+// RefreshTokenExchangeRequest stores the values required to request a token from the authority using a refresh token
 type RefreshTokenExchangeRequest struct {
-	webRequestManager IWebRequestManager
+	webRequestManager WebRequestManager
 	authParameters    *msalbase.AuthParametersInternal
 	refreshToken      msalbase.Credential
 	ClientCredential  *msalbase.ClientCredential
 	RequestType       RefreshTokenReqType
 }
 
-// CreateRefreshTokenExchangeRequest stuff
+// CreateRefreshTokenExchangeRequest creates a RefreshTokenExchangeRequest instance
 func CreateRefreshTokenExchangeRequest(
-	webRequestManager IWebRequestManager,
+	webRequestManager WebRequestManager,
 	authParameters *msalbase.AuthParametersInternal,
 	refreshToken msalbase.Credential,
 	reqType RefreshTokenReqType) *RefreshTokenExchangeRequest {
@@ -38,7 +40,7 @@ func CreateRefreshTokenExchangeRequest(
 	return req
 }
 
-// Execute stuff
+//Execute performs the token acquisition request and returns a token response or an error
 func (req *RefreshTokenExchangeRequest) Execute() (*msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")

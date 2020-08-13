@@ -15,7 +15,7 @@ import (
 
 func TestIsAccessTokenValid(t *testing.T) {
 	errorTimestamp := "TIMESTAMP_SHOULD_BE_INT"
-	accessTokenCacheItem := CreateAccessTokenCacheItem(
+	accessTokenCacheItem := createAccessTokenCacheItem(
 		"hid",
 		"env",
 		"realm",
@@ -73,7 +73,7 @@ func TestGetAllAccounts(t *testing.T) {
 	}
 	expectedAccounts := []*msalbase.Account{account1, account2}
 	mockStorageManager := new(MockStorageManager)
-	cacheManager := &cacheManager{storageManager: mockStorageManager}
+	cacheManager := &defaultCacheManager{storageManager: mockStorageManager}
 	mockStorageManager.On("ReadAllAccounts").Return(expectedAccounts)
 	actualAccounts := cacheManager.GetAllAccounts()
 	if !reflect.DeepEqual(expectedAccounts, actualAccounts) {
@@ -84,7 +84,7 @@ func TestGetAllAccounts(t *testing.T) {
 func TestTryReadCache(t *testing.T) {
 	mockStorageManager := new(MockStorageManager)
 	mockWebRequestManager := new(requests.MockWebRequestManager)
-	cacheManager := &cacheManager{storageManager: mockStorageManager}
+	cacheManager := &defaultCacheManager{storageManager: mockStorageManager}
 	authInfo := &msalbase.AuthorityInfo{
 		Host:   "env",
 		Tenant: "realm",
@@ -107,7 +107,7 @@ func TestTryReadCache(t *testing.T) {
 		Metadata:                metadata,
 	}
 	mockWebRequestManager.On("GetAadinstanceDiscoveryResponse", authInfo).Return(mockInstDiscResponse, nil)
-	accessTokenCacheItem := CreateAccessTokenCacheItem(
+	accessTokenCacheItem := createAccessTokenCacheItem(
 		"hid",
 		"env",
 		"realm",
@@ -124,7 +124,7 @@ func TestTryReadCache(t *testing.T) {
 		"realm",
 		"cid",
 		[]string{"openid", "profile"}).Return(accessTokenCacheItem)
-	testIDToken := CreateIDTokenCacheItem(
+	testIDToken := createIDTokenCacheItem(
 		"hid",
 		"env",
 		"realm",
@@ -136,9 +136,9 @@ func TestTryReadCache(t *testing.T) {
 		[]string{"env", "alias2"},
 		"realm",
 		"cid").Return(testIDToken)
-	testAppMeta := CreateAppMetadata("fid", "cid", "env")
+	testAppMeta := createAppMetadata("fid", "cid", "env")
 	mockStorageManager.On("ReadAppMetadata", []string{"env", "alias2"}, "cid").Return(testAppMeta)
-	testRefreshToken := CreateRefreshTokenCacheItem(
+	testRefreshToken := createRefreshTokenCacheItem(
 		"hid",
 		"env",
 		"cid",
@@ -164,7 +164,7 @@ func TestTryReadCache(t *testing.T) {
 
 func TestCacheTokenResponse(t *testing.T) {
 	mockStorageManager := new(MockStorageManager)
-	cacheManager := &cacheManager{storageManager: mockStorageManager}
+	cacheManager := &defaultCacheManager{storageManager: mockStorageManager}
 	clientInfo := &msalbase.ClientInfoJSONPayload{
 		UID:  "testUID",
 		Utid: "testUtid",
@@ -190,7 +190,7 @@ func TestCacheTokenResponse(t *testing.T) {
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
 	}
-	testRefreshToken := CreateRefreshTokenCacheItem(
+	testRefreshToken := createRefreshTokenCacheItem(
 		"testUID.testUtid",
 		"env",
 		"cid",
@@ -198,7 +198,7 @@ func TestCacheTokenResponse(t *testing.T) {
 		"fid",
 	)
 	mockStorageManager.On("WriteRefreshToken", testRefreshToken).Return(nil)
-	accessTokenCacheItem := CreateAccessTokenCacheItem(
+	accessTokenCacheItem := createAccessTokenCacheItem(
 		"testUID.testUtid",
 		"env",
 		"realm",
@@ -210,7 +210,7 @@ func TestCacheTokenResponse(t *testing.T) {
 		"accessToken",
 	)
 	mockStorageManager.On("WriteAccessToken", accessTokenCacheItem).Return(nil)
-	testIDToken := CreateIDTokenCacheItem(
+	testIDToken := createIDTokenCacheItem(
 		"testUID.testUtid",
 		"env",
 		"realm",
@@ -220,7 +220,7 @@ func TestCacheTokenResponse(t *testing.T) {
 	mockStorageManager.On("WriteIDToken", testIDToken).Return(nil)
 	testAccount := msalbase.CreateAccount("testUID.testUtid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	mockStorageManager.On("WriteAccount", testAccount).Return(nil)
-	testAppMeta := CreateAppMetadata("fid", "cid", "env")
+	testAppMeta := createAppMetadata("fid", "cid", "env")
 	mockStorageManager.On("WriteAppMetadata", testAppMeta).Return(nil)
 	actualAccount, err := cacheManager.CacheTokenResponse(authParams, tokenResponse)
 	if err != nil {

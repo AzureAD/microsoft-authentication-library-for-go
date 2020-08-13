@@ -10,7 +10,6 @@ type applicationCommonParameters struct {
 	authorityInfo *msalbase.AuthorityInfo
 }
 
-// CreateApplicationCommonParameters stuff
 func createApplicationCommonParameters(clientID string) *applicationCommonParameters {
 	p := &applicationCommonParameters{
 		clientID: clientID,
@@ -18,8 +17,8 @@ func createApplicationCommonParameters(clientID string) *applicationCommonParame
 	return p
 }
 
-func (p *applicationCommonParameters) SetAadAuthority(authorityURI string) error {
-	authorityInfo, err := msalbase.CreateAuthorityInfoFromAuthorityUri(authorityURI, true)
+func (p *applicationCommonParameters) setAadAuthority(authorityURI string) error {
+	authorityInfo, err := msalbase.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return err
 	}

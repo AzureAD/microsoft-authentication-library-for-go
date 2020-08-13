@@ -38,7 +38,7 @@ func TestCreateAccessTokenCacheItem(t *testing.T) {
 	testExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
 	testExtExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
 	testCachedAt := time.Date(2020, time.June, 13, 11, 0, 0, 0, time.UTC)
-	actualAt := CreateAccessTokenCacheItem("testHID",
+	actualAt := createAccessTokenCacheItem("testHID",
 		"env",
 		"realm",
 		"clientID",

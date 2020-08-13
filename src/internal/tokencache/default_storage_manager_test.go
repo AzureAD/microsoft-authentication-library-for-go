@@ -37,7 +37,14 @@ func TestIsMatchingScopes(t *testing.T) {
 }
 
 func TestReadAllAccounts(t *testing.T) {
-	storageManager := CreateStorageManager()
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
 	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
@@ -64,7 +71,14 @@ func TestReadAllAccounts(t *testing.T) {
 }
 
 func TestDeleteAccounts(t *testing.T) {
-	storageManager := CreateStorageManager()
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
 	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
@@ -76,8 +90,15 @@ func TestDeleteAccounts(t *testing.T) {
 }
 
 func TestReadAccessToken(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testAccessToken := CreateAccessTokenCacheItem(
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testAccessToken := createAccessTokenCacheItem(
 		"hid",
 		"env",
 		"realm",
@@ -112,8 +133,15 @@ func TestReadAccessToken(t *testing.T) {
 }
 
 func TestWriteAccessToken(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testAccessToken := CreateAccessTokenCacheItem(
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testAccessToken := createAccessTokenCacheItem(
 		"hid",
 		"env",
 		"realm",
@@ -137,7 +165,14 @@ func TestWriteAccessToken(t *testing.T) {
 }
 
 func TestReadAccount(t *testing.T) {
-	storageManager := CreateStorageManager()
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
 	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	storageManager.accounts[testAcc.CreateKey()] = testAcc
 	returnedAccount := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
@@ -151,7 +186,14 @@ func TestReadAccount(t *testing.T) {
 }
 
 func TestWriteAccount(t *testing.T) {
-	storageManager := CreateStorageManager()
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
 	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	key := testAcc.CreateKey()
 	err := storageManager.WriteAccount(testAcc)
@@ -164,8 +206,15 @@ func TestWriteAccount(t *testing.T) {
 }
 
 func TestReadAppMetadata(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testAppMeta := CreateAppMetadata("fid", "cid", "env")
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testAppMeta := createAppMetadata("fid", "cid", "env")
 	storageManager.appMetadatas[testAppMeta.CreateKey()] = testAppMeta
 	returnedAppMeta := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "cid")
 	if !reflect.DeepEqual(returnedAppMeta, testAppMeta) {
@@ -178,8 +227,15 @@ func TestReadAppMetadata(t *testing.T) {
 }
 
 func TestWriteAppMetadata(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testAppMeta := CreateAppMetadata("fid", "cid", "env")
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testAppMeta := createAppMetadata("fid", "cid", "env")
 	key := testAppMeta.CreateKey()
 	err := storageManager.WriteAppMetadata(testAppMeta)
 	if err != nil {
@@ -191,8 +247,15 @@ func TestWriteAppMetadata(t *testing.T) {
 }
 
 func TestReadIDToken(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testIDToken := CreateIDTokenCacheItem(
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testIDToken := createIDTokenCacheItem(
 		"hid",
 		"env",
 		"realm",
@@ -221,8 +284,15 @@ func TestReadIDToken(t *testing.T) {
 }
 
 func TestWriteIDToken(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testIDToken := CreateIDTokenCacheItem(
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testIDToken := createIDTokenCacheItem(
 		"hid",
 		"env",
 		"realm",
@@ -242,8 +312,15 @@ func TestWriteIDToken(t *testing.T) {
 }
 
 func TestReadRefreshToken(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testRefreshTokenWithFID := CreateRefreshTokenCacheItem(
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testRefreshTokenWithFID := createRefreshTokenCacheItem(
 		"hid",
 		"env",
 		"cid",
@@ -273,7 +350,7 @@ func TestReadRefreshToken(t *testing.T) {
 			returnedRT,
 			testRefreshTokenWithFID)
 	}
-	testRefreshTokenWoFID := CreateRefreshTokenCacheItem(
+	testRefreshTokenWoFID := createRefreshTokenCacheItem(
 		"hid",
 		"env",
 		"cid",
@@ -306,8 +383,15 @@ func TestReadRefreshToken(t *testing.T) {
 }
 
 func TestWriteRefreshToken(t *testing.T) {
-	storageManager := CreateStorageManager()
-	testRefreshToken := CreateRefreshTokenCacheItem(
+	storageManager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
+	testRefreshToken := createRefreshTokenCacheItem(
 		"hid",
 		"env",
 		"cid",
@@ -327,7 +411,14 @@ func TestWriteRefreshToken(t *testing.T) {
 }
 
 func TestStorageManagerSerialize(t *testing.T) {
-	manager := CreateStorageManager()
+	manager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
 	manager.accessTokens = map[string]*accessTokenCacheItem{
 		"an-entry": {
 			additionalFields: map[string]interface{}{"foo": "bar"},
@@ -378,7 +469,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 			AuthorityType:     &accAuth,
 		},
 	}
-	manager.appMetadatas = map[string]*AppMetadata{
+	manager.appMetadatas = map[string]*appMetadata{
 		"appmetadata-login.windows.net-my_client_id": {
 			Environment:      &defaultEnvironment,
 			FamilyID:         nil,
@@ -393,7 +484,14 @@ func TestStorageManagerSerialize(t *testing.T) {
 }
 
 func TestStorageManagerDeserialize(t *testing.T) {
-	manager := CreateStorageManager()
+	manager := &defaultStorageManager{
+		accessTokens:  make(map[string]*accessTokenCacheItem),
+		refreshTokens: make(map[string]*refreshTokenCacheItem),
+		idTokens:      make(map[string]*idTokenCacheItem),
+		accounts:      make(map[string]*msalbase.Account),
+		appMetadatas:  make(map[string]*appMetadata),
+		cacheContract: createCacheSerializationContract(),
+	}
 	jsonFile, err := os.Open(testFile)
 	testCache, err := ioutil.ReadAll(jsonFile)
 	jsonFile.Close()
