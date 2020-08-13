@@ -66,7 +66,6 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	// Prints the access token on the webpage
 	fmt.Fprintf(w, "Access token is "+result.GetAccessToken())
 	accessToken = result.GetAccessToken()
-	//http.Redirect(w, r, graphURL, http.StatusMovedPermanently)
 }
 
 func acquireByAuthorizationCodeConfidential() {
