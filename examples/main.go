@@ -12,7 +12,7 @@ var config = createConfig("config.json")
 var publicClientApp *msalgo.PublicClientApplication
 var err error
 var authCodeParams *msalgo.AcquireTokenAuthCodeParameters
-var cacheAccessor = &SampleCacheAccessor{"examples/serialized_cache.json"}
+var cacheAccessor = &SampleCacheAccessor{"serialized_cache.json"}
 
 func main() {
 	exampleType := os.Args[1]
