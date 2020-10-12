@@ -1,6 +1,7 @@
 # Running Examples for MSAL Go
 
-To run one of the examples of uses of MSAL Go, you need to first create a `config.json` file. The `config.json` file should look like the following:
+To run one of the examples of uses of MSAL Go. The `config.json` file and the `confidential_config.json` should look like the following:
+
 ```json
 {
     "authority": "https://login.microsoftonline.com/organizations",
@@ -19,7 +20,21 @@ To run one of the examples of uses of MSAL Go, you need to first create a `confi
 
 The samples in this repo get tokens for the MS Graph API. To find permissible scopes for MS Graph, visit this [link](https://docs.microsoft.com/graph/permissions-reference). PKCE is explained [here](https://tools.ietf.org/html/rfc7636#section-4.1).
 
+## On Windows
+
+To run the examples:
+    `cd examples`
+  
+run the command:
+    `go run main.go sample_utils.go sample_cache_accessor.go device_code_flow_sample.go authorization_code_sample.go client_secret_sample.go confidential_auth_code_sample.go username_password_sample.go client_certificate_sample.go <example-number>`
+
+For example to run device code flow use this command:
+    `go run main.go sample_utils.go sample_cache_accessor.go device_code_flow_sample.go authorization_code_sample.go client_secret_sample.go confidential_auth_code_sample.go username_password_sample.go client_certificate_sample.go 1`
+
+## On Mac
+
 To run one of the examples, run the command `go run src/examples/*.go <example-number>`. The example numbers are as follows:
+
 * 1 - `device_code_flow_sample.go` 
 * 2 - `authorization_code_sample.go`
 * 3 - `username_password_sample.go`
