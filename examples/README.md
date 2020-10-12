@@ -33,7 +33,7 @@ For example to run device code flow use this command:
 
     `go run main.go sample_utils.go sample_cache_accessor.go device_code_flow_sample.go authorization_code_sample.go client_secret_sample.go confidential_auth_code_sample.go username_password_sample.go client_certificate_sample.go 1`
     
-or simly type
+or simply type
     
     'go run ./ 1'
     
@@ -43,7 +43,8 @@ Alternatives:
   * type 'go build' 
   * type 'examples.exe 1' to run the device code flow
 
-* 2 install and run from the gobin folder
+* 2 (Advanced) install and run from the gobin folder
+  * See more: https://golang.org/cmd/go/#hdr-Compile_and_install_packages_and_dependencies
   * In the examples folder
   * type 'go install' 
   * locate your gobin folder e.g. type 'go env' to find your gobin folder location
