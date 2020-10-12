@@ -26,10 +26,16 @@ To run the examples:
     `cd examples`
   
 run the command:
+
     `go run main.go sample_utils.go sample_cache_accessor.go device_code_flow_sample.go authorization_code_sample.go client_secret_sample.go confidential_auth_code_sample.go username_password_sample.go client_certificate_sample.go <example-number>`
 
 For example to run device code flow use this command:
+
     `go run main.go sample_utils.go sample_cache_accessor.go device_code_flow_sample.go authorization_code_sample.go client_secret_sample.go confidential_auth_code_sample.go username_password_sample.go client_certificate_sample.go 1`
+    
+or simly type
+    
+    'go run ./ 1'
     
 Alternatives:
 * 1 build and run "locally"
