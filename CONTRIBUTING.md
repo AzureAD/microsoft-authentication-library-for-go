@@ -7,6 +7,19 @@ This document will guide you through the process.
 Please visit [https://cla.microsoft.com/](https://cla.microsoft.com/) and sign the Contributor License
 Agreement.  You only need to do that once. We can not look at your code until you've submitted this request.
 
+### FORK
+
+Fork the project [on GitHub](https://github.com/AzureAD/microsoft-authentication-library-for-go) and check out
+your copy.
+
+Example for MSAL Go:
+
+```
+$ git clone git@github.com:username/microsoft-authentication-library-for-go.git
+$ cd microsoft-authentication-library-for-go
+$ git remote add upstream git@github.com:AzureAD/microsoft-authentication-library-for-go.git
+```
+
 ## Setup, Building and Testing
 
 Please see the [Build & Run](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki/build-and-test) wiki page.
