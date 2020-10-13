@@ -7,7 +7,7 @@ assignees: ''
 
 ---
 
-**Which version of Microsoft Go are you using?**
+**Which version of MSAL Go are you using?**
 Note that to get help, you need to run the latest version. 
 <!-- E.g. Microsoft Authentication Library for Go 1.0.0-preview -->
 
@@ -32,11 +32,22 @@ b. The app is in production and I haven't upgraded Microsoft Authentication Libr
 c. This is a new app or an experiment.
 -->
 
+**What version of Go are you using (`go version`)?**
+
+<pre>
+$ go version
+</pre>
+
+**What operating system and processor architecture are you using (`go env`)?**
+
+<details><summary><code>go env</code> Output</summary><br><pre>
+$ go env
+
+</pre></details>
+
 **Repro**
 
-```csharp
-var your = (code) => here;
-```
+<code>var your = (code) => here;</code>
 
 **Expected behavior**
 A clear and concise description of what you expected to happen (or code).
