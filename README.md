@@ -7,6 +7,10 @@ Quick links:
 | [Getting Started](https://docs.microsoft.com/azure/active-directory/develop/#quickstarts) | [Docs](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki) | [Samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/examples) | [Support](README.md#community-help-and-support) |
 | ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | 
 
+## Build Status
+
+![Go](https://github.com/AzureAD/microsoft-authentication-library-for-go/workflows/Go/badge.svg?branch=dev)
+
 ## Installation
 
 ### Setting up Go
