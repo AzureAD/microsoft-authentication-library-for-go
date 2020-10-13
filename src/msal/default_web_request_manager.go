@@ -129,7 +129,7 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromSamlGrant(authParameters 
 		decodedQueryParams["grant_type"] = msalbase.SAMLV2Grant
 		break
 	default:
-		return nil, errors.New("GetAccessTokenFromSamlGrant returned unknown saml assertion type: " + string(samlGrant.AssertionType))
+		return nil, errors.New("GetAccessTokenFromSamlGrant returned unknown saml assertion type: " + fmt.Sprint(samlGrant.AssertionType))
 	}
 
 	decodedQueryParams["assertion"] = base64.StdEncoding.WithPadding(base64.StdPadding).EncodeToString([]byte(samlGrant.Assertion)) //  .EncodeToString([]byte(samlGrant.GetAssertion())) // StringUtils::Base64RFCEncodePadded(samlGrant->GetAssertion());
