@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/src/internal/msalbase"
+	"github.com/gdexlab/go-render/render"
 )
 
 func TestCheckAlias(t *testing.T) {
@@ -311,15 +312,7 @@ func TestWriteIDToken(t *testing.T) {
 	}
 }
 
-func TestReadRefreshToken(t *testing.T) {
-	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
-		cacheContract: createCacheSerializationContract(),
-	}
+func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 	testRefreshTokenWithFID := createRefreshTokenCacheItem(
 		"hid",
 		"env",
@@ -327,29 +320,6 @@ func TestReadRefreshToken(t *testing.T) {
 		"secret",
 		"fid",
 	)
-	storageManager.refreshTokens[testRefreshTokenWithFID.CreateKey()] = testRefreshTokenWithFID
-	returnedRT := storageManager.ReadRefreshToken(
-		"hid",
-		[]string{"test", "env", "hello"},
-		"fid",
-		"cid",
-	)
-	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
-		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
-			returnedRT,
-			testRefreshTokenWithFID)
-	}
-	returnedRT = storageManager.ReadRefreshToken(
-		"hid",
-		[]string{"test", "env", "hello"},
-		"",
-		"CID",
-	)
-	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
-		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
-			returnedRT,
-			testRefreshTokenWithFID)
-	}
 	testRefreshTokenWoFID := createRefreshTokenCacheItem(
 		"hid",
 		"env",
@@ -357,28 +327,188 @@ func TestReadRefreshToken(t *testing.T) {
 		"secret",
 		"",
 	)
-	storageManager.refreshTokens[testRefreshTokenWoFID.CreateKey()] = testRefreshTokenWoFID
-	returnedRT = storageManager.ReadRefreshToken(
+	testRefreshTokenWoFIDAltCID := createRefreshTokenCacheItem(
 		"hid",
-		[]string{"test", "env", "hello"},
-		"fid",
-		"cid",
-	)
-	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
-		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
-			returnedRT,
-			testRefreshTokenWithFID)
-	}
-	returnedRT = storageManager.ReadRefreshToken(
-		"hid",
-		[]string{"test", "env", "hello"},
+		"env",
+		"cid2",
+		"secret",
 		"",
-		"cid",
 	)
-	if !reflect.DeepEqual(testRefreshTokenWithFID, returnedRT) {
-		t.Errorf("Returned refresh token %v differs from expected refresh token %v",
-			returnedRT,
-			testRefreshTokenWithFID)
+	type args struct {
+		homeAccountID string
+		envAliases    []string
+		familyID      string
+		clientID      string
+	}
+	tests := []struct {
+		name string
+		m    *defaultStorageManager
+		args args
+		want *refreshTokenCacheItem
+	}{
+		{
+			name: "Token without fid, read with fid, cid, env, and hid",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{"test", "env", "hello"},
+				familyID:      "fid",
+				clientID:      "cid",
+			},
+			want: testRefreshTokenWoFID,
+		},
+		{
+			name: "Token without fid, read with cid, env, and hid",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{"test", "env", "hello"},
+				familyID:      "",
+				clientID:      "cid",
+			},
+			want: testRefreshTokenWoFID,
+		},
+		{
+			name: "Token without fid, verify CID is required",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{"test", "env", "hello"},
+				familyID:      "",
+				clientID:      "",
+			},
+			want: nil,
+		},
+		{
+			name: "Token without fid, Verify env is required",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{},
+				familyID:      "",
+				clientID:      "",
+			},
+			want: nil,
+		},
+		{
+			name: "Token without fid, read with fid, cid, env, and hid",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{"test", "env", "hello"},
+				familyID:      "fid",
+				clientID:      "cid",
+			},
+			want: testRefreshTokenWithFID,
+		},
+		{
+			name: "Token with fid, read with cid, env, and hid",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{"test", "env", "hello"},
+				familyID:      "",
+				clientID:      "cid",
+			},
+			want: testRefreshTokenWithFID,
+		},
+		{
+			name: "Token with fid, verify CID is not required", // match on hid, env, and has fid
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{"test", "env", "hello"},
+				familyID:      "",
+				clientID:      "",
+			},
+			want: testRefreshTokenWithFID,
+		},
+		{
+			name: "Token with fid, Verify env is required",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{},
+				familyID:      "",
+				clientID:      "",
+			},
+			want: nil,
+		},
+		{
+			name: "Multiple items in cache, given a fid, item with fid will be returned",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey():       testRefreshTokenWoFID,
+					testRefreshTokenWithFID.CreateKey():     testRefreshTokenWithFID,
+					testRefreshTokenWoFIDAltCID.CreateKey(): testRefreshTokenWoFIDAltCID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{},
+				familyID:      "fid",
+				clientID:      "cid",
+			},
+			want: nil,
+		},
+		// Cannot guarentee that without an alternate cid which token will be
+		// returned deterministically when HID, CID, and env match.
+		{
+			name: "Multiple items in cache, without a fid and with alternate CID, token with alternate CID is returned",
+			m: &defaultStorageManager{
+				refreshTokens: map[string]*refreshTokenCacheItem{
+					testRefreshTokenWoFID.CreateKey():       testRefreshTokenWoFID,
+					testRefreshTokenWithFID.CreateKey():     testRefreshTokenWithFID,
+					testRefreshTokenWoFIDAltCID.CreateKey(): testRefreshTokenWoFIDAltCID,
+				},
+			},
+			args: args{
+				homeAccountID: "hid",
+				envAliases:    []string{},
+				familyID:      "",
+				clientID:      "cid2",
+			},
+			want: nil,
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := tt.m.ReadRefreshToken(tt.args.homeAccountID, tt.args.envAliases, tt.args.familyID, tt.args.clientID); !reflect.DeepEqual(got, tt.want) {
+				t.Errorf("defaultStorageManager.ReadRefreshToken() = %v, want %v", render.AsCode(got), render.AsCode(tt.want))
+			}
+		})
 	}
 }
 
