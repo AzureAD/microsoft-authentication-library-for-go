@@ -52,7 +52,7 @@ if err != nil {
 accessToken := result.GetAccessToken()
 ```
 
-You can view the [dev samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/devSamples) on how to use MSAL Go with various application types in various scenarios. For more detailed information, please refer to the [wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki).
+You can view the [dev apps](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/test/devapps) on how to use MSAL Go with various application types in various scenarios. For more detailed information, please refer to the [wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki).
 
 ## Roadmap
 
