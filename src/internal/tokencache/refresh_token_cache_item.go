@@ -42,7 +42,7 @@ func createRefreshTokenCacheItem(homeAccountID string,
 
 func (rt *refreshTokenCacheItem) CreateKey() string {
 	var fourth string
-	if rt.FamilyID == nil {
+	if msalbase.GetStringFromPointer(rt.FamilyID) == "" {
 		fourth = msalbase.GetStringFromPointer(rt.ClientID)
 	} else {
 		fourth = msalbase.GetStringFromPointer(rt.FamilyID)
