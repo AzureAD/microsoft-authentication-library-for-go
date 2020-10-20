@@ -96,23 +96,24 @@ func (m *defaultStorageManager) ReadRefreshToken(
 	defer lock.RUnlock()
 	if familyID != "" {
 		for _, rt := range m.refreshTokens {
-			if testClientIDRefreshToken(rt, homeAccountID, envAliases, clientID) {
+			if matchFamilyRefreshToken(rt, homeAccountID, envAliases) {
 				return rt
 			}
 		}
 		for _, rt := range m.refreshTokens {
-			if testFamilyRefreshToken(rt, homeAccountID, envAliases) {
+			if matchClientIDRefreshToken(rt, homeAccountID, envAliases, clientID) {
 				return rt
 			}
 		}
 	} else {
 		for _, rt := range m.refreshTokens {
-			if testFamilyRefreshToken(rt, homeAccountID, envAliases) {
+			if matchClientIDRefreshToken(rt, homeAccountID, envAliases, clientID) {
 				return rt
 			}
 		}
+
 		for _, rt := range m.refreshTokens {
-			if testClientIDRefreshToken(rt, homeAccountID, envAliases, clientID) {
+			if matchFamilyRefreshToken(rt, homeAccountID, envAliases) {
 				return rt
 			}
 		}
@@ -120,13 +121,13 @@ func (m *defaultStorageManager) ReadRefreshToken(
 	return nil
 }
 
-func testFamilyRefreshToken(rt *refreshTokenCacheItem, homeAccountID string, envAliases []string) bool {
+func matchFamilyRefreshToken(rt *refreshTokenCacheItem, homeAccountID string, envAliases []string) bool {
 	return msalbase.GetStringFromPointer(rt.HomeAccountID) == homeAccountID &&
 		checkAlias(msalbase.GetStringFromPointer(rt.Environment), envAliases) &&
 		msalbase.GetStringFromPointer(rt.FamilyID) != ""
 }
 
-func testClientIDRefreshToken(rt *refreshTokenCacheItem, homeAccountID string, envAliases []string, clientID string) bool {
+func matchClientIDRefreshToken(rt *refreshTokenCacheItem, homeAccountID string, envAliases []string, clientID string) bool {
 	return msalbase.GetStringFromPointer(rt.HomeAccountID) == homeAccountID &&
 		checkAlias(msalbase.GetStringFromPointer(rt.Environment), envAliases) &&
 		msalbase.GetStringFromPointer(rt.ClientID) == clientID
