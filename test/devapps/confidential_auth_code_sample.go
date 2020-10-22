@@ -10,19 +10,19 @@ import (
 	"net/http"
 	"os"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 	log "github.com/sirupsen/logrus"
 )
 
 var (
 	accessToken                string
 	confidentialConfig         = createConfig("confidential_config.json")
-	confidentialClientAuthCode *msalgo.ConfidentialClientApplication
+	confidentialClientAuthCode *msal.ConfidentialClientApplication
 )
 
 func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
-	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(
+	authCodeURLParams := msal.CreateAuthorizationCodeURLParameters(
 		confidentialConfig.ClientID,
 		confidentialConfig.RedirectURI,
 		confidentialConfig.Scopes,
@@ -53,7 +53,7 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(
+	authCodeParams := msal.CreateAcquireTokenAuthCodeParameters(
 		confidentialConfig.Scopes,
 		confidentialConfig.RedirectURI,
 	)
@@ -78,17 +78,17 @@ func acquireByAuthorizationCodeConfidential() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	certificate, err := msalgo.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
+	certificate, err := msal.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientAuthCode, err = msalgo.CreateConfidentialClientApplication(
+	confidentialClientAuthCode, err = msal.CreateConfidentialClientApplication(
 		confidentialConfig.ClientID, confidentialConfig.Authority, certificate)
 	if err != nil {
 		log.Fatal(err)
 	}
 	confidentialClientAuthCode.SetCacheAccessor(cacheAccessor)
-	var userAccount msalgo.AccountProvider
+	var userAccount msal.AccountProvider
 	accounts := confidentialClientAuthCode.GetAccounts()
 	for _, account := range accounts {
 		if account.GetUsername() == confidentialConfig.Username {
@@ -96,7 +96,7 @@ func acquireByAuthorizationCodeConfidential() {
 		}
 	}
 	if userAccount != nil {
-		silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(confidentialConfig.Scopes, userAccount)
+		silentParams := msal.CreateAcquireTokenSilentParametersWithAccount(confidentialConfig.Scopes, userAccount)
 		result, err := confidentialClientAuthCode.AcquireTokenSilent(silentParams)
 		if err == nil {
 			fmt.Printf("Access token is " + result.GetAccessToken())
