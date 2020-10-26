@@ -27,7 +27,7 @@ Before using MSAL Go, you will need to [register your application with the Micro
 Acquiring tokens with MSAL Go follows this general three step pattern. There might be some slight differences for other token acquisition flows. Here is a basic example:
 1. MSAL separates [public and confidential client applications](https://tools.ietf.org/html/rfc6749#section-2.1). So, you would create an instance of a `PublicClientApplication` and `ConfidentialClientApplication` and use this throughout the lifetime of your application.
 ```go
-publicClientApp, err := msalgo.CreatePublicClientApplication("your_client_id",
+publicClientApp, err := msal.CreatePublicClientApplication("your_client_id",
     "https://login.microsoftonline.com/Enter_the_Tenant_Name_Here")
 ```
 
@@ -37,7 +37,7 @@ accounts := publicClientApp.GetAccounts()
 // Assuming the user wanted the first account
 userAccount := accounts[0]
 scopes := []string{"your_scope"}
-silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(scopes, userAccount)
+silentParams := msal.CreateAcquireTokenSilentParametersWithAccount(scopes, userAccount)
 result, err := publicClientApp.AcquireTokenSilent(silentParams)
 ```
 
@@ -45,7 +45,7 @@ result, err := publicClientApp.AcquireTokenSilent(silentParams)
 ```go
 if err != nil {
     // Based on the flow, you create the type of parameters
-    tokenParams := msalgo.CreateAcquireTokenxxxParameters(scopes, ...)
+    tokenParams := msal.CreateAcquireTokenxxxParameters(scopes, ...)
     result, err := publicClientApp.AcquireTokenByxxx(tokenParams)
     if err != nil {
         log.Fatal(err)

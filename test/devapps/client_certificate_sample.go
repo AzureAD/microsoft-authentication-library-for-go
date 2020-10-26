@@ -8,12 +8,12 @@ import (
 	"io/ioutil"
 	"os"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 	log "github.com/sirupsen/logrus"
 )
 
-func tryClientCertificateFlow(confidentialClientApp *msalgo.ConfidentialClientApplication) {
-	certificateParams := msalgo.CreateAcquireTokenClientCredentialParameters(
+func tryClientCertificateFlow(confidentialClientApp *msal.ConfidentialClientApplication) {
+	certificateParams := msal.CreateAcquireTokenClientCredentialParameters(
 		confidentialConfig.Scopes)
 	result, err := confidentialClientApp.AcquireTokenByClientCredential(certificateParams)
 	if err != nil {
@@ -32,17 +32,17 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	certificate, err := msalgo.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
+	certificate, err := msal.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientApp, err := msalgo.CreateConfidentialClientApplication(
+	confidentialClientApp, err := msal.CreateConfidentialClientApplication(
 		confidentialConfig.ClientID, confidentialConfig.Authority, certificate)
 	if err != nil {
 		log.Fatal(err)
 	}
 	confidentialClientApp.SetCacheAccessor(cacheAccessor)
-	silentParams := msalgo.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
+	silentParams := msal.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
 	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)
 	if err != nil {
 		log.Info(err)

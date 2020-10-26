@@ -8,13 +8,13 @@ import (
 	"fmt"
 	"net/http"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 	log "github.com/sirupsen/logrus"
 )
 
 func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
-	authCodeURLParams := msalgo.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes)
+	authCodeURLParams := msal.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes)
 	authCodeURLParams.CodeChallenge = config.CodeChallenge
 	authCodeURLParams.State = config.State
 	authURL, err := publicClientApp.CreateAuthCodeURL(authCodeURLParams)
@@ -41,7 +41,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	authCodeParams := msalgo.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI)
+	authCodeParams := msal.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI)
 	authCodeParams.Code = code
 	authCodeParams.CodeChallenge = config.CodeChallenge
 	result, err := publicClientApp.AcquireTokenByAuthCode(authCodeParams)
@@ -53,7 +53,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func acquireByAuthorizationCodePublic() {
-	publicClientApp, err = msalgo.CreatePublicClientApplication(config.ClientID, config.Authority)
+	publicClientApp, err = msal.CreatePublicClientApplication(config.ClientID, config.Authority)
 	if err != nil {
 		log.Fatal(err)
 	}

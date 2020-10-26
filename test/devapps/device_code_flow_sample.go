@@ -8,20 +8,20 @@ import (
 	"fmt"
 	"time"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 	log "github.com/sirupsen/logrus"
 )
 
-func deviceCodeCallback(deviceCodeResult msalgo.DeviceCodeResultProvider) {
+func deviceCodeCallback(deviceCodeResult msal.DeviceCodeResultProvider) {
 	log.Infof(deviceCodeResult.GetMessage())
 }
 
-func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
+func tryDeviceCodeFlow(publicClientApp *msal.PublicClientApplication) {
 	cancelTimeout := 100 //Change this for cancel timeout
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
 	defer cancelFunc()
-	deviceCodeParams := msalgo.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
-	resultChannel := make(chan msalgo.AuthenticationResultProvider)
+	deviceCodeParams := msal.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
+	resultChannel := make(chan msal.AuthenticationResultProvider)
 	errChannel := make(chan error)
 	go func() {
 		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
@@ -38,12 +38,12 @@ func tryDeviceCodeFlow(publicClientApp *msalgo.PublicClientApplication) {
 
 func acquireTokenDeviceCode() {
 	config := createConfig("config.json")
-	publicClientApp, err := msalgo.CreatePublicClientApplication(config.ClientID, config.Authority)
+	publicClientApp, err := msal.CreatePublicClientApplication(config.ClientID, config.Authority)
 	if err != nil {
 		log.Fatal(err)
 	}
 	publicClientApp.SetCacheAccessor(cacheAccessor)
-	var userAccount msalgo.AccountProvider
+	var userAccount msal.AccountProvider
 	accounts := publicClientApp.GetAccounts()
 	for _, account := range accounts {
 		if account.GetUsername() == config.Username {
@@ -54,7 +54,7 @@ func acquireTokenDeviceCode() {
 		log.Info("No valid account found")
 		tryDeviceCodeFlow(publicClientApp)
 	} else {
-		silentParams := msalgo.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
+		silentParams := msal.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
 		result, err := publicClientApp.AcquireTokenSilent(silentParams)
 		if err != nil {
 			log.Info(err)

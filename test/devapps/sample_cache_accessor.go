@@ -9,14 +9,14 @@ import (
 
 	log "github.com/sirupsen/logrus"
 
-	msalgo "github.com/AzureAD/microsoft-authentication-library-for-go/src/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 )
 
 type SampleCacheAccessor struct {
 	file string
 }
 
-func (accessor *SampleCacheAccessor) BeforeCacheAccess(context *msalgo.CacheContext) {
+func (accessor *SampleCacheAccessor) BeforeCacheAccess(context *msal.CacheContext) {
 	jsonFile, err := os.Open(accessor.file)
 	if err != nil {
 		log.Fatal(err)
@@ -32,7 +32,7 @@ func (accessor *SampleCacheAccessor) BeforeCacheAccess(context *msalgo.CacheCont
 	}
 }
 
-func (accessor *SampleCacheAccessor) AfterCacheAccess(context *msalgo.CacheContext) {
+func (accessor *SampleCacheAccessor) AfterCacheAccess(context *msal.CacheContext) {
 	data, err := context.SerializeCache()
 	if err != nil {
 		log.Fatal(err)
