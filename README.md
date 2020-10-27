@@ -1,6 +1,6 @@
 # Microsoft Authentication Library (MSAL) for Go
 
-**Microsoft does not currently have bandwidth to actively develop this new addition to the MSAL family of libraries, but we would like to gauge customer interest and get early feedback. Please contribute (see [CONTRIBUTING.md](https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/dev/CONTRIBUTING.md)) and help us grow our list of supported MSAL SDKs.**
+**MSAL Go is a new addition to the MSAL family of libraries, not yet in public preview, but we would like to gauge customer interest and get early feedback. Please contribute (see [CONTRIBUTING.md](https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/dev/CONTRIBUTING.md)) and help us grow our list of supported MSAL SDKs.**
 
 The MSAL library for Go is part of the [Microsoft identity platform for developers](https://aka.ms/aaddevv2) (formerly named Azure AD) v2.0. It enables you to acquire security tokens to call protected APIs. It uses industry standard OAuth2 and OpenID Connect.
 
