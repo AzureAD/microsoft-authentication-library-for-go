@@ -36,5 +36,8 @@ jobs:
       - name: Build
         run: go build -v ./msal
 
+      - name: Build testapp
+        run: go build -v ./test/devapps
+
       - name: Test
         run: go test -v ./...
