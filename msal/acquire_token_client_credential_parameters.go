@@ -13,10 +13,9 @@ type AcquireTokenClientCredentialParameters struct {
 // CreateAcquireTokenClientCredentialParameters creates an AcquireTokenClientCredentialParameters instance.
 // Pass in the scopes required.
 func CreateAcquireTokenClientCredentialParameters(scopes []string) *AcquireTokenClientCredentialParameters {
-	params := &AcquireTokenClientCredentialParameters{
+	return &AcquireTokenClientCredentialParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 	}
-	return params
 }
 
 func (p *AcquireTokenClientCredentialParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {

@@ -17,23 +17,21 @@ type AcquireTokenSilentParameters struct {
 }
 
 // CreateAcquireTokenSilentParameters creates an AcquireTokenSilentParameters instance with an empty account.
-// This can be used in the case where tokens are acquired as the application instelf.
+// This can be used in the case where tokens are acquired as the application itself.
 func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
-	p := &AcquireTokenSilentParameters{
+	return &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          &msalbase.Account{},
 	}
-	return p
 }
 
 // CreateAcquireTokenSilentParametersWithAccount creates an AcquireTokenSilentParameters instance from an account.
-// This account can be pulled from the cache by calling GetAccounts
+// This account can be pulled from the cache by calling GetAccounts.
 func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account AccountProvider) *AcquireTokenSilentParameters {
-	p := &AcquireTokenSilentParameters{
+	return &AcquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          account,
 	}
-	return p
 }
 
 func (p *AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {

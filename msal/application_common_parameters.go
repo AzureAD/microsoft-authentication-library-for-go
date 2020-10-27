@@ -11,10 +11,9 @@ type applicationCommonParameters struct {
 }
 
 func createApplicationCommonParameters(clientID string) *applicationCommonParameters {
-	p := &applicationCommonParameters{
+	return &applicationCommonParameters{
 		clientID: clientID,
 	}
-	return p
 }
 
 func (p *applicationCommonParameters) setAadAuthority(authorityURI string) error {

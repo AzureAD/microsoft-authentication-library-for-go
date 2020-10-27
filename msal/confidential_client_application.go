@@ -32,11 +32,10 @@ func CreateConfidentialClientApplication(
 	}, nil
 }
 
-// This is used to convert the user-facing client credential interface to the internal representation of a client credential
+// This is used to convert the user-facing client credential interface to the internal representation of a client credential.
 func createInternalClientCredential(interfaceCred ClientCredentialProvider) (*msalbase.ClientCredential, error) {
 	if interfaceCred.GetCredentialType() == msalbase.ClientCredentialSecret {
 		return msalbase.CreateClientCredentialFromSecret(interfaceCred.GetSecret())
-
 	}
 	if interfaceCred.GetAssertion().ClientCertificate != nil {
 		return msalbase.CreateClientCredentialFromCertificateObject(
@@ -77,7 +76,6 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 	authCodeParams.requestType = requests.AuthCodeConfidential
 	authCodeParams.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
-
 }
 
 // AcquireTokenByClientCredential acquires a security token from the authority, using the client credentials grant.

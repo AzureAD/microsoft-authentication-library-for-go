@@ -12,7 +12,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 )
 
-// deviceCodeRequest stores the values required to request a token from the authority using device code flow
+// deviceCodeRequest stores the values required to request a token from the authority using device code flow.
 type deviceCodeRequest struct {
 	webRequestManager  requests.WebRequestManager
 	authParameters     *msalbase.AuthParametersInternal
@@ -28,7 +28,7 @@ func createDeviceCodeRequest(cancelCtx context.Context,
 	return req
 }
 
-// Execute performs the token acquisition request and returns a token response or an error
+// Execute performs the token acquisition request and returns a token response or an error.
 func (req *deviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	// Resolve authority endpoints
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(req.webRequestManager)
@@ -48,7 +48,6 @@ func (req *deviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 }
 
 func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
-
 	interval := deviceCodeResult.GetInterval()
 	timeRemaining := deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
 

@@ -3,7 +3,7 @@
 
 package msal
 
-// CacheAccessor is an interface where the user can specify cache persistence properties.
+// CacheAccessor represents the events that can be handled on cache access.
 // BeforeCacheAccess is called everytime before the cache is accessed, and AfterCacheAccess
 // is called after it is accessed.
 type CacheAccessor interface {

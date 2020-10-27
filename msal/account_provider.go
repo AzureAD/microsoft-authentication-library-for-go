@@ -3,8 +3,8 @@
 
 package msal
 
-//AccountProvider is an interface representing an account that is returned to users.
-//This can help with accessing the cache for tokens.
+// AccountProvider represents an account that is returned to users.
+// This can help with accessing the cache for tokens.
 type AccountProvider interface {
 	GetUsername() string
 	GetHomeAccountID() string

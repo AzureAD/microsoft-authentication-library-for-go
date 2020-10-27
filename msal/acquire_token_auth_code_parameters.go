@@ -22,14 +22,12 @@ type AcquireTokenAuthCodeParameters struct {
 }
 
 // CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance.
-// Pass in the scopes required, the redirect URI for your application.
-func CreateAcquireTokenAuthCodeParameters(scopes []string,
-	redirectURI string) *AcquireTokenAuthCodeParameters {
-	p := &AcquireTokenAuthCodeParameters{
+// Pass in the scopes required and the redirect URI for your application.
+func CreateAcquireTokenAuthCodeParameters(scopes []string, redirectURI string) *AcquireTokenAuthCodeParameters {
+	return &AcquireTokenAuthCodeParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		redirectURI:      redirectURI,
 	}
-	return p
 }
 
 func (p *AcquireTokenAuthCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {

@@ -5,7 +5,7 @@ package msal
 
 import "time"
 
-// DeviceCodeResultProvider is an interface for DeviceCodeResult that can be returned to users.
+// DeviceCodeResultProvider gets values from DeviceCodeResult that can be returned to users.
 // You can use these functions to show the user different parameters of the device code result.
 type DeviceCodeResultProvider interface {
 	GetMessage() string

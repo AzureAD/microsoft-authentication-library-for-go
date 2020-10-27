@@ -12,7 +12,7 @@ const (
 	clientAssertion
 )
 
-// ClientCredentialProvider is an interface representing a client credential.
+// ClientCredentialProvider represents a client credential.
 // This is required to create a ConfidentialClientApplication instance.
 type ClientCredentialProvider interface {
 	GetCredentialType() msalbase.ClientCredentialType

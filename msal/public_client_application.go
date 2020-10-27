@@ -23,13 +23,13 @@ func CreatePublicClientApplication(clientID string, authority string) (*PublicCl
 	return pca, nil
 }
 
-//SetHTTPManager allows users to use their own implementation of HTTPManager.
+// SetHTTPManager allows users to use their own implementation of HTTPManager.
 func (pca *PublicClientApplication) SetHTTPManager(httpManager HTTPManager) {
 	webRequestManager := createWebRequestManager(httpManager)
 	pca.clientApplication.webRequestManager = webRequestManager
 }
 
-//SetCacheAccessor allows users to use an implementation of CacheAccessor to handle cache persistence.
+// SetCacheAccessor allows users to use an implementation of CacheAccessor to handle cache persistence.
 func (pca *PublicClientApplication) SetCacheAccessor(accessor CacheAccessor) {
 	pca.clientApplication.cacheAccessor = accessor
 }

@@ -15,12 +15,11 @@ type AcquireTokenUsernamePasswordParameters struct {
 // CreateAcquireTokenUsernamePasswordParameters creates an AcquireTokenUsernamePasswordParameters instance.
 // Pass in the scopes as well as the user's username and password.
 func CreateAcquireTokenUsernamePasswordParameters(scopes []string, username string, password string) *AcquireTokenUsernamePasswordParameters {
-	p := &AcquireTokenUsernamePasswordParameters{
+	return &AcquireTokenUsernamePasswordParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		username:         username,
 		password:         password,
 	}
-	return p
 }
 
 func (p *AcquireTokenUsernamePasswordParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {

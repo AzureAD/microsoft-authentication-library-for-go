@@ -12,12 +12,12 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-//msalHTTPManager is a wrapper for http.Client
+// msalHTTPManager is a wrapper for http.Client.
 type msalHTTPManager struct {
 	client *http.Client
 }
 
-// CreateHTTPManager creates a http.Client object and wraps it in a msalHTTPManager
+// CreateHTTPManager creates a http.Client object and wraps it in a msalHTTPManager.
 func createHTTPManager() HTTPManager {
 	tr := &http.Transport{
 		DialContext: (&net.Dialer{
@@ -48,7 +48,7 @@ func (mgr *msalHTTPManager) performRequest(
 	return createHTTPManagerResponse(resp)
 }
 
-// Get sends a get request to the appropriate URL
+// Get sends a get request to the appropriate URL.
 func (mgr *msalHTTPManager) Get(url string, requestHeaders map[string]string) (HTTPManagerResponse, error) {
 	log.Info("<------------------")
 	log.Infof("   GET to %v", url)
@@ -61,7 +61,7 @@ func (mgr *msalHTTPManager) Get(url string, requestHeaders map[string]string) (H
 	return mgr.performRequest(req, requestHeaders)
 }
 
-// Post sends a post request to the appropriate URL
+// Post sends a post request to the appropriate URL.
 func (mgr *msalHTTPManager) Post(url string, body string, requestHeaders map[string]string) (HTTPManagerResponse, error) {
 	log.Info("<------------------")
 	log.Infof("   POST to %v", url)

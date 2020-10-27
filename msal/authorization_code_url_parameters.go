@@ -37,7 +37,7 @@ func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, s
 	return p
 }
 
-//createURL creates the URL required to generate an authorization code from the parameters
+// createURL creates the URL required to generate an authorization code from the parameters.
 func (p *AuthorizationCodeURLParameters) createURL(wrm requests.WebRequestManager, authParams *msalbase.AuthParametersInternal) (string, error) {
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(wrm)
 	endpoints, err := resolutionManager.ResolveEndpoints(authParams.AuthorityInfo, "")

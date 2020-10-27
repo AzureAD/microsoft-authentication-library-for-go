@@ -24,12 +24,11 @@ type AcquireTokenDeviceCodeParameters struct {
 // MSAL polls the authorization server repeatedly until the end-user completes input of credentials. Use cancelCtx to cancel the polling.
 func CreateAcquireTokenDeviceCodeParameters(cancelCtx context.Context, scopes []string,
 	deviceCodeCallback func(DeviceCodeResultProvider)) *AcquireTokenDeviceCodeParameters {
-	p := &AcquireTokenDeviceCodeParameters{
+	return &AcquireTokenDeviceCodeParameters{
 		commonParameters:   createAcquireTokenCommonParameters(scopes),
 		deviceCodeCallback: deviceCodeCallback,
 		cancelCtx:          cancelCtx,
 	}
-	return p
 }
 
 func (p *AcquireTokenDeviceCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
