@@ -18,27 +18,25 @@ var (
 )
 
 var idToken = &idTokenCacheItem{
-	HomeAccountID:  &idHid,
-	Environment:    &idEnv,
-	CredentialType: &idCredential,
-	ClientID:       &idClient,
-	Realm:          &idRealm,
-	Secret:         &idTokSecret,
+	HomeAccountID:  idHid,
+	Environment:    idEnv,
+	CredentialType: idCredential,
+	ClientID:       idClient,
+	Realm:          idRealm,
+	Secret:         idTokSecret,
 }
 
 func TestCreateIDTokenCacheItem(t *testing.T) {
 	actualIDToken := createIDTokenCacheItem("HID", "env", "realm", "clientID", "id")
-	actualHomeID := *actualIDToken.HomeAccountID
-	if !reflect.DeepEqual(actualHomeID, idHid) {
-		t.Errorf("Actual home account id %+v differs from expected home account id %+v", actualHomeID, idHid)
+	if actualIDToken.HomeAccountID != idHid {
+		t.Errorf("actual home account id %+v differs from expected home account id %+v", actualIDToken.HomeAccountID, idHid)
 	}
 }
 
 func TestCreateKeyForIDToken(t *testing.T) {
-	expectedKey := "HID-env-IdToken-clientID-realm"
-	actualKey := idToken.CreateKey()
-	if !reflect.DeepEqual(actualKey, expectedKey) {
-		t.Errorf("Actual key %v differs from expected key %v", actualKey, expectedKey)
+	want := "HID-env-IdToken-clientID-realm"
+	if idToken.CreateKey() != want {
+		t.Errorf("actual key %v differs from expected key %v", idToken.CreateKey(), want)
 	}
 }
 
@@ -53,17 +51,16 @@ func TestIDTokenPopulateFromJSONMap(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	actualHomeID := *actualIDToken.HomeAccountID
-	if !reflect.DeepEqual(actualHomeID, idHid) {
-		t.Errorf("Actual home account id %+v differs from expected home account id %+v", actualHomeID, idHid)
+	if actualIDToken.HomeAccountID != idHid {
+		t.Errorf("actual home account id %+v differs from expected home account id %+v", actualIDToken.HomeAccountID, idHid)
 	}
 }
 
 func TestIDTokenConvertToJSONMap(t *testing.T) {
 	idToken := &idTokenCacheItem{
-		HomeAccountID:    &idHid,
-		Environment:      &idEnv,
-		Realm:            nil,
+		HomeAccountID:    idHid,
+		Environment:      idEnv,
+		Realm:            "",
 		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
 	jsonMap := map[string]interface{}{

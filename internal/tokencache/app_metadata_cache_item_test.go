@@ -6,6 +6,8 @@ package tokencache
 import (
 	"reflect"
 	"testing"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 var (
@@ -13,17 +15,17 @@ var (
 	appEnv    = "env"
 	fam       = ""
 	appMeta   = &appMetadata{
-		ClientID:    &appClient,
-		Environment: &appEnv,
-		FamilyID:    nil,
+		ClientID:    appClient,
+		Environment: appEnv,
+		FamilyID:    "",
 	}
 )
 
 func TestCreateKeyForAppMetadata(t *testing.T) {
-	expectedKey := "appmetadata-env-cid"
-	actualKey := appMeta.CreateKey()
-	if !reflect.DeepEqual(expectedKey, actualKey) {
-		t.Errorf("Actual key %v differs from expected key %v", actualKey, expectedKey)
+	want := "appmetadata-env-cid"
+	got := appMeta.CreateKey()
+	if want != got {
+		t.Errorf("actual key %v differs from expected key %v", want, got)
 	}
 }
 
@@ -40,39 +42,43 @@ func TestAppMetadataPopulateFromJSONMap(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	actualEnv := *actualAppMetadata.Environment
+	actualEnv := actualAppMetadata.Environment
 	if !reflect.DeepEqual(actualEnv, appEnv) {
 		t.Errorf("Actual app metadata environment %+v differs from expected app metadata environment %+v",
 			actualEnv, appEnv)
 	}
-	actualClient := *actualAppMetadata.ClientID
+	actualClient := actualAppMetadata.ClientID
 	if !reflect.DeepEqual(actualClient, appClient) {
 		t.Errorf("Actual app metadata client ID %s differs from expected app metadata client ID %s",
 			actualClient, appClient)
 	}
-	if actualAppMetadata.FamilyID != nil {
-		t.Errorf("Family ID should be nil, not %v", *actualAppMetadata.FamilyID)
+	if actualAppMetadata.FamilyID != "" {
+		t.Errorf("Family ID should be nil, not %v", actualAppMetadata.FamilyID)
 	}
 }
 
 func TestAppMetadataConvertToJSONMap(t *testing.T) {
 	appMetadata := &appMetadata{
-		Environment:      nil,
-		ClientID:         &appClient,
-		FamilyID:         &fam,
+		Environment:      "",
+		ClientID:         appClient,
+		FamilyID:         fam,
 		additionalFields: map[string]interface{}{"extra": "this_is_extra", "cached_at": "100"},
 	}
-	jsonMap := map[string]interface{}{
+	want := map[string]interface{}{
 		"client_id": "cid",
 		"extra":     "this_is_extra",
 		"cached_at": "100",
-		"family_id": "",
 	}
-	actualJSONMap, err := appMetadata.convertToJSONMap()
+	got, err := appMetadata.convertToJSONMap()
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
-		t.Errorf("JSON app metadata %+v differs from expected JSON app metadata %+v", actualJSONMap, jsonMap)
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestAppMetadataConvertToJSONMap: -want/+got:\n%s", diff)
 	}
+	/*
+		if !reflect.DeepEqual(jsonMap, actualJSONMap) {
+			t.Errorf("JSON app metadata %+v differs from expected JSON app metadata %+v", actualJSONMap, jsonMap)
+		}
+	*/
 }

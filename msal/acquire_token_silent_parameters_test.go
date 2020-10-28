@@ -16,7 +16,7 @@ func TestAugmentAuthenticationParametersSilent(t *testing.T) {
 	testTokenCommonParams := &acquireTokenCommonParameters{testScopes}
 	homeAccountID := "hid"
 	testAccount := &msalbase.Account{
-		HomeAccountID: &homeAccountID,
+		HomeAccountID: homeAccountID,
 	}
 	testSilentParams := &AcquireTokenSilentParameters{
 		commonParameters: testTokenCommonParams,

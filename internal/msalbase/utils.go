@@ -10,7 +10,7 @@ import (
 	"time"
 )
 
-//ConvertStrUnixToUTCTime converts a string representation of unix time to a UTC timestamp
+//ConvertStrUnixToUTCTime converts a string representation of unix time to a UTC timestamp.
 func ConvertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 	timeInt, err := strconv.ParseInt(unixTime, 10, 64)
 	if err != nil {
@@ -19,36 +19,27 @@ func ConvertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 	return time.Unix(timeInt, 0).UTC(), nil
 }
 
-//ConcatenateScopes combines all scopes into one space-separated string
+// ConcatenateScopes combines all scopes into one space-separated string.
 func ConcatenateScopes(scopes []string) string {
 	return strings.Join(scopes, DefaultScopeSeparator)
 }
 
-//SplitScopes splits a space-separated string of scopes to a list
+// SplitScopes splits a space-separated string of scopes to a list.
 func SplitScopes(scopes string) []string {
 	return strings.Split(scopes, DefaultScopeSeparator)
 }
 
-//ExtractStringPointerForCache checks a map to see if the key required exists
-//If it does, returns a pointer to the string value, if not, returns nil
-func ExtractStringPointerForCache(j map[string]interface{}, key string) *string {
-	if val, ok := j[key]; ok {
-		if str, ok := val.(string); ok {
-			delete(j, key)
-			return &str
-		}
-	}
-	delete(j, key)
-	return nil
-}
-
-//GetStringFromPointer checks if a pointer to a string is nil
-//If it's not, the pointer is dereferenced; otherwise, an empty string is returned
-func GetStringFromPointer(pointer *string) string {
-	if pointer == nil {
+// GetStringKey does a lookup and returns the string at that value or an empty string.
+func GetStringKey(j map[string]interface{}, key string) string {
+	i := j[key]
+	if i == nil {
 		return ""
 	}
-	return *pointer
+	v, ok := i.(string)
+	if !ok {
+		return ""
+	}
+	return v
 }
 
 //DecodeJWT decodes a JWT and converts it to a byte array representing a JSON object

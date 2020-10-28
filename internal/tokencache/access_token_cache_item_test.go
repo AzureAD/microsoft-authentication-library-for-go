@@ -7,6 +7,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 var (
@@ -21,16 +23,16 @@ var (
 	extExpiresOn  = "1592049600"
 	cachedAt      = "1592049600"
 	atCacheEntity = &accessTokenCacheItem{
-		HomeAccountID:                  &testHID,
-		Environment:                    &env,
-		CredentialType:                 &credential,
-		ClientID:                       &clientID,
-		Realm:                          &realm,
-		Scopes:                         &scopes,
-		Secret:                         &secret,
-		ExpiresOnUnixTimestamp:         &expiresOn,
-		ExtendedExpiresOnUnixTimestamp: &extExpiresOn,
-		CachedAt:                       &cachedAt,
+		HomeAccountID:                  testHID,
+		Environment:                    env,
+		CredentialType:                 credential,
+		ClientID:                       clientID,
+		Realm:                          realm,
+		Scopes:                         scopes,
+		Secret:                         secret,
+		ExpiresOnUnixTimestamp:         expiresOn,
+		ExtendedExpiresOnUnixTimestamp: extExpiresOn,
+		CachedAt:                       cachedAt,
 	}
 )
 
@@ -48,8 +50,8 @@ func TestCreateAccessTokenCacheItem(t *testing.T) {
 		"user.read",
 		"access",
 	)
-	if !reflect.DeepEqual(extExpiresOn, *actualAt.ExtendedExpiresOnUnixTimestamp) {
-		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", *actualAt.ExtendedExpiresOnUnixTimestamp, extExpiresOn)
+	if !reflect.DeepEqual(extExpiresOn, actualAt.ExtendedExpiresOnUnixTimestamp) {
+		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", actualAt.ExtendedExpiresOnUnixTimestamp, extExpiresOn)
 	}
 }
 
@@ -69,33 +71,34 @@ func TestAccessTokenPopulateFromJSONMap(t *testing.T) {
 		"cached_at":       "100",
 	}
 	testCachedAt := "100"
-	expectedAccessToken := &accessTokenCacheItem{
-		HomeAccountID:    &testHID,
-		Environment:      &env,
-		CachedAt:         &testCachedAt,
+	want := &accessTokenCacheItem{
+		HomeAccountID:    testHID,
+		Environment:      env,
+		CachedAt:         testCachedAt,
 		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
-	actualAccessToken := &accessTokenCacheItem{}
-	err := actualAccessToken.populateFromJSONMap(jsonMap)
+	got := &accessTokenCacheItem{}
+	err := got.populateFromJSONMap(jsonMap)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualAccessToken, expectedAccessToken) {
-		t.Errorf("Actual access token %+v differs from expected access token %+v", actualAccessToken, expectedAccessToken)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(want, got); diff != "" {
+		t.Errorf("TestAccessTokenPopulateFromJSONMap(access tokens): -want/+got:\n %s", diff)
 	}
-	actualHID := *actualAccessToken.HomeAccountID
-	if !reflect.DeepEqual(actualHID, testHID) {
-		t.Errorf("Expected home account ID %s differs from actual home account ID %s", actualHID, testHID)
+
+	gotExtra := got.additionalFields["extra"].(string)
+	if gotExtra != "this_is_extra" {
+		t.Errorf("TestAccessTokenPopulateFromJSONMap(extra field): got %s, want %s", gotExtra, "this_is_extra")
 	}
 }
 
 func TestAccessTokenConvertToJSONMap(t *testing.T) {
 	testCachedAt := "100"
 	accessToken := &accessTokenCacheItem{
-		HomeAccountID:    &testHID,
-		Environment:      nil,
-		CachedAt:         &testCachedAt,
-		CredentialType:   &credential,
+		HomeAccountID:    testHID,
+		Environment:      "",
+		CachedAt:         testCachedAt,
+		CredentialType:   credential,
 		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
 	jsonMap := map[string]interface{}{
