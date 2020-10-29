@@ -46,8 +46,8 @@ func TestReadAllAccounts(t *testing.T) {
 		appMetadatas:  make(map[string]*appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
-	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
-	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
+	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
 	storageManager.accounts[testAccTwo.CreateKey()] = testAccTwo
 	actualAccounts := storageManager.ReadAllAccounts()
@@ -80,8 +80,8 @@ func TestDeleteAccounts(t *testing.T) {
 		appMetadatas:  make(map[string]*appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
-	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
-	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
+	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
 	storageManager.accounts[testAccTwo.CreateKey()] = testAccTwo
 	err := storageManager.DeleteAccounts("hid", []string{"hello", "env", "test"})
@@ -174,7 +174,7 @@ func TestReadAccount(t *testing.T) {
 		appMetadatas:  make(map[string]*appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
-	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	storageManager.accounts[testAcc.CreateKey()] = testAcc
 	returnedAccount := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
 	if !reflect.DeepEqual(returnedAccount, testAcc) {
@@ -195,7 +195,7 @@ func TestWriteAccount(t *testing.T) {
 		appMetadatas:  make(map[string]*appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
-	testAcc := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	key := testAcc.CreateKey()
 	err := storageManager.WriteAccount(testAcc)
 	if err != nil {
@@ -554,56 +554,56 @@ func TestStorageManagerSerialize(t *testing.T) {
 			additionalFields: map[string]interface{}{"foo": "bar"},
 		},
 		"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
-			Environment:                    &defaultEnvironment,
-			CredentialType:                 &accessTokenCred,
-			Secret:                         &accessTokenSecret,
-			Realm:                          &defaultRealm,
-			Scopes:                         &defaultScopes,
-			ClientID:                       &defaultClientID,
-			CachedAt:                       &atCached,
-			HomeAccountID:                  &defaultHID,
-			ExpiresOnUnixTimestamp:         &atExpires,
-			ExtendedExpiresOnUnixTimestamp: &atExpires,
+			Environment:                    defaultEnvironment,
+			CredentialType:                 accessTokenCred,
+			Secret:                         accessTokenSecret,
+			Realm:                          defaultRealm,
+			Scopes:                         defaultScopes,
+			ClientID:                       defaultClientID,
+			CachedAt:                       atCached,
+			HomeAccountID:                  defaultHID,
+			ExpiresOnUnixTimestamp:         atExpires,
+			ExtendedExpiresOnUnixTimestamp: atExpires,
 			additionalFields:               make(map[string]interface{}),
 		},
 	}
 	manager.refreshTokens = map[string]*refreshTokenCacheItem{
 		"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
-			Target:           &defaultScopes,
-			Environment:      &defaultEnvironment,
-			CredentialType:   &rtCredType,
-			Secret:           &rtSecret,
-			ClientID:         &defaultClientID,
-			HomeAccountID:    &defaultHID,
+			Target:           defaultScopes,
+			Environment:      defaultEnvironment,
+			CredentialType:   rtCredType,
+			Secret:           rtSecret,
+			ClientID:         defaultClientID,
+			HomeAccountID:    defaultHID,
 			additionalFields: make(map[string]interface{}),
 		},
 	}
 	manager.idTokens = map[string]*idTokenCacheItem{
 		"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
-			Realm:            &defaultRealm,
-			Environment:      &defaultEnvironment,
-			CredentialType:   &idCred,
-			Secret:           &idSecret,
-			ClientID:         &defaultClientID,
-			HomeAccountID:    &defaultHID,
+			Realm:            defaultRealm,
+			Environment:      defaultEnvironment,
+			CredentialType:   idCred,
+			Secret:           idSecret,
+			ClientID:         defaultClientID,
+			HomeAccountID:    defaultHID,
 			additionalFields: make(map[string]interface{}),
 		},
 	}
 	manager.accounts = map[string]*msalbase.Account{
 		"uid.utid-login.windows.net-contoso": {
-			PreferredUsername: &accUser,
-			LocalAccountID:    &accLID,
-			Realm:             &defaultRealm,
-			Environment:       &defaultEnvironment,
-			HomeAccountID:     &defaultHID,
-			AuthorityType:     &accAuth,
+			PreferredUsername: accUser,
+			LocalAccountID:    accLID,
+			Realm:             defaultRealm,
+			Environment:       defaultEnvironment,
+			HomeAccountID:     defaultHID,
+			AuthorityType:     accAuth,
 		},
 	}
 	manager.appMetadatas = map[string]*appMetadata{
 		"appmetadata-login.windows.net-my_client_id": {
-			Environment:      &defaultEnvironment,
-			FamilyID:         nil,
-			ClientID:         &defaultClientID,
+			Environment:      defaultEnvironment,
+			FamilyID:         "",
+			ClientID:         defaultClientID,
 			additionalFields: make(map[string]interface{}),
 		},
 	}
@@ -629,23 +629,23 @@ func TestStorageManagerDeserialize(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	actualATSecret := *manager.accessTokens["uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3"].Secret
+	actualATSecret := manager.accessTokens["uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3"].Secret
 	if !reflect.DeepEqual(accessTokenSecret, actualATSecret) {
 		t.Errorf("Expected access token secret %+v differs from actual access token secret %+v", accessTokenSecret, actualATSecret)
 	}
-	actualRTSecret := *manager.refreshTokens["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
+	actualRTSecret := manager.refreshTokens["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
 	if !reflect.DeepEqual(rtSecret, actualRTSecret) {
 		t.Errorf("Expected refresh tokens %+v differ from actual refresh tokens %+v", rtSecret, actualRTSecret)
 	}
-	actualIDSecret := *manager.idTokens["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
+	actualIDSecret := manager.idTokens["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
 	if !reflect.DeepEqual(idSecret, actualIDSecret) {
 		t.Errorf("Expected ID tokens %+v differ from actual ID tokens %+v", idSecret, actualIDSecret)
 	}
-	actualUser := *manager.accounts["uid.utid-login.windows.net-contoso"].PreferredUsername
+	actualUser := manager.accounts["uid.utid-login.windows.net-contoso"].PreferredUsername
 	if !reflect.DeepEqual(actualUser, accUser) {
 		t.Errorf("Actual account username %+s differs from expected account username %+v", actualUser, accUser)
 	}
-	if manager.appMetadatas["appmetadata-login.windows.net-my_client_id"].FamilyID != nil {
-		t.Errorf("Expected app metadata family ID is nil, instead it is %s", *manager.appMetadatas["appmetadata-login.windows.net-my_client_id"].FamilyID)
+	if manager.appMetadatas["appmetadata-login.windows.net-my_client_id"].FamilyID != "" {
+		t.Errorf("Expected app metadata family ID is nil, instead it is %s", manager.appMetadatas["appmetadata-login.windows.net-my_client_id"].FamilyID)
 	}
 }

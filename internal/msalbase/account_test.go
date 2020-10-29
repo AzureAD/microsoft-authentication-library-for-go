@@ -8,17 +8,19 @@ import (
 	"testing"
 )
 
-var accHID = "hid"
-var accEnv = "env"
-var accRealm = "realm"
-var authType = "MSSTS"
-var accLid = "lid"
-var accUser = "user"
+var (
+	accHID   = "hid"
+	accEnv   = "env"
+	accRealm = "realm"
+	authType = "MSSTS"
+	accLid   = "lid"
+	accUser  = "user"
+)
 
 var testAccount = &Account{
-	HomeAccountID:     &accHID,
-	PreferredUsername: &accUser,
-	Environment:       &accEnv,
+	HomeAccountID:     accHID,
+	PreferredUsername: accUser,
+	Environment:       accEnv,
 }
 
 func TestAccountPopulateFromJSONMap(t *testing.T) {
@@ -34,40 +36,38 @@ func TestAccountPopulateFromJSONMap(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	actualHID := *actualAccount.HomeAccountID
-	if !reflect.DeepEqual(actualHID, accHID) {
-		t.Errorf("Expected home account ID %s differs from actual home account ID %s", accHID, actualHID)
+	if actualAccount.HomeAccountID != accHID {
+		t.Errorf("Expected home account ID %s differs from actual home account ID %s", accHID, actualAccount.HomeAccountID)
 	}
-	actualEnv := *actualAccount.Environment
-	if !reflect.DeepEqual(actualEnv, accEnv) {
-		t.Errorf("Expected environment %s differs from actual environment %s", accEnv, actualEnv)
+	if actualAccount.Environment != accEnv {
+		t.Errorf("Expected environment %s differs from actual environment %s", accEnv, actualAccount.Environment)
 	}
-	if !reflect.DeepEqual(*actualAccount.AuthorityType, MSSTS) {
+	if actualAccount.AuthorityType != MSSTS {
 		t.Errorf("Actual auth type %v differs from expected auth type %v", actualAccount.AuthorityType, MSSTS)
 	}
 }
 
 func TestAccountCreateKey(t *testing.T) {
 	acc := &Account{
-		HomeAccountID: &accHID,
-		Environment:   &accEnv,
-		Realm:         &accRealm,
+		HomeAccountID: accHID,
+		Environment:   accEnv,
+		Realm:         accRealm,
 	}
 	expectedKey := "hid-env-realm"
 	actualKey := acc.CreateKey()
-	if !reflect.DeepEqual(expectedKey, actualKey) {
+	if expectedKey != actualKey {
 		t.Errorf("Actual key %s differs from expected key %s", actualKey, expectedKey)
 	}
 }
 
 func TestAccountConvertToJSONMap(t *testing.T) {
 	acc := &Account{
-		HomeAccountID:     &accHID,
-		Environment:       &accEnv,
-		Realm:             &accRealm,
-		LocalAccountID:    &accLid,
-		AuthorityType:     &authType,
-		PreferredUsername: &accUser,
+		HomeAccountID:     accHID,
+		Environment:       accEnv,
+		Realm:             accRealm,
+		LocalAccountID:    accLid,
+		AuthorityType:     authType,
+		PreferredUsername: accUser,
 		additionalFields:  map[string]interface{}{"extra": "extra"},
 	}
 	jsonMap := map[string]interface{}{
@@ -89,22 +89,19 @@ func TestAccountConvertToJSONMap(t *testing.T) {
 }
 
 func TestGetHomeAccountIDForAccount(t *testing.T) {
-	if !reflect.DeepEqual(testAccount.GetHomeAccountID(), accHID) {
-		t.Errorf("Actual home account ID %s differs from expected home account ID %s",
-			testAccount.GetHomeAccountID(), accHID)
+	if testAccount.GetHomeAccountID() != accHID {
+		t.Errorf("Actual home account ID %s differs from expected home account ID %s", testAccount.GetHomeAccountID(), accHID)
 	}
 }
 
 func TestGetUsernameForAccount(t *testing.T) {
-	if !reflect.DeepEqual(testAccount.GetUsername(), accUser) {
-		t.Errorf("Actual username %s differs from expected username %s",
-			testAccount.GetUsername(), accUser)
+	if testAccount.GetUsername() != accUser {
+		t.Errorf("Actual username %s differs from expected username %s", testAccount.GetUsername(), accUser)
 	}
 }
 
 func TestGetEnvironmentForAccount(t *testing.T) {
-	if !reflect.DeepEqual(testAccount.GetEnvironment(), accEnv) {
-		t.Errorf("Actual environment %s differs from expected environment %s",
-			testAccount.GetEnvironment(), accEnv)
+	if testAccount.GetEnvironment() != accEnv {
+		t.Errorf("Actual environment %s differs from expected environment %s", testAccount.GetEnvironment(), accEnv)
 	}
 }

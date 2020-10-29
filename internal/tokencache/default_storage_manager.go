@@ -4,12 +4,17 @@
 package tokencache
 
 import (
-	"errors"
+	"fmt"
 	"sync"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
+// TODO(jdoak): Investigate this lock. It is strange to have a global lock.
+// TODO(jdoak): Find out what our expected number of concurrent reads are and the expected number of tokens.
+// RWMutex is only more performant in high reads with low writes. Also, if the number of tokens is low,
+// we might be able to use atomic.Value with map copies to achieve lockless read/writes. If the token number
+// is really low, we could replace this with slices.
 var lock sync.RWMutex
 
 type defaultStorageManager struct {
@@ -57,21 +62,14 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 	return scopeCounter == len(scopesOne)
 }
 
-func (m *defaultStorageManager) ReadAccessToken(
-	homeAccountID string,
-	envAliases []string,
-	realm string,
-	clientID string,
-	scopes []string) *accessTokenCacheItem {
+func (m *defaultStorageManager) ReadAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) *accessTokenCacheItem {
 	lock.RLock()
 	defer lock.RUnlock()
 	for _, at := range m.accessTokens {
-		if msalbase.GetStringFromPointer(at.HomeAccountID) == homeAccountID &&
-			checkAlias(msalbase.GetStringFromPointer(at.Environment), envAliases) &&
-			msalbase.GetStringFromPointer(at.Realm) == realm &&
-			msalbase.GetStringFromPointer(at.ClientID) == clientID &&
-			isMatchingScopes(scopes, msalbase.GetStringFromPointer(at.Scopes)) {
-			return at
+		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
+			if checkAlias(at.Environment, envAliases) && isMatchingScopes(scopes, at.Scopes) {
+				return at
+			}
 		}
 	}
 	return nil
@@ -79,41 +77,37 @@ func (m *defaultStorageManager) ReadAccessToken(
 
 func (m *defaultStorageManager) WriteAccessToken(accessToken *accessTokenCacheItem) error {
 	lock.Lock()
+	defer lock.Unlock()
+
 	key := accessToken.CreateKey()
 	m.accessTokens[key] = accessToken
-	lock.Unlock()
 	return nil
 }
 
-func (m *defaultStorageManager) ReadRefreshToken(
-	homeAccountID string,
-	envAliases []string,
-	familyID string,
-	clientID string,
-) *refreshTokenCacheItem {
-
+func (m *defaultStorageManager) ReadRefreshToken(homeID string, envAliases []string, familyID, clientID string) *refreshTokenCacheItem {
 	lock.RLock()
 	defer lock.RUnlock()
+
 	if familyID != "" {
 		for _, rt := range m.refreshTokens {
-			if matchFamilyRefreshToken(rt, homeAccountID, envAliases) {
+			if matchFamilyRefreshToken(rt, homeID, envAliases) {
 				return rt
 			}
 		}
 		for _, rt := range m.refreshTokens {
-			if matchClientIDRefreshToken(rt, homeAccountID, envAliases, clientID) {
+			if matchClientIDRefreshToken(rt, homeID, envAliases, clientID) {
 				return rt
 			}
 		}
 	} else {
 		for _, rt := range m.refreshTokens {
-			if matchClientIDRefreshToken(rt, homeAccountID, envAliases, clientID) {
+			if matchClientIDRefreshToken(rt, homeID, envAliases, clientID) {
 				return rt
 			}
 		}
 
 		for _, rt := range m.refreshTokens {
-			if matchFamilyRefreshToken(rt, homeAccountID, envAliases) {
+			if matchFamilyRefreshToken(rt, homeID, envAliases) {
 				return rt
 			}
 		}
@@ -121,40 +115,33 @@ func (m *defaultStorageManager) ReadRefreshToken(
 	return nil
 }
 
-func matchFamilyRefreshToken(rt *refreshTokenCacheItem, homeAccountID string, envAliases []string) bool {
-	return msalbase.GetStringFromPointer(rt.HomeAccountID) == homeAccountID &&
-		checkAlias(msalbase.GetStringFromPointer(rt.Environment), envAliases) &&
-		msalbase.GetStringFromPointer(rt.FamilyID) != ""
+func matchFamilyRefreshToken(rt *refreshTokenCacheItem, homeID string, envAliases []string) bool {
+	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.FamilyID != ""
 }
 
-func matchClientIDRefreshToken(rt *refreshTokenCacheItem, homeAccountID string, envAliases []string, clientID string) bool {
-	return msalbase.GetStringFromPointer(rt.HomeAccountID) == homeAccountID &&
-		checkAlias(msalbase.GetStringFromPointer(rt.Environment), envAliases) &&
-		msalbase.GetStringFromPointer(rt.ClientID) == clientID
+func matchClientIDRefreshToken(rt *refreshTokenCacheItem, homeID string, envAliases []string, clientID string) bool {
+	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
 
 func (m *defaultStorageManager) WriteRefreshToken(refreshToken *refreshTokenCacheItem) error {
 	lock.Lock()
+	defer lock.Unlock()
+
 	key := refreshToken.CreateKey()
 	m.refreshTokens[key] = refreshToken
-	lock.Unlock()
+
 	return nil
 }
 
-func (m *defaultStorageManager) ReadIDToken(
-	homeAccountID string,
-	envAliases []string,
-	realm string,
-	clientID string,
-) *idTokenCacheItem {
+func (m *defaultStorageManager) ReadIDToken(homeID string, envAliases []string, realm, clientID string) *idTokenCacheItem {
 	lock.RLock()
 	defer lock.RUnlock()
+
 	for _, idt := range m.idTokens {
-		if msalbase.GetStringFromPointer(idt.HomeAccountID) == homeAccountID &&
-			checkAlias(msalbase.GetStringFromPointer(idt.Environment), envAliases) &&
-			msalbase.GetStringFromPointer(idt.Realm) == realm &&
-			msalbase.GetStringFromPointer(idt.ClientID) == clientID {
-			return idt
+		if idt.HomeAccountID == homeID && idt.Realm == realm && idt.ClientID == clientID {
+			if checkAlias(idt.Environment, envAliases) {
+				return idt
+			}
 		}
 	}
 	return nil
@@ -162,29 +149,32 @@ func (m *defaultStorageManager) ReadIDToken(
 
 func (m *defaultStorageManager) WriteIDToken(idToken *idTokenCacheItem) error {
 	lock.Lock()
+	defer lock.Unlock()
+
 	key := idToken.CreateKey()
 	m.idTokens[key] = idToken
-	lock.Unlock()
+
 	return nil
 }
 
 func (m *defaultStorageManager) ReadAllAccounts() []*msalbase.Account {
 	lock.RLock()
+	defer lock.RUnlock()
+
 	accounts := []*msalbase.Account{}
 	for _, v := range m.accounts {
 		accounts = append(accounts, v)
 	}
-	lock.RUnlock()
+
 	return accounts
 }
 
 func (m *defaultStorageManager) ReadAccount(homeAccountID string, envAliases []string, realm string) *msalbase.Account {
 	lock.RLock()
 	defer lock.RUnlock()
+
 	for _, acc := range m.accounts {
-		if msalbase.GetStringFromPointer(acc.HomeAccountID) == homeAccountID &&
-			checkAlias(msalbase.GetStringFromPointer(acc.Environment), envAliases) &&
-			msalbase.GetStringFromPointer(acc.Realm) == realm {
+		if acc.HomeAccountID == homeAccountID && checkAlias(acc.Environment, envAliases) && acc.Realm == realm {
 			return acc
 		}
 	}
@@ -193,41 +183,47 @@ func (m *defaultStorageManager) ReadAccount(homeAccountID string, envAliases []s
 
 func (m *defaultStorageManager) WriteAccount(account *msalbase.Account) error {
 	lock.Lock()
+	defer lock.Unlock()
+
 	key := account.CreateKey()
 	m.accounts[key] = account
-	lock.Unlock()
+
 	return nil
 }
 
-func (m *defaultStorageManager) DeleteAccounts(
-	homeAccountID string,
-	envAliases []string) error {
+func (m *defaultStorageManager) DeleteAccounts(homeID string, envAliases []string) error {
 	keys := []string{}
-	lock.RLock()
-	for key, acc := range m.accounts {
-		if msalbase.GetStringFromPointer(acc.HomeAccountID) == homeAccountID &&
-			checkAlias(msalbase.GetStringFromPointer(acc.Environment), envAliases) {
-			keys = append(keys, key)
+	func() {
+		lock.RLock()
+		defer lock.RUnlock()
+
+		for key, acc := range m.accounts {
+			if acc.HomeAccountID == homeID && checkAlias(acc.Environment, envAliases) {
+				keys = append(keys, key)
+			}
 		}
-	}
-	lock.RUnlock()
+	}()
+
 	if len(keys) == 0 {
-		return errors.New("Can't find account")
+		return fmt.Errorf("can't find account for ID(%s)", homeID)
 	}
+
 	lock.Lock()
+	defer lock.Unlock()
+
 	for _, key := range keys {
 		delete(m.accounts, key)
 	}
-	lock.Unlock()
+
 	return nil
 }
 
 func (m *defaultStorageManager) ReadAppMetadata(envAliases []string, clientID string) *appMetadata {
 	lock.RLock()
 	defer lock.RUnlock()
+
 	for _, app := range m.appMetadatas {
-		if checkAlias(msalbase.GetStringFromPointer(app.Environment), envAliases) &&
-			msalbase.GetStringFromPointer(app.ClientID) == clientID {
+		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
 			return app
 		}
 	}
@@ -236,25 +232,29 @@ func (m *defaultStorageManager) ReadAppMetadata(envAliases []string, clientID st
 
 func (m *defaultStorageManager) WriteAppMetadata(appMetadata *appMetadata) error {
 	lock.Lock()
+	defer lock.Unlock()
+
 	key := appMetadata.CreateKey()
 	m.appMetadatas[key] = appMetadata
-	lock.Unlock()
+
 	return nil
 }
 
 func (m *defaultStorageManager) Serialize() (string, error) {
 	lock.RLock()
+	defer lock.RUnlock()
+
 	m.cacheContract.AccessTokens = m.accessTokens
 	m.cacheContract.RefreshTokens = m.refreshTokens
 	m.cacheContract.IDTokens = m.idTokens
 	m.cacheContract.Accounts = m.accounts
 	m.cacheContract.AppMetadata = m.appMetadatas
-	lock.RUnlock()
+
 	serializedCache, err := m.cacheContract.MarshalJSON()
 	if err != nil {
 		return "", err
 	}
-	return string(serializedCache), nil
+	return string(serializedCache), nil // TODO(someone): while you can do the string conversion, this is costly. Investigate []byte
 }
 
 func (m *defaultStorageManager) Deserialize(cacheData []byte) error {
@@ -262,12 +262,15 @@ func (m *defaultStorageManager) Deserialize(cacheData []byte) error {
 	if err != nil {
 		return err
 	}
+
 	lock.Lock()
+	defer lock.Unlock()
+
 	m.accessTokens = m.cacheContract.AccessTokens
 	m.refreshTokens = m.cacheContract.RefreshTokens
 	m.idTokens = m.cacheContract.IDTokens
 	m.accounts = m.cacheContract.Accounts
 	m.appMetadatas = m.cacheContract.AppMetadata
-	lock.Unlock()
+
 	return nil
 }

@@ -87,8 +87,8 @@ func TestAcquireTokenByUsernamePassword(t *testing.T) {
 }
 
 func TestGetAllAccounts(t *testing.T) {
-	testAccOne := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
-	testAccTwo := msalbase.CreateAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
+	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	expectedAccounts := []*msalbase.Account{testAccOne, testAccTwo}
 	returnedAccounts := []AccountProvider{testAccOne, testAccTwo}
 	cacheManager.On("GetAllAccounts").Return(expectedAccounts)

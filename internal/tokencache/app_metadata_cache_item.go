@@ -11,33 +11,31 @@ import (
 )
 
 type appMetadata struct {
-	FamilyID         *string `json:"family_id,omitempty"`
-	ClientID         *string `json:"client_id,omitempty"`
-	Environment      *string `json:"environment,omitempty"`
+	FamilyID         string `json:"family_id,omitempty"`
+	ClientID         string `json:"client_id,omitempty"`
+	Environment      string `json:"environment,omitempty"`
 	additionalFields map[string]interface{}
 }
 
-func createAppMetadata(familyID string, clientID string, environment string) *appMetadata {
-	metadata := &appMetadata{
-		FamilyID:    &familyID,
-		ClientID:    &clientID,
-		Environment: &environment,
+func createAppMetadata(familyID, clientID, environment string) *appMetadata {
+	return &appMetadata{
+		FamilyID:    familyID,
+		ClientID:    clientID,
+		Environment: environment,
 	}
-	return metadata
 }
 
 func (appMeta *appMetadata) CreateKey() string {
-	keyParts := []string{msalbase.AppMetadataCacheID,
-		msalbase.GetStringFromPointer(appMeta.Environment),
-		msalbase.GetStringFromPointer(appMeta.ClientID),
-	}
-	return strings.Join(keyParts, msalbase.CacheKeySeparator)
+	return strings.Join(
+		[]string{msalbase.AppMetadataCacheID, appMeta.Environment, appMeta.ClientID},
+		msalbase.CacheKeySeparator,
+	)
 }
 
 func (appMeta *appMetadata) populateFromJSONMap(j map[string]interface{}) error {
-	appMeta.FamilyID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONFamilyID)
-	appMeta.ClientID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONClientID)
-	appMeta.Environment = msalbase.ExtractStringPointerForCache(j, msalbase.JSONEnvironment)
+	appMeta.FamilyID = msalbase.GetStringKey(j, msalbase.JSONFamilyID)
+	appMeta.ClientID = msalbase.GetStringKey(j, msalbase.JSONClientID)
+	appMeta.Environment = msalbase.GetStringKey(j, msalbase.JSONEnvironment)
 	appMeta.additionalFields = j
 	return nil
 }

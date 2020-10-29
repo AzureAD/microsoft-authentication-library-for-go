@@ -30,24 +30,22 @@ func TestIsAccessTokenValid(t *testing.T) {
 	if !validity {
 		t.Errorf("Access token should be valid")
 	}
-	expiresOn := strconv.FormatInt(time.Now().Unix()+200, 10)
-	accessTokenCacheItem.ExpiresOnUnixTimestamp = &expiresOn
+	accessTokenCacheItem.ExpiresOnUnixTimestamp = strconv.FormatInt(time.Now().Unix()+200, 10)
 	validity = isAccessTokenValid(accessTokenCacheItem)
 	if validity {
 		t.Errorf("Access token shouldn't be valid")
 	}
-	accessTokenCacheItem.ExpiresOnUnixTimestamp = &errorTimestamp
+	accessTokenCacheItem.ExpiresOnUnixTimestamp = errorTimestamp
 	validity = isAccessTokenValid(accessTokenCacheItem)
 	if validity {
 		t.Errorf("Access token shouldn't be valid")
 	}
-	accessTokenCacheItem.CachedAt = &errorTimestamp
+	accessTokenCacheItem.CachedAt = errorTimestamp
 	validity = isAccessTokenValid(accessTokenCacheItem)
 	if validity {
 		t.Errorf("Access token shouldn't be valid")
 	}
-	actualCachedAt := strconv.FormatInt(time.Now().Unix()+500, 10)
-	accessTokenCacheItem.CachedAt = &actualCachedAt
+	accessTokenCacheItem.CachedAt = strconv.FormatInt(time.Now().Unix()+500, 10)
 	validity = isAccessTokenValid(accessTokenCacheItem)
 	if validity {
 		t.Errorf("Access token shouldn't be valid")
@@ -59,17 +57,17 @@ func TestGetAllAccounts(t *testing.T) {
 	accEnvOne := "env"
 	accRealmOne := "realm"
 	account1 := &msalbase.Account{
-		HomeAccountID: &accHidOne,
-		Environment:   &accEnvOne,
-		Realm:         &accRealmOne,
+		HomeAccountID: accHidOne,
+		Environment:   accEnvOne,
+		Realm:         accRealmOne,
 	}
 	accHidTwo := "testHID"
 	accEnvTwo := "testEnv"
 	accRealmTwo := "testRealm"
 	account2 := &msalbase.Account{
-		HomeAccountID: &accHidTwo,
-		Environment:   &accEnvTwo,
-		Realm:         &accRealmTwo,
+		HomeAccountID: accHidTwo,
+		Environment:   accEnvTwo,
+		Realm:         accRealmTwo,
 	}
 	expectedAccounts := []*msalbase.Account{account1, account2}
 	mockStorageManager := new(MockStorageManager)
@@ -150,7 +148,7 @@ func TestTryReadCache(t *testing.T) {
 		[]string{"env", "alias2"},
 		"fid",
 		"cid").Return(testRefreshToken)
-	testAccount := msalbase.CreateAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccount := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	mockStorageManager.On("ReadAccount", "hid", []string{"env", "alias2"}, "realm").Return(testAccount)
 	expectedStorageToken := msalbase.CreateStorageTokenResponse(accessTokenCacheItem, testRefreshToken, testIDToken, testAccount)
 	actualStorageToken, err := cacheManager.TryReadCache(authParameters, mockWebRequestManager)
@@ -218,7 +216,7 @@ func TestCacheTokenResponse(t *testing.T) {
 		"idToken",
 	)
 	mockStorageManager.On("WriteIDToken", testIDToken).Return(nil)
-	testAccount := msalbase.CreateAccount("testUID.testUtid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccount := msalbase.NewAccount("testUID.testUtid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	mockStorageManager.On("WriteAccount", testAccount).Return(nil)
 	testAppMeta := createAppMetadata("fid", "cid", "env")
 	mockStorageManager.On("WriteAppMetadata", testAppMeta).Return(nil)

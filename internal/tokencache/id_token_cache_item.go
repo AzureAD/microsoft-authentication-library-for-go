@@ -11,54 +11,44 @@ import (
 )
 
 type idTokenCacheItem struct {
-	HomeAccountID    *string `json:"home_account_id,omitempty"`
-	Environment      *string `json:"environment,omitempty"`
-	Realm            *string `json:"realm,omitempty"`
-	CredentialType   *string `json:"credential_type,omitempty"`
-	ClientID         *string `json:"client_id,omitempty"`
-	Secret           *string `json:"secret,omitempty"`
+	HomeAccountID    string `json:"home_account_id,omitempty"`
+	Environment      string `json:"environment,omitempty"`
+	Realm            string `json:"realm,omitempty"`
+	CredentialType   string `json:"credential_type,omitempty"`
+	ClientID         string `json:"client_id,omitempty"`
+	Secret           string `json:"secret,omitempty"`
 	additionalFields map[string]interface{}
 }
 
-func createIDTokenCacheItem(homeAccountID string,
-	environment string,
-	realm string,
-	clientID string,
-	idToken string) *idTokenCacheItem {
-	credentialType := msalbase.CredentialTypeIDToken
-	id := &idTokenCacheItem{
-		HomeAccountID:  &homeAccountID,
-		Environment:    &environment,
-		Realm:          &realm,
-		CredentialType: &credentialType,
-		ClientID:       &clientID,
-		Secret:         &idToken,
+func createIDTokenCacheItem(homeID, env, realm, clientID, idToken string) *idTokenCacheItem {
+	return &idTokenCacheItem{
+		HomeAccountID:  homeID,
+		Environment:    env,
+		Realm:          realm,
+		CredentialType: msalbase.CredentialTypeIDToken,
+		ClientID:       clientID,
+		Secret:         idToken,
 	}
-	return id
 }
 
 func (id *idTokenCacheItem) CreateKey() string {
-	keyParts := []string{
-		msalbase.GetStringFromPointer(id.HomeAccountID),
-		msalbase.GetStringFromPointer(id.Environment),
-		msalbase.GetStringFromPointer(id.CredentialType),
-		msalbase.GetStringFromPointer(id.ClientID),
-		msalbase.GetStringFromPointer(id.Realm),
-	}
-	return strings.Join(keyParts, msalbase.CacheKeySeparator)
+	return strings.Join(
+		[]string{id.HomeAccountID, id.Environment, id.CredentialType, id.ClientID, id.Realm},
+		msalbase.CacheKeySeparator,
+	)
 }
 
 func (id *idTokenCacheItem) GetSecret() string {
-	return msalbase.GetStringFromPointer(id.Secret)
+	return id.Secret
 }
 
 func (id *idTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
-	id.HomeAccountID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONHomeAccountID)
-	id.Environment = msalbase.ExtractStringPointerForCache(j, msalbase.JSONEnvironment)
-	id.Realm = msalbase.ExtractStringPointerForCache(j, msalbase.JSONRealm)
-	id.CredentialType = msalbase.ExtractStringPointerForCache(j, msalbase.JSONCredentialType)
-	id.ClientID = msalbase.ExtractStringPointerForCache(j, msalbase.JSONClientID)
-	id.Secret = msalbase.ExtractStringPointerForCache(j, msalbase.JSONSecret)
+	id.HomeAccountID = msalbase.GetStringKey(j, msalbase.JSONHomeAccountID)
+	id.Environment = msalbase.GetStringKey(j, msalbase.JSONEnvironment)
+	id.Realm = msalbase.GetStringKey(j, msalbase.JSONRealm)
+	id.CredentialType = msalbase.GetStringKey(j, msalbase.JSONCredentialType)
+	id.ClientID = msalbase.GetStringKey(j, msalbase.JSONClientID)
+	id.Secret = msalbase.GetStringKey(j, msalbase.JSONSecret)
 	id.additionalFields = j
 	return nil
 }
