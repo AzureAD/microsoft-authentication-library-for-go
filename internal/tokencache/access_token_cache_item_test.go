@@ -4,7 +4,6 @@
 package tokencache
 
 import (
-	"reflect"
 	"testing"
 	"time"
 
@@ -50,16 +49,16 @@ func TestCreateAccessTokenCacheItem(t *testing.T) {
 		"user.read",
 		"access",
 	)
-	if !reflect.DeepEqual(extExpiresOn, actualAt.ExtendedExpiresOnUnixTimestamp) {
+	if extExpiresOn != actualAt.ExtendedExpiresOnUnixTimestamp {
 		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", actualAt.ExtendedExpiresOnUnixTimestamp, extExpiresOn)
 	}
 }
 
 func TestCreateKeyForAccessToken(t *testing.T) {
-	expectedKey := "testHID-env-AccessToken-clientID-realm-user.read"
-	actualKey := atCacheEntity.CreateKey()
-	if !reflect.DeepEqual(actualKey, expectedKey) {
-		t.Errorf("Actual key %v differs from expected key %v", actualKey, expectedKey)
+	const want = "testHID-env-AccessToken-clientID-realm-user.read"
+	got := atCacheEntity.CreateKey()
+	if got != want {
+		t.Errorf("TestCreateKeyForAccessToken: got %s, want %s", got, want)
 	}
 }
 
@@ -101,17 +100,17 @@ func TestAccessTokenConvertToJSONMap(t *testing.T) {
 		CredentialType:   credential,
 		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
-	jsonMap := map[string]interface{}{
+	want := map[string]interface{}{
 		"home_account_id": "testHID",
 		"extra":           "this_is_extra",
 		"cached_at":       "100",
 		"credential_type": "AccessToken",
 	}
-	actualJSONMap, err := accessToken.convertToJSONMap()
+	got, err := accessToken.convertToJSONMap()
 	if err != nil {
-		t.Errorf("Error should be nil; instead it is %v", err)
+		t.Errorf("TestAccessTokenConvertToJSONMap(access token): got error %q", err)
 	}
-	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
-		t.Errorf("JSON access token %+v differs from expected JSON access token %+v", actualJSONMap, jsonMap)
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestAccessTokenConvertToJSONMap(access token): -want/+got:\n%s", diff)
 	}
 }
