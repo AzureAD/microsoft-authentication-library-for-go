@@ -114,8 +114,7 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(
 	return msalbase.CreateAuthenticationResult(tokenResponse, account)
 }
 
-func (client *clientApplication) getAccounts() []AccountProvider {
-	returnedAccounts := []AccountProvider{}
+func (client *clientApplication) getAccounts() []*msalbase.Account {
 	if client.cacheAccessor != nil {
 		client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
 	}
@@ -123,8 +122,5 @@ func (client *clientApplication) getAccounts() []AccountProvider {
 	if client.cacheAccessor != nil {
 		client.cacheAccessor.AfterCacheAccess(client.cacheContext)
 	}
-	for _, acc := range accounts {
-		returnedAccounts = append(returnedAccounts, acc)
-	}
-	return returnedAccounts
+	return accounts
 }

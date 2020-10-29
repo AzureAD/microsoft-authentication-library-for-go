@@ -5,15 +5,12 @@ package msal
 
 import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 )
 
-// AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
-type AcquireTokenSilentParameters struct {
-	commonParameters *acquireTokenCommonParameters
-	account          AccountProvider
-	requestType      requests.RefreshTokenReqType
-	clientCredential *msalbase.ClientCredential
+// AcquireTokenSilentOptions contains the optional parameters to acquire a token silently (from cache).
+type AcquireTokenSilentOptions struct {
+	// Account specifies the account to use when acquiring a token from the cache.
+	Account *msalbase.Account
 }
 
 // CreateAcquireTokenSilentParameters creates an AcquireTokenSilentParameters instance with an empty account.

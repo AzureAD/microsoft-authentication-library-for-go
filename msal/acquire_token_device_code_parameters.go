@@ -9,11 +9,9 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
-// AcquireTokenDeviceCodeParameters contains the parameters required to acquire an access token using the device code flow.
-type AcquireTokenDeviceCodeParameters struct {
-	commonParameters   *acquireTokenCommonParameters
-	deviceCodeCallback func(DeviceCodeResultProvider)
-	cancelCtx          context.Context
+// AcquireTokenDeviceCodeOptions contains the optional parameters required to acquire an access token using the device code flow.
+type AcquireTokenDeviceCodeOptions struct {
+	// placeholder for future optional args
 }
 
 // CreateAcquireTokenDeviceCodeParameters creates an AcquireTokenDeviceCodeParameters instance.
