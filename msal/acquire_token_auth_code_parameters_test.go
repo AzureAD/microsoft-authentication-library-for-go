@@ -13,7 +13,7 @@ import (
 func TestCreateAcquireTokenAuthCodeParameters(t *testing.T) {
 	expectedScopes := []string{"user.read"}
 	expectedRedirectURI := "http://localhost:3000/redirect"
-	params := CreateAcquireTokenAuthCodeParameters(expectedScopes, expectedRedirectURI)
+	params := createAcquireTokenAuthCodeParameters(expectedScopes, expectedRedirectURI)
 	if params == nil {
 		t.Error("Parameters cannot be nil.")
 	}
@@ -32,7 +32,7 @@ func TestAugmentAuthenticationParametersForAuth(t *testing.T) {
 	testRedirectURI := "http://localhost:3000/redirect"
 	testAuthParams := &msalbase.AuthParametersInternal{}
 	testTokenCommonParams := &acquireTokenCommonParameters{testScopes}
-	testAuthCodeParams := &AcquireTokenAuthCodeParameters{
+	testAuthCodeParams := &acquireTokenAuthCodeParameters{
 		commonParameters: testTokenCommonParams,
 		redirectURI:      testRedirectURI,
 	}

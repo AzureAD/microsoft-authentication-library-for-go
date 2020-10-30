@@ -36,12 +36,11 @@ func createClientApplication(clientID string, authority string) *clientApplicati
 	return client
 }
 
-func (client *clientApplication) createAuthCodeURL(authCodeURLParameters *AuthorizationCodeURLParameters) (string, error) {
+func (client *clientApplication) createAuthCodeURL(authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
 	return authCodeURLParameters.createURL(client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
 }
 
-func (client *clientApplication) acquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
+func (client *clientApplication) acquireTokenSilent(silentParameters *acquireTokenSilentParameters) (*msalbase.AuthenticationResult, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	silentParameters.augmentAuthenticationParameters(authParams)
 	if client.cacheAccessor != nil {
@@ -73,8 +72,7 @@ func (client *clientApplication) acquireTokenSilent(
 	return nil, errors.New("no cache entry found")
 }
 
-func (client *clientApplication) acquireTokenByAuthCode(
-	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
+func (client *clientApplication) acquireTokenByAuthCode(authCodeParams *acquireTokenAuthCodeParameters) (*msalbase.AuthenticationResult, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
@@ -96,9 +94,7 @@ func (client *clientApplication) executeTokenRequestWithoutCacheWrite(
 	return msalbase.CreateAuthenticationResult(tokenResponse, nil)
 }
 
-func (client *clientApplication) executeTokenRequestWithCacheWrite(
-	req requests.TokenRequester,
-	authParams *msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
+func (client *clientApplication) executeTokenRequestWithCacheWrite(req requests.TokenRequester, authParams *msalbase.AuthParametersInternal) (*msalbase.AuthenticationResult, error) {
 	tokenResponse, err := req.Execute()
 	if err != nil {
 		return nil, err

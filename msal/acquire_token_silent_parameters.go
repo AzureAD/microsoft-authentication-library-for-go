@@ -5,18 +5,21 @@ package msal
 
 import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 )
 
-// AcquireTokenSilentOptions contains the optional parameters to acquire a token silently (from cache).
-type AcquireTokenSilentOptions struct {
-	// Account specifies the account to use when acquiring a token from the cache.
-	Account *msalbase.Account
+// AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
+type acquireTokenSilentParameters struct {
+	commonParameters *acquireTokenCommonParameters
+	account          AccountProvider
+	requestType      requests.RefreshTokenReqType
+	clientCredential *msalbase.ClientCredential
 }
 
 // CreateAcquireTokenSilentParameters creates an AcquireTokenSilentParameters instance with an empty account.
 // This can be used in the case where tokens are acquired as the application instelf.
-func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
-	p := &AcquireTokenSilentParameters{
+func createAcquireTokenSilentParameters(scopes []string) *acquireTokenSilentParameters {
+	p := &acquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          &msalbase.Account{},
 	}
@@ -25,15 +28,15 @@ func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentPara
 
 // CreateAcquireTokenSilentParametersWithAccount creates an AcquireTokenSilentParameters instance from an account.
 // This account can be pulled from the cache by calling GetAccounts
-func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account AccountProvider) *AcquireTokenSilentParameters {
-	p := &AcquireTokenSilentParameters{
+func createAcquireTokenSilentParametersWithAccount(scopes []string, account AccountProvider) *acquireTokenSilentParameters {
+	p := &acquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          account,
 	}
 	return p
 }
 
-func (p *AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
+func (p *acquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.AuthorizationType = msalbase.AuthorizationTypeRefreshTokenExchange
 	authParams.HomeaccountID = p.account.GetHomeAccountID()

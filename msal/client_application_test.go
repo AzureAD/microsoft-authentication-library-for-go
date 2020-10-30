@@ -31,7 +31,7 @@ var (
 
 func TestAcquireTokenSilent(t *testing.T) {
 	account := &msalbase.Account{}
-	silentParams := &AcquireTokenSilentParameters{
+	silentParams := &acquireTokenSilentParameters{
 		commonParameters: tokenCommonParams,
 		account:          account,
 	}

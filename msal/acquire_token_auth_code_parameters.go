@@ -12,7 +12,7 @@ import (
 // To use PKCE, set the CodeChallengeParameter.
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
-type AcquireTokenAuthCodeParameters struct {
+type acquireTokenAuthCodeParameters struct {
 	commonParameters *acquireTokenCommonParameters
 	redirectURI      string
 	Code             string
@@ -21,18 +21,16 @@ type AcquireTokenAuthCodeParameters struct {
 	requestType      requests.AuthCodeRequestType
 }
 
-// CreateAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance.
+// createAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance.
 // Pass in the scopes required, the redirect URI for your application.
-func CreateAcquireTokenAuthCodeParameters(scopes []string,
-	redirectURI string) *AcquireTokenAuthCodeParameters {
-	p := &AcquireTokenAuthCodeParameters{
+func createAcquireTokenAuthCodeParameters(scopes []string, redirectURI string) *acquireTokenAuthCodeParameters {
+	return &acquireTokenAuthCodeParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		redirectURI:      redirectURI,
 	}
-	return p
 }
 
-func (p *AcquireTokenAuthCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
+func (p *acquireTokenAuthCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.Redirecturi = p.redirectURI
 	authParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode

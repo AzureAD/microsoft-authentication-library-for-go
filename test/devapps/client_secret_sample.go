@@ -4,14 +4,15 @@
 package main
 
 import (
+	"context"
+
 	log "github.com/sirupsen/logrus"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 )
 
 func tryClientSecretFlow(confidentialClientApp *msal.ConfidentialClientApplication) {
-	clientSecretParams := msal.CreateAcquireTokenClientCredentialParameters(confidentialConfig.Scopes)
-	result, err := confidentialClientApp.AcquireTokenByClientCredential(clientSecretParams)
+	result, err := confidentialClientApp.AcquireTokenByClientCredential(context.Background(), confidentialConfig.Scopes)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -24,14 +25,13 @@ func acquireTokenClientSecret() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientApp, err := msal.CreateConfidentialClientApplication(
-		confidentialConfig.ClientID, confidentialConfig.Authority, secret)
+	options := msal.DefaultConfidentialClientApplicationOptions()
+	options.Accessor = cacheAccessor
+	confidentialClientApp, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, confidentialConfig.Authority, secret, &options)
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientApp.SetCacheAccessor(cacheAccessor)
-	silentParams := msal.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
-	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)
+	result, err := confidentialClientApp.AcquireTokenSilent(context.Background(), confidentialConfig.Scopes, nil)
 	if err != nil {
 		log.Info(err)
 		tryClientSecretFlow(confidentialClientApp)

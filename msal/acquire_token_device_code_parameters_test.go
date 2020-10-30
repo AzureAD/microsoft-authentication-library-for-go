@@ -14,7 +14,7 @@ func TestAugmentAuthenticationParametersDeviceCode(t *testing.T) {
 	testScopes := []string{"user.read"}
 	testAuthParams := &msalbase.AuthParametersInternal{}
 	testTokenCommonParams := &acquireTokenCommonParameters{testScopes}
-	testDeviceCodeParams := &AcquireTokenDeviceCodeParameters{
+	testDeviceCodeParams := &acquireTokenDeviceCodeParameters{
 		commonParameters: testTokenCommonParams,
 	}
 	testDeviceCodeParams.augmentAuthenticationParameters(testAuthParams)
