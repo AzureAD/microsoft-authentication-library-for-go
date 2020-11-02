@@ -19,13 +19,13 @@ type ConfidentialClientApplicationOptions struct {
 
 	// Client sets the transport for making HTTP requests.
 	// Leave this as nil to use the default HTTP transport.
-	Client HTTPClient
+	HTTPClient HTTPClient
 }
 
 // DefaultConfidentialClientApplicationOptions returns an instance of ConfidentialClientApplicationOptions initialized with default values.
 func DefaultConfidentialClientApplicationOptions() ConfidentialClientApplicationOptions {
 	return ConfidentialClientApplicationOptions{
-		Client: http.DefaultClient,
+		HTTPClient: http.DefaultClient,
 	}
 }
 
