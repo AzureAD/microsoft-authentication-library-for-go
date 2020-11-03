@@ -17,6 +17,9 @@ type PublicClientApplicationOptions struct {
 	// By default there is no cache persistence.
 	Accessor CacheAccessor
 
+	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
+	Authority string
+
 	// Client sets the transport for making HTTP requests.
 	// Leave this as nil to use the default HTTP transport.
 	HTTPClient HTTPClient
@@ -25,6 +28,7 @@ type PublicClientApplicationOptions struct {
 // DefaultPublicClientApplicationOptions returns an instance of PublicClientApplicationOptions initialized with default values.
 func DefaultPublicClientApplicationOptions() PublicClientApplicationOptions {
 	return PublicClientApplicationOptions{
+		Authority:  authorityPublicCloud,
 		HTTPClient: http.DefaultClient,
 	}
 }
@@ -39,8 +43,12 @@ type PublicClientApplication struct {
 // NewPublicClientApplication creates a PublicClientApplication instance given a client ID and authority URL.
 // Pass nil for options to accept the default values; this is the same as passing the result
 // from a call to DefaultPublicClientApplicationOptions().
-func NewPublicClientApplication(clientID string, authority string, options *PublicClientApplicationOptions) *PublicClientApplication {
-	clientApp := createClientApplication(clientID, authority)
+func NewPublicClientApplication(clientID string, options *PublicClientApplicationOptions) *PublicClientApplication {
+	if options == nil {
+		def := DefaultPublicClientApplicationOptions()
+		options = &def
+	}
+	clientApp := createClientApplication(clientID, options.Authority)
 	return &PublicClientApplication{
 		clientApplication: clientApp,
 	}

@@ -17,6 +17,9 @@ type ConfidentialClientApplicationOptions struct {
 	// By default there is no cache persistence.
 	Accessor CacheAccessor
 
+	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
+	Authority string
+
 	// Client sets the transport for making HTTP requests.
 	// Leave this as nil to use the default HTTP transport.
 	HTTPClient HTTPClient
@@ -25,6 +28,7 @@ type ConfidentialClientApplicationOptions struct {
 // DefaultConfidentialClientApplicationOptions returns an instance of ConfidentialClientApplicationOptions initialized with default values.
 func DefaultConfidentialClientApplicationOptions() ConfidentialClientApplicationOptions {
 	return ConfidentialClientApplicationOptions{
+		Authority:  authorityPublicCloud,
 		HTTPClient: http.DefaultClient,
 	}
 }
@@ -41,12 +45,16 @@ type ConfidentialClientApplication struct {
 // NewConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
 // Pass nil for options to accept the default values; this is the same as passing the result
 // from a call to DefaultConfidentialClientApplicationOptions().
-func NewConfidentialClientApplication(clientID string, authority string, clientCredential ClientCredentialProvider, options *ConfidentialClientApplicationOptions) (*ConfidentialClientApplication, error) {
+func NewConfidentialClientApplication(clientID string, clientCredential ClientCredentialProvider, options *ConfidentialClientApplicationOptions) (*ConfidentialClientApplication, error) {
 	cred, err := createInternalClientCredential(clientCredential)
 	if err != nil {
 		return nil, err
 	}
-	clientApp := createClientApplication(clientID, authority)
+	if options == nil {
+		def := DefaultConfidentialClientApplicationOptions()
+		options = &def
+	}
+	clientApp := createClientApplication(clientID, options.Authority)
 	return &ConfidentialClientApplication{
 		clientApplication: clientApp,
 		clientCredential:  cred,

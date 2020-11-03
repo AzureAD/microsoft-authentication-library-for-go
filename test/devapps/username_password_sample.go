@@ -17,7 +17,8 @@ func acquireByUsernamePasswordPublic() {
 	// create a PublicClientApplication with a  custom cache accessor
 	options := msal.DefaultPublicClientApplicationOptions()
 	options.Accessor = cacheAccessor
-	publicClientApp := msal.NewPublicClientApplication(config.ClientID, config.Authority, &options)
+	options.Authority = config.Authority
+	publicClientApp := msal.NewPublicClientApplication(config.ClientID, &options)
 
 	// look in the cache to see if the account to use has been cached
 	var userAccount *msalbase.Account

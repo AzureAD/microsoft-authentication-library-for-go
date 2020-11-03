@@ -37,7 +37,8 @@ func acquireTokenClientCertificate() {
 	}
 	options := msal.DefaultConfidentialClientApplicationOptions()
 	options.Accessor = cacheAccessor
-	confidentialClientApp, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, confidentialConfig.Authority, certificate, &options)
+	options.Authority = confidentialConfig.Authority
+	confidentialClientApp, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
 	if err != nil {
 		log.Fatal(err)
 	}

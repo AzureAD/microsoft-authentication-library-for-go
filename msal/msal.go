@@ -10,3 +10,8 @@ import "net/http"
 type HTTPClient interface {
 	Do(*http.Request) (*http.Response, error)
 }
+
+const (
+	// default AAD authority host
+	authorityPublicCloud = "https://login.microsoftonline.com/common"
+)

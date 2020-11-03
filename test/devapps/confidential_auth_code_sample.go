@@ -83,7 +83,8 @@ func acquireByAuthorizationCodeConfidential() {
 	}
 	options := msal.DefaultConfidentialClientApplicationOptions()
 	options.Accessor = cacheAccessor
-	confidentialClientAuthCode, err = msal.NewConfidentialClientApplication(confidentialConfig.ClientID, confidentialConfig.Authority, certificate, &options)
+	options.Authority = confidentialConfig.Authority
+	confidentialClientAuthCode, err = msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
 	if err != nil {
 		log.Fatal(err)
 	}
