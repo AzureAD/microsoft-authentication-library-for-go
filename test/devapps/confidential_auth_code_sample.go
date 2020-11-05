@@ -55,7 +55,7 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(context.Background(), confidentialConfig.Scopes, confidentialConfig.RedirectURI, &msal.AcquireTokenByAuthCodeOptions{
+	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(context.Background(), confidentialConfig.Scopes, &msal.AcquireTokenByAuthCodeOptions{
 		Code:          code,
 		CodeChallenge: confidentialConfig.CodeChallenge,
 	})

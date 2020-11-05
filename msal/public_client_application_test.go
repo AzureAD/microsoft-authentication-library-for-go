@@ -56,7 +56,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	actualTokenResp := &msalbase.TokenResponse{}
 	wrm.On("GetAccessTokenFromAuthCode", mock.AnythingOfType("*msalbase.AuthParametersInternal"), "", "", make(map[string]string)).Return(actualTokenResp, nil)
 	cacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
-	_, err := testPCA.AcquireTokenByAuthCode(context.Background(), []string{"openid"}, "", nil)
+	_, err := testPCA.AcquireTokenByAuthCode(context.Background(), []string{"openid"}, nil)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}

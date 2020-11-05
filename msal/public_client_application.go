@@ -93,8 +93,8 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(ctx context.Context
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // Users need to create an AcquireTokenAuthCodeParameters instance and pass it in.
-func (pca *PublicClientApplication) AcquireTokenByAuthCode(ctx context.Context, scopes []string, redirectURI string, options *AcquireTokenByAuthCodeOptions) (*msalbase.AuthenticationResult, error) {
-	authCodeParams := createAcquireTokenAuthCodeParameters(scopes, redirectURI)
+func (pca *PublicClientApplication) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options *AcquireTokenByAuthCodeOptions) (*msalbase.AuthenticationResult, error) {
+	authCodeParams := createAcquireTokenAuthCodeParameters(scopes)
 	authCodeParams.requestType = requests.AuthCodePublic
 	if options != nil {
 		authCodeParams.Code = options.Code

@@ -93,8 +93,8 @@ func (cca *ConfidentialClientApplication) AcquireTokenSilent(ctx context.Context
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // Users need to create an AcquireTokenAuthCodeParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(ctx context.Context, scopes []string, redirectURI string, options *AcquireTokenByAuthCodeOptions) (*msalbase.AuthenticationResult, error) {
-	authCodeParams := createAcquireTokenAuthCodeParameters(scopes, redirectURI)
+func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options *AcquireTokenByAuthCodeOptions) (*msalbase.AuthenticationResult, error) {
+	authCodeParams := createAcquireTokenAuthCodeParameters(scopes)
 	authCodeParams.requestType = requests.AuthCodeConfidential
 	authCodeParams.clientCredential = cca.clientCredential
 	if options != nil {

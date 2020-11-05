@@ -42,7 +42,7 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	result, err := publicClientApp.AcquireTokenByAuthCode(context.Background(), config.Scopes, config.RedirectURI, &msal.AcquireTokenByAuthCodeOptions{
+	result, err := publicClientApp.AcquireTokenByAuthCode(context.Background(), config.Scopes, &msal.AcquireTokenByAuthCodeOptions{
 		Code:          code,
 		CodeChallenge: config.CodeChallenge,
 	})
