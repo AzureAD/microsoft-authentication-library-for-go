@@ -6,11 +6,10 @@ package tokencache
 import (
 	"io/ioutil"
 	"os"
-	"reflect"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/gdexlab/go-render/render"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 func TestCheckAlias(t *testing.T) {
@@ -59,7 +58,7 @@ func TestReadAllAccounts(t *testing.T) {
 		counter := 0
 		for _, accOne := range listOne {
 			for _, accTwo := range listTwo {
-				if reflect.DeepEqual(accOne, accTwo) {
+				if diff := (&pretty.Config{IncludeUnexported: false}).Compare(accOne, accTwo); diff != "" {
 					counter++
 				}
 			}
@@ -118,8 +117,8 @@ func TestReadAccessToken(t *testing.T) {
 		"cid",
 		[]string{"user.read", "openid"},
 	)
-	if !reflect.DeepEqual(testAccessToken, retAccessToken) {
-		t.Errorf("Returned access token %v is not the same as expected access token %v", retAccessToken, testAccessToken)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testAccessToken, retAccessToken); diff != "" {
+		t.Errorf("Returned access token is not the same as expected access token: -want/+got:\n %s", diff)
 	}
 	readAccessToken := storageManager.ReadAccessToken(
 		"this_should_break_it",
@@ -158,10 +157,8 @@ func TestWriteAccessToken(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(storageManager.accessTokens[key], testAccessToken) {
-		t.Errorf("Added access token %v differs from expected access token %v",
-			storageManager.accessTokens[key],
-			testAccessToken)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testAccessToken, storageManager.accessTokens[key]); diff != "" {
+		t.Errorf("Added access token differs from expected access token: -want/+got:\n %s", diff)
 	}
 }
 
@@ -177,8 +174,8 @@ func TestReadAccount(t *testing.T) {
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	storageManager.accounts[testAcc.CreateKey()] = testAcc
 	returnedAccount := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
-	if !reflect.DeepEqual(returnedAccount, testAcc) {
-		t.Errorf("Returned account %v differs from expected account %v", returnedAccount, testAcc)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testAcc, returnedAccount); diff != "" {
+		t.Errorf("Returned account differs from expected account: -want/+got:\n %s", diff)
 	}
 	readAccount := storageManager.ReadAccount("this_should_break_it", []string{"hello", "env", "test"}, "realm")
 	if readAccount != nil {
@@ -201,8 +198,8 @@ func TestWriteAccount(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(storageManager.accounts[key], testAcc) {
-		t.Errorf("Added account %v differs from expected account %v", storageManager.accounts[key], testAcc)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testAcc, storageManager.accounts[key]); diff != "" {
+		t.Errorf("Added account differs from expected account: -want/+got:\n %s", diff)
 	}
 }
 
@@ -218,8 +215,8 @@ func TestReadAppMetadata(t *testing.T) {
 	testAppMeta := createAppMetadata("fid", "cid", "env")
 	storageManager.appMetadatas[testAppMeta.CreateKey()] = testAppMeta
 	returnedAppMeta := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "cid")
-	if !reflect.DeepEqual(returnedAppMeta, testAppMeta) {
-		t.Errorf("Returned app metadata %v differs from expected app metadata %v", returnedAppMeta, testAppMeta)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testAppMeta, returnedAppMeta); diff != "" {
+		t.Errorf("Returned app metadata differs from expected app metadata: -want/+got:\n %s", diff)
 	}
 	readAppMeta := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "break_this")
 	if readAppMeta != nil {
@@ -242,8 +239,8 @@ func TestWriteAppMetadata(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(storageManager.appMetadatas[key], testAppMeta) {
-		t.Errorf("Added app metadata %v differs from expected account %v", storageManager.appMetadatas[key], testAppMeta)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testAppMeta, storageManager.appMetadatas[key]); diff != "" {
+		t.Errorf("Added app metadata differs from expected account: -want/+got:\n %s", diff)
 	}
 }
 
@@ -270,8 +267,8 @@ func TestReadIDToken(t *testing.T) {
 		"realm",
 		"cid",
 	)
-	if !reflect.DeepEqual(testIDToken, returnedIDToken) {
-		t.Errorf("Returned ID token %v differs from expected ID token %v", returnedIDToken, testIDToken)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testIDToken, returnedIDToken); diff != "" {
+		t.Errorf("Returned ID token differs from expected ID token: -want/+got:\n %s", diff)
 	}
 	readIDToken := storageManager.ReadIDToken(
 		"this_should_break_it",
@@ -305,10 +302,8 @@ func TestWriteIDToken(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(storageManager.idTokens[key], testIDToken) {
-		t.Errorf("Added ID token %v differs from expected ID Token %v",
-			storageManager.idTokens[key],
-			testIDToken)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testIDToken, storageManager.idTokens[key]); diff != "" {
+		t.Errorf("Added ID token differs from expected ID Token: -want/+got:\n %s", diff)
 	}
 }
 
@@ -407,10 +402,10 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 			want: nil,
 		},
 		{
-			name: "Token without fid, read with fid, cid, env, and hid",
+			name: "Token with fid, read with fid, cid, env, and hid",
 			m: &defaultStorageManager{
 				refreshTokens: map[string]*refreshTokenCacheItem{
-					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+					testRefreshTokenWithFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
 			args: args{
@@ -425,7 +420,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 			name: "Token with fid, read with cid, env, and hid",
 			m: &defaultStorageManager{
 				refreshTokens: map[string]*refreshTokenCacheItem{
-					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+					testRefreshTokenWithFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
 			args: args{
@@ -440,7 +435,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 			name: "Token with fid, verify CID is not required", // match on hid, env, and has fid
 			m: &defaultStorageManager{
 				refreshTokens: map[string]*refreshTokenCacheItem{
-					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+					testRefreshTokenWithFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
 			args: args{
@@ -455,7 +450,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 			name: "Token with fid, Verify env is required",
 			m: &defaultStorageManager{
 				refreshTokens: map[string]*refreshTokenCacheItem{
-					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
+					testRefreshTokenWithFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
 			args: args{
@@ -505,8 +500,9 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.m.ReadRefreshToken(tt.args.homeAccountID, tt.args.envAliases, tt.args.familyID, tt.args.clientID); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("defaultStorageManager.ReadRefreshToken() = %v, want %v", render.AsCode(got), render.AsCode(tt.want))
+			got := tt.m.ReadRefreshToken(tt.args.homeAccountID, tt.args.envAliases, tt.args.familyID, tt.args.clientID)
+			if diff := (&pretty.Config{IncludeUnexported: false}).Compare(tt.want, got); diff != "" {
+				t.Errorf("defaultStorageManager.ReadRefreshToken(): -want/+got:\n %s", diff)
 			}
 		})
 	}
@@ -533,10 +529,8 @@ func TestWriteRefreshToken(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(storageManager.refreshTokens[key], testRefreshToken) {
-		t.Errorf("Added refresh token %v differs from expected refresh token %v",
-			storageManager.refreshTokens[key],
-			testRefreshToken)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(testRefreshToken, storageManager.refreshTokens[key]); diff != "" {
+		t.Errorf("Added refresh token differs from expected refresh token: -want/+got:\n %s", diff)
 	}
 }
 
@@ -630,20 +624,20 @@ func TestStorageManagerDeserialize(t *testing.T) {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
 	actualATSecret := manager.accessTokens["uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3"].Secret
-	if !reflect.DeepEqual(accessTokenSecret, actualATSecret) {
-		t.Errorf("Expected access token secret %+v differs from actual access token secret %+v", accessTokenSecret, actualATSecret)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(accessTokenSecret, actualATSecret); diff != "" {
+		t.Errorf("Expected access token secret differs from actual access token secret: -want/+got:\n %s", diff)
 	}
 	actualRTSecret := manager.refreshTokens["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
-	if !reflect.DeepEqual(rtSecret, actualRTSecret) {
-		t.Errorf("Expected refresh tokens %+v differ from actual refresh tokens %+v", rtSecret, actualRTSecret)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(rtSecret, actualRTSecret); diff != "" {
+		t.Errorf("Expected refresh tokens differ from actual refresh tokens: -want/+got:\n %s", diff)
 	}
 	actualIDSecret := manager.idTokens["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
-	if !reflect.DeepEqual(idSecret, actualIDSecret) {
-		t.Errorf("Expected ID tokens %+v differ from actual ID tokens %+v", idSecret, actualIDSecret)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(idSecret, actualIDSecret); diff != "" {
+		t.Errorf("Expected ID tokens differ from actual ID tokens: -want/+got:\n %s", diff)
 	}
 	actualUser := manager.accounts["uid.utid-login.windows.net-contoso"].PreferredUsername
-	if !reflect.DeepEqual(actualUser, accUser) {
-		t.Errorf("Actual account username %+s differs from expected account username %+v", actualUser, accUser)
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(accUser, actualUser); diff != "" {
+		t.Errorf("Actual account username differs from expected account username: -want/+got:\n %s", diff)
 	}
 	if manager.appMetadatas["appmetadata-login.windows.net-my_client_id"].FamilyID != "" {
 		t.Errorf("Expected app metadata family ID is nil, instead it is %s", manager.appMetadatas["appmetadata-login.windows.net-my_client_id"].FamilyID)
