@@ -124,7 +124,7 @@ func TestMarshalStruct(t *testing.T) {
 			}{
 				Name: "John",
 				Map: map[string]StructB{
-					"key": StructB{
+					"key": {
 						Address: "addr",
 					},
 				},
@@ -168,7 +168,7 @@ func TestMarshalStruct(t *testing.T) {
 			}{
 				Name: "John",
 				Map: map[string][]StructB{
-					"key": []StructB{
+					"key": {
 						{Address: "addr"},
 					},
 				},

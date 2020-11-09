@@ -82,7 +82,7 @@ func TestUnmarshalMap(t *testing.T) {
 					`,
 			got: &map[string]*StructWithUnmarshal{},
 			want: map[string]*StructWithUnmarshal{
-				"key": &StructWithUnmarshal{
+				"key": {
 					Name: "John",
 				},
 			},
@@ -99,7 +99,7 @@ func TestUnmarshalMap(t *testing.T) {
 					`,
 			got: &map[string]StructName{},
 			want: map[string]StructName{
-				"key": StructName{
+				"key": {
 					Name: "John",
 					AdditionalFields: map[string]interface{}{
 						"extra": MarshalRaw("extra"),
@@ -119,7 +119,7 @@ func TestUnmarshalMap(t *testing.T) {
 					`,
 			got: &map[string]*StructName{},
 			want: map[string]*StructName{
-				"key": &StructName{
+				"key": {
 					Name: "John",
 					AdditionalFields: map[string]interface{}{
 						"extra": MarshalRaw("extra"),
@@ -141,7 +141,7 @@ func TestUnmarshalMap(t *testing.T) {
 				`,
 			got: &map[string][]StructName{},
 			want: map[string][]StructName{
-				"key": []StructName{
+				"key": {
 					{
 						Name: "John",
 						AdditionalFields: map[string]interface{}{
@@ -165,7 +165,7 @@ func TestUnmarshalMap(t *testing.T) {
 				`,
 			got: &map[string][]*StructName{},
 			want: map[string][]*StructName{
-				"key": []*StructName{
+				"key": {
 					{
 						Name: "John",
 						AdditionalFields: map[string]interface{}{
@@ -239,7 +239,7 @@ func TestUnmarshalSlice(t *testing.T) {
 				`,
 			got: new([]*StructWithUnmarshal),
 			want: []*StructWithUnmarshal{
-				&StructWithUnmarshal{
+				{
 					Name: "John",
 				},
 			},
@@ -346,8 +346,8 @@ func TestUnmarshalSlice(t *testing.T) {
 			`,
 			got: new([]map[string]StructName),
 			want: []map[string]StructName{
-				map[string]StructName{
-					"key": StructName{
+				{
+					"key": {
 						Name: "John",
 						AdditionalFields: map[string]interface{}{
 							"extra": MarshalRaw("extra"),
