@@ -82,44 +82,36 @@ func marshalStruct(v reflect.Value, buff *bytes.Buffer, enc *json.Encoder) error
 			field = field.Elem()
 		}
 
-		err := func() error {
-			// Determine if we need a trailing comma.
-			defer buff.WriteByte(comma)
-
-			switch field.Kind() {
-			// If it was a *struct or struct, we need to recursively all marshal().
-			case reflect.Struct:
-				if err := marshalStruct(field, buff, enc); err != nil {
-					return err
-				}
-				return nil
-			case reflect.Map:
-				if err := marshalMap(field, buff, enc); err != nil {
-					return err
-				}
-				return nil
-			case reflect.Slice:
-				if err := marshalSlice(field, buff, enc); err != nil {
-					return err
-				}
-				return nil
-			}
-
-			// It is just a basic type, so encode it.
-			if err := enc.Encode(field.Interface()); err != nil {
-				return err
-			}
-			buff.Truncate(buff.Len() - 1) // Remove Encode() added \n
-
-			return nil
-		}()
-		if err != nil {
+		if err := marshalStructField(field, buff, enc); err != nil {
 			return err
 		}
 	}
 
 	buff.Truncate(buff.Len() - 1) // Remove final comma
 	buff.WriteByte(rightBrace)
+
+	return nil
+}
+
+func marshalStructField(field reflect.Value, buff *bytes.Buffer, enc *json.Encoder) error {
+	// Determine if we need a trailing comma.
+	defer buff.WriteByte(comma)
+
+	switch field.Kind() {
+	// If it was a *struct or struct, we need to recursively all marshal().
+	case reflect.Struct:
+		return marshalStruct(field, buff, enc)
+	case reflect.Map:
+		return marshalMap(field, buff, enc)
+	case reflect.Slice:
+		return marshalSlice(field, buff, enc)
+	}
+
+	// It is just a basic type, so encode it.
+	if err := enc.Encode(field.Interface()); err != nil {
+		return err
+	}
+	buff.Truncate(buff.Len() - 1) // Remove Encode() added \n
 
 	return nil
 }
