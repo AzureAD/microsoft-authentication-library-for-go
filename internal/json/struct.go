@@ -39,7 +39,6 @@ type decoder struct {
 	dec        *json.Decoder
 	value      reflect.Value // This will be a reflect.Struct
 	translator translateFields
-	hasAdd     bool
 	key        string
 }
 

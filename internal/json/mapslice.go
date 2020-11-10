@@ -190,7 +190,6 @@ func unmarshalSlice(dec *json.Decoder, ptrSlice reflect.Value) error {
 type sliceWalk struct {
 	dec           *json.Decoder
 	s             reflect.Value // *[]slice
-	skipOpenParen bool
 	valueType     reflect.Type
 }
 
@@ -253,8 +252,8 @@ func (s *sliceWalk) next() (stateFn, error) {
 		return s.storeValue, nil
 	}
 	// Nothing left in the slice, remove closing ]
-	s.dec.Token()
-	return nil, nil
+	_, err := s.dec.Token()
+	return nil, err
 }
 
 func (s *sliceWalk) storeValue() (stateFn, error) {

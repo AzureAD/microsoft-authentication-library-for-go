@@ -56,7 +56,7 @@ func Marshal(i interface{}) ([]byte, error) {
 // a field called AdditionalFields of type map[string]interface{}, JSON data representing fields not in the struct
 // will be written as key/value pairs to AdditionalFields.
 func Unmarshal(b []byte, i interface{}) error {
-	if b == nil || len(b) == 0 {
+	if len(b) == 0 {
 		return nil
 	}
 
@@ -101,10 +101,7 @@ func delimIs(got json.Token, want rune) bool {
 func hasMarshalJSON(v reflect.Value) bool {
 	if method := v.MethodByName(marshalJSON); method.Kind() != reflect.Invalid {
 		_, ok := v.Interface().(json.Marshaler)
-		if ok {
-			return true
-		}
-		return false
+		return ok
 	}
 
 	if v.Kind() == reflect.Ptr {
@@ -118,10 +115,7 @@ func hasMarshalJSON(v reflect.Value) bool {
 
 	if method := v.MethodByName(marshalJSON); method.Kind() != reflect.Invalid {
 		_, ok := v.Interface().(json.Marshaler)
-		if ok {
-			return true
-		}
-		return false
+		return ok
 	}
 	return false
 }
