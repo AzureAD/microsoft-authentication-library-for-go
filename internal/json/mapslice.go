@@ -188,9 +188,9 @@ func unmarshalSlice(dec *json.Decoder, ptrSlice reflect.Value) error {
 }
 
 type sliceWalk struct {
-	dec           *json.Decoder
-	s             reflect.Value // *[]slice
-	valueType     reflect.Type
+	dec       *json.Decoder
+	s         reflect.Value // *[]slice
+	valueType reflect.Type
 }
 
 // run runs our decoder state machine.
