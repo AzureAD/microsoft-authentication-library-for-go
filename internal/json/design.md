@@ -45,7 +45,7 @@ They provide streaming processing (efficient) and return errors on bad JSON.
 Support for json.Marshaler/Unmarshaler allows for us to use non-basic types
 that must be specially encoded/decoded (like time.Time objects).
 
-We don't support types that can't custome unmarshal or have AdditionalFields
+We don't support types that can't customer unmarshal or have AdditionalFields
 in order to prevent future devs from forgetting that important field and
 generating bad return values.
 
