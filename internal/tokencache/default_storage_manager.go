@@ -13,7 +13,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/kr/pretty"
 )
 
 // TODO(jdoak): Investigate this lock. It is strange to have a global lock.
@@ -137,10 +136,6 @@ func matchFamilyRefreshToken(rt refreshTokenCacheItem, homeID string, envAliases
 }
 
 func matchClientIDRefreshToken(rt refreshTokenCacheItem, homeID string, envAliases []string, clientID string) bool {
-	log.Println(pretty.Sprint(rt))
-	log.Println("homeid: ", homeID)
-	log.Println("checkAlias: ", checkAlias(rt.Environment, envAliases))
-	log.Println("clientID: ", clientID)
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
 
