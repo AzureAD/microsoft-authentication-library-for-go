@@ -44,7 +44,7 @@ func acquireByUsernamePasswordPublic() {
 	if err != nil {
 		// either there's no applicable token in the cache or something failed
 		log.Info(err)
-	}else{
+	} else {
 		return
 	}
 

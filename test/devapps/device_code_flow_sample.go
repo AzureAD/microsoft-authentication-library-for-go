@@ -41,7 +41,7 @@ func acquireTokenDeviceCode() {
 	//       cached or if something goes wrong (making the HTTP request, unmarshalling, etc).
 	result, err := publicClientApp.AcquireTokenSilent(
 		context.Background(),
-		config.Scopes, 
+		config.Scopes,
 		&msal.AcquireTokenSilentOptions{
 			Account: userAccount,
 		},

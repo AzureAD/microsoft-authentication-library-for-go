@@ -9,9 +9,9 @@ import (
 const port = "3000"
 
 var (
-	config = createConfig("config.json")
+	config          = createConfig("config.json")
 	publicClientApp *msal.PublicClientApplication
-	cacheAccessor = &SampleCacheAccessor{"serialized_cache.json"}
+	cacheAccessor   = &SampleCacheAccessor{"serialized_cache.json"}
 )
 
 func main() {
@@ -19,9 +19,9 @@ func main() {
 	exampleType := os.Args[1]
 	if exampleType == "1" {
 		acquireTokenDeviceCode()
-	/*} else if exampleType == "2" {
+		/*} else if exampleType == "2" {
 		acquireByAuthorizationCodePublic()
-	*/
+		*/
 	} else if exampleType == "3" {
 		acquireByUsernamePasswordPublic()
 	} else if exampleType == "4" {
