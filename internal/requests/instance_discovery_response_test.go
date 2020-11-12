@@ -13,7 +13,7 @@ func TestCreateInstanceDiscoveryResponse(t *testing.T) {
 				 [{"preferred_network": "hello", "preferred_cache": "hello", "tenant_discovery_endpoint": "hello"}]}`
 	expInstDisc := &InstanceDiscoveryResponse{
 		TenantDiscoveryEndpoint: "hello",
-		Metadata: []*InstanceDiscoveryMetadata{
+		Metadata: []InstanceDiscoveryMetadata{
 			{
 				PreferredCache:          "hello",
 				PreferredNetwork:        "hello",

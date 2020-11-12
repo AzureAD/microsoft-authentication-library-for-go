@@ -4,8 +4,11 @@
 package tokencache
 
 import (
-	"reflect"
+	stdJSON "encoding/json"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 var (
@@ -17,20 +20,13 @@ var (
 	idTokSecret  = "id"
 )
 
-var idToken = &idTokenCacheItem{
+var idToken = idTokenCacheItem{
 	HomeAccountID:  idHid,
 	Environment:    idEnv,
 	CredentialType: idCredential,
 	ClientID:       idClient,
 	Realm:          idRealm,
 	Secret:         idTokSecret,
-}
-
-func TestCreateIDTokenCacheItem(t *testing.T) {
-	actualIDToken := createIDTokenCacheItem("HID", "env", "realm", "clientID", "id")
-	if actualIDToken.HomeAccountID != idHid {
-		t.Errorf("actual home account id %+v differs from expected home account id %+v", actualIDToken.HomeAccountID, idHid)
-	}
 }
 
 func TestCreateKeyForIDToken(t *testing.T) {
@@ -40,39 +36,60 @@ func TestCreateKeyForIDToken(t *testing.T) {
 	}
 }
 
-func TestIDTokenPopulateFromJSONMap(t *testing.T) {
+func TestIDTokenUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "HID",
 		"environment":     "env",
 		"extra":           "this_is_extra",
 	}
-	actualIDToken := &idTokenCacheItem{}
-	err := actualIDToken.populateFromJSONMap(jsonMap)
+	b, err := stdJSON.Marshal(jsonMap)
 	if err != nil {
-		t.Errorf("Error is supposed to be nil, but it is %v", err)
+		panic(err)
 	}
-	if actualIDToken.HomeAccountID != idHid {
-		t.Errorf("actual home account id %+v differs from expected home account id %+v", actualIDToken.HomeAccountID, idHid)
+
+	want := idTokenCacheItem{
+		HomeAccountID: "HID",
+		Environment:   "env",
+		AdditionalFields: map[string]interface{}{
+			"extra": json.MarshalRaw("this_is_extra"),
+		},
+	}
+
+	got := idTokenCacheItem{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		panic(err)
+	}
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestIDTokenUnmarshal: -want/+got:\n%s", diff)
 	}
 }
 
-func TestIDTokenConvertToJSONMap(t *testing.T) {
-	idToken := &idTokenCacheItem{
+func TestIDTokenMarshal(t *testing.T) {
+	idToken := idTokenCacheItem{
 		HomeAccountID:    idHid,
 		Environment:      idEnv,
 		Realm:            "",
-		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+		AdditionalFields: map[string]interface{}{"extra": "this_is_extra"},
 	}
-	jsonMap := map[string]interface{}{
+
+	want := map[string]interface{}{
 		"home_account_id": "HID",
 		"environment":     "env",
 		"extra":           "this_is_extra",
 	}
-	actualJSONMap, err := idToken.convertToJSONMap()
+
+	b, err := json.Marshal(idToken)
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		panic(err)
 	}
-	if !reflect.DeepEqual(actualJSONMap, jsonMap) {
-		t.Errorf("JSON ID token %+v differs from expected JSON ID token %+v", actualJSONMap, jsonMap)
+	got := map[string]interface{}{}
+
+	if err := stdJSON.Unmarshal(b, &got); err != nil {
+		panic(err)
+	}
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestIDTokenMarshal: -want/+got:\n%s", diff)
 	}
 }

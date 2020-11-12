@@ -28,20 +28,22 @@ func TestGetSeparatedScopes(t *testing.T) {
 
 func TestCreateURL(t *testing.T) {
 	authCodeURLParams.CodeChallenge = "codeChallenge"
-	tdr := &requests.TenantDiscoveryResponse{
+	tdr := requests.TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
 		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
 		Issuer:                "https://login.microsoftonline.com/v2.0",
 	}
-	urlWRM.On("GetTenantDiscoveryResponse",
-		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
+	urlWRM.On(
+		"GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
+	).Return(tdr, nil)
 	url, err := authCodeURLParams.createURL(urlWRM, testURLAuthParams)
 	if err != nil {
-		t.Errorf("Error is supposed to be nil, instead it is %v", err)
+		t.Fatalf("Error is supposed to be nil, instead it is %v", err)
 	}
 	actualURL := "https://login.microsoftonline.com/v2.0/authorize?client_id=clientID&code_challenge=codeChallenge" +
 		"&redirect_uri=redirect&response_type=code&scope=openid+user.read"
-	if !reflect.DeepEqual(url, actualURL) {
+	if url != actualURL {
 		t.Errorf("Actual URL %v differs from expected URL %v", actualURL, url)
 	}
 }

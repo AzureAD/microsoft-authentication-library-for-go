@@ -14,18 +14,19 @@ import (
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type ConfidentialClientApplication struct {
 	clientApplication *clientApplication
-	clientCredential  *msalbase.ClientCredential
+	clientCredential  msalbase.ClientCredential
 }
 
 // CreateConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
-func CreateConfidentialClientApplication(
-	clientID string, authority string, clientCredential ClientCredentialProvider,
-) (*ConfidentialClientApplication, error) {
+func CreateConfidentialClientApplication(clientID, authority string, clientCredential ClientCredentialProvider) (*ConfidentialClientApplication, error) {
 	cred, err := createInternalClientCredential(clientCredential)
 	if err != nil {
 		return nil, err
 	}
-	clientApp := createClientApplication(clientID, authority)
+	clientApp, err := createClientApplication(clientID, authority)
+	if err != nil {
+		return nil, err
+	}
 	return &ConfidentialClientApplication{
 		clientApplication: clientApp,
 		clientCredential:  cred,
@@ -33,7 +34,7 @@ func CreateConfidentialClientApplication(
 }
 
 // This is used to convert the user-facing client credential interface to the internal representation of a client credential
-func createInternalClientCredential(interfaceCred ClientCredentialProvider) (*msalbase.ClientCredential, error) {
+func createInternalClientCredential(interfaceCred ClientCredentialProvider) (msalbase.ClientCredential, error) {
 	if interfaceCred.GetCredentialType() == msalbase.ClientCredentialSecret {
 		return msalbase.CreateClientCredentialFromSecret(interfaceCred.GetSecret())
 
@@ -63,8 +64,7 @@ func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameter
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token
 // Users need to create an AcquireTokenSilentParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
+func (cca *ConfidentialClientApplication) AcquireTokenSilent(silentParameters AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
 	silentParameters.requestType = requests.RefreshTokenConfidential
 	silentParameters.clientCredential = cca.clientCredential
 	return cca.clientApplication.acquireTokenSilent(silentParameters)
@@ -85,7 +85,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
 func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
 	clientCredParams *AcquireTokenClientCredentialParameters) (AuthenticationResultProvider, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
-	clientCredParams.augmentAuthenticationParameters(authParams)
+	clientCredParams.augmentAuthenticationParameters(&authParams)
 	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }

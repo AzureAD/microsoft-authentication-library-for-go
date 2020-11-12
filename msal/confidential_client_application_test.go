@@ -20,14 +20,25 @@ func TestAcquireTokenByClientCredential(t *testing.T) {
 			clientApplicationParameters: clientAppParams,
 			webRequestManager:           testWrm,
 			cacheContext:                &CacheContext{testCacheManager},
+			cacheAccessor:               noopCacheAccessor{},
 		},
 		clientCredential: cred,
 	}
-	testWrm.On("GetTenantDiscoveryResponse",
-		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
-	actualTokenResp := &msalbase.TokenResponse{}
-	testWrm.On("GetAccessTokenWithClientSecret", mock.AnythingOfType("*msalbase.AuthParametersInternal"), "client_secret").Return(actualTokenResp, nil)
-	testCacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
+	testWrm.On(
+		"GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
+	).Return(tdr, nil)
+	actualTokenResp := msalbase.TokenResponse{}
+	testWrm.On(
+		"GetAccessTokenWithClientSecret",
+		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		"client_secret",
+	).Return(actualTokenResp, nil)
+	testCacheManager.On(
+		"CacheTokenResponse",
+		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		actualTokenResp,
+	).Return(testAcc, nil)
 	clientCredParams := &AcquireTokenClientCredentialParameters{tokenCommonParams}
 	_, err := cca.AcquireTokenByClientCredential(clientCredParams)
 	if err != nil {

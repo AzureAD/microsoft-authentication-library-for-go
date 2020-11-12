@@ -4,31 +4,23 @@
 package requests
 
 import (
-	"sync"
-
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
-var instanceDiscoveryCache map[string]*InstanceDiscoveryMetadata
-var instanceDiscoveryCacheInitOnce sync.Once
-
-func initInstanceDiscoveryCache() {
-	instanceDiscoveryCache = make(map[string]*InstanceDiscoveryMetadata)
-}
+var instanceDiscoveryCache = map[string]InstanceDiscoveryMetadata{}
 
 type AadInstanceDiscovery struct {
 	webRequestManager WebRequestManager
 }
 
 func CreateAadInstanceDiscovery(webRequestManager WebRequestManager) *AadInstanceDiscovery {
-	instanceDiscoveryCacheInitOnce.Do(initInstanceDiscoveryCache)
 	return &AadInstanceDiscovery{webRequestManager: webRequestManager}
 }
 
-func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo *msalbase.AuthorityInfo) (*InstanceDiscoveryMetadata, error) {
+func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryMetadata, error) {
 	discoveryResponse, err := d.webRequestManager.GetAadinstanceDiscoveryResponse(authorityInfo)
 	if err != nil {
-		return nil, err
+		return InstanceDiscoveryMetadata{}, err
 	}
 
 	for _, metadataEntry := range discoveryResponse.Metadata {
@@ -43,13 +35,13 @@ func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo *msalba
 	return instanceDiscoveryCache[authorityInfo.Host], nil
 }
 
-func (d *AadInstanceDiscovery) GetMetadataEntry(authorityInfo *msalbase.AuthorityInfo) (*InstanceDiscoveryMetadata, error) {
+func (d *AadInstanceDiscovery) GetMetadataEntry(authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryMetadata, error) {
 	if metadata, ok := instanceDiscoveryCache[authorityInfo.Host]; ok {
 		return metadata, nil
 	}
 	metadata, err := d.doInstanceDiscoveryAndCache(authorityInfo)
 	if err != nil {
-		return nil, err
+		return InstanceDiscoveryMetadata{}, err
 	}
 	return metadata, nil
 }

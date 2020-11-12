@@ -4,9 +4,11 @@
 package tokencache
 
 import (
-	"encoding/json"
+	"errors"
+	"fmt"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
@@ -22,11 +24,12 @@ type accessTokenCacheItem struct {
 	ExpiresOnUnixTimestamp         string `json:"expires_on,omitempty"`
 	ExtendedExpiresOnUnixTimestamp string `json:"extended_expires_on,omitempty"`
 	CachedAt                       string `json:"cached_at,omitempty"`
-	additionalFields               map[string]interface{}
+
+	AdditionalFields map[string]interface{}
 }
 
-func createAccessTokenCacheItem(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn int64, scopes, token string) *accessTokenCacheItem {
-	return &accessTokenCacheItem{
+func createAccessTokenCacheItem(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn int64, scopes, token string) accessTokenCacheItem {
+	return accessTokenCacheItem{
 		HomeAccountID:                  homeID,
 		Environment:                    env,
 		Realm:                          realm,
@@ -37,56 +40,47 @@ func createAccessTokenCacheItem(homeID, env, realm, clientID string, cachedAt, e
 		CachedAt:                       strconv.FormatInt(cachedAt, 10),
 		ExpiresOnUnixTimestamp:         strconv.FormatInt(expiresOn, 10),
 		ExtendedExpiresOnUnixTimestamp: strconv.FormatInt(extendedExpiresOn, 10),
-		additionalFields:               make(map[string]interface{}),
 	}
 }
 
-func (s *accessTokenCacheItem) CreateKey() string {
+func (a accessTokenCacheItem) CreateKey() string {
 	return strings.Join(
-		[]string{s.HomeAccountID, s.Environment, s.CredentialType, s.ClientID, s.Realm, s.Scopes},
+		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes},
 		msalbase.CacheKeySeparator,
 	)
 }
 
-func (s *accessTokenCacheItem) GetSecret() string {
-	return s.Secret
+func (a accessTokenCacheItem) GetSecret() string {
+	return a.Secret
 }
 
-func (s *accessTokenCacheItem) GetExpiresOn() string {
-	return s.ExpiresOnUnixTimestamp
+func (a accessTokenCacheItem) GetExpiresOn() string {
+	return a.ExpiresOnUnixTimestamp
 }
 
-func (s *accessTokenCacheItem) GetScopes() string {
-	return s.Scopes
+func (a accessTokenCacheItem) GetScopes() string {
+	return a.Scopes
 }
 
-func (s *accessTokenCacheItem) populateFromJSONMap(j map[string]interface{}) error {
-	s.HomeAccountID = msalbase.GetStringKey(j, msalbase.JSONHomeAccountID)
-	s.Environment = msalbase.GetStringKey(j, msalbase.JSONEnvironment)
-	s.Realm = msalbase.GetStringKey(j, msalbase.JSONRealm)
-	s.CredentialType = msalbase.GetStringKey(j, msalbase.JSONCredentialType)
-	s.ClientID = msalbase.GetStringKey(j, msalbase.JSONClientID)
-	s.Secret = msalbase.GetStringKey(j, msalbase.JSONSecret)
-	s.Scopes = msalbase.GetStringKey(j, msalbase.JSONTarget)
-	s.CachedAt = msalbase.GetStringKey(j, msalbase.JSONCachedAt)
-	s.ExpiresOnUnixTimestamp = msalbase.GetStringKey(j, msalbase.JSONExpiresOn)
-	s.ExtendedExpiresOnUnixTimestamp = msalbase.GetStringKey(j, msalbase.JSONExtExpiresOn)
-	s.additionalFields = j
+// Validate validates that this accessTokenCacheItem can be used.
+func (a accessTokenCacheItem) Validate() error {
+	cachedAt, err := strconv.ParseInt(a.CachedAt, 10, 64)
+	if err != nil {
+		return fmt.Errorf("access token isn't valid, the cached at field is invalid: %w", err)
+	}
+
+	// TODO(jdoak): Fix all this Unix() stuff. We should be using time.Time() objects
+	// and we can make it easy to do this across JSON borders.
+	now := time.Now().Unix()
+	if cachedAt > now {
+		return errors.New("access token isn't valid, it was cached at a future time")
+	}
+	expiresOn, err := strconv.ParseInt(a.ExpiresOnUnixTimestamp, 10, 64)
+	if err != nil {
+		return fmt.Errorf("access token isn't valid, the cached at field is invalid: %w", err)
+	}
+	if expiresOn <= now+300 {
+		return fmt.Errorf("access token is expired")
+	}
 	return nil
-}
-
-func (s *accessTokenCacheItem) convertToJSONMap() (map[string]interface{}, error) {
-	accessMap, err := json.Marshal(s)
-	if err != nil {
-		return nil, err
-	}
-	newMap := make(map[string]interface{})
-	err = json.Unmarshal(accessMap, &newMap)
-	if err != nil {
-		return nil, err
-	}
-	for k, v := range s.additionalFields {
-		newMap[k] = v
-	}
-	return newMap, nil
 }

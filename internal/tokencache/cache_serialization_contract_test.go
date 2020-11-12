@@ -4,11 +4,12 @@
 package tokencache
 
 import (
+	stdJSON "encoding/json"
 	"io/ioutil"
 	"os"
-	"reflect"
 	"testing"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -38,155 +39,161 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 	jsonFile, err := os.Open(testFile)
 	testCache, err := ioutil.ReadAll(jsonFile)
 	jsonFile.Close()
-	contract := createCacheSerializationContract()
-	err = contract.UnmarshalJSON(testCache)
+	got := cacheSerializationContract{}
+	err = json.Unmarshal(testCache, &got)
 	if err != nil {
-		t.Errorf("Error is supposed to be nil, but it is %v", err)
+		t.Fatalf("TestCacheSerializationContractUnmarshalJSON(unmarshal): %v", err)
 	}
-	expectedAccessTokens := map[string]*accessTokenCacheItem{
-		"an-entry": {
-			additionalFields: map[string]interface{}{"foo": "bar"},
+
+	want := cacheSerializationContract{
+		AccessTokens: map[string]accessTokenCacheItem{
+			"an-entry": {
+				AdditionalFields: map[string]interface{}{
+					"foo": json.MarshalRaw("bar"),
+				},
+			},
+			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
+				Environment:                    defaultEnvironment,
+				CredentialType:                 accessTokenCred,
+				Secret:                         accessTokenSecret,
+				Realm:                          defaultRealm,
+				Scopes:                         defaultScopes,
+				ClientID:                       defaultClientID,
+				CachedAt:                       atCached,
+				HomeAccountID:                  defaultHID,
+				ExpiresOnUnixTimestamp:         atExpires,
+				ExtendedExpiresOnUnixTimestamp: atExpires,
+			},
 		},
-		"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
-			Environment:                    defaultEnvironment,
-			CredentialType:                 accessTokenCred,
-			Secret:                         accessTokenSecret,
-			Realm:                          defaultRealm,
-			Scopes:                         defaultScopes,
-			ClientID:                       defaultClientID,
-			CachedAt:                       atCached,
-			HomeAccountID:                  defaultHID,
-			ExpiresOnUnixTimestamp:         atExpires,
-			ExtendedExpiresOnUnixTimestamp: atExpires,
-			additionalFields:               make(map[string]interface{}),
+		Accounts: map[string]msalbase.Account{
+			"uid.utid-login.windows.net-contoso": {
+				PreferredUsername: "John Doe",
+				LocalAccountID:    "object1234",
+				Realm:             "contoso",
+				Environment:       "login.windows.net",
+				HomeAccountID:     "uid.utid",
+				AuthorityType:     "MSSTS",
+			},
+		},
+		RefreshTokens: map[string]refreshTokenCacheItem{
+			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
+				Target:         defaultScopes,
+				Environment:    defaultEnvironment,
+				CredentialType: rtCredType,
+				Secret:         rtSecret,
+				ClientID:       defaultClientID,
+				HomeAccountID:  defaultHID,
+			},
+		},
+		IDTokens: map[string]idTokenCacheItem{
+			"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
+				Realm:          defaultRealm,
+				Environment:    defaultEnvironment,
+				CredentialType: idCred,
+				Secret:         idSecret,
+				ClientID:       defaultClientID,
+				HomeAccountID:  defaultHID,
+			},
+		},
+		AppMetadata: map[string]appMetadata{
+			"appmetadata-login.windows.net-my_client_id": {
+				Environment: defaultEnvironment,
+				FamilyID:    "",
+				ClientID:    defaultClientID,
+			},
+		},
+		AdditionalFields: map[string]interface{}{
+			"unknownEntity": json.MarshalRaw(
+				map[string]interface{}{
+					"field1": "1",
+					"field2": "whats",
+				},
+			),
 		},
 	}
-
-	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(expectedAccessTokens, contract.AccessTokens); diff != "" {
-		t.Errorf("TestCacheSerializationContractUnmarshalJSON(access token): -want/+got:\n%s", diff)
-	}
-
-	if contract.AccessTokens["an-entry"].additionalFields["foo"] != "bar" {
-		t.Errorf("TestCacheSerializationContractUnmarshalJSON(access token): did not include additional fields")
-	}
-
-	expectedRefreshTokens := map[string]*refreshTokenCacheItem{
-		"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
-			Target:           defaultScopes,
-			Environment:      defaultEnvironment,
-			CredentialType:   rtCredType,
-			Secret:           rtSecret,
-			ClientID:         defaultClientID,
-			HomeAccountID:    defaultHID,
-			additionalFields: make(map[string]interface{}),
-		},
-	}
-	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(expectedRefreshTokens, contract.RefreshTokens); diff != "" {
-		t.Errorf("TestCacheSerializationContractUnmarshalJSON(refresh token): -want/+got:\n%s", diff)
-	}
-
-	expectedIDTokens := map[string]*idTokenCacheItem{
-		"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
-			Realm:            defaultRealm,
-			Environment:      defaultEnvironment,
-			CredentialType:   idCred,
-			Secret:           idSecret,
-			ClientID:         defaultClientID,
-			HomeAccountID:    defaultHID,
-			additionalFields: make(map[string]interface{}),
-		},
-	}
-	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(expectedIDTokens, contract.IDTokens); diff != "" {
-		t.Errorf("TestCacheSerializationContractUnmarshalJSON(id token): -want/+got:\n%s", diff)
-	}
-
-	expectedMetadata := map[string]*appMetadata{
-		"appmetadata-login.windows.net-my_client_id": {
-			Environment:      defaultEnvironment,
-			FamilyID:         "",
-			ClientID:         defaultClientID,
-			additionalFields: make(map[string]interface{}),
-		},
-	}
-	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(expectedMetadata, contract.AppMetadata); diff != "" {
-		t.Errorf("TestCacheSerializationContractUnmarshalJSON(app metadata): -want/+got:\n%s", diff)
-	}
-
-	extraEntry := map[string]interface{}{"field1": "1", "field2": "whats"}
-	expectedSnapshot := map[string]interface{}{
-		"unknownEntity": extraEntry,
-	}
-	if !reflect.DeepEqual(expectedSnapshot, contract.snapshot) {
-		t.Errorf("Expected snapshot %+v differs from actual snapshot %+v", expectedSnapshot, contract.snapshot)
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestCacheSerializationContractUnmarshalJSON: -want/+got:\n%s", diff)
+		t.Errorf(string(got.AdditionalFields["unknownEntity"].(stdJSON.RawMessage)))
 	}
 }
 
 func TestCacheSerializationContractMarshalJSON(t *testing.T) {
-	contract := &cacheSerializationContract{}
-	contract.AccessTokens = map[string]*accessTokenCacheItem{
-		"an-entry": {
-			additionalFields: map[string]interface{}{"foo": "bar"},
+	want := cacheSerializationContract{
+		AccessTokens: map[string]accessTokenCacheItem{
+			"an-entry": {
+				AdditionalFields: map[string]interface{}{
+					"foo": json.MarshalRaw("bar"),
+				},
+			},
+			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
+				Environment:                    defaultEnvironment,
+				CredentialType:                 accessTokenCred,
+				Secret:                         accessTokenSecret,
+				Realm:                          defaultRealm,
+				Scopes:                         defaultScopes,
+				ClientID:                       defaultClientID,
+				CachedAt:                       atCached,
+				HomeAccountID:                  defaultHID,
+				ExpiresOnUnixTimestamp:         atExpires,
+				ExtendedExpiresOnUnixTimestamp: atExpires,
+			},
 		},
-		"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
-			Environment:                    defaultEnvironment,
-			CredentialType:                 accessTokenCred,
-			Secret:                         accessTokenSecret,
-			Realm:                          defaultRealm,
-			Scopes:                         defaultScopes,
-			ClientID:                       defaultClientID,
-			CachedAt:                       atCached,
-			HomeAccountID:                  defaultHID,
-			ExpiresOnUnixTimestamp:         atExpires,
-			ExtendedExpiresOnUnixTimestamp: atExpires,
-			additionalFields:               make(map[string]interface{}),
+		RefreshTokens: map[string]refreshTokenCacheItem{
+			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
+				Target:         defaultScopes,
+				Environment:    defaultEnvironment,
+				CredentialType: rtCredType,
+				Secret:         rtSecret,
+				ClientID:       defaultClientID,
+				HomeAccountID:  defaultHID,
+			},
+		},
+		IDTokens: map[string]idTokenCacheItem{
+			"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
+				Realm:          defaultRealm,
+				Environment:    defaultEnvironment,
+				CredentialType: idCred,
+				Secret:         idSecret,
+				ClientID:       defaultClientID,
+				HomeAccountID:  defaultHID,
+			},
+		},
+		Accounts: map[string]msalbase.Account{
+			"uid.utid-login.windows.net-contoso": {
+				PreferredUsername: accUser,
+				LocalAccountID:    accLID,
+				Realm:             defaultRealm,
+				Environment:       defaultEnvironment,
+				HomeAccountID:     defaultHID,
+				AuthorityType:     accAuth,
+			},
+		},
+		AppMetadata: map[string]appMetadata{
+			"appmetadata-login.windows.net-my_client_id": {
+				Environment: defaultEnvironment,
+				FamilyID:    "",
+				ClientID:    defaultClientID,
+			},
+		},
+		AdditionalFields: map[string]interface{}{
+			"unknownEntity": json.MarshalRaw(
+				map[string]interface{}{
+					"field1": "1",
+					"field2": "whats",
+				},
+			),
 		},
 	}
-	contract.RefreshTokens = map[string]*refreshTokenCacheItem{
-		"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
-			Target:           defaultScopes,
-			Environment:      defaultEnvironment,
-			CredentialType:   rtCredType,
-			Secret:           rtSecret,
-			ClientID:         defaultClientID,
-			HomeAccountID:    defaultHID,
-			additionalFields: make(map[string]interface{}),
-		},
-	}
-	contract.IDTokens = map[string]*idTokenCacheItem{
-		"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
-			Realm:            defaultRealm,
-			Environment:      defaultEnvironment,
-			CredentialType:   idCred,
-			Secret:           idSecret,
-			ClientID:         defaultClientID,
-			HomeAccountID:    defaultHID,
-			additionalFields: make(map[string]interface{}),
-		},
-	}
-	contract.Accounts = map[string]*msalbase.Account{
-		"uid.utid-login.windows.net-contoso": {
-			PreferredUsername: accUser,
-			LocalAccountID:    accLID,
-			Realm:             defaultRealm,
-			Environment:       defaultEnvironment,
-			HomeAccountID:     defaultHID,
-			AuthorityType:     accAuth,
-		},
-	}
-	contract.AppMetadata = map[string]*appMetadata{
-		"appmetadata-login.windows.net-my_client_id": {
-			Environment:      defaultEnvironment,
-			FamilyID:         "",
-			ClientID:         defaultClientID,
-			additionalFields: make(map[string]interface{}),
-		},
-	}
-	extraEntry := map[string]interface{}{"field1": "1", "field2": "whats"}
-	contract.snapshot = map[string]interface{}{
-		"unknownEntity": extraEntry,
-	}
-	_, err := contract.MarshalJSON()
+	b, err := json.Marshal(want)
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("TestCacheSerializationContractMarshalJSON(marshal): got err == %s, want err == nil", err)
+	}
+	got := cacheSerializationContract{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("TestCacheSerializationContractMarshalJSON(unmarshal back): got err == %s, want err == nil", err)
+	}
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestCacheSerializationContractMarshalJSON: -want/+got:\n%s", diff)
 	}
 }

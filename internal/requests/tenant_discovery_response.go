@@ -4,17 +4,21 @@
 package requests
 
 import (
-	"encoding/json"
-
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
 // TenantDiscoveryResponse consists of the tenant endpoints from the OpenID configuration endpoint
 type TenantDiscoveryResponse struct {
-	BaseResponse          *msalbase.OAuthResponseBase
+	// TODO(jdoak): Ask someone about why BaseResponse doesn't have a tag.
+	// Either it should be encoded and we should tag it or we should tag it
+	// to be omitted on export or private.
+	BaseResponse          msalbase.OAuthResponseBase
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	Issuer                string `json:"issuer"`
+
+	AdditionalFields map[string]interface{}
 }
 
 func (r *TenantDiscoveryResponse) hasAuthorizationEndpoint() bool {
@@ -30,16 +34,17 @@ func (r *TenantDiscoveryResponse) hasIssuer() bool {
 }
 
 //CreateTenantDiscoveryResponse creates a tenant discovery response instance from an HTTP response
-func CreateTenantDiscoveryResponse(responseCode int, responseData string) (*TenantDiscoveryResponse, error) {
+func CreateTenantDiscoveryResponse(responseCode int, responseData string) (TenantDiscoveryResponse, error) {
+	resp := TenantDiscoveryResponse{}
 	baseResponse, err := msalbase.CreateOAuthResponseBase(responseCode, responseData)
 	if err != nil {
-		return nil, err
+		return resp, err
 	}
-	discoveryResponse := &TenantDiscoveryResponse{}
-	err = json.Unmarshal([]byte(responseData), discoveryResponse)
+
+	err = json.Unmarshal([]byte(responseData), &resp)
 	if err != nil {
-		return nil, err
+		return resp, err
 	}
-	discoveryResponse.BaseResponse = baseResponse
-	return discoveryResponse, nil
+	resp.BaseResponse = baseResponse
+	return resp, nil
 }

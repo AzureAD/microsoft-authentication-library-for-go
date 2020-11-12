@@ -4,16 +4,16 @@
 package tokencache
 
 import (
-	"reflect"
+	stdJSON "encoding/json"
 	"testing"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/kylelemons/godebug/pretty"
 )
 
 var (
 	appClient = "cid"
 	appEnv    = "env"
-	fam       = ""
 	appMeta   = &appMetadata{
 		ClientID:    appClient,
 		Environment: appEnv,
@@ -29,7 +29,7 @@ func TestCreateKeyForAppMetadata(t *testing.T) {
 	}
 }
 
-func TestAppMetadataPopulateFromJSONMap(t *testing.T) {
+func TestAppMetadataUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"environment": "env",
 		"extra":       "this_is_extra",
@@ -37,48 +37,56 @@ func TestAppMetadataPopulateFromJSONMap(t *testing.T) {
 		"client_id":   "cid",
 		"family_id":   nil,
 	}
-	actualAppMetadata := &appMetadata{}
-	err := actualAppMetadata.populateFromJSONMap(jsonMap)
+	want := appMetadata{
+		ClientID:    "cid",
+		Environment: "env",
+		AdditionalFields: map[string]interface{}{
+			"extra":     json.MarshalRaw("this_is_extra"),
+			"cached_at": json.MarshalRaw("100"),
+		},
+	}
+
+	b, err := stdJSON.Marshal(jsonMap)
 	if err != nil {
-		t.Errorf("Error is supposed to be nil, but it is %v", err)
+		panic(err)
 	}
-	actualEnv := actualAppMetadata.Environment
-	if !reflect.DeepEqual(actualEnv, appEnv) {
-		t.Errorf("Actual app metadata environment %+v differs from expected app metadata environment %+v",
-			actualEnv, appEnv)
+	got := appMetadata{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("TestAppMetadataUnmarshal(unmarshal): got err == %s, want err == nil", err)
 	}
-	actualClient := actualAppMetadata.ClientID
-	if !reflect.DeepEqual(actualClient, appClient) {
-		t.Errorf("Actual app metadata client ID %s differs from expected app metadata client ID %s",
-			actualClient, appClient)
-	}
-	if actualAppMetadata.FamilyID != "" {
-		t.Errorf("Family ID should be nil, not %v", actualAppMetadata.FamilyID)
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Fatalf("TestAppMetadataUnmarshal: -want/+got:\n%s", diff)
 	}
 }
 
-func TestAppMetadataConvertToJSONMap(t *testing.T) {
-	appMetadata := &appMetadata{
-		Environment:      "",
-		ClientID:         appClient,
-		FamilyID:         fam,
-		additionalFields: map[string]interface{}{"extra": "this_is_extra", "cached_at": "100"},
+func TestAppMetadataMarshal(t *testing.T) {
+	appMetadata := appMetadata{
+		Environment: "",
+		ClientID:    appClient,
+		FamilyID:    "",
+		AdditionalFields: map[string]interface{}{
+			"extra":     "this_is_extra",
+			"cached_at": "100",
+		},
 	}
+
 	want := map[string]interface{}{
 		"client_id": "cid",
 		"extra":     "this_is_extra",
 		"cached_at": "100",
 	}
-	got, err := appMetadata.convertToJSONMap()
+
+	b, err := json.Marshal(appMetadata)
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		panic(err)
 	}
+	got := map[string]interface{}{}
+	if err := stdJSON.Unmarshal(b, &got); err != nil {
+		t.Fatalf("TestAppMetadataMarshal(unmarshal): err == %s, want err == nil", err)
+	}
+
 	if diff := pretty.Compare(want, got); diff != "" {
 		t.Errorf("TestAppMetadataConvertToJSONMap: -want/+got:\n%s", diff)
 	}
-	/*
-		if !reflect.DeepEqual(jsonMap, actualJSONMap) {
-			t.Errorf("JSON app metadata %+v differs from expected JSON app metadata %+v", actualJSONMap, jsonMap)
-		}
-	*/
 }

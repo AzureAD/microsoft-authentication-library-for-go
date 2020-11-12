@@ -4,9 +4,9 @@
 package msalbase
 
 import (
-	"errors"
-	"reflect"
 	"testing"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 var testRealm = `{"account_type" : "Federated",
@@ -17,19 +17,8 @@ var testRealm = `{"account_type" : "Federated",
 					"federation_metadata_url" : "fed_meta"}`
 
 func TestCreateUserRealm(t *testing.T) {
-	type testData struct {
-		input string
-		err   error
-		realm *UserRealm
-	}
-	expectedUserRealm := &UserRealm{
-		AccountType:           "Federated",
-		DomainName:            "domain",
-		CloudInstanceName:     "cloud",
-		CloudAudienceURN:      "urn",
-		FederationProtocol:    "fed_prot",
-		FederationMetadataURL: "fed_meta",
-	}
+	// TODO(jdoak): make these maps that we just json.Marshal before we
+	// call CreateUserRealm().
 	fedProtRealm := `{"account_type" : "Federated",
 				"domain_name" : "domain",
 				"cloud_instance_name" : "cloud",
@@ -49,23 +38,46 @@ func TestCreateUserRealm(t *testing.T) {
 	cloudURNRealm := `{"account_type" : "Managed",
 						"domain_name" : "domain",
 						"cloud_instance_name" : "cloud"}`
-	tests := []testData{
-		{input: testRealm, err: nil, realm: expectedUserRealm},
-		{input: fedProtRealm, err: errors.New("federation protocol of user realm is missing"), realm: nil},
-		{input: fedMetaRealm, err: errors.New("federation metadata URL of user realm is missing"), realm: nil},
-		{input: domainRealm, err: errors.New("domain name of user realm is missing"), realm: nil},
-		{input: cloudNameRealm, err: errors.New("cloud instance name of user realm is missing"), realm: nil},
-		{input: cloudURNRealm, err: errors.New("cloud Instance URN is missing"), realm: nil},
+
+	tests := []struct {
+		desc  string
+		input string
+		want  UserRealm
+		err   bool
+	}{
+		{
+			desc:  "success",
+			input: testRealm,
+			want: UserRealm{
+				AccountType:           "Federated",
+				DomainName:            "domain",
+				CloudInstanceName:     "cloud",
+				CloudAudienceURN:      "urn",
+				FederationProtocol:    "fed_prot",
+				FederationMetadataURL: "fed_meta",
+			},
+		},
+		{desc: "error: Fed Protocol Realm", input: fedProtRealm, err: true},
+		{desc: "error: Fed Meta Realm", input: fedMetaRealm, err: true},
+		{desc: "error: Domain Realm", input: domainRealm, err: true},
+		{desc: "error: Cloud Name Realm", input: cloudNameRealm, err: true},
+		{desc: "error: Cloud URN Realm", input: cloudURNRealm, err: true},
 	}
 	for _, test := range tests {
-		actualRealm, err := CreateUserRealm(test.input)
-		if err != test.err {
-			if err == nil || !reflect.DeepEqual(err.Error(), test.err.Error()) {
-				t.Errorf("Actual error %v differs from expected error %v", err, test.err)
-			}
+		got, err := CreateUserRealm(test.input)
+		switch {
+		case err == nil && test.err:
+			t.Errorf("TestCreateUserRealm(%s): got err == nil, want err != nil", test.desc)
+			continue
+		case err != nil && !test.err:
+			t.Errorf("TestCreateUserRealm(%s): got err == %s, want err == nil", test.desc, err)
+			continue
+		case err != nil:
+			continue
 		}
-		if !reflect.DeepEqual(actualRealm, test.realm) {
-			t.Errorf("Actual user realm %+v differs from expected user realm %+v", actualRealm, test.realm)
+
+		if diff := pretty.Compare(test.want, got); diff != "" {
+			t.Errorf("TestCreateUserRealm(%s): -want/+got:\n%s", test.desc, diff)
 		}
 	}
 }

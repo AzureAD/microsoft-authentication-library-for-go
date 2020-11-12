@@ -4,13 +4,15 @@
 package msalbase
 
 import (
-	"reflect"
 	"testing"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
-	authorityURI := "https://login.microsoftonline.com/common/"
-	expectedAuthorityURI := &AuthorityInfo{
+	const authorityURI = "https://login.microsoftonline.com/common/"
+
+	want := AuthorityInfo{
 		Host:                  "login.microsoftonline.com",
 		CanonicalAuthorityURI: authorityURI,
 		AuthorityType:         MSSTS,
@@ -18,11 +20,12 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 		Tenant:                "common",
 		ValidateAuthority:     true,
 	}
-	actualAuthorityURI, err := CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
+	got, err := CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("TestCreateAuthorityInfoFromAuthorityUri: got err == %s, want err == nil", err)
 	}
-	if !reflect.DeepEqual(actualAuthorityURI, expectedAuthorityURI) {
-		t.Errorf("Actual authority info %+v differs from expected authority info %+v", actualAuthorityURI, expectedAuthorityURI)
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestCreateAuthorityInfoFromAuthorityUri: -want/+got:\n%s", diff)
 	}
 }

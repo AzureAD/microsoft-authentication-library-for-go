@@ -11,17 +11,17 @@ import (
 )
 
 func TestGetMetadataEntry(t *testing.T) {
-	authInfo := &msalbase.AuthorityInfo{
+	authInfo := msalbase.AuthorityInfo{
 		Host: "login.microsoft.com",
 	}
 	mockWRM := new(MockWebRequestManager)
-	metEntry := &InstanceDiscoveryMetadata{
+	metEntry := InstanceDiscoveryMetadata{
 		Aliases: []string{"login.microsoft.com"},
 	}
 	instanceDisc := CreateAadInstanceDiscovery(mockWRM)
-	instanceResp := &InstanceDiscoveryResponse{
+	instanceResp := InstanceDiscoveryResponse{
 		TenantDiscoveryEndpoint: "",
-		Metadata:                []*InstanceDiscoveryMetadata{metEntry},
+		Metadata:                []InstanceDiscoveryMetadata{metEntry},
 	}
 	mockWRM.On("GetAadinstanceDiscoveryResponse", authInfo).Return(instanceResp, nil)
 	actualMet, err := instanceDisc.GetMetadataEntry(authInfo)

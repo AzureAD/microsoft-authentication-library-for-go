@@ -7,10 +7,11 @@ import (
 	"io/ioutil"
 	"os"
 	"reflect"
+	"sort"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/gdexlab/go-render/render"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 func TestCheckAlias(t *testing.T) {
@@ -29,55 +30,53 @@ func TestIsMatchingScopes(t *testing.T) {
 	scopesOne := []string{"user.read", "openid", "user.write"}
 	scopesTwo := "openid user.write user.read"
 	if !isMatchingScopes(scopesOne, scopesTwo) {
-		t.Errorf("Scopes %v and %v are supposed to be the same", scopesOne, scopesTwo)
+		t.Fatalf("Scopes %v and %v are supposed to be the same", scopesOne, scopesTwo)
 	}
 	errorScopes := "openid user.read hello"
 	if isMatchingScopes(scopesOne, errorScopes) {
-		t.Errorf("Scopes %v and %v are not supposed to be the same", scopesOne, errorScopes)
+		t.Fatalf("Scopes %v and %v are not supposed to be the same", scopesOne, errorScopes)
 	}
 }
 
 func TestReadAllAccounts(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  make(map[string]accessTokenCacheItem),
+		refreshTokens: make(map[string]refreshTokenCacheItem),
+		idTokens:      make(map[string]idTokenCacheItem),
+		accounts:      make(map[string]msalbase.Account),
+		appMetadatas:  make(map[string]appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
 	storageManager.accounts[testAccOne.CreateKey()] = testAccOne
 	storageManager.accounts[testAccTwo.CreateKey()] = testAccTwo
-	actualAccounts := storageManager.ReadAllAccounts()
-	expectedAccounts := []*msalbase.Account{testAccOne, testAccTwo}
-	checkEqual := func(listOne []*msalbase.Account, listTwo []*msalbase.Account) bool {
-		if len(listOne) != len(listTwo) {
-			return false
-		}
-		counter := 0
-		for _, accOne := range listOne {
-			for _, accTwo := range listTwo {
-				if reflect.DeepEqual(accOne, accTwo) {
-					counter++
-				}
-			}
-		}
-		return counter == len(listOne)
+	actualAccounts, err := storageManager.ReadAllAccounts()
+	if err != nil {
+		panic(err)
 	}
-	if !checkEqual(actualAccounts, expectedAccounts) {
-		t.Errorf("Actual accounts %v differ from expected accounts %v", actualAccounts, expectedAccounts)
+	// ReadAllAccounts() is unstable in that the order can be reversed between calls.
+	// This fixes that.
+	sort.Slice(
+		actualAccounts,
+		func(i, j int) bool {
+			return actualAccounts[i].HomeAccountID > actualAccounts[j].HomeAccountID
+		},
+	)
+
+	expectedAccounts := []msalbase.Account{testAccOne, testAccTwo}
+	if diff := pretty.Compare(expectedAccounts, actualAccounts); diff != "" {
+		t.Errorf("Actual accounts differ from expected accounts: -want/+got:\n%s", diff)
 	}
 }
 
 func TestDeleteAccounts(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  make(map[string]accessTokenCacheItem),
+		refreshTokens: make(map[string]refreshTokenCacheItem),
+		idTokens:      make(map[string]idTokenCacheItem),
+		accounts:      make(map[string]msalbase.Account),
+		appMetadatas:  make(map[string]appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
@@ -92,11 +91,11 @@ func TestDeleteAccounts(t *testing.T) {
 
 func TestReadAccessToken(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAccessToken := createAccessTokenCacheItem(
@@ -111,35 +110,38 @@ func TestReadAccessToken(t *testing.T) {
 		"secret",
 	)
 	storageManager.accessTokens[testAccessToken.CreateKey()] = testAccessToken
-	retAccessToken := storageManager.ReadAccessToken(
+	retAccessToken, err := storageManager.ReadAccessToken(
 		"hid",
 		[]string{"hello", "env", "test"},
 		"realm",
 		"cid",
 		[]string{"user.read", "openid"},
 	)
-	if !reflect.DeepEqual(testAccessToken, retAccessToken) {
-		t.Errorf("Returned access token %v is not the same as expected access token %v", retAccessToken, testAccessToken)
+	if err != nil {
+		t.Errorf("ReadAccessToken(): got err == %s, want err == nil", err)
 	}
-	readAccessToken := storageManager.ReadAccessToken(
+	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
+		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
+	}
+	_, err = storageManager.ReadAccessToken(
 		"this_should_break_it",
 		[]string{"hello", "env", "test"},
 		"realm",
 		"cid",
 		[]string{"user.read", "openid"},
 	)
-	if readAccessToken != nil {
-		t.Errorf("Returned access token should be nil; instead it is %v", readAccessToken)
+	if err == nil {
+		t.Errorf("ReadAccessToken(): got err == nil, want err != nil")
 	}
 }
 
 func TestWriteAccessToken(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAccessToken := createAccessTokenCacheItem(
@@ -167,32 +169,36 @@ func TestWriteAccessToken(t *testing.T) {
 
 func TestReadAccount(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	storageManager.accounts[testAcc.CreateKey()] = testAcc
-	returnedAccount := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
-	if !reflect.DeepEqual(returnedAccount, testAcc) {
-		t.Errorf("Returned account %v differs from expected account %v", returnedAccount, testAcc)
+	returnedAccount, err := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
+	if err != nil {
+		t.Fatalf("ReadAccount: got err == %s, want err == nil", err)
 	}
-	readAccount := storageManager.ReadAccount("this_should_break_it", []string{"hello", "env", "test"}, "realm")
-	if readAccount != nil {
-		t.Errorf("Returned account should be nil, instead it is %v", readAccount)
+	if diff := pretty.Compare(testAcc, returnedAccount); diff != "" {
+		t.Errorf("Returned account differs from expected account: -want/+got:\n%s", diff)
+	}
+
+	_, err = storageManager.ReadAccount("this_should_break_it", []string{"hello", "env", "test"}, "realm")
+	if err == nil {
+		t.Errorf("Returned account: got err == nil, want err != nil")
 	}
 }
 
 func TestWriteAccount(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
@@ -208,32 +214,36 @@ func TestWriteAccount(t *testing.T) {
 
 func TestReadAppMetadata(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAppMeta := createAppMetadata("fid", "cid", "env")
 	storageManager.appMetadatas[testAppMeta.CreateKey()] = testAppMeta
-	returnedAppMeta := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "cid")
-	if !reflect.DeepEqual(returnedAppMeta, testAppMeta) {
-		t.Errorf("Returned app metadata %v differs from expected app metadata %v", returnedAppMeta, testAppMeta)
+	returnedAppMeta, err := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "cid")
+	if err != nil {
+		t.Fatalf("TestReadAppMetadata(ReadAppMetadata): got err == %s, want err == nil", err)
 	}
-	readAppMeta := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "break_this")
-	if readAppMeta != nil {
-		t.Errorf("Returned app metadata should be nil; instead it is %v", readAppMeta)
+	if diff := pretty.Compare(testAppMeta, returnedAppMeta); diff != "" {
+		t.Fatalf("TestReadAppMetadata(ReadAppMetadata): -want/+got:\n%s", diff)
+	}
+
+	_, err = storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "break_this")
+	if err == nil {
+		t.Fatalf("TestReadAppMetadata(bad ReadAppMetadata): got err == nil, want err != nil")
 	}
 }
 
 func TestWriteAppMetadata(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testAppMeta := createAppMetadata("fid", "cid", "env")
@@ -249,11 +259,11 @@ func TestWriteAppMetadata(t *testing.T) {
 
 func TestReadIDToken(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testIDToken := createIDTokenCacheItem(
@@ -264,33 +274,38 @@ func TestReadIDToken(t *testing.T) {
 		"secret",
 	)
 	storageManager.idTokens[testIDToken.CreateKey()] = testIDToken
-	returnedIDToken := storageManager.ReadIDToken(
+	returnedIDToken, err := storageManager.ReadIDToken(
 		"hid",
 		[]string{"hello", "env", "test"},
 		"realm",
 		"cid",
 	)
-	if !reflect.DeepEqual(testIDToken, returnedIDToken) {
-		t.Errorf("Returned ID token %v differs from expected ID token %v", returnedIDToken, testIDToken)
+	if err != nil {
+		panic(err)
 	}
-	readIDToken := storageManager.ReadIDToken(
+
+	if diff := pretty.Compare(testIDToken, returnedIDToken); diff != "" {
+		t.Fatalf("TestReadIDToken(good token): -want/+got:\n%s", diff)
+	}
+
+	_, err = storageManager.ReadIDToken(
 		"this_should_break_it",
 		[]string{"hello", "env", "test"},
 		"realm",
 		"cid",
 	)
-	if readIDToken != nil {
-		t.Errorf("Returned ID token should be nil; instead it is %v", readIDToken)
+	if err == nil {
+		t.Errorf("TestReadIDToken(bad token): got err == nil, want err != nil")
 	}
 }
 
 func TestWriteIDToken(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	testIDToken := createIDTokenCacheItem(
@@ -312,7 +327,7 @@ func TestWriteIDToken(t *testing.T) {
 	}
 }
 
-func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
+func TestDefaultStorageManagerReadRefreshToken(t *testing.T) {
 	testRefreshTokenWithFID := createRefreshTokenCacheItem(
 		"hid",
 		"env",
@@ -340,16 +355,18 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 		familyID      string
 		clientID      string
 	}
+
 	tests := []struct {
 		name string
 		m    *defaultStorageManager
 		args args
-		want *refreshTokenCacheItem
+		want refreshTokenCacheItem
+		err  bool
 	}{
 		{
 			name: "Token without fid, read with fid, cid, env, and hid",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
 				},
 			},
@@ -364,7 +381,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 		{
 			name: "Token without fid, read with cid, env, and hid",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
 				},
 			},
@@ -379,7 +396,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 		{
 			name: "Token without fid, verify CID is required",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
 				},
 			},
@@ -389,12 +406,12 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 				familyID:      "",
 				clientID:      "",
 			},
-			want: nil,
+			err: true,
 		},
 		{
 			name: "Token without fid, Verify env is required",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWoFID,
 				},
 			},
@@ -404,12 +421,12 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 				familyID:      "",
 				clientID:      "",
 			},
-			want: nil,
+			err: true,
 		},
 		{
 			name: "Token without fid, read with fid, cid, env, and hid",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
@@ -424,7 +441,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 		{
 			name: "Token with fid, read with cid, env, and hid",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
@@ -439,7 +456,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 		{
 			name: "Token with fid, verify CID is not required", // match on hid, env, and has fid
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
@@ -454,7 +471,7 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 		{
 			name: "Token with fid, Verify env is required",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey(): testRefreshTokenWithFID,
 				},
 			},
@@ -464,12 +481,12 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 				familyID:      "",
 				clientID:      "",
 			},
-			want: nil,
+			err: true,
 		},
 		{
 			name: "Multiple items in cache, given a fid, item with fid will be returned",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey():       testRefreshTokenWoFID,
 					testRefreshTokenWithFID.CreateKey():     testRefreshTokenWithFID,
 					testRefreshTokenWoFIDAltCID.CreateKey(): testRefreshTokenWoFIDAltCID,
@@ -481,14 +498,14 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 				familyID:      "fid",
 				clientID:      "cid",
 			},
-			want: nil,
+			err: true,
 		},
 		// Cannot guarentee that without an alternate cid which token will be
 		// returned deterministically when HID, CID, and env match.
 		{
 			name: "Multiple items in cache, without a fid and with alternate CID, token with alternate CID is returned",
 			m: &defaultStorageManager{
-				refreshTokens: map[string]*refreshTokenCacheItem{
+				refreshTokens: map[string]refreshTokenCacheItem{
 					testRefreshTokenWoFID.CreateKey():       testRefreshTokenWoFID,
 					testRefreshTokenWithFID.CreateKey():     testRefreshTokenWithFID,
 					testRefreshTokenWoFIDAltCID.CreateKey(): testRefreshTokenWoFIDAltCID,
@@ -500,25 +517,34 @@ func Test_defaultStorageManager_ReadRefreshToken(t *testing.T) {
 				familyID:      "",
 				clientID:      "cid2",
 			},
-			want: nil,
+			err: true,
 		},
 	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			if got := tt.m.ReadRefreshToken(tt.args.homeAccountID, tt.args.envAliases, tt.args.familyID, tt.args.clientID); !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("defaultStorageManager.ReadRefreshToken() = %v, want %v", render.AsCode(got), render.AsCode(tt.want))
-			}
-		})
+	for _, test := range tests {
+		got, err := test.m.ReadRefreshToken(test.args.homeAccountID, test.args.envAliases, test.args.familyID, test.args.clientID)
+		switch {
+		case test.err && err == nil:
+			t.Errorf("TestDefaultStorageManagerReadRefreshToken(%s): got err == nil, want err != nil", test.name)
+			continue
+		case !test.err && err != nil:
+			t.Errorf("TestDefaultStorageManagerReadRefreshToken(%s): got err == %s, want err == nil", test.name, err)
+			continue
+		case err != nil:
+			continue
+		}
+		if diff := pretty.Compare(test.want, got); diff != "" {
+			t.Errorf("TestDefaultStorageManagerReadRefreshToken(%s): -want/+got:\n%s", test.name, diff)
+		}
 	}
 }
 
 func TestWriteRefreshToken(t *testing.T) {
 	storageManager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  make(map[string]accessTokenCacheItem),
+		refreshTokens: make(map[string]refreshTokenCacheItem),
+		idTokens:      make(map[string]idTokenCacheItem),
+		accounts:      make(map[string]msalbase.Account),
+		appMetadatas:  make(map[string]appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
 	testRefreshToken := createRefreshTokenCacheItem(
@@ -542,16 +568,18 @@ func TestWriteRefreshToken(t *testing.T) {
 
 func TestStorageManagerSerialize(t *testing.T) {
 	manager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  make(map[string]accessTokenCacheItem),
+		refreshTokens: make(map[string]refreshTokenCacheItem),
+		idTokens:      make(map[string]idTokenCacheItem),
+		accounts:      make(map[string]msalbase.Account),
+		appMetadatas:  make(map[string]appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
-	manager.accessTokens = map[string]*accessTokenCacheItem{
+	manager.accessTokens = map[string]accessTokenCacheItem{
 		"an-entry": {
-			additionalFields: map[string]interface{}{"foo": "bar"},
+			AdditionalFields: map[string]interface{}{
+				"foo": "bar",
+			},
 		},
 		"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
 			Environment:                    defaultEnvironment,
@@ -564,32 +592,29 @@ func TestStorageManagerSerialize(t *testing.T) {
 			HomeAccountID:                  defaultHID,
 			ExpiresOnUnixTimestamp:         atExpires,
 			ExtendedExpiresOnUnixTimestamp: atExpires,
-			additionalFields:               make(map[string]interface{}),
 		},
 	}
-	manager.refreshTokens = map[string]*refreshTokenCacheItem{
+	manager.refreshTokens = map[string]refreshTokenCacheItem{
 		"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
-			Target:           defaultScopes,
-			Environment:      defaultEnvironment,
-			CredentialType:   rtCredType,
-			Secret:           rtSecret,
-			ClientID:         defaultClientID,
-			HomeAccountID:    defaultHID,
-			additionalFields: make(map[string]interface{}),
+			Target:         defaultScopes,
+			Environment:    defaultEnvironment,
+			CredentialType: rtCredType,
+			Secret:         rtSecret,
+			ClientID:       defaultClientID,
+			HomeAccountID:  defaultHID,
 		},
 	}
-	manager.idTokens = map[string]*idTokenCacheItem{
+	manager.idTokens = map[string]idTokenCacheItem{
 		"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
-			Realm:            defaultRealm,
-			Environment:      defaultEnvironment,
-			CredentialType:   idCred,
-			Secret:           idSecret,
-			ClientID:         defaultClientID,
-			HomeAccountID:    defaultHID,
-			additionalFields: make(map[string]interface{}),
+			Realm:          defaultRealm,
+			Environment:    defaultEnvironment,
+			CredentialType: idCred,
+			Secret:         idSecret,
+			ClientID:       defaultClientID,
+			HomeAccountID:  defaultHID,
 		},
 	}
-	manager.accounts = map[string]*msalbase.Account{
+	manager.accounts = map[string]msalbase.Account{
 		"uid.utid-login.windows.net-contoso": {
 			PreferredUsername: accUser,
 			LocalAccountID:    accLID,
@@ -599,12 +624,11 @@ func TestStorageManagerSerialize(t *testing.T) {
 			AuthorityType:     accAuth,
 		},
 	}
-	manager.appMetadatas = map[string]*appMetadata{
+	manager.appMetadatas = map[string]appMetadata{
 		"appmetadata-login.windows.net-my_client_id": {
-			Environment:      defaultEnvironment,
-			FamilyID:         "",
-			ClientID:         defaultClientID,
-			additionalFields: make(map[string]interface{}),
+			Environment: defaultEnvironment,
+			FamilyID:    "",
+			ClientID:    defaultClientID,
 		},
 	}
 	_, err := manager.Serialize()
@@ -615,11 +639,11 @@ func TestStorageManagerSerialize(t *testing.T) {
 
 func TestStorageManagerDeserialize(t *testing.T) {
 	manager := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  make(map[string]accessTokenCacheItem),
+		refreshTokens: make(map[string]refreshTokenCacheItem),
+		idTokens:      make(map[string]idTokenCacheItem),
+		accounts:      make(map[string]msalbase.Account),
+		appMetadatas:  make(map[string]appMetadata),
 		cacheContract: createCacheSerializationContract(),
 	}
 	jsonFile, err := os.Open(testFile)

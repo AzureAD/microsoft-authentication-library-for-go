@@ -1,13 +1,19 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+// TODO(jdoak): A lot of pointer returns that probably don't need it.
+// Mostly to use nil, which we can probably do without.
+
 package tokencache
 
 import (
 	"fmt"
+	"log"
 	"sync"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/kr/pretty"
 )
 
 // TODO(jdoak): Investigate this lock. It is strange to have a global lock.
@@ -18,22 +24,22 @@ import (
 var lock sync.RWMutex
 
 type defaultStorageManager struct {
-	accessTokens  map[string]*accessTokenCacheItem
-	refreshTokens map[string]*refreshTokenCacheItem
-	idTokens      map[string]*idTokenCacheItem
-	accounts      map[string]*msalbase.Account
-	appMetadatas  map[string]*appMetadata
+	accessTokens  map[string]accessTokenCacheItem
+	refreshTokens map[string]refreshTokenCacheItem
+	idTokens      map[string]idTokenCacheItem
+	accounts      map[string]msalbase.Account
+	appMetadatas  map[string]appMetadata
 	cacheContract *cacheSerializationContract
 }
 
 //CreateStorageManager creates an instance of defaultStorageManager as a StorageManager interface
 func CreateStorageManager() StorageManager {
 	mgr := &defaultStorageManager{
-		accessTokens:  make(map[string]*accessTokenCacheItem),
-		refreshTokens: make(map[string]*refreshTokenCacheItem),
-		idTokens:      make(map[string]*idTokenCacheItem),
-		accounts:      make(map[string]*msalbase.Account),
-		appMetadatas:  make(map[string]*appMetadata),
+		accessTokens:  map[string]accessTokenCacheItem{},
+		refreshTokens: map[string]refreshTokenCacheItem{},
+		idTokens:      map[string]idTokenCacheItem{},
+		accounts:      map[string]msalbase.Account{},
+		appMetadatas:  map[string]appMetadata{},
 		cacheContract: createCacheSerializationContract(),
 	}
 	return mgr
@@ -62,20 +68,20 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 	return scopeCounter == len(scopesOne)
 }
 
-func (m *defaultStorageManager) ReadAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) *accessTokenCacheItem {
+func (m *defaultStorageManager) ReadAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (accessTokenCacheItem, error) {
 	lock.RLock()
 	defer lock.RUnlock()
 	for _, at := range m.accessTokens {
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
 			if checkAlias(at.Environment, envAliases) && isMatchingScopes(scopes, at.Scopes) {
-				return at
+				return at, nil
 			}
 		}
 	}
-	return nil
+	return accessTokenCacheItem{}, fmt.Errorf("access token not found")
 }
 
-func (m *defaultStorageManager) WriteAccessToken(accessToken *accessTokenCacheItem) error {
+func (m *defaultStorageManager) WriteAccessToken(accessToken accessTokenCacheItem) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -84,46 +90,61 @@ func (m *defaultStorageManager) WriteAccessToken(accessToken *accessTokenCacheIt
 	return nil
 }
 
-func (m *defaultStorageManager) ReadRefreshToken(homeID string, envAliases []string, familyID, clientID string) *refreshTokenCacheItem {
+func (m *defaultStorageManager) ReadRefreshToken(homeID string, envAliases []string, familyID, clientID string) (refreshTokenCacheItem, error) {
 	lock.RLock()
 	defer lock.RUnlock()
 
-	if familyID != "" {
-		for _, rt := range m.refreshTokens {
-			if matchFamilyRefreshToken(rt, homeID, envAliases) {
-				return rt
-			}
-		}
-		for _, rt := range m.refreshTokens {
-			if matchClientIDRefreshToken(rt, homeID, envAliases, clientID) {
-				return rt
-			}
+	byFamily := func(rt refreshTokenCacheItem) bool {
+		return matchFamilyRefreshToken(rt, homeID, envAliases)
+	}
+	byClient := func(rt refreshTokenCacheItem) bool {
+		return matchClientIDRefreshToken(rt, homeID, envAliases, clientID)
+	}
+
+	var matchers []func(rt refreshTokenCacheItem) bool
+	if familyID == "" {
+		matchers = []func(rt refreshTokenCacheItem) bool{
+			byClient, byFamily,
 		}
 	} else {
-		for _, rt := range m.refreshTokens {
-			if matchClientIDRefreshToken(rt, homeID, envAliases, clientID) {
-				return rt
-			}
+		matchers = []func(rt refreshTokenCacheItem) bool{
+			byFamily, byClient,
 		}
+	}
 
+	// TODO(jdoak): So, I redid this code to make it clearer that we
+	// changed order based on if FamilyID was set. But I'm not sure
+	// why I have to loop twice over the tokens instead of just
+	// trying both matchers.  If someone could shed some light on this
+	// I could make a note for future maintainers. If order doesn't
+	// matter, then we could ditch byFamily and byClient for cleaner
+	// code.
+	for _, matcher := range matchers {
+		log.Println("matcher")
 		for _, rt := range m.refreshTokens {
-			if matchFamilyRefreshToken(rt, homeID, envAliases) {
-				return rt
+			log.Printf("\t%v", matcher(rt))
+			if matcher(rt) {
+				return rt, nil
 			}
 		}
 	}
-	return nil
+
+	return refreshTokenCacheItem{}, fmt.Errorf("refresh token not found")
 }
 
-func matchFamilyRefreshToken(rt *refreshTokenCacheItem, homeID string, envAliases []string) bool {
+func matchFamilyRefreshToken(rt refreshTokenCacheItem, homeID string, envAliases []string) bool {
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.FamilyID != ""
 }
 
-func matchClientIDRefreshToken(rt *refreshTokenCacheItem, homeID string, envAliases []string, clientID string) bool {
+func matchClientIDRefreshToken(rt refreshTokenCacheItem, homeID string, envAliases []string, clientID string) bool {
+	log.Println(pretty.Sprint(rt))
+	log.Println("homeid: ", homeID)
+	log.Println("checkAlias: ", checkAlias(rt.Environment, envAliases))
+	log.Println("clientID: ", clientID)
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
 
-func (m *defaultStorageManager) WriteRefreshToken(refreshToken *refreshTokenCacheItem) error {
+func (m *defaultStorageManager) WriteRefreshToken(refreshToken refreshTokenCacheItem) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -133,21 +154,21 @@ func (m *defaultStorageManager) WriteRefreshToken(refreshToken *refreshTokenCach
 	return nil
 }
 
-func (m *defaultStorageManager) ReadIDToken(homeID string, envAliases []string, realm, clientID string) *idTokenCacheItem {
+func (m *defaultStorageManager) ReadIDToken(homeID string, envAliases []string, realm, clientID string) (idTokenCacheItem, error) {
 	lock.RLock()
 	defer lock.RUnlock()
 
 	for _, idt := range m.idTokens {
 		if idt.HomeAccountID == homeID && idt.Realm == realm && idt.ClientID == clientID {
 			if checkAlias(idt.Environment, envAliases) {
-				return idt
+				return idt, nil
 			}
 		}
 	}
-	return nil
+	return idTokenCacheItem{}, fmt.Errorf("token not found")
 }
 
-func (m *defaultStorageManager) WriteIDToken(idToken *idTokenCacheItem) error {
+func (m *defaultStorageManager) WriteIDToken(idToken idTokenCacheItem) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -157,31 +178,31 @@ func (m *defaultStorageManager) WriteIDToken(idToken *idTokenCacheItem) error {
 	return nil
 }
 
-func (m *defaultStorageManager) ReadAllAccounts() []*msalbase.Account {
+func (m *defaultStorageManager) ReadAllAccounts() ([]msalbase.Account, error) {
 	lock.RLock()
 	defer lock.RUnlock()
 
-	accounts := []*msalbase.Account{}
+	var accounts []msalbase.Account
 	for _, v := range m.accounts {
 		accounts = append(accounts, v)
 	}
 
-	return accounts
+	return accounts, nil
 }
 
-func (m *defaultStorageManager) ReadAccount(homeAccountID string, envAliases []string, realm string) *msalbase.Account {
+func (m *defaultStorageManager) ReadAccount(homeAccountID string, envAliases []string, realm string) (msalbase.Account, error) {
 	lock.RLock()
 	defer lock.RUnlock()
 
 	for _, acc := range m.accounts {
 		if acc.HomeAccountID == homeAccountID && checkAlias(acc.Environment, envAliases) && acc.Realm == realm {
-			return acc
+			return acc, nil
 		}
 	}
-	return nil
+	return msalbase.Account{}, fmt.Errorf("account not found")
 }
 
-func (m *defaultStorageManager) WriteAccount(account *msalbase.Account) error {
+func (m *defaultStorageManager) WriteAccount(account msalbase.Account) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -218,19 +239,19 @@ func (m *defaultStorageManager) DeleteAccounts(homeID string, envAliases []strin
 	return nil
 }
 
-func (m *defaultStorageManager) ReadAppMetadata(envAliases []string, clientID string) *appMetadata {
+func (m *defaultStorageManager) ReadAppMetadata(envAliases []string, clientID string) (appMetadata, error) {
 	lock.RLock()
 	defer lock.RUnlock()
 
 	for _, app := range m.appMetadatas {
 		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
-			return app
+			return app, nil
 		}
 	}
-	return nil
+	return appMetadata{}, fmt.Errorf("not found")
 }
 
-func (m *defaultStorageManager) WriteAppMetadata(appMetadata *appMetadata) error {
+func (m *defaultStorageManager) WriteAppMetadata(appMetadata appMetadata) error {
 	lock.Lock()
 	defer lock.Unlock()
 
@@ -244,13 +265,14 @@ func (m *defaultStorageManager) Serialize() (string, error) {
 	lock.RLock()
 	defer lock.RUnlock()
 
+	// TODO(jdoak): This looks weird, investigate later.
 	m.cacheContract.AccessTokens = m.accessTokens
 	m.cacheContract.RefreshTokens = m.refreshTokens
 	m.cacheContract.IDTokens = m.idTokens
 	m.cacheContract.Accounts = m.accounts
 	m.cacheContract.AppMetadata = m.appMetadatas
 
-	serializedCache, err := m.cacheContract.MarshalJSON()
+	serializedCache, err := json.Marshal(m.cacheContract)
 	if err != nil {
 		return "", err
 	}
@@ -258,7 +280,7 @@ func (m *defaultStorageManager) Serialize() (string, error) {
 }
 
 func (m *defaultStorageManager) Deserialize(cacheData []byte) error {
-	err := m.cacheContract.UnmarshalJSON(cacheData)
+	err := json.Unmarshal(cacheData, m.cacheContract)
 	if err != nil {
 		return err
 	}

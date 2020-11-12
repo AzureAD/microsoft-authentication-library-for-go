@@ -16,11 +16,11 @@ type PublicClientApplication struct {
 
 // CreatePublicClientApplication creates a PublicClientApplication instance given a client ID and authority URL.
 func CreatePublicClientApplication(clientID string, authority string) (*PublicClientApplication, error) {
-	clientApp := createClientApplication(clientID, authority)
-	pca := &PublicClientApplication{
-		clientApplication: clientApp,
+	clientApp, err := createClientApplication(clientID, authority)
+	if err != nil {
+		return nil, err
 	}
-	return pca, nil
+	return &PublicClientApplication{clientApplication: clientApp}, nil
 }
 
 //SetHTTPManager allows users to use their own implementation of HTTPManager.
@@ -41,39 +41,35 @@ func (pca *PublicClientApplication) CreateAuthCodeURL(authCodeURLParameters *Aut
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token
 // Users need to create an AcquireTokenSilentParameters instance and pass it in.
-func (pca *PublicClientApplication) AcquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
-	silentParameters.requestType = requests.RefreshTokenPublic
-	return pca.clientApplication.acquireTokenSilent(silentParameters)
+func (pca *PublicClientApplication) AcquireTokenSilent(params AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
+	params.requestType = requests.RefreshTokenPublic
+	return pca.clientApplication.acquireTokenSilent(params)
 }
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // Users need to create an AcquireTokenUsernamePasswordParameters instance and pass it in.
 // NOTE: this flow is NOT recommended.
-func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(
-	usernamePasswordParameters *AcquireTokenUsernamePasswordParameters) (AuthenticationResultProvider, error) {
+func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(atupp *AcquireTokenUsernamePasswordParameters) (AuthenticationResultProvider, error) {
 	authParams := pca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
-	usernamePasswordParameters.augmentAuthenticationParameters(authParams)
+	atupp.augmentAuthenticationParameters(&authParams)
 	req := requests.CreateUsernamePasswordRequest(pca.clientApplication.webRequestManager, authParams)
 	return pca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
 // AcquireTokenByDeviceCode acquires a security token from the authority, by acquiring a device code and using that to acquire the token.
 // Users need to create an AcquireTokenDeviceCodeParameters instance and pass it in.
-func (pca *PublicClientApplication) AcquireTokenByDeviceCode(
-	deviceCodeParameters *AcquireTokenDeviceCodeParameters) (AuthenticationResultProvider, error) {
+func (pca *PublicClientApplication) AcquireTokenByDeviceCode(dcp *AcquireTokenDeviceCodeParameters) (AuthenticationResultProvider, error) {
 	authParams := pca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
-	deviceCodeParameters.augmentAuthenticationParameters(authParams)
-	req := createDeviceCodeRequest(deviceCodeParameters.cancelCtx, pca.clientApplication.webRequestManager, authParams, deviceCodeParameters.deviceCodeCallback)
+	dcp.augmentAuthenticationParameters(&authParams)
+	req := createDeviceCodeRequest(dcp.cancelCtx, pca.clientApplication.webRequestManager, authParams, dcp.deviceCodeCallback)
 	return pca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // Users need to create an AcquireTokenAuthCodeParameters instance and pass it in.
-func (pca *PublicClientApplication) AcquireTokenByAuthCode(
-	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
-	authCodeParams.requestType = requests.AuthCodePublic
-	return pca.clientApplication.acquireTokenByAuthCode(authCodeParams)
+func (pca *PublicClientApplication) AcquireTokenByAuthCode(atacp *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
+	atacp.requestType = requests.AuthCodePublic
+	return pca.clientApplication.acquireTokenByAuthCode(atacp)
 }
 
 // GetAccounts gets all the accounts in the token cache.

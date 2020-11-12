@@ -13,6 +13,11 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
+type noopCacheAccessor struct{}
+
+func (n noopCacheAccessor) BeforeCacheAccess(context *CacheContext) {}
+func (n noopCacheAccessor) AfterCacheAccess(context *CacheContext)  {}
+
 type clientApplication struct {
 	webRequestManager           requests.WebRequestManager
 	clientApplicationParameters *clientApplicationParameters
@@ -20,63 +25,64 @@ type clientApplication struct {
 	cacheAccessor               CacheAccessor
 }
 
-func createClientApplication(clientID string, authority string) *clientApplication {
-	params := createClientApplicationParameters(clientID)
-	params.setAadAuthority(authority)
-	httpManager := createHTTPManager()
-	webRequestManager := createWebRequestManager(httpManager)
-	storageManager := tokencache.CreateStorageManager()
-	cacheManager := tokencache.CreateCacheManager(storageManager)
-	cacheContext := &CacheContext{cacheManager}
-	client := &clientApplication{
-		webRequestManager:           webRequestManager,
-		clientApplicationParameters: params,
-		cacheContext:                cacheContext,
+func createClientApplication(clientID string, authority string) (*clientApplication, error) {
+	params, err := createClientApplicationParameters(clientID, authority)
+	if err != nil {
+		return nil, err
 	}
-	return client
+
+	return &clientApplication{
+		webRequestManager: createWebRequestManager(
+			createHTTPManager(),
+		),
+		clientApplicationParameters: params,
+		cacheAccessor:               noopCacheAccessor{},
+		cacheContext: &CacheContext{
+			cache: tokencache.CreateCacheManager(
+				tokencache.CreateStorageManager(),
+			),
+		},
+	}, nil
 }
 
 func (client *clientApplication) createAuthCodeURL(authCodeURLParameters *AuthorizationCodeURLParameters) (string, error) {
 	return authCodeURLParameters.createURL(client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
 }
 
-func (client *clientApplication) acquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
+func (client *clientApplication) acquireTokenSilent(silent AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
-	silentParameters.augmentAuthenticationParameters(authParams)
-	if client.cacheAccessor != nil {
-		client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
-	}
+	silent.augmentAuthenticationParameters(&authParams)
+
+	// TODO(jdoak/msal): This accessor stuff should be integrated into the
+	// CacheManager instead of here probably by passing the accessor in its
+	// constructor and defining these methods.
+	client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
+	defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
 	storageTokenResponse, err := client.cacheContext.cache.TryReadCache(authParams, client.webRequestManager)
-	if client.cacheAccessor != nil {
-		client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-	}
 	if err != nil {
 		return nil, err
 	}
-	if storageTokenResponse != nil {
-		result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
-		if err != nil {
-			log.Error(err)
-			if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
-				return nil, errors.New("no refresh token found")
-			}
-			req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
-				authParams, storageTokenResponse.RefreshToken, silentParameters.requestType)
-			if req.RequestType == requests.RefreshTokenConfidential {
-				req.ClientCredential = silentParameters.clientCredential
-			}
-			return client.executeTokenRequestWithCacheWrite(req, authParams)
+
+	result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
+	if err != nil {
+		log.Error(err)
+		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
+			return nil, errors.New("no refresh token found")
 		}
-		return result, nil
+		req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
+			authParams, storageTokenResponse.RefreshToken, silent.requestType)
+		if req.RequestType == requests.RefreshTokenConfidential {
+			req.ClientCredential = silent.clientCredential
+		}
+		return client.executeTokenRequestWithCacheWrite(req, authParams)
 	}
-	return nil, errors.New("no cache entry found")
+	return result, nil
 }
 
 func (client *clientApplication) acquireTokenByAuthCode(
 	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
-	authCodeParams.augmentAuthenticationParameters(authParams)
+	authCodeParams.augmentAuthenticationParameters(&authParams)
 	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
 	req.Code = authCodeParams.Code
 	req.CodeChallenge = authCodeParams.CodeChallenge
@@ -86,27 +92,26 @@ func (client *clientApplication) acquireTokenByAuthCode(
 	return client.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
-func (client *clientApplication) executeTokenRequestWithoutCacheWrite(
-	req requests.TokenRequester,
-	authParams *msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
+func (client *clientApplication) executeTokenRequestWithoutCacheWrite(req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
 	tokenResponse, err := req.Execute()
 	if err != nil {
 		return nil, err
 	}
-	return msalbase.CreateAuthenticationResult(tokenResponse, nil)
+	// TODO(msal expert): This used to pass nil for Account. I'm not sure if that
+	// was really valid or not or had hidden bugs (like the GetAccount() call). This
+	// is safe from a Go standpoint, but I'm not sure that MSAL doesn't acutally depend
+	// on Account here.  If this is ok, I'll just add a bit of documentation here.
+	return msalbase.CreateAuthenticationResult(tokenResponse, msalbase.Account{})
 }
 
-func (client *clientApplication) executeTokenRequestWithCacheWrite(
-	req requests.TokenRequester,
-	authParams *msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
+func (client *clientApplication) executeTokenRequestWithCacheWrite(req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
 	tokenResponse, err := req.Execute()
 	if err != nil {
 		return nil, err
 	}
-	if client.cacheAccessor != nil {
-		client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
-		defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-	}
+
+	client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
+	defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
 	account, err := client.cacheContext.cache.CacheTokenResponse(authParams, tokenResponse)
 	if err != nil {
 		return nil, err
@@ -115,14 +120,13 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(
 }
 
 func (client *clientApplication) getAccounts() []AccountProvider {
-	returnedAccounts := []AccountProvider{}
-	if client.cacheAccessor != nil {
-		client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
+	client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
+	defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
+	accounts, err := client.cacheContext.cache.GetAllAccounts()
+	if err != nil {
+		return nil
 	}
-	accounts := client.cacheContext.cache.GetAllAccounts()
-	if client.cacheAccessor != nil {
-		client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-	}
+	returnedAccounts := make([]AccountProvider, 0, len(accounts))
 	for _, acc := range accounts {
 		returnedAccounts = append(returnedAccounts, acc)
 	}

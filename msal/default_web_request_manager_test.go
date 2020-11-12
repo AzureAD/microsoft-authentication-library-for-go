@@ -14,6 +14,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/wstrust"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 var testHeaders = map[string]string{
@@ -64,7 +65,7 @@ func TestGetUserRealm(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
 	url := "https://login.microsoftonline.com/common/UserRealm/username?api-version=1.0"
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Username:  "username",
 		Endpoints: testAuthorityEndpoints,
 	}
@@ -73,30 +74,30 @@ func TestGetUserRealm(t *testing.T) {
 		responseData: `{"domain_name" : "domain", "cloud_instance_name" : "cloudInst", "cloud_audience_urn" : "URN"}`,
 	}
 	mockHTTPManager.On("Get", url, testHeaders).Return(httpResp, nil)
-	userRealm := &msalbase.UserRealm{
+	want := msalbase.UserRealm{
 		DomainName:        "domain",
 		CloudAudienceURN:  "URN",
 		CloudInstanceName: "cloudInst",
 	}
-	actualRealm, err := wrm.GetUserRealm(authParams)
+	got, err := wrm.GetUserRealm(authParams)
 	if err != nil {
-		t.Errorf("Error should be nil, instead it is %v", err)
+		t.Fatalf("TestGetUserRealm: got err == %s, want err == nil", err)
 	}
-	if !reflect.DeepEqual(userRealm, actualRealm) {
-		t.Errorf("Actual realm %+v differs from expected realm %+v", actualRealm, userRealm)
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestGetUserRealm: -want/+got:\n%s", diff)
 	}
 }
 
 func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Username:  "username",
 		Password:  "pass",
 		Endpoints: testAuthorityEndpoints,
 	}
 	respData := `{"access_token":"secret", "expires_in":10, "ext_expires_in":10}`
-	tokenResp := &msalbase.TokenResponse{
+	tokenResp := msalbase.TokenResponse{
 		AccessToken:  "secret",
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
@@ -114,14 +115,23 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 		"client_info": "1",
 	}
 	mockHTTPManager.On(
-		"Post", "https://login.microsoftonline.com/v2.0/token", encodeQueryParameters(paramMap), testHeadersWURLUTF8).Return(response, nil)
+		"Post", "https://login.microsoftonline.com/v2.0/token",
+		encodeQueryParameters(paramMap),
+		testHeadersWURLUTF8,
+	).Return(response, nil)
+
 	actualToken, err := wrm.GetAccessTokenFromUsernamePassword(authParams)
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualToken.AccessToken, tokenResp.AccessToken) &&
-		!reflect.DeepEqual(actualToken.ExpiresOn, tokenResp.ExpiresOn) &&
-		!reflect.DeepEqual(actualToken.ExtExpiresOn, tokenResp.ExtExpiresOn) {
+	// TODO(msal expert): I made this nicer here and below, but...
+	// this tests looks like it requires all 3 things not to match in
+	// order for the tests to fail. Did we mean to fail if any of these
+	// were different?  Could we just do a single compare and if any field
+	// is different just error?
+	if actualToken.AccessToken != tokenResp.AccessToken &&
+		!actualToken.ExpiresOn.Equal(tokenResp.ExpiresOn) &&
+		!actualToken.ExtExpiresOn.Equal(tokenResp.ExtExpiresOn) {
 		t.Errorf("Actual token response %+v differs from expected token response %+v", actualToken, tokenResp)
 	}
 }
@@ -129,7 +139,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 func TestGetAccessTokenFromSAMLGrant(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Username:  "username",
 		Password:  "pass",
 		Endpoints: testAuthorityEndpoints,
@@ -139,26 +149,31 @@ func TestGetAccessTokenFromSAMLGrant(t *testing.T) {
 		responseCode: 200,
 		responseData: respData,
 	}
-	tokenResp := &msalbase.TokenResponse{
+	tokenResp := msalbase.TokenResponse{
 		AccessToken:  "secret",
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
-	samlGrant := &wstrust.SamlTokenInfo{
+	samlGrant := wstrust.SamlTokenInfo{
 		AssertionType: wstrust.SamlV1,
 		Assertion:     "hello",
 	}
 	encodedParams := "assertion=aGVsbG8%3D&client_id=&client_info=1&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Asaml1_1-bearer&password=pass&" +
 		"scope=openid+offline_access+profile&username=username"
 	mockHTTPManager.On(
-		"Post", "https://login.microsoftonline.com/v2.0/token", encodedParams, testHeadersWURLUTF8).Return(response, nil)
+		"Post",
+		"https://login.microsoftonline.com/v2.0/token",
+		encodedParams,
+		testHeadersWURLUTF8,
+	).Return(response, nil)
+
 	actualToken, err := wrm.GetAccessTokenFromSamlGrant(authParams, samlGrant)
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualToken.AccessToken, tokenResp.AccessToken) &&
-		!reflect.DeepEqual(actualToken.ExpiresOn, tokenResp.ExpiresOn) &&
-		!reflect.DeepEqual(actualToken.ExtExpiresOn, tokenResp.ExtExpiresOn) {
+	if actualToken.AccessToken != tokenResp.AccessToken &&
+		!actualToken.ExpiresOn.Equal(tokenResp.ExpiresOn) &&
+		!actualToken.ExtExpiresOn.Equal(tokenResp.ExtExpiresOn) {
 		t.Errorf("Actual token response %+v differs from expected token response %+v", actualToken, tokenResp)
 	}
 }
@@ -166,7 +181,7 @@ func TestGetAccessTokenFromSAMLGrant(t *testing.T) {
 func TestGetDeviceCodeResult(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
 	}
 	respData := `{"user_code":"user", "device_code":"dev"}`
@@ -175,8 +190,14 @@ func TestGetDeviceCodeResult(t *testing.T) {
 		responseData: respData,
 	}
 	mockHTTPManager.On(
-		"Post", "https://login.microsoftonline.com/v2.0/devicecode",
-		"client_id=&scope=openid+offline_access+profile", testHeadersWURLUTF8).Return(response, nil)
+		"Post",
+		"https://login.microsoftonline.com/v2.0/devicecode",
+		"client_id=&scope=openid+offline_access+profile",
+		testHeadersWURLUTF8,
+	).Return(response, nil)
+
+	// TODO(jdoak): suspicious of tests that are just looking at err
+	// and not the value.
 	_, err := wrm.GetDeviceCodeResult(authParams)
 	if err != nil {
 		t.Errorf("Error should be nil, but is %v", err)
@@ -186,7 +207,7 @@ func TestGetDeviceCodeResult(t *testing.T) {
 func TestGetAccessTokenFromAuthCode(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
 	}
 	respData := `{"access_token":"secret", "expires_in":10, "ext_expires_in":10}`
@@ -194,7 +215,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		responseCode: 200,
 		responseData: respData,
 	}
-	tokenResp := &msalbase.TokenResponse{
+	tokenResp := msalbase.TokenResponse{
 		AccessToken:  "secret",
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
@@ -202,14 +223,19 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 	params := "client_id=&client_info=1&code=code&code_verifier=ver&" +
 		"grant_type=authorization_code&redirect_uri=&scope=openid+offline_access+profile"
 	mockHTTPManager.On(
-		"Post", "https://login.microsoftonline.com/v2.0/token", params, testHeadersWURLUTF8).Return(response, nil)
+		"Post",
+		"https://login.microsoftonline.com/v2.0/token",
+		params,
+		testHeadersWURLUTF8,
+	).Return(response, nil)
+
 	actualToken, err := wrm.GetAccessTokenFromAuthCode(authParams, "code", "ver", map[string]string{})
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualToken.AccessToken, tokenResp.AccessToken) &&
-		!reflect.DeepEqual(actualToken.ExpiresOn, tokenResp.ExpiresOn) &&
-		!reflect.DeepEqual(actualToken.ExtExpiresOn, tokenResp.ExtExpiresOn) {
+	if actualToken.AccessToken != tokenResp.AccessToken &&
+		!actualToken.ExpiresOn.Equal(tokenResp.ExpiresOn) &&
+		!actualToken.ExtExpiresOn.Equal(tokenResp.ExtExpiresOn) {
 		t.Errorf("Actual token response %+v differs from expected token response %+v", actualToken, tokenResp)
 	}
 }
@@ -217,7 +243,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
 	}
 	respData := `{"access_token":"secret", "expires_in":10, "ext_expires_in":10}`
@@ -225,21 +251,26 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		responseCode: 200,
 		responseData: respData,
 	}
-	tokenResp := &msalbase.TokenResponse{
+	tokenResp := msalbase.TokenResponse{
 		AccessToken:  "secret",
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
 	params := "client_id=&client_info=1&grant_type=refresh_token&refresh_token=secret&scope=openid+offline_access+profile"
 	mockHTTPManager.On(
-		"Post", "https://login.microsoftonline.com/v2.0/token", params, testHeadersWURLUTF8).Return(response, nil)
+		"Post",
+		"https://login.microsoftonline.com/v2.0/token",
+		params,
+		testHeadersWURLUTF8,
+	).Return(response, nil)
+
 	actualToken, err := wrm.GetAccessTokenFromRefreshToken(authParams, "secret", map[string]string{})
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualToken.AccessToken, tokenResp.AccessToken) &&
-		!reflect.DeepEqual(actualToken.ExpiresOn, tokenResp.ExpiresOn) &&
-		!reflect.DeepEqual(actualToken.ExtExpiresOn, tokenResp.ExtExpiresOn) {
+	if actualToken.AccessToken != tokenResp.AccessToken &&
+		!actualToken.ExpiresOn.Equal(tokenResp.ExpiresOn) &&
+		!actualToken.ExtExpiresOn.Equal(tokenResp.ExtExpiresOn) {
 		t.Errorf("Actual token response %+v differs from expected token response %+v", actualToken, tokenResp)
 	}
 }
@@ -247,7 +278,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 func TestGetAccessTokenWithClientSecret(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
 	}
 	respData := `{"access_token":"secret", "expires_in":10, "ext_expires_in":10}`
@@ -255,21 +286,26 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 		responseCode: 200,
 		responseData: respData,
 	}
-	tokenResp := &msalbase.TokenResponse{
+	tokenResp := msalbase.TokenResponse{
 		AccessToken:  "secret",
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
 	params := "client_id=&client_secret=csecret&grant_type=client_credentials&scope=openid+offline_access+profile"
 	mockHTTPManager.On(
-		"Post", "https://login.microsoftonline.com/v2.0/token", params, testHeadersWURLUTF8).Return(response, nil)
+		"Post",
+		"https://login.microsoftonline.com/v2.0/token",
+		params,
+		testHeadersWURLUTF8,
+	).Return(response, nil)
+
 	actualToken, err := wrm.GetAccessTokenWithClientSecret(authParams, "csecret")
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualToken.AccessToken, tokenResp.AccessToken) &&
-		!reflect.DeepEqual(actualToken.ExpiresOn, tokenResp.ExpiresOn) &&
-		!reflect.DeepEqual(actualToken.ExtExpiresOn, tokenResp.ExtExpiresOn) {
+	if actualToken.AccessToken != tokenResp.AccessToken &&
+		!actualToken.ExpiresOn.Equal(tokenResp.ExpiresOn) &&
+		!actualToken.ExtExpiresOn.Equal(tokenResp.ExtExpiresOn) {
 		t.Errorf("Actual token response %+v differs from expected token response %+v", actualToken, tokenResp)
 	}
 }
@@ -277,7 +313,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 func TestGetAccessTokenWithAssertion(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authParams := &msalbase.AuthParametersInternal{
+	authParams := msalbase.AuthParametersInternal{
 		Endpoints: testAuthorityEndpoints,
 	}
 	respData := `{"access_token":"secret", "expires_in":10, "ext_expires_in":10}`
@@ -285,7 +321,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 		responseCode: 200,
 		responseData: respData,
 	}
-	tokenResp := &msalbase.TokenResponse{
+	tokenResp := msalbase.TokenResponse{
 		AccessToken:  "secret",
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
@@ -293,14 +329,18 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 	params := "client_assertion=assertion&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer" +
 		"&client_info=1&grant_type=client_credentials&scope=openid+offline_access+profile"
 	mockHTTPManager.On(
-		"Post", "https://login.microsoftonline.com/v2.0/token", params, testHeadersWURLUTF8).Return(response, nil)
+		"Post",
+		"https://login.microsoftonline.com/v2.0/token",
+		params,
+		testHeadersWURLUTF8,
+	).Return(response, nil)
 	actualToken, err := wrm.GetAccessTokenWithAssertion(authParams, "assertion")
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(actualToken.AccessToken, tokenResp.AccessToken) &&
-		!reflect.DeepEqual(actualToken.ExpiresOn, tokenResp.ExpiresOn) &&
-		!reflect.DeepEqual(actualToken.ExtExpiresOn, tokenResp.ExtExpiresOn) {
+	if actualToken.AccessToken != tokenResp.AccessToken &&
+		!actualToken.ExpiresOn.Equal(tokenResp.ExpiresOn) &&
+		!actualToken.ExtExpiresOn.Equal(tokenResp.ExtExpiresOn) {
 		t.Errorf("Actual token response %+v differs from expected token response %+v", actualToken, tokenResp)
 	}
 }
@@ -308,7 +348,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 func TestGetAadInstanceDiscoveryResponse(t *testing.T) {
 	mockHTTPManager := new(mockHTTPManager)
 	wrm := &defaultWebRequestManager{httpManager: mockHTTPManager}
-	authInfo := &msalbase.AuthorityInfo{
+	authInfo := msalbase.AuthorityInfo{
 		Host:   "login.microsoftonline.com",
 		Tenant: "tenant",
 	}
@@ -319,16 +359,15 @@ func TestGetAadInstanceDiscoveryResponse(t *testing.T) {
 	}
 	instanceDiscEndpoint := "https://login.microsoftonline.com/common/discovery/instance?api-version=1.1&" +
 		"authorization_endpoint=https%3A%2F%2Flogin.microsoftonline.com%2Ftenant%2Foauth2%2Fv2.0%2Fauthorize"
-	var params map[string]string = nil
+	var params map[string]string
 	mockHTTPManager.On("Get", instanceDiscEndpoint, params).Return(response, nil)
 	expIDR := &requests.InstanceDiscoveryResponse{}
 	actIDR, err := wrm.GetAadinstanceDiscoveryResponse(authInfo)
-
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Fatalf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(expIDR, actIDR) {
-		t.Errorf("Actual instance discovery response %+v differs from expected instance discovery response %+v", actIDR, expIDR)
+	if diff := pretty.Compare(expIDR, actIDR); diff != "" {
+		t.Errorf("TestGetAadInstanceDiscoveryResponse: -want/+got:\n%s", diff)
 	}
 }
 
@@ -341,7 +380,7 @@ func TestGetTenantDiscoveryResponse(t *testing.T) {
 		responseData: respData,
 	}
 	openIDEndpoint := "endpoint"
-	var params map[string]string = nil
+	var params map[string]string
 	mockHTTPManager.On("Get", openIDEndpoint, params).Return(response, nil)
 	_, err := wrm.GetTenantDiscoveryResponse(openIDEndpoint)
 	if err != nil {

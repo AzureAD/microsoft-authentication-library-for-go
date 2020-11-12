@@ -4,13 +4,13 @@
 package requests
 
 import (
-	"errors"
+	"fmt"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
 type openIDConfigurationEndpointManager interface {
-	getOpenIDConfigurationEndpoint(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (string, error)
+	getOpenIDConfigurationEndpoint(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error)
 }
 
 type aadOpenIDConfigurationEndpointManager struct {
@@ -40,7 +40,7 @@ func IsInTrustedHostList(host string) bool {
 	return false
 }
 
-func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(authorityInfo *msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
+func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
 	if authorityInfo.ValidateAuthority && !IsInTrustedHostList(authorityInfo.Host) {
 		discoveryResponse, err := m.aadInstanceDiscovery.GetMetadataEntry(authorityInfo)
 		if err != nil {
@@ -53,10 +53,10 @@ func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(a
 	return authorityInfo.CanonicalAuthorityURI + "v2.0/.well-known/openid-configuration", nil
 }
 
-func createOpenIDConfigurationEndpointManager(authorityInfo *msalbase.AuthorityInfo) (openIDConfigurationEndpointManager, error) {
+func createOpenIDConfigurationEndpointManager(authorityInfo msalbase.AuthorityInfo) (openIDConfigurationEndpointManager, error) {
 	if authorityInfo.AuthorityType == msalbase.MSSTS {
 		return &aadOpenIDConfigurationEndpointManager{}, nil
 	}
 
-	return nil, errors.New("unsupported authority type for createOpenIdConfigurationEndpointManager: " + string(authorityInfo.AuthorityType))
+	return nil, fmt.Errorf("unsupported authority type(%v) for createOpenIdConfigurationEndpointManager", authorityInfo.AuthorityType)
 }

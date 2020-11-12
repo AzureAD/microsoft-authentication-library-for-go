@@ -46,10 +46,7 @@
         "home_account_id": "uid.utid"
       }
     },
-    "unknownEntity": {
-      "field1": "1",
-      "field2": "whats"
-    },
+    "unknownEntity": {"field1":"1","field2":"whats"},
     "AppMetadata": {
       "appmetadata-login.windows.net-my_client_id": {
         "environment": "login.windows.net",

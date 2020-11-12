@@ -4,8 +4,11 @@
 package tokencache
 
 import (
-	"reflect"
+	stdJSON "encoding/json"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 var (
@@ -39,43 +42,64 @@ func TestCreateKeyForRefreshToken(t *testing.T) {
 	}
 }
 
-func TestRefreshTokenPopulateFromJSONMap(t *testing.T) {
+func TestRefreshTokenUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "hid",
 		"environment":     "env",
 		"extra":           "this_is_extra",
 		"secret":          "secret",
 	}
-	actualRefreshToken := &refreshTokenCacheItem{}
-	err := actualRefreshToken.populateFromJSONMap(jsonMap)
+	b, err := stdJSON.Marshal(jsonMap)
 	if err != nil {
-		t.Errorf("Error is supposed to be nil, but it is %v", err)
+		panic(err)
+	}
+	want := refreshTokenCacheItem{
+		HomeAccountID: "hid",
+		Environment:   "env",
+		Secret:        "secret",
+		AdditionalFields: map[string]interface{}{
+			"extra": json.MarshalRaw("this_is_extra"),
+		},
 	}
 
-	if actualRefreshToken.Secret != refSecret {
-		t.Errorf("Expected secret %s differs from actualSecret %s", actualRefreshToken.Secret, refSecret)
+	got := refreshTokenCacheItem{}
+	err = json.Unmarshal(b, &got)
+	if err != nil {
+		panic(err)
+	}
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestRefreshTokenUnmarshal: -want/+got:\n%s", diff)
 	}
 }
 
-func TestRefreshTokenConvertToJSONMap(t *testing.T) {
-	refreshToken := &refreshTokenCacheItem{
-		HomeAccountID:    "",
-		Environment:      rtEnv,
-		CredentialType:   rtCredential,
-		Secret:           refSecret,
-		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+func TestRefreshTokenMarshal(t *testing.T) {
+	refreshToken := refreshTokenCacheItem{
+		HomeAccountID:  "",
+		Environment:    rtEnv,
+		CredentialType: rtCredential,
+		Secret:         refSecret,
+		AdditionalFields: map[string]interface{}{
+			"extra": "this_is_extra",
+		},
 	}
-	jsonMap := map[string]interface{}{
+	want := map[string]interface{}{
 		"environment":     "env",
 		"credential_type": "RefreshToken",
 		"secret":          "secret",
 		"extra":           "this_is_extra",
 	}
-	actualJSONMap, err := refreshToken.convertToJSONMap()
+	b, err := json.Marshal(refreshToken)
 	if err != nil {
-		t.Errorf("Error should be nil, instead it is %v", err)
+		panic(err)
 	}
-	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
-		t.Errorf("JSON refresh token %+v differs from expected JSON refresh token %+v", actualJSONMap, jsonMap)
+	got := map[string]interface{}{}
+
+	if err := stdJSON.Unmarshal(b, &got); err != nil {
+		panic(err)
+	}
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestRefreshTokenMarshal: -want/+got:\n%s", diff)
 	}
 }

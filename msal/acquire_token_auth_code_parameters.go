@@ -17,7 +17,7 @@ type AcquireTokenAuthCodeParameters struct {
 	redirectURI      string
 	Code             string
 	CodeChallenge    string
-	clientCredential *msalbase.ClientCredential
+	clientCredential msalbase.ClientCredential
 	requestType      requests.AuthCodeRequestType
 }
 

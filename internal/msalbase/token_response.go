@@ -4,12 +4,12 @@
 package msalbase
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -22,76 +22,78 @@ type tokenResponseJSONPayload struct {
 	Scope        string `json:"scope"`
 	IDToken      string `json:"id_token"`
 	ClientInfo   string `json:"client_info"`
+
+	AdditionalFields map[string]interface{}
 }
 
-//ClientInfoJSONPayload is used to create a Home Account ID for an account
+// ClientInfoJSONPayload is used to create a Home Account ID for an account.
 type ClientInfoJSONPayload struct {
 	UID  string `json:"uid"`
 	Utid string `json:"utid"`
 }
 
-//TokenResponse is the information that is returned from a token endpoint during a token acquisition flow
+// TokenResponse is the information that is returned from a token endpoint during a token acquisition flow.
 type TokenResponse struct {
-	baseResponse   *OAuthResponseBase
+	baseResponse   OAuthResponseBase
 	AccessToken    string
 	RefreshToken   string
-	IDToken        *IDToken
+	IDToken        IDToken
 	FamilyID       string
 	GrantedScopes  []string
 	declinedScopes []string
 	ExpiresOn      time.Time
 	ExtExpiresOn   time.Time
 	rawClientInfo  string
-	ClientInfo     *ClientInfoJSONPayload
+	ClientInfo     ClientInfoJSONPayload
 }
 
-//HasAccessToken checks if the TokenResponse has an access token secret
-func (tr *TokenResponse) HasAccessToken() bool {
+// HasAccessToken checks if the TokenResponse has an access token secret.
+func (tr TokenResponse) HasAccessToken() bool {
 	return len(tr.AccessToken) > 0
 }
 
-//HasRefreshToken checks if the TokenResponse has an refresh token secret
-func (tr *TokenResponse) HasRefreshToken() bool {
+// HasRefreshToken checks if the TokenResponse has an refresh token secret.
+func (tr TokenResponse) HasRefreshToken() bool {
 	return len(tr.RefreshToken) > 0
 }
 
-//GetHomeAccountIDFromClientInfo creates the home account ID for an account from the client info parameter
-func (tr *TokenResponse) GetHomeAccountIDFromClientInfo() string {
+// GetHomeAccountIDFromClientInfo creates the home account ID for an account from the client info parameter.
+func (tr TokenResponse) GetHomeAccountIDFromClientInfo() string {
 	if tr.ClientInfo.UID == "" || tr.ClientInfo.Utid == "" {
 		return ""
 	}
 	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
 }
 
-//CreateTokenResponse creates a TokenResponse instance from the response from the token endpoint
-func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode int, responseData string) (*TokenResponse, error) {
+// CreateTokenResponse creates a TokenResponse instance from the response from the token endpoint.
+func CreateTokenResponse(authParameters AuthParametersInternal, responseCode int, responseData string) (TokenResponse, error) {
 	baseResponse, err := CreateOAuthResponseBase(responseCode, responseData)
 	if err != nil {
-		return nil, err
+		return TokenResponse{}, err
 	}
-	payload := &tokenResponseJSONPayload{}
-	err = json.Unmarshal([]byte(responseData), payload)
+	payload := tokenResponseJSONPayload{}
+	err = json.Unmarshal([]byte(responseData), &payload)
 	if err != nil {
-		return nil, err
+		return TokenResponse{}, err
 	}
 
 	if payload.AccessToken == "" {
 		// Access token is required in a token response
-		return nil, errors.New("response is missing access_token")
+		return TokenResponse{}, errors.New("response is missing access_token")
 	}
 
 	rawClientInfo := payload.ClientInfo
-	clientInfo := &ClientInfoJSONPayload{}
+	clientInfo := ClientInfoJSONPayload{}
 	// Client info may be empty in some flows, e.g. certificate exchange.
 	if len(rawClientInfo) > 0 {
 		rawClientInfoDecoded, err := DecodeJWT(rawClientInfo)
 		if err != nil {
-			return nil, err
+			return TokenResponse{}, err
 		}
 
-		err = json.Unmarshal(rawClientInfoDecoded, clientInfo)
+		err = json.Unmarshal(rawClientInfoDecoded, &clientInfo)
 		if err != nil {
-			return nil, err
+			return TokenResponse{}, err
 		}
 	}
 
@@ -114,11 +116,12 @@ func CreateTokenResponse(authParameters *AuthParametersInternal, responseCode in
 
 	idToken, err := CreateIDToken(payload.IDToken)
 	if err != nil {
-		//ID tokens aren't always returned, so the error is just logged
+		// ID tokens aren't always returned, so the error is just logged
+		// TODO(jdoak): we should probably remove this. Either this is an error or isn't.
 		log.Errorf("ID Token error: %v", err)
 	}
 
-	tokenResponse := &TokenResponse{
+	tokenResponse := TokenResponse{
 		baseResponse:   baseResponse,
 		AccessToken:    payload.AccessToken,
 		RefreshToken:   payload.RefreshToken,
@@ -140,7 +143,7 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 	for _, s := range grantedScopes {
 		grantedMap[s] = true
 	}
-	//Comparing the requested scopes with the granted scopes to see if there are any scopes that have been declined
+	// Comparing the requested scopes with the granted scopes to see if there are any scopes that have been declined.
 	for _, r := range requestedScopes {
 		if !grantedMap[r] {
 			declined = append(declined, r)

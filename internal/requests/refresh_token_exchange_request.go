@@ -19,18 +19,14 @@ const (
 // RefreshTokenExchangeRequest stores the values required to request a token from the authority using a refresh token
 type RefreshTokenExchangeRequest struct {
 	webRequestManager WebRequestManager
-	authParameters    *msalbase.AuthParametersInternal
+	authParameters    msalbase.AuthParametersInternal
 	refreshToken      msalbase.Credential
-	ClientCredential  *msalbase.ClientCredential
+	ClientCredential  msalbase.ClientCredential
 	RequestType       RefreshTokenReqType
 }
 
 // CreateRefreshTokenExchangeRequest creates a RefreshTokenExchangeRequest instance
-func CreateRefreshTokenExchangeRequest(
-	webRequestManager WebRequestManager,
-	authParameters *msalbase.AuthParametersInternal,
-	refreshToken msalbase.Credential,
-	reqType RefreshTokenReqType) *RefreshTokenExchangeRequest {
+func CreateRefreshTokenExchangeRequest(webRequestManager WebRequestManager, authParameters msalbase.AuthParametersInternal, refreshToken msalbase.Credential, reqType RefreshTokenReqType) *RefreshTokenExchangeRequest {
 	req := &RefreshTokenExchangeRequest{
 		webRequestManager: webRequestManager,
 		authParameters:    authParameters,
@@ -41,11 +37,11 @@ func CreateRefreshTokenExchangeRequest(
 }
 
 //Execute performs the token acquisition request and returns a token response or an error
-func (req *RefreshTokenExchangeRequest) Execute() (*msalbase.TokenResponse, error) {
+func (req *RefreshTokenExchangeRequest) Execute() (msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {
-		return nil, err
+		return msalbase.TokenResponse{}, err
 	}
 	req.authParameters.Endpoints = endpoints
 	params := make(map[string]string)
@@ -55,7 +51,7 @@ func (req *RefreshTokenExchangeRequest) Execute() (*msalbase.TokenResponse, erro
 		} else {
 			jwt, err := req.ClientCredential.GetAssertion().GetJWT(req.authParameters)
 			if err != nil {
-				return nil, err
+				return msalbase.TokenResponse{}, err
 			}
 			params["client_assertion"] = jwt
 			params["client_assertion_type"] = msalbase.ClientAssertionGrant
