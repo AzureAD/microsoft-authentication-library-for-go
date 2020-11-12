@@ -10,7 +10,7 @@ import (
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
-	commonParameters *acquireTokenCommonParameters
+	commonParameters acquireTokenCommonParameters
 	account          AccountProvider
 	requestType      requests.RefreshTokenReqType
 	clientCredential msalbase.ClientCredential

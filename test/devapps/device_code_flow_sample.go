@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 	log "github.com/sirupsen/logrus"
 )
@@ -16,51 +17,47 @@ func deviceCodeCallback(deviceCodeResult msal.DeviceCodeResultProvider) {
 	log.Infof(deviceCodeResult.GetMessage())
 }
 
-func tryDeviceCodeFlow(publicClientApp *msal.PublicClientApplication) {
-	cancelTimeout := 100 //Change this for cancel timeout
-	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(cancelTimeout)*time.Second)
-	defer cancelFunc()
-	deviceCodeParams := msal.CreateAcquireTokenDeviceCodeParameters(cancelCtx, config.Scopes, deviceCodeCallback)
-	resultChannel := make(chan msal.AuthenticationResultProvider)
-	errChannel := make(chan error)
-	go func() {
-		result, err := publicClientApp.AcquireTokenByDeviceCode(deviceCodeParams)
-		errChannel <- err
-		resultChannel <- result
-	}()
-	err = <-errChannel
-	if err != nil {
-		log.Fatal(err)
-	}
-	result := <-resultChannel
-	fmt.Println("Access token is " + result.GetAccessToken())
-}
-
 func acquireTokenDeviceCode() {
 	config := createConfig("config.json")
-	publicClientApp, err := msal.CreatePublicClientApplication(config.ClientID, config.Authority)
+	// create a PublicClientApplication with a  custom cache accessor
+	options := msal.DefaultPublicClientApplicationOptions()
+	options.Accessor = cacheAccessor
+	options.Authority = config.Authority
+	publicClientApp, err := msal.NewPublicClientApplication(config.ClientID, &options)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
-	publicClientApp.SetCacheAccessor(cacheAccessor)
-	var userAccount msal.AccountProvider
-	accounts := publicClientApp.GetAccounts()
+
+	// look in the cache to see if the account to use has been cached
+	var userAccount msalbase.Account
+	accounts := publicClientApp.Accounts()
 	for _, account := range accounts {
-		if account.GetUsername() == config.Username {
+		if account.PreferredUsername == config.Username {
 			userAccount = account
 		}
 	}
-	if userAccount == nil {
-		log.Info("No valid account found")
-		tryDeviceCodeFlow(publicClientApp)
-	} else {
-		silentParams := msal.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
-		result, err := publicClientApp.AcquireTokenSilent(silentParams)
-		if err != nil {
-			log.Info(err)
-			tryDeviceCodeFlow(publicClientApp)
-		} else {
-			fmt.Println("Access token is " + result.GetAccessToken())
-		}
+	// found a cached account, now see if an applicable token has been cached
+	// NOTE: this API conflates error states, i.e. err is non-nil if an applicable token isn't
+	//       cached or if something goes wrong (making the HTTP request, unmarshalling, etc).
+	result, err := publicClientApp.AcquireTokenSilent(
+		context.Background(),
+		config.Scopes, 
+		&msal.AcquireTokenSilentOptions{
+			Account: userAccount,
+		},
+	)
+	if err != nil {
+		// either there's no applicable token in the cache or something failed
+		panic(err)
 	}
+	// either there was no cached account/token or the call to AcquireTokenSilent() failed
+	// make a new request to AAD
+	cancelTimeout := 100 * time.Second //Change this for cancel timeout
+	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), cancelTimeout)
+	defer cancelFunc()
+	result, err = publicClientApp.AcquireTokenByDeviceCode(cancelCtx, config.Scopes, deviceCodeCallback, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("Access token is " + result.AccessToken)
 }

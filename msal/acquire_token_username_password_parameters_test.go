@@ -14,14 +14,14 @@ func TestAugmentAuthenticationParametersForUsernamePass(t *testing.T) {
 	testScopes := []string{"user.read"}
 	testUsername := "testUser"
 	testPassword := "testPass"
-	testAuthParams := &msalbase.AuthParametersInternal{}
-	testTokenCommonParams := &acquireTokenCommonParameters{testScopes}
-	tokenUserPassParams := &AcquireTokenUsernamePasswordParameters{
+	testAuthParams := msalbase.AuthParametersInternal{}
+	testTokenCommonParams := acquireTokenCommonParameters{testScopes}
+	tokenUserPassParams := acquireTokenUsernamePasswordParameters{
 		commonParameters: testTokenCommonParams,
 		username:         testUsername,
 		password:         testPassword,
 	}
-	tokenUserPassParams.augmentAuthenticationParameters(testAuthParams)
+	tokenUserPassParams.augmentAuthenticationParameters(&testAuthParams)
 	actualScopes := testAuthParams.Scopes
 	if !reflect.DeepEqual(testScopes, actualScopes) {
 		t.Errorf("Actual scopes %v differ from expected scopes %v", actualScopes, testScopes)

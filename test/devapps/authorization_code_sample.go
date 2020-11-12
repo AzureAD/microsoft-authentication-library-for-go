@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,10 +42,10 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	authCodeParams := msal.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI)
-	authCodeParams.Code = code
-	authCodeParams.CodeChallenge = config.CodeChallenge
-	result, err := publicClientApp.AcquireTokenByAuthCode(authCodeParams)
+	result, err := publicClientApp.AcquireTokenByAuthCode(context.Background(), config.Scopes, &msal.AcquireTokenByAuthCodeOptions{
+		Code:          code,
+		CodeChallenge: config.CodeChallenge,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -52,13 +53,19 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Access token is "+result.GetAccessToken())
 }
 
+// TODO(msal expert): This test doesn't do anything that I can tell. We call msal.NewPublicClientApplication(), but we
+// don't use it.  Someone needs to clarify to me how this is supposed to work.
+/*
 func acquireByAuthorizationCodePublic() {
-	publicClientApp, err = msal.CreatePublicClientApplication(config.ClientID, config.Authority)
+	options := msal.DefaultPublicClientApplicationOptions()
+	options.Authority = config.Authority
+	publicClientApp, err := msal.NewPublicClientApplication(config.ClientID, &options)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
 	http.HandleFunc("/", redirectToURL)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
+*/

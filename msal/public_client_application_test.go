@@ -16,7 +16,7 @@ import (
 
 // TODO(jdoak): Remove all of these globals.
 
-var tokenCommonParams = &acquireTokenCommonParameters{
+var tokenCommonParams = acquireTokenCommonParameters{
 	scopes: []string{"openid"},
 }
 var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.microsoftonline.com/v2.0/authorize",
@@ -54,9 +54,6 @@ func TestCreateAuthCodeURL(t *testing.T) {
 }
 
 func TestAcquireTokenByAuthCode(t *testing.T) {
-	authCodeParams := &AcquireTokenAuthCodeParameters{
-		commonParameters: tokenCommonParams,
-	}
 	wrm.On(
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
@@ -74,19 +71,13 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 		mock.AnythingOfType("msalbase.AuthParametersInternal"),
 		actualTokenResp,
 	).Return(testAcc, nil)
-
-	_, err := testPCA.AcquireTokenByAuthCode(authCodeParams)
+	_, err := testPCA.AcquireTokenByAuthCode(context.Background(), []string{"openid"}, nil)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}
 }
 
 func TestAcquireTokenByUsernamePassword(t *testing.T) {
-	userPassParams := &AcquireTokenUsernamePasswordParameters{
-		commonParameters: tokenCommonParams,
-		username:         "username",
-		password:         "password",
-	}
 	managedUserRealm := msalbase.UserRealm{
 		AccountType: "Managed",
 	}
@@ -110,7 +101,7 @@ func TestAcquireTokenByUsernamePassword(t *testing.T) {
 		mock.AnythingOfType("msalbase.AuthParametersInternal"),
 		actualTokenResp,
 	).Return(testAcc, nil)
-	_, err := testPCA.AcquireTokenByUsernamePassword(userPassParams)
+	_, err := testPCA.AcquireTokenByUsernamePassword(context.Background(), []string{"openid"}, "username", "password")
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}
@@ -124,7 +115,7 @@ func TestGetAllAccounts(t *testing.T) {
 	// TODO(jdoak): I would think we could just create a cacheManager and
 	// simply put something in and then get it out, instead of mocks.
 	cacheManager.On("GetAllAccounts").Return(cacheOutput, nil)
-	got := testPCA.GetAccounts()
+	got := testPCA.Accounts()
 	if diff := pretty.Compare(want, got); diff != "" {
 		t.Errorf("TestGetAllAccounts: -want/+got:\n%s", diff)
 	}
@@ -134,20 +125,28 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 	callback := func(dcr DeviceCodeResultProvider) {}
 	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
 	defer cancelFunc()
-	devCodeParams := &AcquireTokenDeviceCodeParameters{
-		commonParameters:   tokenCommonParams,
-		deviceCodeCallback: callback,
-		cancelCtx:          cancelCtx,
-	}
-	wrm.On("GetTenantDiscoveryResponse",
-		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
+	wrm.On(
+		"GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
+	).Return(tdr, nil)
 	actualTokenResp := msalbase.TokenResponse{}
 	devCodeResp := requests.DeviceCodeResponse{ExpiresIn: 10}
 	devCodeResult := devCodeResp.ToDeviceCodeResult("clientID", tokenCommonParams.scopes)
-	wrm.On("GetDeviceCodeResult", mock.AnythingOfType("msalbase.AuthParametersInternal")).Return(devCodeResult, nil)
-	wrm.On("GetAccessTokenFromDeviceCodeResult", mock.AnythingOfType("msalbase.AuthParametersInternal"), devCodeResult).Return(actualTokenResp, nil)
-	cacheManager.On("CacheTokenResponse", mock.AnythingOfType("msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
-	_, err := testPCA.AcquireTokenByDeviceCode(devCodeParams)
+	wrm.On(
+		"GetDeviceCodeResult",
+		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+	).Return(devCodeResult, nil)
+	wrm.On(
+		"GetAccessTokenFromDeviceCodeResult",
+		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		devCodeResult,
+	).Return(actualTokenResp, nil)
+	cacheManager.On(
+		"CacheTokenResponse",
+		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		actualTokenResp,
+	).Return(testAcc, nil)
+	_, err := testPCA.AcquireTokenByDeviceCode(cancelCtx, []string{"openid"}, callback, nil)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

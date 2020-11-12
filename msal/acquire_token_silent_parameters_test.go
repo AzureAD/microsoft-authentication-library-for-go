@@ -12,17 +12,17 @@ import (
 
 func TestAugmentAuthenticationParametersSilent(t *testing.T) {
 	testScopes := []string{"user.read"}
-	testAuthParams := &msalbase.AuthParametersInternal{}
-	testTokenCommonParams := &acquireTokenCommonParameters{testScopes}
+	testAuthParams := msalbase.AuthParametersInternal{}
+	testTokenCommonParams := acquireTokenCommonParameters{testScopes}
 	homeAccountID := "hid"
 	testAccount := msalbase.Account{
 		HomeAccountID: homeAccountID,
 	}
-	testSilentParams := &AcquireTokenSilentParameters{
+	testSilentParams := AcquireTokenSilentParameters{
 		commonParameters: testTokenCommonParams,
 		account:          testAccount,
 	}
-	testSilentParams.augmentAuthenticationParameters(testAuthParams)
+	testSilentParams.augmentAuthenticationParameters(&testAuthParams)
 	actualScopes := testAuthParams.Scopes
 	if !reflect.DeepEqual(testScopes, actualScopes) {
 		t.Errorf("Actual scopes %v differ from expected scopes %v", actualScopes, testScopes)

@@ -12,12 +12,12 @@ import (
 
 func TestAugmentAuthenticationParametersDeviceCode(t *testing.T) {
 	testScopes := []string{"user.read"}
-	testAuthParams := &msalbase.AuthParametersInternal{}
-	testTokenCommonParams := &acquireTokenCommonParameters{testScopes}
-	testDeviceCodeParams := &AcquireTokenDeviceCodeParameters{
+	testAuthParams := msalbase.AuthParametersInternal{}
+	testTokenCommonParams := acquireTokenCommonParameters{testScopes}
+	testDeviceCodeParams := acquireTokenDeviceCodeParameters{
 		commonParameters: testTokenCommonParams,
 	}
-	testDeviceCodeParams.augmentAuthenticationParameters(testAuthParams)
+	testDeviceCodeParams.augmentAuthenticationParameters(&testAuthParams)
 	actualScopes := testAuthParams.Scopes
 	if !reflect.DeepEqual(testScopes, actualScopes) {
 		t.Errorf("Actual scopes %v differ from expected scopes %v", actualScopes, testScopes)

@@ -4,12 +4,14 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"os"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 	log "github.com/sirupsen/logrus"
 )
@@ -53,13 +55,10 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	authCodeParams := msal.CreateAcquireTokenAuthCodeParameters(
-		confidentialConfig.Scopes,
-		confidentialConfig.RedirectURI,
-	)
-	authCodeParams.CodeChallenge = confidentialConfig.CodeChallenge
-	authCodeParams.Code = code
-	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(authCodeParams)
+	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(context.Background(), confidentialConfig.Scopes, &msal.AcquireTokenByAuthCodeOptions{
+		Code:          code,
+		CodeChallenge: confidentialConfig.CodeChallenge,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -74,35 +73,43 @@ func acquireByAuthorizationCodeConfidential() {
 		log.Fatal(err)
 	}
 	defer file.Close()
+
 	key, err := ioutil.ReadAll(file)
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	certificate, err := msal.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientAuthCode, err = msal.CreateConfidentialClientApplication(
-		confidentialConfig.ClientID, confidentialConfig.Authority, certificate)
+
+	options := msal.DefaultConfidentialClientApplicationOptions()
+	options.Accessor = cacheAccessor
+	options.Authority = confidentialConfig.Authority
+	confidentialClientAuthCode, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientAuthCode.SetCacheAccessor(cacheAccessor)
-	var userAccount msal.AccountProvider
-	accounts := confidentialClientAuthCode.GetAccounts()
-	for _, account := range accounts {
+	var userAccount msalbase.Account
+	for _, account := range confidentialClientAuthCode.Accounts() {
 		if account.GetUsername() == confidentialConfig.Username {
 			userAccount = account
 		}
 	}
-	if userAccount != nil {
-		silentParams := msal.CreateAcquireTokenSilentParametersWithAccount(confidentialConfig.Scopes, userAccount)
-		result, err := confidentialClientAuthCode.AcquireTokenSilent(silentParams)
-		if err == nil {
-			fmt.Printf("Access token is " + result.GetAccessToken())
-			accessToken = result.GetAccessToken()
-		}
+	result, err := confidentialClientAuthCode.AcquireTokenSilent(
+		context.Background(),
+		confidentialConfig.Scopes,
+		&msal.AcquireTokenSilentOptions{
+			Account: userAccount,
+		},
+	)
+	if err != nil {
+		panic(err)
 	}
+	fmt.Printf("Access token is " + result.GetAccessToken())
+	accessToken = result.GetAccessToken()
+
 	http.HandleFunc("/", redirectToURLConfidential)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getTokenConfidential)

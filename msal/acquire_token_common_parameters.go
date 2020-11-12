@@ -13,16 +13,15 @@ type acquireTokenCommonParameters struct {
 	scopes []string
 }
 
-func createAcquireTokenCommonParameters(scopes []string) *acquireTokenCommonParameters {
+func createAcquireTokenCommonParameters(scopes []string) acquireTokenCommonParameters {
 	loweredScopes := []string{}
 	for _, s := range scopes {
 		s = strings.ToLower(s)
 		loweredScopes = append(loweredScopes, s)
 	}
-	p := &acquireTokenCommonParameters{
+	return acquireTokenCommonParameters{
 		scopes: loweredScopes,
 	}
-	return p
 }
 
 func (p *acquireTokenCommonParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
