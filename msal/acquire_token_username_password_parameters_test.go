@@ -16,7 +16,7 @@ func TestAugmentAuthenticationParametersForUsernamePass(t *testing.T) {
 	testPassword := "testPass"
 	testAuthParams := &msalbase.AuthParametersInternal{}
 	testTokenCommonParams := &acquireTokenCommonParameters{testScopes}
-	tokenUserPassParams := &AcquireTokenUsernamePasswordParameters{
+	tokenUserPassParams := &acquireTokenUsernamePasswordParameters{
 		commonParameters: testTokenCommonParams,
 		username:         testUsername,
 		password:         testPassword,

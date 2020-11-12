@@ -9,7 +9,7 @@ import (
 )
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
-type AcquireTokenSilentParameters struct {
+type acquireTokenSilentParameters struct {
 	commonParameters *acquireTokenCommonParameters
 	account          AccountProvider
 	requestType      requests.RefreshTokenReqType
@@ -18,8 +18,8 @@ type AcquireTokenSilentParameters struct {
 
 // CreateAcquireTokenSilentParameters creates an AcquireTokenSilentParameters instance with an empty account.
 // This can be used in the case where tokens are acquired as the application instelf.
-func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentParameters {
-	p := &AcquireTokenSilentParameters{
+func createAcquireTokenSilentParameters(scopes []string) *acquireTokenSilentParameters {
+	p := &acquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          &msalbase.Account{},
 	}
@@ -28,15 +28,15 @@ func CreateAcquireTokenSilentParameters(scopes []string) *AcquireTokenSilentPara
 
 // CreateAcquireTokenSilentParametersWithAccount creates an AcquireTokenSilentParameters instance from an account.
 // This account can be pulled from the cache by calling GetAccounts
-func CreateAcquireTokenSilentParametersWithAccount(scopes []string, account AccountProvider) *AcquireTokenSilentParameters {
-	p := &AcquireTokenSilentParameters{
+func createAcquireTokenSilentParametersWithAccount(scopes []string, account AccountProvider) *acquireTokenSilentParameters {
+	p := &acquireTokenSilentParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 		account:          account,
 	}
 	return p
 }
 
-func (p *AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
+func (p *acquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.AuthorizationType = msalbase.AuthorizationTypeRefreshTokenExchange
 	authParams.HomeaccountID = p.account.GetHomeAccountID()

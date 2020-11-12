@@ -9,8 +9,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
-// AcquireTokenDeviceCodeParameters contains the parameters required to acquire an access token using the device code flow.
-type AcquireTokenDeviceCodeParameters struct {
+// acquireTokenDeviceCodeParameters contains the parameters required to acquire an access token using the device code flow.
+type acquireTokenDeviceCodeParameters struct {
 	commonParameters   *acquireTokenCommonParameters
 	deviceCodeCallback func(DeviceCodeResultProvider)
 	cancelCtx          context.Context
@@ -22,9 +22,8 @@ type AcquireTokenDeviceCodeParameters struct {
 // The DeviceCode object is provided through the DeviceCodeResultProvider callback, and the end-user should be instructed to use
 // another device to navigate to the verification URI to input credentials. Since the client cannot receive incoming requests,
 // MSAL polls the authorization server repeatedly until the end-user completes input of credentials. Use cancelCtx to cancel the polling.
-func CreateAcquireTokenDeviceCodeParameters(cancelCtx context.Context, scopes []string,
-	deviceCodeCallback func(DeviceCodeResultProvider)) *AcquireTokenDeviceCodeParameters {
-	p := &AcquireTokenDeviceCodeParameters{
+func createAcquireTokenDeviceCodeParameters(cancelCtx context.Context, scopes []string, deviceCodeCallback func(DeviceCodeResultProvider)) *acquireTokenDeviceCodeParameters {
+	p := &acquireTokenDeviceCodeParameters{
 		commonParameters:   createAcquireTokenCommonParameters(scopes),
 		deviceCodeCallback: deviceCodeCallback,
 		cancelCtx:          cancelCtx,
@@ -32,7 +31,7 @@ func CreateAcquireTokenDeviceCodeParameters(cancelCtx context.Context, scopes []
 	return p
 }
 
-func (p *AcquireTokenDeviceCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
+func (p *acquireTokenDeviceCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
 	authParams.AuthorizationType = msalbase.AuthorizationTypeDeviceCode
 }

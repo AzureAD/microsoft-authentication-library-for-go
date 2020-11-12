@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"net/http"
@@ -41,10 +42,10 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	authCodeParams := msal.CreateAcquireTokenAuthCodeParameters(config.Scopes, config.RedirectURI)
-	authCodeParams.Code = code
-	authCodeParams.CodeChallenge = config.CodeChallenge
-	result, err := publicClientApp.AcquireTokenByAuthCode(authCodeParams)
+	result, err := publicClientApp.AcquireTokenByAuthCode(context.Background(), config.Scopes, &msal.AcquireTokenByAuthCodeOptions{
+		Code:          code,
+		CodeChallenge: config.CodeChallenge,
+	})
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -53,10 +54,9 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 }
 
 func acquireByAuthorizationCodePublic() {
-	publicClientApp, err = msal.CreatePublicClientApplication(config.ClientID, config.Authority)
-	if err != nil {
-		log.Fatal(err)
-	}
+	options := msal.DefaultPublicClientApplicationOptions()
+	options.Authority = config.Authority
+	publicClientApp = msal.NewPublicClientApplication(config.ClientID, &options)
 	http.HandleFunc("/", redirectToURL)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)

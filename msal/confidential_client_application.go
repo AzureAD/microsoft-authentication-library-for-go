@@ -4,9 +4,34 @@
 package msal
 
 import (
+	"context"
+	"net/http"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 )
+
+// ConfidentialClientApplicationOptions configures the PublicClientApplication's behavior.
+type ConfidentialClientApplicationOptions struct {
+	// Accessor controls cache persistence.
+	// By default there is no cache persistence.
+	Accessor CacheAccessor
+
+	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
+	Authority string
+
+	// Client sets the transport for making HTTP requests.
+	// Leave this as nil to use the default HTTP transport.
+	HTTPClient HTTPClient
+}
+
+// DefaultConfidentialClientApplicationOptions returns an instance of ConfidentialClientApplicationOptions initialized with default values.
+func DefaultConfidentialClientApplicationOptions() ConfidentialClientApplicationOptions {
+	return ConfidentialClientApplicationOptions{
+		Authority:  authorityPublicCloud,
+		HTTPClient: http.DefaultClient,
+	}
+}
 
 // ConfidentialClientApplication is a representation of confidential client applications.
 // These are apps that run on servers (web apps, web API apps, or even service/daemon apps),
@@ -17,15 +42,19 @@ type ConfidentialClientApplication struct {
 	clientCredential  *msalbase.ClientCredential
 }
 
-// CreateConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
-func CreateConfidentialClientApplication(
-	clientID string, authority string, clientCredential ClientCredentialProvider,
-) (*ConfidentialClientApplication, error) {
+// NewConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
+// Pass nil for options to accept the default values; this is the same as passing the result
+// from a call to DefaultConfidentialClientApplicationOptions().
+func NewConfidentialClientApplication(clientID string, clientCredential ClientCredentialProvider, options *ConfidentialClientApplicationOptions) (*ConfidentialClientApplication, error) {
 	cred, err := createInternalClientCredential(clientCredential)
 	if err != nil {
 		return nil, err
 	}
-	clientApp := createClientApplication(clientID, authority)
+	if options == nil {
+		def := DefaultConfidentialClientApplicationOptions()
+		options = &def
+	}
+	clientApp := createClientApplication(clientID, options.Authority)
 	return &ConfidentialClientApplication{
 		clientApplication: clientApp,
 		clientCredential:  cred,
@@ -45,52 +74,48 @@ func createInternalClientCredential(interfaceCred ClientCredentialProvider) (*ms
 	return msalbase.CreateClientCredentialFromAssertion(interfaceCred.GetAssertion().ClientAssertionJWT)
 }
 
-// SetHTTPManager allows users to use their own implementation of HTTPManager.
-func (cca *ConfidentialClientApplication) SetHTTPManager(httpManager HTTPManager) {
-	webRequestManager := createWebRequestManager(httpManager)
-	cca.clientApplication.webRequestManager = webRequestManager
-}
-
-// SetCacheAccessor allows users to use an implementation of CacheAccessor to handle cache persistence.
-func (cca *ConfidentialClientApplication) SetCacheAccessor(accessor CacheAccessor) {
-	cca.clientApplication.cacheAccessor = accessor
-}
-
 // CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameters *AuthorizationCodeURLParameters) (string, error) {
+func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
 	return cca.clientApplication.createAuthCodeURL(authCodeURLParameters)
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token
 // Users need to create an AcquireTokenSilentParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenSilent(
-	silentParameters *AcquireTokenSilentParameters) (AuthenticationResultProvider, error) {
+func (cca *ConfidentialClientApplication) AcquireTokenSilent(ctx context.Context, scopes []string, options *AcquireTokenSilentOptions) (*msalbase.AuthenticationResult, error) {
+	silentParameters := createAcquireTokenSilentParameters(scopes)
 	silentParameters.requestType = requests.RefreshTokenConfidential
 	silentParameters.clientCredential = cca.clientCredential
+	if options != nil {
+		silentParameters.account = options.Account
+	}
 	return cca.clientApplication.acquireTokenSilent(silentParameters)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // Users need to create an AcquireTokenAuthCodeParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(
-	authCodeParams *AcquireTokenAuthCodeParameters) (AuthenticationResultProvider, error) {
+func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options *AcquireTokenByAuthCodeOptions) (*msalbase.AuthenticationResult, error) {
+	authCodeParams := createAcquireTokenAuthCodeParameters(scopes)
 	authCodeParams.requestType = requests.AuthCodeConfidential
 	authCodeParams.clientCredential = cca.clientCredential
+	if options != nil {
+		authCodeParams.Code = options.Code
+		authCodeParams.CodeChallenge = options.CodeChallenge
+	}
 	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
 
 }
 
 // AcquireTokenByClientCredential acquires a security token from the authority, using the client credentials grant.
 // Users need to create an AcquireTokenClientCredentialParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(
-	clientCredParams *AcquireTokenClientCredentialParameters) (AuthenticationResultProvider, error) {
+func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(ctx context.Context, scopes []string) (*msalbase.AuthenticationResult, error) {
 	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
+	clientCredParams := createAcquireTokenClientCredentialParameters(scopes)
 	clientCredParams.augmentAuthenticationParameters(authParams)
 	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
 }
 
-// GetAccounts gets all the accounts in the token cache.
-func (cca *ConfidentialClientApplication) GetAccounts() []AccountProvider {
+// Accounts gets all the accounts in the token cache.
+func (cca *ConfidentialClientApplication) Accounts() []*msalbase.Account {
 	return cca.clientApplication.getAccounts()
 }

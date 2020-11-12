@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"os"
@@ -13,9 +14,7 @@ import (
 )
 
 func tryClientCertificateFlow(confidentialClientApp *msal.ConfidentialClientApplication) {
-	certificateParams := msal.CreateAcquireTokenClientCredentialParameters(
-		confidentialConfig.Scopes)
-	result, err := confidentialClientApp.AcquireTokenByClientCredential(certificateParams)
+	result, err := confidentialClientApp.AcquireTokenByClientCredential(context.Background(), confidentialConfig.Scopes)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,14 +35,14 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientApp, err := msal.CreateConfidentialClientApplication(
-		confidentialConfig.ClientID, confidentialConfig.Authority, certificate)
+	options := msal.DefaultConfidentialClientApplicationOptions()
+	options.Accessor = cacheAccessor
+	options.Authority = confidentialConfig.Authority
+	confidentialClientApp, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
 	if err != nil {
 		log.Fatal(err)
 	}
-	confidentialClientApp.SetCacheAccessor(cacheAccessor)
-	silentParams := msal.CreateAcquireTokenSilentParameters(confidentialConfig.Scopes)
-	result, err := confidentialClientApp.AcquireTokenSilent(silentParams)
+	result, err := confidentialClientApp.AcquireTokenSilent(context.Background(), confidentialConfig.Scopes, nil)
 	if err != nil {
 		log.Info(err)
 		tryClientCertificateFlow(confidentialClientApp)

@@ -4,48 +4,51 @@
 package main
 
 import (
+	"context"
 	"fmt"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 	log "github.com/sirupsen/logrus"
 )
 
-func tryUsernamePasswordFlow(publicClientApp *msal.PublicClientApplication) {
-	userNameParams := msal.CreateAcquireTokenUsernamePasswordParameters(config.Scopes, config.Username, config.Password)
-	result, err := publicClientApp.AcquireTokenByUsernamePassword(userNameParams)
-	if err != nil {
-		log.Fatal(err)
-	}
-	accessToken := result.GetAccessToken()
-	log.Info("Access token is: " + accessToken)
-}
-
 func acquireByUsernamePasswordPublic() {
 	config := createConfig("config.json")
-	// Creating the Public Client Application
-	publicClientApp, err := msal.CreatePublicClientApplication(config.ClientID, config.Authority)
-	if err != nil {
-		log.Fatal(err)
-	}
-	publicClientApp.SetCacheAccessor(cacheAccessor)
-	var userAccount msal.AccountProvider
-	accounts := publicClientApp.GetAccounts()
+	// create a PublicClientApplication with a  custom cache accessor
+	options := msal.DefaultPublicClientApplicationOptions()
+	options.Accessor = cacheAccessor
+	options.Authority = config.Authority
+	publicClientApp := msal.NewPublicClientApplication(config.ClientID, &options)
+
+	// look in the cache to see if the account to use has been cached
+	var userAccount *msalbase.Account
+	accounts := publicClientApp.Accounts()
 	for _, account := range accounts {
-		if account.GetUsername() == config.Username {
+		if account.PreferredUsername == config.Username {
 			userAccount = account
 		}
 	}
-	if userAccount == nil {
-		log.Info("No valid account found")
-		tryUsernamePasswordFlow(publicClientApp)
-	} else {
-		silentParams := msal.CreateAcquireTokenSilentParametersWithAccount(config.Scopes, userAccount)
-		result, err := publicClientApp.AcquireTokenSilent(silentParams)
+	var result *msalbase.AuthenticationResult
+	var err error
+	if userAccount != nil {
+		// found a cached account, now see if an applicable token has been cached
+		// NOTE: this API conflates error states, i.e. err is non-nil if an applicable token isn't
+		//       cached or if something goes wrong (making the HTTP request, unmarshalling, etc).
+		result, err = publicClientApp.AcquireTokenSilent(context.Background(), config.Scopes, &msal.AcquireTokenSilentOptions{
+			Account: userAccount,
+		})
 		if err != nil {
+			// either there's no applicable token in the cache or something failed
 			log.Info(err)
-			tryUsernamePasswordFlow(publicClientApp)
-		} else {
-			fmt.Println("Access token is " + result.GetAccessToken())
 		}
 	}
+	if result == nil {
+		// either there was no cached account/token or the call to AcquireTokenSilent() failed
+		// make a new request to AAD
+		result, err = publicClientApp.AcquireTokenByUsernamePassword(context.Background(), config.Scopes, config.Username, config.Password)
+		if err != nil {
+			log.Fatal(err)
+		}
+	}
+	fmt.Println("Access token is " + result.AccessToken)
 }

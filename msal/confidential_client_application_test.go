@@ -4,6 +4,7 @@
 package msal
 
 import (
+	"context"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
@@ -28,8 +29,7 @@ func TestAcquireTokenByClientCredential(t *testing.T) {
 	actualTokenResp := &msalbase.TokenResponse{}
 	testWrm.On("GetAccessTokenWithClientSecret", mock.AnythingOfType("*msalbase.AuthParametersInternal"), "client_secret").Return(actualTokenResp, nil)
 	testCacheManager.On("CacheTokenResponse", mock.AnythingOfType("*msalbase.AuthParametersInternal"), actualTokenResp).Return(testAcc, nil)
-	clientCredParams := &AcquireTokenClientCredentialParameters{tokenCommonParams}
-	_, err := cca.AcquireTokenByClientCredential(clientCredParams)
+	_, err := cca.AcquireTokenByClientCredential(context.Background(), []string{"openid"})
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
