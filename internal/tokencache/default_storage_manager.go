@@ -111,13 +111,15 @@ func (m *defaultStorageManager) ReadRefreshToken(homeID string, envAliases []str
 		}
 	}
 
-	// TODO(jdoak): So, I redid this code to make it clearer that we
-	// changed order based on if FamilyID was set. But I'm not sure
-	// why I have to loop twice over the tokens instead of just
-	// trying both matchers.  If someone could shed some light on this
-	// I could make a note for future maintainers. If order doesn't
-	// matter, then we could ditch byFamily and byClient for cleaner
-	// code.
+	// TODO(jdoak): All the tests here pass, but Bogdan says this is
+	// more complicated.  I'm opening an issue for this to have him
+	// review the tests and suggest tests that would break this so
+	// we can re-write against good tests. His comments as follow:
+	// The algorithm is a bit more complex than this, I assume there are some tests covering everything. I would keep the order as is.
+	// The algorithm is:
+	// If application is NOT part of the family, search by client_ID
+	// If app is part of the family or if we DO NOT KNOW if it's part of the family, search by family ID, then by client_id (we will know if an app is part of the family after the first token response).
+	// https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/311fe8b16e7c293462806f397e189a6aa1159769/src/client/Microsoft.Identity.Client/Internal/Requests/Silent/CacheSilentStrategy.cs#L95
 	for _, matcher := range matchers {
 		log.Println("matcher")
 		for _, rt := range m.refreshTokens {
