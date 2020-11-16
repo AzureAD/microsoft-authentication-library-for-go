@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -58,10 +59,10 @@ func (wsTrustResponse *Response) GetSAMLAssertion(endpoint Endpoint) (SamlTokenI
 				switch samlVersion {
 				case "urn:oasis:names:tc:SAML:1.0:assertion":
 					log.Trace("Retrieved WS-Trust 1.3 / SAML V1 assertion")
-					return createSamlTokenInfo(SamlV1, assertion), nil
+					return createSamlTokenInfo(msalbase.SAMLV1Grant, assertion), nil
 				case "urn:oasis:names:tc:SAML:2.0:assertion":
 					log.Trace("Retrieved WS-Trust 1.3 / SAML V2 assertion")
-					return createSamlTokenInfo(SamlV2, assertion), nil
+					return createSamlTokenInfo(msalbase.SAMLV2Grant, assertion), nil
 				}
 				return SamlTokenInfo{}, fmt.Errorf("Couldn't parse SAML assertion, version unknown: '%s'", samlVersion)
 			}

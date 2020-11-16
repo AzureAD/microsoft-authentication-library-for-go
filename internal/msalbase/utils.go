@@ -19,6 +19,9 @@ func ConvertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 	return time.Unix(timeInt, 0).UTC(), nil
 }
 
+// DefaultScopeSeparator is used to convert a list of scopes to a string.
+const DefaultScopeSeparator = " "
+
 // ConcatenateScopes combines all scopes into one space-separated string.
 func ConcatenateScopes(scopes []string) string {
 	return strings.Join(scopes, DefaultScopeSeparator)

@@ -5,7 +5,6 @@ package requests
 
 import (
 	"errors"
-	"log"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
@@ -50,7 +49,6 @@ func (req *UsernamePasswordRequest) Execute() (msalbase.TokenResponse, error) {
 		}
 		samlGrant, err := wsTrustResponse.GetSAMLAssertion(wsTrustEndpoint)
 		if err != nil {
-			log.Println("here")
 			return msalbase.TokenResponse{}, err
 		}
 		return req.webRequestManager.GetAccessTokenFromSamlGrant(req.authParameters, samlGrant)

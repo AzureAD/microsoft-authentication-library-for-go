@@ -46,6 +46,9 @@ func (req *deviceCodeRequest) Execute() (msalbase.TokenResponse, error) {
 }
 
 func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
+	// IntervalAddition is used in device code requests to increase the polling interval if there is a slow down error.
+	const IntervalAddition = 5
+
 	interval := deviceCodeResult.GetInterval()
 	timeRemaining := deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
 
@@ -62,7 +65,7 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult msalbase.Dev
 					timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
 					// If the device is polling too frequently, need to increase the polling interval
 				} else if isErrorSlowDown(err) {
-					interval += msalbase.IntervalAddition
+					interval += IntervalAddition
 				} else {
 					return msalbase.TokenResponse{}, err
 				}

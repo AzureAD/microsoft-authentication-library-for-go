@@ -155,7 +155,7 @@ func TestGetAccessTokenFromSAMLGrant(t *testing.T) {
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
 	samlGrant := wstrust.SamlTokenInfo{
-		AssertionType: wstrust.SamlV1,
+		AssertionType: msalbase.SAMLV1Grant,
 		Assertion:     "hello",
 	}
 	encodedParams := "assertion=aGVsbG8%3D&client_id=&client_info=1&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Asaml1_1-bearer&password=pass&" +

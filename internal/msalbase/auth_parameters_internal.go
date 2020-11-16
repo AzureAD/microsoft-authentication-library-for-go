@@ -5,10 +5,10 @@ package msalbase
 
 import "github.com/google/uuid"
 
-//AuthorizationType represents the type of token flow
+// AuthorizationType represents the type of token flow.
 type AuthorizationType int
 
-//These are all the types of token flows
+// These are all the types of token flows
 const (
 	AuthorizationTypeNone                  AuthorizationType = iota
 	AuthorizationTypeUsernamePassword                        = iota
@@ -34,7 +34,7 @@ type AuthParametersInternal struct {
 	AuthorizationType AuthorizationType
 }
 
-//CreateAuthParametersInternal creates an authorization parameters object
+// CreateAuthParametersInternal creates an authorization parameters object.
 func CreateAuthParametersInternal(clientID string, authorityInfo AuthorityInfo) AuthParametersInternal {
 	return AuthParametersInternal{
 		ClientID:      clientID,

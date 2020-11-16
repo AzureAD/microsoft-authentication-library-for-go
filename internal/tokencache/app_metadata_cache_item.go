@@ -27,7 +27,7 @@ func createAppMetadata(familyID, clientID, environment string) appMetadata {
 
 func (appMeta appMetadata) CreateKey() string {
 	return strings.Join(
-		[]string{msalbase.AppMetadataCacheID, appMeta.Environment, appMeta.ClientID},
+		[]string{"appmetadata", appMeta.Environment, appMeta.ClientID},
 		msalbase.CacheKeySeparator,
 	)
 }

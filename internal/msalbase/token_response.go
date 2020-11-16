@@ -47,12 +47,12 @@ type TokenResponse struct {
 	ClientInfo     ClientInfoJSONPayload
 }
 
-// HasAccessToken checks if the TokenResponse has an access token secret.
+// HasAccessToken checks if the TokenResponse has an access token.
 func (tr TokenResponse) HasAccessToken() bool {
 	return len(tr.AccessToken) > 0
 }
 
-// HasRefreshToken checks if the TokenResponse has an refresh token secret.
+// HasRefreshToken checks if the TokenResponse has an refresh token.
 func (tr TokenResponse) HasRefreshToken() bool {
 	return len(tr.RefreshToken) > 0
 }

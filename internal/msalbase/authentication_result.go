@@ -5,6 +5,8 @@ package msalbase
 
 import (
 	"errors"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -48,7 +50,7 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse Sto
 // TODO(jdoak): Make this a method on TokenResponse() that takes only 1 arge, Account.
 func CreateAuthenticationResult(tokenResponse TokenResponse, account Account) (AuthenticationResult, error) {
 	if len(tokenResponse.declinedScopes) > 0 {
-		return AuthenticationResult{}, errors.New("token response failed because declined scopes are present")
+		return AuthenticationResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.declinedScopes, ","))
 	}
 	return AuthenticationResult{
 		Account:        account,

@@ -43,7 +43,7 @@ func CreateDeviceCodeResponse(responseCode int, responseData string) (DeviceCode
 }
 
 //ToDeviceCodeResult converts the DeviceCodeResponse to a DeviceCodeResult
-func (dcr *DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) msalbase.DeviceCodeResult {
+func (dcr DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) msalbase.DeviceCodeResult {
 	expiresOn := time.Now().UTC().Add(time.Duration(dcr.ExpiresIn) * time.Second)
 	return msalbase.CreateDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
 }

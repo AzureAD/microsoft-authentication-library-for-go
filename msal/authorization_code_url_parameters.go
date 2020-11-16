@@ -28,9 +28,12 @@ type AuthorizationCodeURLParameters struct {
 // CreateAuthorizationCodeURLParameters creates an AuthorizationCodeURLParameters instance. These are the basic required parameters to create this URL.
 // However, if you want other parameters to be in the URL, you can just set the fields of the struct.
 func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, scopes []string) AuthorizationCodeURLParameters {
+	// DefaultAuthCodeResponseType is the response type for authorization code requests.
+	const DefaultAuthCodeResponseType = "code"
+
 	return AuthorizationCodeURLParameters{
 		ClientID:     clientID,
-		ResponseType: msalbase.DefaultAuthCodeResponseType,
+		ResponseType: DefaultAuthCodeResponseType,
 		RedirectURI:  redirectURI,
 		Scopes:       scopes,
 	}

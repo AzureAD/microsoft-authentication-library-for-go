@@ -44,6 +44,9 @@ func (cert *ClientCertificate) IsExpired() bool {
 // BuildJWT builds a JWT assertion using the client certificate parameters.
 // The parameters of the JWT are described in https://docs.microsoft.com/azure/active-directory/develop/active-directory-certificate-credentials .
 func (cert *ClientCertificate) BuildJWT(authParams AuthParametersInternal) (string, error) {
+	// CertificateExpirationTime is used when building an assertion JWT from a client certificate.
+	const CertificateExpirationTime = 600
+
 	now := time.Now().UTC().Unix()
 	expiresOn := now + CertificateExpirationTime
 	cert.expiresOn = expiresOn

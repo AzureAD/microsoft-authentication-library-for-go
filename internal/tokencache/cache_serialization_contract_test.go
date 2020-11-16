@@ -37,8 +37,16 @@ var (
 
 func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 	jsonFile, err := os.Open(testFile)
+	if err != nil {
+		panic(err)
+	}
+	defer jsonFile.Close()
+
 	testCache, err := ioutil.ReadAll(jsonFile)
-	jsonFile.Close()
+	if err != nil {
+		panic(err)
+	}
+
 	got := cacheSerializationContract{}
 	err = json.Unmarshal(testCache, &got)
 	if err != nil {

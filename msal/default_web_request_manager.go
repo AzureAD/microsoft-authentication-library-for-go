@@ -71,6 +71,10 @@ func (wrm *defaultWebRequestManager) GetMex(federationMetadataURL string) (wstru
 }
 
 func (wrm *defaultWebRequestManager) GetWsTrustResponse(authParameters msalbase.AuthParametersInternal, cloudAudienceURN string, endpoint wstrust.Endpoint) (*wstrust.Response, error) {
+	const (
+		SoapActionWSTrust2005 = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
+		SoapActionDefault     = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue"
+	)
 	var wsTrustRequestMessage string
 	var err error
 
@@ -91,9 +95,9 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(authParameters msalbase.
 	var soapAction string
 
 	if endpoint.EndpointVersion == wstrust.Trust2005 {
-		soapAction = msalbase.SoapActionWSTrust2005
+		soapAction = SoapActionWSTrust2005
 	} else {
-		soapAction = msalbase.SoapActionDefault
+		soapAction = SoapActionDefault
 	}
 
 	headers := map[string]string{
@@ -118,12 +122,12 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromSamlGrant(authParameters 
 	}
 
 	switch samlGrant.AssertionType {
-	case wstrust.SamlV1:
+	case msalbase.SAMLV1Grant:
 		decodedQueryParams["grant_type"] = msalbase.SAMLV1Grant
-	case wstrust.SamlV2:
+	case msalbase.SAMLV2Grant:
 		decodedQueryParams["grant_type"] = msalbase.SAMLV2Grant
 	default:
-		return msalbase.TokenResponse{}, errors.New("GetAccessTokenFromSamlGrant returned unknown saml assertion type: " + fmt.Sprint(samlGrant.AssertionType))
+		return msalbase.TokenResponse{}, fmt.Errorf("GetAccessTokenFromSamlGrant returned unknown saml assertion type: %s", samlGrant.AssertionType)
 	}
 
 	decodedQueryParams["assertion"] = base64.StdEncoding.WithPadding(base64.StdPadding).EncodeToString([]byte(samlGrant.Assertion)) //  .EncodeToString([]byte(samlGrant.GetAssertion())) // StringUtils::Base64RFCEncodePadded(samlGrant->GetAssertion());
@@ -223,15 +227,24 @@ func addContentTypeHeader(headers map[string]string, contentType contentType) {
 	}
 }
 
+const (
+	// HTTP Headers.
+	ProductHeaderName                    = "x-client-SKU"
+	ProductHeaderValue                   = "MSAL.Go"
+	OSHeaderName                         = "x-client-OS"
+	CorrelationIDHeaderName              = "client-request-id"
+	ReqCorrelationIDInResponseHeaderName = "return-client-request-id"
+)
+
 func getAadHeaders(authParameters msalbase.AuthParametersInternal) map[string]string {
 	// TODO(jdoak): Replace with http.Header
 	headers := map[string]string{}
 
-	headers[msalbase.ProductHeaderName] = msalbase.ProductHeaderValue
-	headers[msalbase.OSHeaderName] = runtime.GOOS
+	headers[ProductHeaderName] = ProductHeaderValue
+	headers[OSHeaderName] = runtime.GOOS
 	// headers["x-client-Ver"] = todo: client version here;
-	headers[msalbase.CorrelationIDHeaderName] = authParameters.CorrelationID
-	headers[msalbase.ReqCorrelationIDInResponseHeaderName] = "false"
+	headers[CorrelationIDHeaderName] = authParameters.CorrelationID
+	headers[ReqCorrelationIDInResponseHeaderName] = "false"
 	return headers
 }
 
