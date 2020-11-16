@@ -4,6 +4,7 @@
 package msalbase
 
 import (
+	"net/http"
 	"testing"
 
 	"github.com/kylelemons/godebug/pretty"
@@ -64,7 +65,7 @@ func TestCreateUserRealm(t *testing.T) {
 		{desc: "error: Cloud URN Realm", input: cloudURNRealm, err: true},
 	}
 	for _, test := range tests {
-		got, err := CreateUserRealm(test.input)
+		got, err := CreateUserRealm(createFakeResp(http.StatusOK, test.input))
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestCreateUserRealm(%s): got err == nil, want err != nil", test.desc)

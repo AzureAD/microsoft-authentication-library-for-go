@@ -4,7 +4,9 @@
 package requests
 
 import (
+	"context"
 	"fmt"
+	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
@@ -38,28 +40,28 @@ func CreateAuthCodeRequest(webRequestManager WebRequestManager, authParameters m
 }
 
 //Execute performs the token acquisition request and returns a token response or an error
-func (req *AuthCodeRequest) Execute() (msalbase.TokenResponse, error) {
+func (req *AuthCodeRequest) Execute(ctx context.Context) (msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
-	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
+	endpoints, err := resolutionManager.ResolveEndpoints(ctx, req.authParameters.AuthorityInfo, "")
 	if err != nil {
 		return msalbase.TokenResponse{}, fmt.Errorf("unable to resolve endpoints: %w", err)
 	}
 
 	req.authParameters.Endpoints = endpoints
-	params := make(map[string]string)
+	params := url.Values{}
 	if req.RequestType == AuthCodeConfidential {
 		if req.ClientCredential.GetCredentialType() == msalbase.ClientCredentialSecret {
-			params["client_secret"] = req.ClientCredential.GetSecret()
+			params.Set("client_secret", req.ClientCredential.GetSecret())
 		} else {
 			jwt, err := req.ClientCredential.GetAssertion().GetJWT(req.authParameters)
 			if err != nil {
 				return msalbase.TokenResponse{}, fmt.Errorf("unable to retrieve JWT from client credentials: %w", err)
 			}
-			params["client_assertion"] = jwt
-			params["client_assertion_type"] = msalbase.ClientAssertionGrant
+			params.Set("client_assertion", jwt)
+			params.Set("client_assertion_type", msalbase.ClientAssertionGrant)
 		}
 	}
-	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.Code, req.CodeChallenge, params)
+	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(ctx, req.authParameters, req.Code, req.CodeChallenge, params)
 	if err != nil {
 		return msalbase.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
 	}

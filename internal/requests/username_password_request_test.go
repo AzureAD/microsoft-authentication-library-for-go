@@ -3,6 +3,7 @@
 package requests
 
 import (
+	"context"
 	"errors"
 	"reflect"
 	"testing"
@@ -88,7 +89,7 @@ func TestUsernamePassExecuteWithManaged(t *testing.T) {
 	upWRM.On("GetUserRealm", usernamePassRequest.authParameters).Return(managedUserRealm, nil)
 	actualTokenResp := msalbase.TokenResponse{}
 	upWRM.On("GetAccessTokenFromUsernamePassword", usernamePassRequest.authParameters).Return(actualTokenResp, nil)
-	_, err := usernamePassRequest.Execute()
+	_, err := usernamePassRequest.Execute(context.Background())
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, instead it is %v", err)
 	}
@@ -100,7 +101,7 @@ func TestUsernamePassExecuteWithAcctError(t *testing.T) {
 	newUpWRM.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(createTDR(), nil)
 	newUpWRM.On("GetUserRealm", usernamePassRequest.authParameters).Return(errorUserRealm, nil)
-	_, acctError := usernamePassRequest.Execute()
+	_, acctError := usernamePassRequest.Execute(context.Background())
 	expectedErrorMessage := "unknown account type"
 	if acctError == nil {
 		t.Errorf("Error is nil, should be %v", errors.New(expectedErrorMessage))

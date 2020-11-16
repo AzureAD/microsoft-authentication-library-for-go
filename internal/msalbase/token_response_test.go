@@ -4,16 +4,30 @@
 package msalbase
 
 import (
+	"io/ioutil"
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
 
-var testTokenResponse = `{
+const (
+	testTokenResponse = `{
 	"access_token" : "secret",
 	"expires_in": 86399,
 	"ext_expires_in": 86399
 	}`
+
+	testTokenResponseErrors = `{"expires_in": 86399, "ext_expires_in": 86399}`
+)
+
+func createFakeResp(code int, body string) *http.Response {
+	return &http.Response{
+		Body:       ioutil.NopCloser(strings.NewReader(body)),
+		StatusCode: code,
+	}
+}
 
 func TestCreateTokenResponse(t *testing.T) {
 	scopes := []string{"openid", "profile"}
@@ -29,7 +43,7 @@ func TestCreateTokenResponse(t *testing.T) {
 		GrantedScopes: scopes,
 		ClientInfo:    ClientInfoJSONPayload{},
 	}
-	actualTokenResp, err := CreateTokenResponse(testAuthParams, 200, testTokenResponse)
+	actualTokenResp, err := CreateTokenResponse(testAuthParams, createFakeResp(http.StatusOK, testTokenResponse))
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
@@ -48,8 +62,7 @@ func TestCreateTokenResponseWithErrors(t *testing.T) {
 	testAuthParams := AuthParametersInternal{
 		Scopes: scopes,
 	}
-	testTokenResponseErrors := `{"expires_in": 86399, "ext_expires_in": 86399}`
-	_, err := CreateTokenResponse(testAuthParams, 200, testTokenResponseErrors)
+	_, err := CreateTokenResponse(testAuthParams, createFakeResp(http.StatusOK, testTokenResponseErrors))
 	if !reflect.DeepEqual(err.Error(), "response is missing access_token") {
 		t.Errorf("Actual error %s differs from expected error %s",
 			err.Error(), "response is missing access_token")

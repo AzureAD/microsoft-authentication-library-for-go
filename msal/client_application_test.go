@@ -4,7 +4,9 @@
 package msal
 
 import (
+	"context"
 	"errors"
+	"net/url"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
@@ -50,7 +52,7 @@ func TestAcquireTokenSilent(t *testing.T) {
 		"GetAccessTokenFromRefreshToken",
 		mock.AnythingOfType("msalbase.AuthParametersInternal"),
 		"secret",
-		make(map[string]string),
+		url.Values{},
 	).Return(tokenResp, nil)
 	cacheManager.On(
 		"CacheTokenResponse",
@@ -64,7 +66,7 @@ func TestAcquireTokenSilent(t *testing.T) {
 	rt.On("GetSecret").Return("secret")
 	id.On("GetSecret").Return("secret")
 
-	_, err := testClientApplication.acquireTokenSilent(silentParams)
+	_, err := testClientApplication.acquireTokenSilent(context.Background(), silentParams)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
@@ -75,14 +77,14 @@ func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 	req := new(requests.MockTokenRequest)
 	actualTokenResp := msalbase.TokenResponse{}
 	req.On("Execute").Return(actualTokenResp, nil)
-	_, err := testClientApplication.executeTokenRequestWithoutCacheWrite(req, testAuthParams)
+	_, err := testClientApplication.executeTokenRequestWithoutCacheWrite(context.Background(), req, testAuthParams)
 	if err != nil {
 		t.Fatalf("Error should be nil, instead it is %v", err)
 	}
 	mockError := errors.New("This is a mock error")
 	errorReq := new(requests.MockTokenRequest)
 	errorReq.On("Execute").Return(msalbase.TokenResponse{}, mockError)
-	_, err = testClientApplication.executeTokenRequestWithoutCacheWrite(errorReq, testAuthParams)
+	_, err = testClientApplication.executeTokenRequestWithoutCacheWrite(context.Background(), errorReq, testAuthParams)
 	if err != mockError {
 		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
 	}
@@ -93,7 +95,7 @@ func TestExecuteTokenRequestWithCacheWrite(t *testing.T) {
 	mockError := errors.New("This is a mock error")
 	errorReq := new(requests.MockTokenRequest)
 	errorReq.On("Execute").Return(msalbase.TokenResponse{}, mockError)
-	_, err := testClientApplication.executeTokenRequestWithCacheWrite(errorReq, testAuthParams)
+	_, err := testClientApplication.executeTokenRequestWithCacheWrite(context.Background(), errorReq, testAuthParams)
 	if err != mockError {
 		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
 	}

@@ -4,6 +4,7 @@
 package tokencache
 
 import (
+	"context"
 	"errors"
 	"time"
 
@@ -34,13 +35,13 @@ func (m defaultCacheManager) Deserialize(data []byte) error {
 	return m.storageManager.Deserialize(data)
 }
 
-func (m defaultCacheManager) TryReadCache(authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
+func (m defaultCacheManager) TryReadCache(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 	aadInstanceDiscovery := requests.CreateAadInstanceDiscovery(webRequestManager)
-	metadata, err := aadInstanceDiscovery.GetMetadataEntry(authParameters.AuthorityInfo)
+	metadata, err := aadInstanceDiscovery.GetMetadataEntry(ctx, authParameters.AuthorityInfo)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}

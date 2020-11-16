@@ -27,25 +27,25 @@ func createDeviceCodeRequest(ctx context.Context, wrm requests.WebRequestManager
 }
 
 // Execute performs the token acquisition request and returns a token response or an error
-func (req *deviceCodeRequest) Execute() (msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) Execute(ctx context.Context) (msalbase.TokenResponse, error) {
 	// Resolve authority endpoints
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(req.webRequestManager)
-	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
+	endpoints, err := resolutionManager.ResolveEndpoints(ctx, req.authParameters.AuthorityInfo, "")
 	if err != nil {
 		return msalbase.TokenResponse{}, err
 	}
 	req.authParameters.Endpoints = endpoints
-	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(req.authParameters)
+	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(ctx, req.authParameters)
 	if err != nil {
 		return msalbase.TokenResponse{}, err
 	}
 	// Let the user do what they want with the device code result
 	req.deviceCodeCallback(deviceCodeResult)
 	// Using the device code to get the token response
-	return req.waitForTokenResponse(deviceCodeResult)
+	return req.waitForTokenResponse(ctx, deviceCodeResult)
 }
 
-func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
 	// IntervalAddition is used in device code requests to increase the polling interval if there is a slow down error.
 	const IntervalAddition = 5
 
@@ -58,7 +58,7 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult msalbase.Dev
 		case <-req.cancelCtx.Done():
 			return msalbase.TokenResponse{}, errors.New("token request canceled")
 		default:
-			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
+			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(ctx, req.authParameters, deviceCodeResult)
 			if err != nil {
 				// If authorization is pending, update the time remaining
 				if isErrorAuthorizationPending(err) {

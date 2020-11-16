@@ -4,6 +4,7 @@
 package tokencache
 
 import (
+	"context"
 	"reflect"
 	"testing"
 	"time"
@@ -155,7 +156,7 @@ func TestTryReadCache(t *testing.T) {
 	testAccount := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	mockStorageManager.On("ReadAccount", "hid", []string{"env", "alias2"}, "realm").Return(testAccount, nil)
 	expectedStorageToken := msalbase.CreateStorageTokenResponse(accessTokenCacheItem, testRefreshToken, testIDToken, testAccount)
-	actualStorageToken, err := cacheManager.TryReadCache(authParameters, mockWebRequestManager)
+	actualStorageToken, err := cacheManager.TryReadCache(context.Background(), authParameters, mockWebRequestManager)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}

@@ -54,7 +54,7 @@ func NewConfidentialClientApplication(clientID string, clientCredential ClientCr
 		def := DefaultConfidentialClientApplicationOptions()
 		options = &def
 	}
-	clientApp, err := createClientApplication(clientID, options.Authority)
+	clientApp, err := createClientApplication(options.HTTPClient, clientID, options.Authority)
 	if err != nil {
 		return nil, err
 	}
@@ -78,8 +78,8 @@ func createInternalClientCredential(interfaceCred ClientCredentialProvider) (msa
 }
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (cca *ConfidentialClientApplication) CreateAuthCodeURL(authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
-	return cca.clientApplication.createAuthCodeURL(authCodeURLParameters)
+func (cca *ConfidentialClientApplication) CreateAuthCodeURL(ctx context.Context, authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
+	return cca.clientApplication.createAuthCodeURL(ctx, authCodeURLParameters)
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token
@@ -91,7 +91,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenSilent(ctx context.Context
 	if options != nil {
 		silentParameters.account = options.Account
 	}
-	return cca.clientApplication.acquireTokenSilent(silentParameters)
+	return cca.clientApplication.acquireTokenSilent(ctx, silentParameters)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
@@ -104,7 +104,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(ctx context.Con
 		authCodeParams.Code = options.Code
 		authCodeParams.CodeChallenge = options.CodeChallenge
 	}
-	return cca.clientApplication.acquireTokenByAuthCode(authCodeParams)
+	return cca.clientApplication.acquireTokenByAuthCode(ctx, authCodeParams)
 
 }
 
@@ -116,7 +116,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(ctx con
 	clientCredParams.augmentAuthenticationParameters(&authParams)
 
 	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
-	return cca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
+	return cca.clientApplication.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 }
 
 // Accounts gets all the accounts in the token cache.

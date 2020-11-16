@@ -6,6 +6,8 @@ package wstrust
 import (
 	"encoding/xml"
 	"errors"
+	"io/ioutil"
+	"net/http"
 	"strings"
 
 	log "github.com/sirupsen/logrus"
@@ -49,9 +51,14 @@ func updateEndpoint(cached *Endpoint, found Endpoint) bool {
 
 // TODO(jdoak): Refactor into smaller bits
 
-func CreateWsTrustMexDocument(responseData string) (MexDocument, error) {
+func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 	definitions := &definitions{}
-	var err = xml.Unmarshal([]byte(responseData), definitions)
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return MexDocument{}, err
+	}
+	err = xml.Unmarshal(body, definitions)
 	if err != nil {
 		return MexDocument{}, err
 	}

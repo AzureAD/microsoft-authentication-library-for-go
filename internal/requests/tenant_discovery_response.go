@@ -4,6 +4,9 @@
 package requests
 
 import (
+	"io/ioutil"
+	"net/http"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
@@ -34,17 +37,22 @@ func (r *TenantDiscoveryResponse) hasIssuer() bool {
 }
 
 //CreateTenantDiscoveryResponse creates a tenant discovery response instance from an HTTP response
-func CreateTenantDiscoveryResponse(responseCode int, responseData string) (TenantDiscoveryResponse, error) {
-	resp := TenantDiscoveryResponse{}
-	baseResponse, err := msalbase.CreateOAuthResponseBase(responseCode, responseData)
+func CreateTenantDiscoveryResponse(resp *http.Response) (TenantDiscoveryResponse, error) {
+	tdr := TenantDiscoveryResponse{}
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
-		return resp, err
+		return tdr, err
+	}
+	baseResponse, err := msalbase.CreateOAuthResponseBase(resp.StatusCode, body)
+	if err != nil {
+		return tdr, err
 	}
 
-	err = json.Unmarshal([]byte(responseData), &resp)
+	err = json.Unmarshal(body, &tdr)
 	if err != nil {
-		return resp, err
+		return tdr, err
 	}
-	resp.BaseResponse = baseResponse
-	return resp, nil
+	tdr.BaseResponse = baseResponse
+	return tdr, nil
 }

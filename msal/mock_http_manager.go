@@ -3,20 +3,17 @@
 
 package msal
 
-import "github.com/stretchr/testify/mock"
+import (
+	"net/http"
+
+	"github.com/stretchr/testify/mock"
+)
 
 type mockHTTPManager struct {
 	mock.Mock
 }
 
-//Get mocks the Get method of a HTTPManager
-func (mock *mockHTTPManager) Get(url string, requestHeaders map[string]string) (HTTPManagerResponse, error) {
-	args := mock.Called(url, requestHeaders)
-	return args.Get(0).(HTTPManagerResponse), args.Error(1)
-}
-
-//Post mocks the Post method of a HTTPManager
-func (mock *mockHTTPManager) Post(url string, body string, requestHeaders map[string]string) (HTTPManagerResponse, error) {
-	args := mock.Called(url, body, requestHeaders)
-	return args.Get(0).(HTTPManagerResponse), args.Error(1)
+func (m *mockHTTPManager) Do(req *http.Request) (*http.Response, error) {
+	args := m.Called(req)
+	return args.Get(0).(*http.Response), args.Error(1)
 }

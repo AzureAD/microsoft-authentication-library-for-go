@@ -5,6 +5,8 @@ package msalbase
 
 import (
 	"errors"
+	"io/ioutil"
+	"net/http"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 )
@@ -55,13 +57,17 @@ func (u UserRealm) validate() error {
 }
 
 // CreateUserRealm creates a UserRealm instance from the HTTP response
-func CreateUserRealm(responseData string) (UserRealm, error) {
+func CreateUserRealm(resp *http.Response) (UserRealm, error) {
 	u := UserRealm{}
-	err := json.Unmarshal([]byte(responseData), &u)
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
 	if err != nil {
 		return u, err
 	}
-
+	err = json.Unmarshal(body, &u)
+	if err != nil {
+		return u, err
+	}
 	return u, u.validate()
 }
 

@@ -48,7 +48,7 @@ func NewPublicClientApplication(clientID string, options *PublicClientApplicatio
 		def := DefaultPublicClientApplicationOptions()
 		options = &def
 	}
-	clientApp, err := createClientApplication(clientID, options.Authority)
+	clientApp, err := createClientApplication(options.HTTPClient, clientID, options.Authority)
 	if err != nil {
 		return nil, err
 	}
@@ -58,8 +58,8 @@ func NewPublicClientApplication(clientID string, options *PublicClientApplicatio
 }
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (pca *PublicClientApplication) CreateAuthCodeURL(authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
-	return pca.clientApplication.createAuthCodeURL(authCodeURLParameters)
+func (pca *PublicClientApplication) CreateAuthCodeURL(ctx context.Context, authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
+	return pca.clientApplication.createAuthCodeURL(ctx, authCodeURLParameters)
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token
@@ -70,7 +70,7 @@ func (pca *PublicClientApplication) AcquireTokenSilent(ctx context.Context, scop
 	if options != nil {
 		silentParameters.account = options.Account
 	}
-	return pca.clientApplication.acquireTokenSilent(silentParameters)
+	return pca.clientApplication.acquireTokenSilent(ctx, silentParameters)
 }
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
@@ -82,7 +82,7 @@ func (pca *PublicClientApplication) AcquireTokenByUsernamePassword(ctx context.C
 	usernamePasswordParameters.augmentAuthenticationParameters(&authParams)
 
 	req := requests.CreateUsernamePasswordRequest(pca.clientApplication.webRequestManager, authParams)
-	return pca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
+	return pca.clientApplication.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 }
 
 // AcquireTokenByDeviceCode acquires a security token from the authority, by acquiring a device code and using that to acquire the token.
@@ -92,7 +92,7 @@ func (pca *PublicClientApplication) AcquireTokenByDeviceCode(ctx context.Context
 	authParams := pca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
 	dcp.augmentAuthenticationParameters(&authParams)
 	req := createDeviceCodeRequest(dcp.cancelCtx, pca.clientApplication.webRequestManager, authParams, dcp.deviceCodeCallback)
-	return pca.clientApplication.executeTokenRequestWithCacheWrite(req, authParams)
+	return pca.clientApplication.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
@@ -104,7 +104,7 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(ctx context.Context, 
 		authCodeParams.Code = options.Code
 		authCodeParams.CodeChallenge = options.CodeChallenge
 	}
-	return pca.clientApplication.acquireTokenByAuthCode(authCodeParams)
+	return pca.clientApplication.acquireTokenByAuthCode(ctx, authCodeParams)
 }
 
 // Accounts gets all the accounts in the token cache.

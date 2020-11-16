@@ -4,6 +4,7 @@
 package msal
 
 import (
+	"context"
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
@@ -40,9 +41,9 @@ func CreateAuthorizationCodeURLParameters(clientID string, redirectURI string, s
 }
 
 //createURL creates the URL required to generate an authorization code from the parameters
-func (p AuthorizationCodeURLParameters) createURL(wrm requests.WebRequestManager, authParams msalbase.AuthParametersInternal) (string, error) {
+func (p AuthorizationCodeURLParameters) createURL(ctx context.Context, wrm requests.WebRequestManager, authParams msalbase.AuthParametersInternal) (string, error) {
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(wrm)
-	endpoints, err := resolutionManager.ResolveEndpoints(authParams.AuthorityInfo, "")
+	endpoints, err := resolutionManager.ResolveEndpoints(ctx, authParams.AuthorityInfo, "")
 	if err != nil {
 		return "", err
 	}

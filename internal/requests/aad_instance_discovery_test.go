@@ -4,6 +4,7 @@
 package requests
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -24,7 +25,7 @@ func TestGetMetadataEntry(t *testing.T) {
 		Metadata:                []InstanceDiscoveryMetadata{metEntry},
 	}
 	mockWRM.On("GetAadinstanceDiscoveryResponse", authInfo).Return(instanceResp, nil)
-	actualMet, err := instanceDisc.GetMetadataEntry(authInfo)
+	actualMet, err := instanceDisc.GetMetadataEntry(context.Background(), authInfo)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

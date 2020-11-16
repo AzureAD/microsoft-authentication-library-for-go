@@ -33,7 +33,7 @@ const (
 	// Endpoints.
 
 	AuthorizationEndpoint     = "https://%v/%v/oauth2/v2.0/authorize"
-	InstanceDiscoveryEndpoint = "https://%v/common/discovery/instance?%v"
+	InstanceDiscoveryEndpoint = "https://%v/common/discovery/instance"
 	DefaultHost               = "login.microsoftonline.com"
 
 	// HTTP Headers.

@@ -4,6 +4,7 @@
 package requests
 
 import (
+	"context"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
@@ -47,7 +48,7 @@ func TestClientCredentialReqExecuteWithAssertion(t *testing.T) {
 		"hello",
 	).Return(msalbase.TokenResponse{}, nil)
 
-	_, err = req.Execute()
+	_, err = req.Execute(context.Background())
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
@@ -81,7 +82,7 @@ func TestClientCredentialReqExecuteWithSecret(t *testing.T) {
 		"hello",
 	).Return(msalbase.TokenResponse{}, nil)
 
-	_, err = req.Execute()
+	_, err = req.Execute(context.Background())
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

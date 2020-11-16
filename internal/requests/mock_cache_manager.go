@@ -4,6 +4,8 @@
 package requests
 
 import (
+	"context"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/stretchr/testify/mock"
 )
@@ -13,7 +15,7 @@ type MockCacheManager struct {
 	mock.Mock
 }
 
-func (mock *MockCacheManager) TryReadCache(authParameters msalbase.AuthParametersInternal, webRequestManager WebRequestManager) (msalbase.StorageTokenResponse, error) {
+func (mock *MockCacheManager) TryReadCache(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager WebRequestManager) (msalbase.StorageTokenResponse, error) {
 	args := mock.Called(authParameters, webRequestManager)
 	return args.Get(0).(msalbase.StorageTokenResponse), args.Error(1)
 }
