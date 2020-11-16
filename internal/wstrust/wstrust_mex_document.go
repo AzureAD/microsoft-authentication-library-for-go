@@ -47,11 +47,13 @@ func updateEndpoint(cached *Endpoint, found Endpoint) bool {
 	return false
 }
 
-func CreateWsTrustMexDocument(responseData string) (*MexDocument, error) {
+// TODO(jdoak): Refactor into smaller bits
+
+func CreateWsTrustMexDocument(responseData string) (MexDocument, error) {
 	definitions := &definitions{}
 	var err = xml.Unmarshal([]byte(responseData), definitions)
 	if err != nil {
-		return nil, err
+		return MexDocument{}, err
 	}
 
 	policies := make(map[string]wsEndpointType)
@@ -88,7 +90,7 @@ func CreateWsTrustMexDocument(responseData string) (*MexDocument, error) {
 				} else if specVersion == trust2005Spec {
 					bindings[bindingName] = wsEndpointData{Trust2005, policy}
 				} else {
-					return nil, errors.New("found unknown spec version in mex document")
+					return MexDocument{}, errors.New("found unknown spec version in mex document")
 				}
 			}
 		}
@@ -125,12 +127,12 @@ func CreateWsTrustMexDocument(responseData string) (*MexDocument, error) {
 				}
 				break
 			default:
-				return nil, errors.New("found unknown port type in MEX document")
+				return MexDocument{}, errors.New("found unknown port type in MEX document")
 			}
 		}
 	}
 
-	doc := &MexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
+	doc := MexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
 	log.Trace("Created WsTrustMexDocument!")
 	return doc, nil
 }

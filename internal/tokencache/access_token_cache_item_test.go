@@ -4,9 +4,11 @@
 package tokencache
 
 import (
+	stdJSON "encoding/json"
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -62,55 +64,58 @@ func TestCreateKeyForAccessToken(t *testing.T) {
 	}
 }
 
-func TestAccessTokenPopulateFromJSONMap(t *testing.T) {
+func TestAccessTokenUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "testHID",
 		"environment":     "env",
 		"extra":           "this_is_extra",
 		"cached_at":       "100",
 	}
+	jsonData, err := stdJSON.Marshal(jsonMap)
+	if err != nil {
+		panic(err)
+	}
+
 	testCachedAt := "100"
 	want := &accessTokenCacheItem{
-		HomeAccountID:    testHID,
-		Environment:      env,
-		CachedAt:         testCachedAt,
-		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+		HomeAccountID: testHID,
+		Environment:   env,
+		CachedAt:      testCachedAt,
+		AdditionalFields: map[string]interface{}{
+			"extra": json.MarshalRaw("this_is_extra"),
+		},
 	}
 	got := &accessTokenCacheItem{}
-	err := got.populateFromJSONMap(jsonMap)
+	err = json.Unmarshal(jsonData, got)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(want, got); diff != "" {
-		t.Errorf("TestAccessTokenPopulateFromJSONMap(access tokens): -want/+got:\n %s", diff)
-	}
-
-	gotExtra := got.additionalFields["extra"].(string)
-	if gotExtra != "this_is_extra" {
-		t.Errorf("TestAccessTokenPopulateFromJSONMap(extra field): got %s, want %s", gotExtra, "this_is_extra")
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestAccessTokenUnmarshal(access tokens): -want/+got:\n %s", diff)
 	}
 }
 
-func TestAccessTokenConvertToJSONMap(t *testing.T) {
+func TestAccessTokenMarshal(t *testing.T) {
 	testCachedAt := "100"
 	accessToken := &accessTokenCacheItem{
-		HomeAccountID:    testHID,
-		Environment:      "",
-		CachedAt:         testCachedAt,
-		CredentialType:   credential,
-		additionalFields: map[string]interface{}{"extra": "this_is_extra"},
+		HomeAccountID:  testHID,
+		Environment:    "",
+		CachedAt:       testCachedAt,
+		CredentialType: credential,
+		AdditionalFields: map[string]interface{}{
+			"extra": json.MarshalRaw("this_is_extra"),
+		},
 	}
-	want := map[string]interface{}{
-		"home_account_id": "testHID",
-		"extra":           "this_is_extra",
-		"cached_at":       "100",
-		"credential_type": "AccessToken",
-	}
-	got, err := accessToken.convertToJSONMap()
+	b, err := json.Marshal(accessToken)
 	if err != nil {
-		t.Errorf("TestAccessTokenConvertToJSONMap(access token): got error %q", err)
+		t.Fatalf("TestAccessTokenMarshal: unable to marshal: %s", err)
 	}
-	if diff := pretty.Compare(want, got); diff != "" {
+	got := accessTokenCacheItem{}
+	if err := json.Unmarshal(b, &got); err != nil {
+		t.Fatalf("TestAccessTokenMarshal: unable to take JSON byte output and unmarshal: %s", err)
+	}
+
+	if diff := pretty.Compare(accessToken, got); diff != "" {
 		t.Errorf("TestAccessTokenConvertToJSONMap(access token): -want/+got:\n%s", diff)
 	}
 }

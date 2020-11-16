@@ -7,30 +7,24 @@ import "github.com/AzureAD/microsoft-authentication-library-for-go/internal/msal
 
 type applicationCommonParameters struct {
 	clientID      string
-	authorityInfo *msalbase.AuthorityInfo
+	authorityInfo msalbase.AuthorityInfo
 }
 
-func createApplicationCommonParameters(clientID string) *applicationCommonParameters {
-	p := &applicationCommonParameters{
-		clientID: clientID,
-	}
-	return p
-}
-
-func (p *applicationCommonParameters) setAadAuthority(authorityURI string) error {
-	authorityInfo, err := msalbase.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
+func createApplicationCommonParameters(clientID, authorityURI string) (*applicationCommonParameters, error) {
+	a, err := msalbase.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	p.authorityInfo = authorityInfo
-	return nil
+	return &applicationCommonParameters{
+		clientID:      clientID,
+		authorityInfo: a,
+	}, nil
 }
 
 func (p *applicationCommonParameters) validate() error {
 	return nil
 }
 
-func (p *applicationCommonParameters) createAuthenticationParameters() *msalbase.AuthParametersInternal {
-	params := msalbase.CreateAuthParametersInternal(p.clientID, p.authorityInfo)
-	return params
+func (p *applicationCommonParameters) createAuthenticationParameters() msalbase.AuthParametersInternal {
+	return msalbase.CreateAuthParametersInternal(p.clientID, p.authorityInfo)
 }

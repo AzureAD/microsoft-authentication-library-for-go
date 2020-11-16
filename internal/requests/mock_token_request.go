@@ -12,10 +12,7 @@ type MockTokenRequest struct {
 	mock.Mock
 }
 
-func (mock *MockTokenRequest) Execute() (*msalbase.TokenResponse, error) {
+func (mock *MockTokenRequest) Execute() (msalbase.TokenResponse, error) {
 	args := mock.Called()
-	if args.Get(0) != nil {
-		return args.Get(0).(*msalbase.TokenResponse), args.Error(1)
-	}
-	return nil, args.Error(1)
+	return args.Get(0).(msalbase.TokenResponse), args.Error(1)
 }

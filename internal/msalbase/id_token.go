@@ -4,13 +4,15 @@
 package msalbase
 
 import (
-	"encoding/json"
 	"errors"
+	"reflect"
 	"strings"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 )
 
-// IDToken consists of all the information used to validate a user
-// https://docs.microsoft.com/azure/active-directory/develop/id-tokens
+// IDToken consists of all the information used to validate a user.
+// https://docs.microsoft.com/azure/active-directory/develop/id-tokens .
 type IDToken struct {
 	PreferredUsername string `json:"preferred_username,omitempty"`
 	GivenName         string `json:"given_name,omitempty"`
@@ -29,32 +31,45 @@ type IDToken struct {
 	IssuedAt          int64  `json:"iat,omitempty"`
 	NotBefore         int64  `json:"nbf,omitempty"`
 	RawToken          string
+
+	AdditionalFields map[string]interface{}
 }
 
-// CreateIDToken creates an ID token instance from a JWT
-func CreateIDToken(jwt string) (*IDToken, error) {
+// CreateIDToken creates an ID token instance from a JWT.
+func CreateIDToken(jwt string) (IDToken, error) {
 	jwtArr := strings.Split(jwt, ".")
 	if len(jwtArr) < 2 {
-		return nil, errors.New("id token returned from server is invalid")
+		return IDToken{}, errors.New("id token returned from server is invalid")
 	}
 	jwtPart := jwtArr[1]
 	jwtDecoded, err := DecodeJWT(jwtPart)
 	if err != nil {
-		return nil, err
+		return IDToken{}, err
 	}
-	idToken := &IDToken{}
-	err = json.Unmarshal(jwtDecoded, idToken)
+	idToken := IDToken{}
+	err = json.Unmarshal(jwtDecoded, &idToken)
 	if err != nil {
-		return nil, err
+		return IDToken{}, err
 	}
 	idToken.RawToken = jwt
 	return idToken, nil
 }
 
-// GetLocalAccountID extracts an account's local account ID from an ID token
-func (idToken *IDToken) GetLocalAccountID() string {
-	if idToken.Oid != "" {
-		return idToken.Oid
+// IsZero indicates if the IDToken is the zero value.
+func (i IDToken) IsZero() bool {
+	v := reflect.ValueOf(i)
+	for i := 0; i < v.NumField(); i++ {
+		if !v.Field(i).IsZero() {
+			return false
+		}
 	}
-	return idToken.Subject
+	return true
+}
+
+// GetLocalAccountID extracts an account's local account ID from an ID token.
+func (i IDToken) GetLocalAccountID() string {
+	if i.Oid != "" {
+		return i.Oid
+	}
+	return i.Subject
 }

@@ -53,12 +53,19 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Access token is "+result.GetAccessToken())
 }
 
+// TODO(msal expert): This test doesn't do anything that I can tell. We call msal.NewPublicClientApplication(), but we
+// don't use it.  Someone needs to clarify to me how this is supposed to work.
+/*
 func acquireByAuthorizationCodePublic() {
 	options := msal.DefaultPublicClientApplicationOptions()
 	options.Authority = config.Authority
-	publicClientApp = msal.NewPublicClientApplication(config.ClientID, &options)
+	publicClientApp, err := msal.NewPublicClientApplication(config.ClientID, &options)
+	if err != nil {
+		panic(err)
+	}
 	http.HandleFunc("/", redirectToURL)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
+*/

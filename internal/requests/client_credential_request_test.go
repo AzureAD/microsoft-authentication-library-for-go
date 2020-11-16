@@ -10,50 +10,78 @@ import (
 )
 
 func TestClientCredentialReqExecuteWithAssertion(t *testing.T) {
-	testAuthorityInfo, _ := msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
+	testAuthorityInfo, err := msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
+	if err != nil {
+		panic(err)
+	}
 	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
 	wrm := new(MockWebRequestManager)
-	cred, _ := msalbase.CreateClientCredentialFromAssertion("hello")
+	cred, err := msalbase.CreateClientCredentialFromAssertion("hello")
+	if err != nil {
+		panic(err)
+	}
 	req := &ClientCredentialRequest{
 		webRequestManager: wrm,
 		authParameters:    testAuthParams,
 		clientCredential:  cred,
 	}
-	tdr := &TenantDiscoveryResponse{
+	tdr := TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
 		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
 		Issuer:                "https://login.microsoftonline.com/v2.0",
 	}
-	actualTokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetTenantDiscoveryResponse",
-		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
-	wrm.On("GetAccessTokenWithAssertion", testAuthParams, "hello").Return(actualTokenResp, nil)
-	_, err := req.Execute()
+	testAuthParams.Endpoints = msalbase.CreateAuthorityEndpoints(
+		tdr.AuthorizationEndpoint,
+		tdr.TokenEndpoint,
+		tdr.Issuer,
+		"login.microsoftonline.com",
+	)
+
+	wrm.On(
+		"GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
+	).Return(tdr, nil)
+	wrm.On(
+		"GetAccessTokenWithAssertion",
+		testAuthParams,
+		"hello",
+	).Return(msalbase.TokenResponse{}, nil)
+
+	_, err = req.Execute()
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
 }
 
 func TestClientCredentialReqExecuteWithSecret(t *testing.T) {
-	testAuthorityInfo, _ := msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
-	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
+	authParams := createACRTestParams()
 	wrm := new(MockWebRequestManager)
-	cred, _ := msalbase.CreateClientCredentialFromSecret("hello")
+	cred, err := msalbase.CreateClientCredentialFromSecret("hello")
+	if err != nil {
+		panic(err)
+	}
 	req := &ClientCredentialRequest{
 		webRequestManager: wrm,
-		authParameters:    testAuthParams,
+		authParameters:    authParams,
 		clientCredential:  cred,
 	}
-	tdr := &TenantDiscoveryResponse{
+	tdr := TenantDiscoveryResponse{
 		AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
 		TokenEndpoint:         "https://login.microsoftonline.com/v2.0/token",
 		Issuer:                "https://login.microsoftonline.com/v2.0",
 	}
-	actualTokenResp := &msalbase.TokenResponse{}
-	wrm.On("GetTenantDiscoveryResponse",
-		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(tdr, nil)
-	wrm.On("GetAccessTokenWithClientSecret", testAuthParams, "hello").Return(actualTokenResp, nil)
-	_, err := req.Execute()
+
+	wrm.On(
+		"GetTenantDiscoveryResponse",
+		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
+	).Return(tdr, nil)
+	wrm.On(
+		"GetAccessTokenWithClientSecret",
+		authParams,
+		"hello",
+	).Return(msalbase.TokenResponse{}, nil)
+
+	_, err = req.Execute()
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

@@ -13,10 +13,10 @@ import (
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type acquireTokenAuthCodeParameters struct {
-	commonParameters *acquireTokenCommonParameters
+	commonParameters acquireTokenCommonParameters
 	Code             string
 	CodeChallenge    string
-	clientCredential *msalbase.ClientCredential
+	clientCredential msalbase.ClientCredential
 	requestType      requests.AuthCodeRequestType
 }
 

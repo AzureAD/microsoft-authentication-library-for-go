@@ -8,7 +8,7 @@ import (
 	"time"
 )
 
-//DeviceCodeResult stores the response from the STS device code endpoint
+// DeviceCodeResult stores the response from the STS device code endpoint.
 type DeviceCodeResult struct {
 	userCode        string
 	deviceCode      string
@@ -20,10 +20,9 @@ type DeviceCodeResult struct {
 	scopes          []string
 }
 
-//CreateDeviceCodeResult creates a DeviceCodeResult instance
-func CreateDeviceCodeResult(userCode string, deviceCode string, verificationURL string,
-	expiresOn time.Time, interval int, message string, clientID string, scopes []string) *DeviceCodeResult {
-	return &DeviceCodeResult{userCode, deviceCode, verificationURL, expiresOn, interval, message, clientID, scopes}
+// CreateDeviceCodeResult creates a DeviceCodeResult instance.
+func CreateDeviceCodeResult(userCode, deviceCode, verificationURL string, expiresOn time.Time, interval int, message, clientID string, scopes []string) DeviceCodeResult {
+	return DeviceCodeResult{userCode, deviceCode, verificationURL, expiresOn, interval, message, clientID, scopes}
 }
 
 func (dcr DeviceCodeResult) String() string {
@@ -31,42 +30,42 @@ func (dcr DeviceCodeResult) String() string {
 
 }
 
-//GetUserCode returns the code the user needs to provide when authentication at the verification URI
-func (dcr *DeviceCodeResult) GetUserCode() string {
+// GetUserCode returns the code the user needs to provide when authentication at the verification URI.
+func (dcr DeviceCodeResult) GetUserCode() string {
 	return dcr.userCode
 }
 
-//GetDeviceCode returns the code used in the access token request
-func (dcr *DeviceCodeResult) GetDeviceCode() string {
+// GetDeviceCode returns the code used in the access token request.
+func (dcr DeviceCodeResult) GetDeviceCode() string {
 	return dcr.deviceCode
 }
 
-//GetVerificationURL returns the URL where user can authenticate
-func (dcr *DeviceCodeResult) GetVerificationURL() string {
+// GetVerificationURL returns the URL where user can authenticate.
+func (dcr DeviceCodeResult) GetVerificationURL() string {
 	return dcr.verificationURL
 }
 
-//GetExpiresOn returns the expiration time of device code in seconds
-func (dcr *DeviceCodeResult) GetExpiresOn() time.Time {
+// GetExpiresOn returns the expiration time of device code in seconds.
+func (dcr DeviceCodeResult) GetExpiresOn() time.Time {
 	return dcr.expiresOn
 }
 
-//GetInterval returns the interval at which the STS should be polled at
-func (dcr *DeviceCodeResult) GetInterval() int {
+// GetInterval returns the interval at which the STS should be polled at.
+func (dcr DeviceCodeResult) GetInterval() int {
 	return dcr.interval
 }
 
-//GetMessage returns the message which should be displayed to the user
-func (dcr *DeviceCodeResult) GetMessage() string {
+// GetMessage returns the message which should be displayed to the user.
+func (dcr DeviceCodeResult) GetMessage() string {
 	return dcr.message
 }
 
-//GetClientID returns the UUID issued by the authorization server for your application
-func (dcr *DeviceCodeResult) GetClientID() string {
+// GetClientID returns the UUID issued by the authorization server for your application.
+func (dcr DeviceCodeResult) GetClientID() string {
 	return dcr.clientID
 }
 
-//GetScopes returns the scopes used to request access a protected API
-func (dcr *DeviceCodeResult) GetScopes() []string {
+// GetScopes returns the scopes used to request access a protected API.
+func (dcr DeviceCodeResult) GetScopes() []string {
 	return dcr.scopes
 }

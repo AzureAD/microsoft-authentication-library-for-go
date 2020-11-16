@@ -4,11 +4,12 @@
 package msalbase
 
 import (
-	"encoding/json"
 	"errors"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 )
 
-//OAuthResponseBase stores common information when sending a request to get a token
+// OAuthResponseBase stores common information when sending a request to get a token.
 type OAuthResponseBase struct {
 	Error            string `json:"error"`
 	SubError         string `json:"suberror"`
@@ -16,6 +17,8 @@ type OAuthResponseBase struct {
 	ErrorCodes       []int  `json:"error_codes"`
 	CorrelationID    string `json:"correlation_id"`
 	Claims           string `json:"claims"`
+
+	AdditionalFields map[string]interface{}
 }
 
 var httpFailureCodes = map[int]string{
@@ -23,21 +26,21 @@ var httpFailureCodes = map[int]string{
 	500: "HTTP 500",
 }
 
-//CreateOAuthResponseBase creates a OAuthResponseBase instance from the HTTP client's response
-func CreateOAuthResponseBase(httpStatusCode int, responseData string) (*OAuthResponseBase, error) {
+// CreateOAuthResponseBase creates a OAuthResponseBase instance from the HTTP client's response.
+func CreateOAuthResponseBase(httpStatusCode int, responseData string) (OAuthResponseBase, error) {
 	// if the status code corresponds to an error, throw the error
 	if failMessage, ok := httpFailureCodes[httpStatusCode]; ok {
-		return nil, errors.New(failMessage)
+		return OAuthResponseBase{}, errors.New(failMessage)
 	}
 
-	payload := &OAuthResponseBase{}
-	err := json.Unmarshal([]byte(responseData), payload)
+	payload := OAuthResponseBase{}
+	err := json.Unmarshal([]byte(responseData), &payload)
 	if err != nil {
-		return nil, err
+		return OAuthResponseBase{}, err
 	}
 	//If the response consists of an error, throw that error
 	if payload.Error != "" {
-		return nil, errors.New(payload.Error)
+		return OAuthResponseBase{}, errors.New(payload.Error)
 	}
 	return payload, nil
 }

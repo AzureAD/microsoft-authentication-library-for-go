@@ -4,6 +4,8 @@
 package requests
 
 import (
+	"fmt"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
@@ -19,33 +21,30 @@ const (
 // AuthCodeRequest stores the values required to request a token from the authority using an authorization code
 type AuthCodeRequest struct {
 	webRequestManager WebRequestManager
-	authParameters    *msalbase.AuthParametersInternal
+	authParameters    msalbase.AuthParametersInternal
 	Code              string
 	CodeChallenge     string
-	ClientCredential  *msalbase.ClientCredential
+	ClientCredential  msalbase.ClientCredential
 	RequestType       AuthCodeRequestType
 }
 
 // CreateAuthCodeRequest creates an instance of AuthCodeRequest
-func CreateAuthCodeRequest(
-	webRequestManager WebRequestManager,
-	authParameters *msalbase.AuthParametersInternal,
-	reqType AuthCodeRequestType) *AuthCodeRequest {
-	req := &AuthCodeRequest{
+func CreateAuthCodeRequest(webRequestManager WebRequestManager, authParameters msalbase.AuthParametersInternal, reqType AuthCodeRequestType) *AuthCodeRequest {
+	return &AuthCodeRequest{
 		webRequestManager: webRequestManager,
 		authParameters:    authParameters,
 		RequestType:       reqType,
 	}
-	return req
 }
 
 //Execute performs the token acquisition request and returns a token response or an error
-func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
+func (req *AuthCodeRequest) Execute() (msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {
-		return nil, err
+		return msalbase.TokenResponse{}, fmt.Errorf("unable to resolve endpoints: %w", err)
 	}
+
 	req.authParameters.Endpoints = endpoints
 	params := make(map[string]string)
 	if req.RequestType == AuthCodeConfidential {
@@ -54,7 +53,7 @@ func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 		} else {
 			jwt, err := req.ClientCredential.GetAssertion().GetJWT(req.authParameters)
 			if err != nil {
-				return nil, err
+				return msalbase.TokenResponse{}, fmt.Errorf("unable to retrieve JWT from client credentials: %w", err)
 			}
 			params["client_assertion"] = jwt
 			params["client_assertion_type"] = msalbase.ClientAssertionGrant
@@ -62,7 +61,7 @@ func (req *AuthCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	}
 	tokenResponse, err := req.webRequestManager.GetAccessTokenFromAuthCode(req.authParameters, req.Code, req.CodeChallenge, params)
 	if err != nil {
-		return nil, err
+		return msalbase.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
 	}
 	return tokenResponse, nil
 }

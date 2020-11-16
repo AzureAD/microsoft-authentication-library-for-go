@@ -20,14 +20,14 @@ var certHeader = map[string]interface{}{
 	"typ": "JWT",
 }
 
-// ClientCertificate consists of the parameters to create a assertion from certificate parameters, which include a thumbprint and private key
+// ClientCertificate consists of the parameters to create a assertion from certificate parameters, which include a thumbprint and private key.
 type ClientCertificate struct {
 	thumbprint string
 	key        []byte
 	expiresOn  int64
 }
 
-// CreateClientCertificate creates a ClientCertificate instance from the thumbprint and private key
+// CreateClientCertificate creates a ClientCertificate instance from the thumbprint and private key.
 func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
 	cert := &ClientCertificate{
 		thumbprint: thumbprint,
@@ -36,14 +36,17 @@ func CreateClientCertificate(thumbprint string, key []byte) *ClientCertificate {
 	return cert
 }
 
-// IsExpired checks if the JWT created from the certificate is expired
+// IsExpired checks if the JWT created from the certificate is expired.
 func (cert *ClientCertificate) IsExpired() bool {
 	return time.Now().UTC().Unix() < cert.expiresOn
 }
 
-// BuildJWT builds a JWT assertion using the client certificate parameters
-// The parameters of the JWT are described in https://docs.microsoft.com/azure/active-directory/develop/active-directory-certificate-credentials
-func (cert *ClientCertificate) BuildJWT(authParams *AuthParametersInternal) (string, error) {
+// BuildJWT builds a JWT assertion using the client certificate parameters.
+// The parameters of the JWT are described in https://docs.microsoft.com/azure/active-directory/develop/active-directory-certificate-credentials .
+func (cert *ClientCertificate) BuildJWT(authParams AuthParametersInternal) (string, error) {
+	// CertificateExpirationTime is used when building an assertion JWT from a client certificate.
+	const CertificateExpirationTime = 600
+
 	now := time.Now().UTC().Unix()
 	expiresOn := now + CertificateExpirationTime
 	cert.expiresOn = expiresOn

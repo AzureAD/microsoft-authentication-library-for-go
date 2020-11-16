@@ -12,48 +12,47 @@ import (
 // UsernamePasswordRequest stuff
 type UsernamePasswordRequest struct {
 	webRequestManager WebRequestManager
-	authParameters    *msalbase.AuthParametersInternal
+	authParameters    msalbase.AuthParametersInternal
 }
 
 // CreateUsernamePasswordRequest stuff
-func CreateUsernamePasswordRequest(
-	webRequestManager WebRequestManager,
-	authParameters *msalbase.AuthParametersInternal) *UsernamePasswordRequest {
+func CreateUsernamePasswordRequest(webRequestManager WebRequestManager, authParameters msalbase.AuthParametersInternal) *UsernamePasswordRequest {
 	req := &UsernamePasswordRequest{webRequestManager, authParameters}
 	return req
 }
 
-// Execute stuff
-func (req *UsernamePasswordRequest) Execute() (*msalbase.TokenResponse, error) {
-
+func (req *UsernamePasswordRequest) Execute() (msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {
-		return nil, err
+		return msalbase.TokenResponse{}, err
 	}
 
 	req.authParameters.Endpoints = endpoints
 
 	userRealm, err := req.webRequestManager.GetUserRealm(req.authParameters)
 	if err != nil {
-		return nil, err
+		return msalbase.TokenResponse{}, err
 	}
 
 	switch accountType := userRealm.GetAccountType(); accountType {
 	case msalbase.Federated:
-		if mexDoc, err := req.webRequestManager.GetMex(userRealm.FederationMetadataURL); err == nil {
-			wsTrustEndpoint := mexDoc.UsernamePasswordEndpoint
-			if wsTrustResponse, err := req.webRequestManager.GetWsTrustResponse(req.authParameters, userRealm.CloudAudienceURN, &wsTrustEndpoint); err == nil {
-				if samlGrant, err := wsTrustResponse.GetSAMLAssertion(&wsTrustEndpoint); err == nil {
-					return req.webRequestManager.GetAccessTokenFromSamlGrant(req.authParameters, samlGrant)
-				}
-			}
+		mexDoc, err := req.webRequestManager.GetMex(userRealm.FederationMetadataURL)
+		if err != nil {
+			return msalbase.TokenResponse{}, err
 		}
-		// todo: check for ui interaction in api result...
-		return nil, err
+		wsTrustEndpoint := mexDoc.UsernamePasswordEndpoint
+		wsTrustResponse, err := req.webRequestManager.GetWsTrustResponse(req.authParameters, userRealm.CloudAudienceURN, wsTrustEndpoint)
+		if err != nil {
+			return msalbase.TokenResponse{}, err
+		}
+		samlGrant, err := wsTrustResponse.GetSAMLAssertion(wsTrustEndpoint)
+		if err != nil {
+			return msalbase.TokenResponse{}, err
+		}
+		return req.webRequestManager.GetAccessTokenFromSamlGrant(req.authParameters, samlGrant)
 	case msalbase.Managed:
 		return req.webRequestManager.GetAccessTokenFromUsernamePassword(req.authParameters)
-	default:
-		return nil, errors.New("unknown account type")
 	}
+	return msalbase.TokenResponse{}, errors.New("unknown account type")
 }

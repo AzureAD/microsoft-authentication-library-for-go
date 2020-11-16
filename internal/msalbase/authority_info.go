@@ -10,7 +10,7 @@ import (
 	"strings"
 )
 
-//AuthorityInfo consists of information about the authority
+// AuthorityInfo consists of information about the authority.
 type AuthorityInfo struct {
 	Host                  string
 	CanonicalAuthorityURI string
@@ -39,31 +39,30 @@ func getFirstPathSegment(u *url.URL) (string, error) {
 	return "", errors.New("authority does not have two segments")
 }
 
-func createAuthorityInfo(authorityType string, authorityURI string, validateAuthority bool) (*AuthorityInfo, error) {
-
+func createAuthorityInfo(authorityType string, authorityURI string, validateAuthority bool) (AuthorityInfo, error) {
 	u, err := url.Parse(authorityURI)
 	if err != nil {
-		return nil, err
+		return AuthorityInfo{}, err
 	}
 
 	host := u.Hostname()
 	userRealmURIPrefix := fmt.Sprintf("https://%v/common/userrealm/", host)
 	tenant, err := getFirstPathSegment(u)
 	if err != nil {
-		return nil, err
+		return AuthorityInfo{}, err
 	}
 
 	canonicalAuthorityURI := fmt.Sprintf("https://%v/%v/", host, tenant)
 
-	return &AuthorityInfo{host, canonicalAuthorityURI, authorityType, userRealmURIPrefix, validateAuthority, tenant}, nil
+	return AuthorityInfo{host, canonicalAuthorityURI, authorityType, userRealmURIPrefix, validateAuthority, tenant}, nil
 }
 
-//CreateAuthorityInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided
-func CreateAuthorityInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (*AuthorityInfo, error) {
+// CreateAuthorityInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
+func CreateAuthorityInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (AuthorityInfo, error) {
 	canonicalURI := canonicalizeAuthorityURI(authorityURI)
 	err := validateAuthorityURI(canonicalURI)
 	if err != nil {
-		return nil, err
+		return AuthorityInfo{}, err
 	}
 
 	// todo: check for other authority types...

@@ -13,26 +13,24 @@ type MockCacheManager struct {
 	mock.Mock
 }
 
-func (mock *MockCacheManager) TryReadCache(authParameters *msalbase.AuthParametersInternal,
-	webRequestManager WebRequestManager) (*msalbase.StorageTokenResponse, error) {
+func (mock *MockCacheManager) TryReadCache(authParameters msalbase.AuthParametersInternal, webRequestManager WebRequestManager) (msalbase.StorageTokenResponse, error) {
 	args := mock.Called(authParameters, webRequestManager)
-	return args.Get(0).(*msalbase.StorageTokenResponse), args.Error(1)
+	return args.Get(0).(msalbase.StorageTokenResponse), args.Error(1)
 }
 
-func (mock *MockCacheManager) CacheTokenResponse(authParameters *msalbase.AuthParametersInternal,
-	tokenResponse *msalbase.TokenResponse) (*msalbase.Account, error) {
+func (mock *MockCacheManager) CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
 	args := mock.Called(authParameters, tokenResponse)
-	return args.Get(0).(*msalbase.Account), args.Error(1)
+	return args.Get(0).(msalbase.Account), args.Error(1)
 }
 
-func (mock *MockCacheManager) DeleteCachedRefreshToken(authParameters *msalbase.AuthParametersInternal) error {
+func (mock *MockCacheManager) DeleteCachedRefreshToken(authParameters msalbase.AuthParametersInternal) error {
 	args := mock.Called(authParameters)
 	return args.Error(0)
 }
 
-func (mock *MockCacheManager) GetAllAccounts() []*msalbase.Account {
+func (mock *MockCacheManager) GetAllAccounts() ([]msalbase.Account, error) {
 	args := mock.Called()
-	return args.Get(0).([]*msalbase.Account)
+	return args.Get(0).([]msalbase.Account), args.Error(1)
 }
 
 func (mock *MockCacheManager) Serialize() (string, error) {

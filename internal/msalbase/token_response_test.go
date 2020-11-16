@@ -17,17 +17,17 @@ var testTokenResponse = `{
 
 func TestCreateTokenResponse(t *testing.T) {
 	scopes := []string{"openid", "profile"}
-	testAuthParams := &AuthParametersInternal{
+	testAuthParams := AuthParametersInternal{
 		Scopes: scopes,
 	}
 	expiresIn := time.Now().Add(time.Second * time.Duration(86399))
 	expTokenResponse := &TokenResponse{
-		baseResponse:  &OAuthResponseBase{},
+		baseResponse:  OAuthResponseBase{},
 		AccessToken:   "secret",
 		ExpiresOn:     expiresIn,
 		ExtExpiresOn:  expiresIn,
 		GrantedScopes: scopes,
-		ClientInfo:    &ClientInfoJSONPayload{},
+		ClientInfo:    ClientInfoJSONPayload{},
 	}
 	actualTokenResp, err := CreateTokenResponse(testAuthParams, 200, testTokenResponse)
 	if err != nil {
@@ -45,7 +45,7 @@ func TestCreateTokenResponse(t *testing.T) {
 
 func TestCreateTokenResponseWithErrors(t *testing.T) {
 	scopes := []string{"openid", "profile"}
-	testAuthParams := &AuthParametersInternal{
+	testAuthParams := AuthParametersInternal{
 		Scopes: scopes,
 	}
 	testTokenResponseErrors := `{"expires_in": 86399, "ext_expires_in": 86399}`
@@ -57,11 +57,11 @@ func TestCreateTokenResponseWithErrors(t *testing.T) {
 }
 
 func TestGetHomeAccountIDFromClientInfo(t *testing.T) {
-	clientInfo := &ClientInfoJSONPayload{
+	clientInfo := ClientInfoJSONPayload{
 		UID:  "uid",
 		Utid: "utid",
 	}
-	tokenResponse := &TokenResponse{ClientInfo: clientInfo}
+	tokenResponse := TokenResponse{ClientInfo: clientInfo}
 	expectedHid := "uid.utid"
 	actualHid := tokenResponse.GetHomeAccountIDFromClientInfo()
 	if !reflect.DeepEqual(actualHid, expectedHid) {

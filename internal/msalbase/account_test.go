@@ -4,8 +4,12 @@
 package msalbase
 
 import (
-	"reflect"
+	stdJSON "encoding/json"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 var (
@@ -17,13 +21,13 @@ var (
 	accUser  = "user"
 )
 
-var testAccount = &Account{
+var testAccount = Account{
 	HomeAccountID:     accHID,
 	PreferredUsername: accUser,
 	Environment:       accEnv,
 }
 
-func TestAccountPopulateFromJSONMap(t *testing.T) {
+func TestAccountUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "hid",
 		"environment":     "env",
@@ -31,19 +35,28 @@ func TestAccountPopulateFromJSONMap(t *testing.T) {
 		"authority_type":  "MSSTS",
 	}
 
-	actualAccount := &Account{}
-	err := actualAccount.PopulateFromJSONMap(jsonMap)
+	b, err := stdJSON.Marshal(jsonMap)
 	if err != nil {
-		t.Errorf("Error is supposed to be nil, but it is %v", err)
+		panic(err)
 	}
-	if actualAccount.HomeAccountID != accHID {
-		t.Errorf("Expected home account ID %s differs from actual home account ID %s", accHID, actualAccount.HomeAccountID)
+
+	want := Account{
+		HomeAccountID: accHID,
+		Environment:   accEnv,
+		AuthorityType: MSSTS,
+		AdditionalFields: map[string]interface{}{
+			"extra": json.MarshalRaw("this_is_extra"),
+		},
 	}
-	if actualAccount.Environment != accEnv {
-		t.Errorf("Expected environment %s differs from actual environment %s", accEnv, actualAccount.Environment)
+
+	got := Account{}
+	err = json.Unmarshal(b, &got)
+	if err != nil {
+		panic(err)
 	}
-	if actualAccount.AuthorityType != MSSTS {
-		t.Errorf("Actual auth type %v differs from expected auth type %v", actualAccount.AuthorityType, MSSTS)
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestAccountUnmarshal: -want/+got:\n%s", diff)
 	}
 }
 
@@ -60,17 +73,18 @@ func TestAccountCreateKey(t *testing.T) {
 	}
 }
 
-func TestAccountConvertToJSONMap(t *testing.T) {
-	acc := &Account{
+func TestAccountMarshal(t *testing.T) {
+	acc := Account{
 		HomeAccountID:     accHID,
 		Environment:       accEnv,
 		Realm:             accRealm,
 		LocalAccountID:    accLid,
 		AuthorityType:     authType,
 		PreferredUsername: accUser,
-		additionalFields:  map[string]interface{}{"extra": "extra"},
+		AdditionalFields:  map[string]interface{}{"extra": "extra"},
 	}
-	jsonMap := map[string]interface{}{
+
+	want := map[string]interface{}{
 		"home_account_id":  "hid",
 		"environment":      "env",
 		"realm":            "realm",
@@ -79,12 +93,18 @@ func TestAccountConvertToJSONMap(t *testing.T) {
 		"username":         "user",
 		"extra":            "extra",
 	}
-	actualJSONMap, err := acc.ConvertToJSONMap()
+	b, err := json.Marshal(acc)
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		panic(err)
 	}
-	if !reflect.DeepEqual(jsonMap, actualJSONMap) {
-		t.Errorf("JSON account %+v differs from expected JSON account %+v", jsonMap, actualJSONMap)
+
+	got := map[string]interface{}{}
+	if err := stdJSON.Unmarshal(b, &got); err != nil {
+		panic(err)
+	}
+
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestAccountMarshal: -want/+got:\n%s", diff)
 	}
 }
 

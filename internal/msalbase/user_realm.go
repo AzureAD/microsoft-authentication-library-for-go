@@ -4,14 +4,15 @@
 package msalbase
 
 import (
-	"encoding/json"
 	"errors"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 )
 
-//UserRealmAccountType refers to the type of user realm
+// UserRealmAccountType refers to the type of user realm.
 type UserRealmAccountType int
 
-//These are the different types of user realms
+// These are the different types of user realms.
 const (
 	Unknown UserRealmAccountType = iota
 	Federated
@@ -28,33 +29,40 @@ type UserRealm struct {
 	// required if accountType is Federated
 	FederationProtocol    string `json:"federation_protocol"`
 	FederationMetadataURL string `json:"federation_metadata_url"`
+
+	AdditionalFields map[string]interface{}
+}
+
+func (u UserRealm) validate() error {
+	switch "" {
+	case u.DomainName:
+		return errors.New("domain name of user realm is missing")
+	case u.CloudInstanceName:
+		return errors.New("cloud instance name of user realm is missing")
+	case u.CloudAudienceURN:
+		return errors.New("cloud Instance URN is missing")
+	}
+
+	if u.GetAccountType() == Federated {
+		switch "" {
+		case u.FederationProtocol:
+			return errors.New("federation protocol of user realm is missing")
+		case u.FederationMetadataURL:
+			return errors.New("federation metadata URL of user realm is missing")
+		}
+	}
+	return nil
 }
 
 // CreateUserRealm creates a UserRealm instance from the HTTP response
-func CreateUserRealm(responseData string) (*UserRealm, error) {
-	userRealm := &UserRealm{}
-	err := json.Unmarshal([]byte(responseData), userRealm)
+func CreateUserRealm(responseData string) (UserRealm, error) {
+	u := UserRealm{}
+	err := json.Unmarshal([]byte(responseData), &u)
 	if err != nil {
-		return nil, err
+		return u, err
 	}
-	if userRealm.GetAccountType() == Federated {
-		if userRealm.FederationProtocol == "" {
-			return nil, errors.New("federation protocol of user realm is missing")
-		}
-		if userRealm.FederationMetadataURL == "" {
-			return nil, errors.New("federation metadata URL of user realm is missing")
-		}
-	}
-	if userRealm.DomainName == "" {
-		return nil, errors.New("domain name of user realm is missing")
-	}
-	if userRealm.CloudInstanceName == "" {
-		return nil, errors.New("cloud instance name of user realm is missing")
-	}
-	if userRealm.CloudAudienceURN == "" {
-		return nil, errors.New("cloud Instance URN is missing")
-	}
-	return userRealm, nil
+
+	return u, u.validate()
 }
 
 //GetAccountType gets the type of user account

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	log "github.com/sirupsen/logrus"
 )
 
@@ -36,43 +37,37 @@ func CreateWsTrustResponse(responseData string) *Response {
 	// }
 }
 
-func (wsTrustResponse *Response) GetSAMLAssertion(endpoint *Endpoint) (*SamlTokenInfo, error) {
+func (wsTrustResponse *Response) GetSAMLAssertion(endpoint Endpoint) (SamlTokenInfo, error) {
 	switch endpoint.EndpointVersion {
 	case Trust2005:
-		return nil, errors.New("WS Trust 2005 support is not implemented")
+		return SamlTokenInfo{}, errors.New("WS Trust 2005 support is not implemented")
 	case Trust13:
-		{
-			log.Trace("Extracting assertion from WS-Trust 1.3 token:")
-
-			samldefinitions := &samldefinitions{}
-			var err = xml.Unmarshal([]byte(wsTrustResponse.responseData), samldefinitions)
-			if err != nil {
-				return nil, err
-			}
-
-			for _, tokenResponse := range samldefinitions.Body.RequestSecurityTokenResponseCollection.RequestSecurityTokenResponse {
-				token := tokenResponse.RequestedSecurityToken
-				if token.Assertion.XMLName.Local != "" {
-					log.Trace("Found valid assertion")
-					assertion := token.AssertionRawXML
-
-					samlVersion := token.Assertion.Saml
-					if samlVersion == "urn:oasis:names:tc:SAML:1.0:assertion" {
-						log.Trace("Retrieved WS-Trust 1.3 / SAML V1 assertion")
-						return createSamlTokenInfo(SamlV1, assertion), nil
-					}
-					if samlVersion == "urn:oasis:names:tc:SAML:2.0:assertion" {
-						log.Trace("Retrieved WS-Trust 1.3 / SAML V2 assertion")
-						return createSamlTokenInfo(SamlV2, assertion), nil
-					}
-
-					return nil, fmt.Errorf("Couldn't parse SAML assertion, version unknown: '%s'", samlVersion)
-				}
-			}
-
-			return nil, errors.New("couldn't find SAML assertion")
+		log.Trace("Extracting assertion from WS-Trust 1.3 token:")
+		samldefinitions := &samldefinitions{}
+		var err = xml.Unmarshal([]byte(wsTrustResponse.responseData), samldefinitions)
+		if err != nil {
+			return SamlTokenInfo{}, err
 		}
-	default:
-		return nil, errors.New("unknown WS-Trust version")
+
+		for _, tokenResponse := range samldefinitions.Body.RequestSecurityTokenResponseCollection.RequestSecurityTokenResponse {
+			token := tokenResponse.RequestedSecurityToken
+			if token.Assertion.XMLName.Local != "" {
+				log.Trace("Found valid assertion")
+				assertion := token.AssertionRawXML
+
+				samlVersion := token.Assertion.Saml
+				switch samlVersion {
+				case "urn:oasis:names:tc:SAML:1.0:assertion":
+					log.Trace("Retrieved WS-Trust 1.3 / SAML V1 assertion")
+					return createSamlTokenInfo(msalbase.SAMLV1Grant, assertion), nil
+				case "urn:oasis:names:tc:SAML:2.0:assertion":
+					log.Trace("Retrieved WS-Trust 1.3 / SAML V2 assertion")
+					return createSamlTokenInfo(msalbase.SAMLV2Grant, assertion), nil
+				}
+				return SamlTokenInfo{}, fmt.Errorf("Couldn't parse SAML assertion, version unknown: '%s'", samlVersion)
+			}
+		}
+		return SamlTokenInfo{}, errors.New("couldn't find SAML assertion")
 	}
+	return SamlTokenInfo{}, errors.New("unknown WS-Trust version")
 }

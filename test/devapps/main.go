@@ -8,17 +8,20 @@ import (
 
 const port = "3000"
 
-var config = createConfig("config.json")
-var publicClientApp *msal.PublicClientApplication
-var err error
-var cacheAccessor = &SampleCacheAccessor{"serialized_cache.json"}
+var (
+	config          = createConfig("config.json")
+	publicClientApp *msal.PublicClientApplication
+	cacheAccessor   = &SampleCacheAccessor{"serialized_cache.json"}
+)
 
 func main() {
+	// TODO(jdoak): This is pretty yikes. At least we should use the flag package.
 	exampleType := os.Args[1]
 	if exampleType == "1" {
 		acquireTokenDeviceCode()
-	} else if exampleType == "2" {
+		/*} else if exampleType == "2" {
 		acquireByAuthorizationCodePublic()
+		*/
 	} else if exampleType == "3" {
 		acquireByUsernamePasswordPublic()
 	} else if exampleType == "4" {

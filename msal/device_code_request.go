@@ -15,31 +15,29 @@ import (
 // deviceCodeRequest stores the values required to request a token from the authority using device code flow
 type deviceCodeRequest struct {
 	webRequestManager  requests.WebRequestManager
-	authParameters     *msalbase.AuthParametersInternal
+	authParameters     msalbase.AuthParametersInternal
 	deviceCodeCallback func(DeviceCodeResultProvider)
 	cancelCtx          context.Context
 }
 
-func createDeviceCodeRequest(cancelCtx context.Context,
-	webRequestManager requests.WebRequestManager,
-	authParameters *msalbase.AuthParametersInternal,
-	deviceCodeCallback func(DeviceCodeResultProvider)) *deviceCodeRequest {
-	req := &deviceCodeRequest{webRequestManager, authParameters, deviceCodeCallback, cancelCtx}
-	return req
+// TODO(jdoak): Make deviceCodeCallback func(DeviceCodeResultProvider) a type.
+
+func createDeviceCodeRequest(ctx context.Context, wrm requests.WebRequestManager, params msalbase.AuthParametersInternal, dcc func(DeviceCodeResultProvider)) *deviceCodeRequest {
+	return &deviceCodeRequest{wrm, params, dcc, ctx}
 }
 
 // Execute performs the token acquisition request and returns a token response or an error
-func (req *deviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) Execute() (msalbase.TokenResponse, error) {
 	// Resolve authority endpoints
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
 	if err != nil {
-		return nil, err
+		return msalbase.TokenResponse{}, err
 	}
 	req.authParameters.Endpoints = endpoints
 	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(req.authParameters)
 	if err != nil {
-		return nil, err
+		return msalbase.TokenResponse{}, err
 	}
 	// Let the user do what they want with the device code result
 	req.deviceCodeCallback(deviceCodeResult)
@@ -47,7 +45,9 @@ func (req *deviceCodeRequest) Execute() (*msalbase.TokenResponse, error) {
 	return req.waitForTokenResponse(deviceCodeResult)
 }
 
-func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.DeviceCodeResult) (*msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
+	// IntervalAddition is used in device code requests to increase the polling interval if there is a slow down error.
+	const IntervalAddition = 5
 
 	interval := deviceCodeResult.GetInterval()
 	timeRemaining := deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
@@ -56,7 +56,7 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 		select {
 		// If this request needs to be canceled, this context is used
 		case <-req.cancelCtx.Done():
-			return nil, errors.New("token request canceled")
+			return msalbase.TokenResponse{}, errors.New("token request canceled")
 		default:
 			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(req.authParameters, deviceCodeResult)
 			if err != nil {
@@ -65,9 +65,9 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 					timeRemaining = deviceCodeResult.GetExpiresOn().Sub(time.Now().UTC())
 					// If the device is polling too frequently, need to increase the polling interval
 				} else if isErrorSlowDown(err) {
-					interval += msalbase.IntervalAddition
+					interval += IntervalAddition
 				} else {
-					return nil, err
+					return msalbase.TokenResponse{}, err
 				}
 			} else {
 				return tokenResponse, nil
@@ -76,5 +76,5 @@ func (req *deviceCodeRequest) waitForTokenResponse(deviceCodeResult *msalbase.De
 			time.Sleep(time.Duration(interval) * time.Second)
 		}
 	}
-	return nil, errors.New("verification code expired before contacting the server")
+	return msalbase.TokenResponse{}, errors.New("verification code expired before contacting the server")
 }

@@ -73,37 +73,43 @@ func acquireByAuthorizationCodeConfidential() {
 		log.Fatal(err)
 	}
 	defer file.Close()
+
 	key, err := ioutil.ReadAll(file)
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	certificate, err := msal.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
 	if err != nil {
 		log.Fatal(err)
 	}
+
 	options := msal.DefaultConfidentialClientApplicationOptions()
 	options.Accessor = cacheAccessor
 	options.Authority = confidentialConfig.Authority
-	confidentialClientAuthCode, err = msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
+	confidentialClientAuthCode, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
 	if err != nil {
 		log.Fatal(err)
 	}
-	var userAccount *msalbase.Account
-	accounts := confidentialClientAuthCode.Accounts()
-	for _, account := range accounts {
+	var userAccount msalbase.Account
+	for _, account := range confidentialClientAuthCode.Accounts() {
 		if account.GetUsername() == confidentialConfig.Username {
 			userAccount = account
 		}
 	}
-	if userAccount != nil {
-		result, err := confidentialClientAuthCode.AcquireTokenSilent(context.Background(), confidentialConfig.Scopes, &msal.AcquireTokenSilentOptions{
+	result, err := confidentialClientAuthCode.AcquireTokenSilent(
+		context.Background(),
+		confidentialConfig.Scopes,
+		&msal.AcquireTokenSilentOptions{
 			Account: userAccount,
-		})
-		if err == nil {
-			fmt.Printf("Access token is " + result.GetAccessToken())
-			accessToken = result.GetAccessToken()
-		}
+		},
+	)
+	if err != nil {
+		panic(err)
 	}
+	fmt.Printf("Access token is " + result.GetAccessToken())
+	accessToken = result.GetAccessToken()
+
 	http.HandleFunc("/", redirectToURLConfidential)
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getTokenConfidential)

@@ -7,13 +7,13 @@ import "github.com/AzureAD/microsoft-authentication-library-for-go/internal/msal
 
 // AcquireTokenClientCredentialParameters contains the parameters required to acquire an access token using the client credential flow.
 type acquireTokenClientCredentialParameters struct {
-	commonParameters *acquireTokenCommonParameters
+	commonParameters acquireTokenCommonParameters
 }
 
 // CreateAcquireTokenClientCredentialParameters creates an AcquireTokenClientCredentialParameters instance.
 // Pass in the scopes required.
-func createAcquireTokenClientCredentialParameters(scopes []string) *acquireTokenClientCredentialParameters {
-	return &acquireTokenClientCredentialParameters{
+func createAcquireTokenClientCredentialParameters(scopes []string) acquireTokenClientCredentialParameters {
+	return acquireTokenClientCredentialParameters{
 		commonParameters: createAcquireTokenCommonParameters(scopes),
 	}
 }

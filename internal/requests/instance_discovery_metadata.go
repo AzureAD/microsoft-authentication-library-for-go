@@ -8,10 +8,12 @@ type InstanceDiscoveryMetadata struct {
 	PreferredCache          string   `json:"preferred_cache"`
 	TenantDiscoveryEndpoint string   `json:"tenant_discovery_endpoint"`
 	Aliases                 []string `json:"aliases"`
+
+	AdditionalFields map[string]interface{}
 }
 
-func createInstanceDiscoveryMetadata(preferredNetwork string, preferredCache string) *InstanceDiscoveryMetadata {
-	return &InstanceDiscoveryMetadata{
+func createInstanceDiscoveryMetadata(preferredNetwork string, preferredCache string) InstanceDiscoveryMetadata {
+	return InstanceDiscoveryMetadata{
 		PreferredNetwork: preferredNetwork,
 		PreferredCache:   preferredCache,
 		Aliases:          []string{},

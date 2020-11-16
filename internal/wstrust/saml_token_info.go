@@ -3,19 +3,11 @@
 
 package wstrust
 
-type SamlAssertionType int
-
-const (
-	SamlV1 SamlAssertionType = iota
-	SamlV2
-)
-
 type SamlTokenInfo struct {
-	AssertionType SamlAssertionType
+	AssertionType string // Should be either constants SAMLV1Grant or SAMLV2Grant.
 	Assertion     string
 }
 
-func createSamlTokenInfo(assertionType SamlAssertionType, assertion string) *SamlTokenInfo {
-	tokenInfo := &SamlTokenInfo{assertionType, assertion}
-	return tokenInfo
+func createSamlTokenInfo(assertionType, assertion string) SamlTokenInfo {
+	return SamlTokenInfo{assertionType, assertion}
 }
