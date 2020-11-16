@@ -39,7 +39,6 @@ func (req *UsernamePasswordRequest) Execute() (msalbase.TokenResponse, error) {
 	case msalbase.Federated:
 		mexDoc, err := req.webRequestManager.GetMex(userRealm.FederationMetadataURL)
 		if err != nil {
-			// TODO(someone): check for ui interaction in api result...
 			return msalbase.TokenResponse{}, err
 		}
 		wsTrustEndpoint := mexDoc.UsernamePasswordEndpoint

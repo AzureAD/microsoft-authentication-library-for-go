@@ -31,7 +31,8 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse Sto
 	accessToken := storageTokenResponse.AccessToken.GetSecret()
 	expiresOn, err := ConvertStrUnixToUTCTime(storageTokenResponse.AccessToken.GetExpiresOn())
 	if err != nil {
-		return AuthenticationResult{}, errors.New("access token in cache expires at an invalid time")
+		return AuthenticationResult{},
+			fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.GetExpiresOn())
 	}
 	grantedScopes := SplitScopes(storageTokenResponse.AccessToken.GetScopes())
 
