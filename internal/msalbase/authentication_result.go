@@ -54,12 +54,11 @@ func CreateAuthenticationResult(tokenResponse TokenResponse, account Account) (A
 		return AuthenticationResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.declinedScopes, ","))
 	}
 	return AuthenticationResult{
-		Account:        account,
-		idToken:        tokenResponse.IDToken,
-		AccessToken:    tokenResponse.AccessToken,
-		ExpiresOn:      tokenResponse.ExpiresOn,
-		GrantedScopes:  tokenResponse.GrantedScopes,
-		DeclinedScopes: nil,
+		Account:       account,
+		idToken:       tokenResponse.IDToken,
+		AccessToken:   tokenResponse.AccessToken,
+		ExpiresOn:     tokenResponse.ExpiresOn,
+		GrantedScopes: tokenResponse.GrantedScopes,
 	}, nil
 }
 
