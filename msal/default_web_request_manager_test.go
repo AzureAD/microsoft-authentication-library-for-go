@@ -62,6 +62,17 @@ func createFakeRequest(method, u string) *http.Request {
 	return req
 }
 
+func createFakeRequestWithBody(method, u, b string) *http.Request {
+	req, err := http.NewRequest(method, u, strings.NewReader(b))
+	if err != nil {
+		panic(err)
+	}
+	// reflect.DeepEqual() is used under-the-hood and will always return false when
+	// comparing non-nil funcs.  set this to nil to work around this behavior.
+	req.GetBody = nil
+	return req
+}
+
 func createFakeResponse(status int, body string) *http.Response {
 	resp := &http.Response{
 		StatusCode: status,
@@ -124,8 +135,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 	paramMap.Set("password", "pass")
 	paramMap.Set("client_id", "")
 	paramMap.Set("client_info", "1")
-	req := createFakeRequest(http.MethodPost, tokenEndpointURL)
-	req.URL.RawQuery = paramMap.Encode()
+	req := createFakeRequestWithBody(http.MethodPost, tokenEndpointURL, paramMap.Encode())
 	addTestHeaders(req, testHeadersWURLUTF8)
 	mockHTTPManager.On("Do", req).Return(response, nil)
 
@@ -163,9 +173,8 @@ func TestGetAccessTokenFromSAMLGrant(t *testing.T) {
 		AssertionType: msalbase.SAMLV1Grant,
 		Assertion:     "hello",
 	}
-	req := createFakeRequest(http.MethodPost, tokenEndpointURL)
-	req.URL.RawQuery = "assertion=aGVsbG8%3D&client_id=&client_info=1&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Asaml1_1-bearer&password=pass&" +
-		"scope=openid+offline_access+profile&username=username"
+	req := createFakeRequestWithBody(http.MethodPost, tokenEndpointURL, "assertion=aGVsbG8%3D&client_id=&client_info=1&grant_type=urn%3Aietf%3Aparams%3Aoauth%3Agrant-type%3Asaml1_1-bearer&password=pass&"+
+		"scope=openid+offline_access+profile&username=username")
 	addTestHeaders(req, testHeadersWURLUTF8)
 	mockHTTPManager.On("Do", req).Return(response, nil)
 
@@ -187,8 +196,7 @@ func TestGetDeviceCodeResult(t *testing.T) {
 		Endpoints: testAuthorityEndpoints,
 	}
 	response := createFakeResponse(http.StatusOK, `{"user_code":"user", "device_code":"dev"}`)
-	req := createFakeRequest(http.MethodPost, deviceCodeEndpointURL)
-	req.URL.RawQuery = "client_id=&scope=openid+offline_access+profile"
+	req := createFakeRequestWithBody(http.MethodPost, deviceCodeEndpointURL, "client_id=&scope=openid+offline_access+profile")
 	addTestHeaders(req, testHeadersWURLUTF8)
 	mockHTTPManager.On("Do", req).Return(response, nil)
 
@@ -212,8 +220,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
-	req := createFakeRequest(http.MethodPost, tokenEndpointURL)
-	req.URL.RawQuery = "client_id=&client_info=1&code=code&code_verifier=ver&grant_type=authorization_code&redirect_uri=&scope=openid+offline_access+profile"
+	req := createFakeRequestWithBody(http.MethodPost, tokenEndpointURL, "client_id=&client_info=1&code=code&code_verifier=ver&grant_type=authorization_code&redirect_uri=&scope=openid+offline_access+profile")
 	addTestHeaders(req, testHeadersWURLUTF8)
 	mockHTTPManager.On("Do", req).Return(response, nil)
 
@@ -240,8 +247,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
-	req := createFakeRequest(http.MethodPost, tokenEndpointURL)
-	req.URL.RawQuery = "client_id=&client_info=1&grant_type=refresh_token&refresh_token=secret&scope=openid+offline_access+profile"
+	req := createFakeRequestWithBody(http.MethodPost, tokenEndpointURL, "client_id=&client_info=1&grant_type=refresh_token&refresh_token=secret&scope=openid+offline_access+profile")
 	addTestHeaders(req, testHeadersWURLUTF8)
 	mockHTTPManager.On("Do", req).Return(response, nil)
 
@@ -268,8 +274,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
-	req := createFakeRequest(http.MethodPost, tokenEndpointURL)
-	req.URL.RawQuery = "client_id=&client_secret=csecret&grant_type=client_credentials&scope=openid+offline_access+profile"
+	req := createFakeRequestWithBody(http.MethodPost, tokenEndpointURL, "client_id=&client_secret=csecret&grant_type=client_credentials&scope=openid+offline_access+profile")
 	addTestHeaders(req, testHeadersWURLUTF8)
 	mockHTTPManager.On("Do", req).Return(response, nil)
 
@@ -296,8 +301,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 		ExpiresOn:    time.Now().Add(time.Second * time.Duration(10)),
 		ExtExpiresOn: time.Now().Add(time.Second * time.Duration(10)),
 	}
-	req := createFakeRequest(http.MethodPost, tokenEndpointURL)
-	req.URL.RawQuery = "client_assertion=assertion&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_info=1&grant_type=client_credentials&scope=openid+offline_access+profile"
+	req := createFakeRequestWithBody(http.MethodPost, tokenEndpointURL, "client_assertion=assertion&client_assertion_type=urn%3Aietf%3Aparams%3Aoauth%3Aclient-assertion-type%3Ajwt-bearer&client_info=1&grant_type=client_credentials&scope=openid+offline_access+profile")
 	addTestHeaders(req, testHeadersWURLUTF8)
 	mockHTTPManager.On("Do", req).Return(response, nil)
 	actualToken, err := wrm.GetAccessTokenWithAssertion(context.Background(), authParams, "assertion")

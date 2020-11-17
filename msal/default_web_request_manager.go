@@ -168,12 +168,11 @@ func (wrm *defaultWebRequestManager) GetDeviceCodeResult(ctx context.Context, au
 
 	deviceCodeEndpoint := strings.Replace(authParameters.Endpoints.TokenEndpoint, "token", "devicecode", -1)
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, deviceCodeEndpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, deviceCodeEndpoint, strings.NewReader(decodedQueryParams.Encode()))
 	if err != nil {
 		return msalbase.DeviceCodeResult{}, err
 	}
 
-	req.URL.RawQuery = decodedQueryParams.Encode()
 	addAADHeaders(req.Header, authParameters)
 	addContentTypeHeader(req.Header, urlEncodedUtf8)
 
