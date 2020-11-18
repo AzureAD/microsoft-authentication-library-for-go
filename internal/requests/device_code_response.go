@@ -29,7 +29,6 @@ type DeviceCodeResponse struct {
 }
 
 // CreateDeviceCodeResponse creates a deviceCodeResponse instance from HTTP response.
-// TODO(jdoak): look at responseData and see if we can get it originally from []byte instead.
 func CreateDeviceCodeResponse(resp *http.Response) (DeviceCodeResponse, error) {
 	dcResponse := DeviceCodeResponse{}
 	body, err := ioutil.ReadAll(resp.Body)
