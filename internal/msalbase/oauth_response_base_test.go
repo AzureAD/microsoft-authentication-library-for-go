@@ -17,10 +17,9 @@ func TestCreateOAuthResponseBase(t *testing.T) {
 	if err.Error() != actualError.Error() {
 		t.Errorf("Actual error %v differs from expected error %v", err, actualError)
 	}
-	expectedErr := errors.New("invalid request: missing payload content")
 	_, err = CreateOAuthResponseBase(300, []byte(oauthResponseWithError))
-	if err.Error() != expectedErr.Error() {
-		t.Errorf("Actual error %v differs from expected error %v", err, expectedErr)
+	if err == nil {
+		t.Error("Unexpected nil error")
 	}
 	_, err = CreateOAuthResponseBase(200, []byte(oauthResponse))
 	if err != nil {

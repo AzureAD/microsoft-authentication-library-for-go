@@ -52,12 +52,12 @@ func updateEndpoint(cached *Endpoint, found Endpoint) bool {
 // TODO(jdoak): Refactor into smaller bits
 
 func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
-	definitions := &definitions{}
 	body, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
 		return MexDocument{}, err
 	}
+	definitions := &definitions{}
 	err = xml.Unmarshal(body, definitions)
 	if err != nil {
 		return MexDocument{}, err
