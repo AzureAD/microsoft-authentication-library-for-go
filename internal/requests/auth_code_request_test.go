@@ -4,6 +4,8 @@
 package requests
 
 import (
+	"context"
+	"net/url"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
@@ -56,8 +58,8 @@ func TestAuthCodeReqExecutePublic(t *testing.T) {
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration").Return(createTDR(), nil)
 	wrm.On("GetAccessTokenFromAuthCode", authCodeRequest.authParameters, authCodeRequest.Code,
-		authCodeRequest.CodeChallenge, map[string]string{}).Return(actualTokenResp, nil)
-	_, err := authCodeRequest.Execute()
+		authCodeRequest.CodeChallenge, url.Values{}).Return(actualTokenResp, nil)
+	_, err := authCodeRequest.Execute(context.Background())
 	if err != nil {
 		t.Errorf("TestAuthCodeReqExecutePublic: got err == %s, want err == nil", err)
 	}
@@ -83,18 +85,18 @@ func TestAuthCodeReqExecuteAssertion(t *testing.T) {
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(createTDR(), nil)
 
+	queryParams := url.Values{}
+	queryParams.Set("client_assertion", "hello")
+	queryParams.Set("client_assertion_type", msalbase.ClientAssertionGrant)
 	wrm.On(
 		"GetAccessTokenFromAuthCode",
 		authCodeRequest.authParameters,
 		authCodeRequest.Code,
 		authCodeRequest.CodeChallenge,
-		map[string]string{
-			"client_assertion":      "hello",
-			"client_assertion_type": msalbase.ClientAssertionGrant,
-		},
+		queryParams,
 	).Return(msalbase.TokenResponse{}, nil)
 
-	_, err = authCodeRequest.Execute()
+	_, err = authCodeRequest.Execute(context.Background())
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, instead it is %v", err)
 	}
@@ -117,11 +119,11 @@ func TestAuthCodeReqExecuteSecret(t *testing.T) {
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(createTDR(), nil)
+	queryParams := url.Values{}
+	queryParams.Set("client_secret", "secret")
 	wrm.On("GetAccessTokenFromAuthCode", authCodeRequest.authParameters, authCodeRequest.Code,
-		authCodeRequest.CodeChallenge, map[string]string{
-			"client_secret": "secret",
-		}).Return(actualTokenResp, nil)
-	_, err := authCodeRequest.Execute()
+		authCodeRequest.CodeChallenge, queryParams).Return(actualTokenResp, nil)
+	_, err := authCodeRequest.Execute(context.Background())
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, instead it is %v", err)
 	}

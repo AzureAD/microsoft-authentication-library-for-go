@@ -6,6 +6,8 @@ package msalbase
 import (
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"strings"
 	"time"
 
@@ -66,13 +68,18 @@ func (tr TokenResponse) GetHomeAccountIDFromClientInfo() string {
 }
 
 // CreateTokenResponse creates a TokenResponse instance from the response from the token endpoint.
-func CreateTokenResponse(authParameters AuthParametersInternal, responseCode int, responseData string) (TokenResponse, error) {
-	baseResponse, err := CreateOAuthResponseBase(responseCode, responseData)
+func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Response) (TokenResponse, error) {
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return TokenResponse{}, err
+	}
+	baseResponse, err := CreateOAuthResponseBase(resp.StatusCode, body)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 	payload := tokenResponseJSONPayload{}
-	err = json.Unmarshal([]byte(responseData), &payload)
+	err = json.Unmarshal(body, &payload)
 	if err != nil {
 		return TokenResponse{}, err
 	}

@@ -4,7 +4,10 @@
 package requests
 
 import (
+	"io/ioutil"
+	"net/http"
 	"reflect"
+	"strings"
 	"testing"
 )
 
@@ -17,10 +20,17 @@ var expDevCodeResp = &DeviceCodeResponse{
 	Message:         "message",
 }
 
+func createFakeResp(code int, body string) *http.Response {
+	return &http.Response{
+		Body:       ioutil.NopCloser(strings.NewReader(body)),
+		StatusCode: code,
+	}
+}
+
 func TestCreateDeviceCodeResponse(t *testing.T) {
 	dcrText := `{"user_code": "user", "device_code": "dev", "verification_url": "url",
 				"expires_in": 10, "interval": 5, "message": "message"}`
-	actualDCR, err := CreateDeviceCodeResponse(200, dcrText)
+	actualDCR, err := CreateDeviceCodeResponse(createFakeResp(http.StatusOK, dcrText))
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

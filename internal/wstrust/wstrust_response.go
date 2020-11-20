@@ -7,6 +7,8 @@ import (
 	"encoding/xml"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	log "github.com/sirupsen/logrus"
@@ -16,9 +18,15 @@ type Response struct {
 	responseData string
 }
 
-func CreateWsTrustResponse(responseData string) *Response {
-	response := &Response{responseData}
-	return response
+func CreateWsTrustResponse(resp *http.Response) (Response, error) {
+	response := Response{}
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return response, err
+	}
+	response.responseData = string(body)
+	return response, nil
 
 	// todo: return error here
 	// pugi::xml_parse_result result = _doc.load_string(response.c_str());

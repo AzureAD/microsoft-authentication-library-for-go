@@ -4,18 +4,22 @@
 package requests
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 )
 
+const (
+	tdrText = `{"authorization_endpoint": "auth", "token_endpoint": "token", "issuer": "iss"}`
+)
+
 func TestCreateTenantDiscoveryResponse(t *testing.T) {
-	tdrText := `{"authorization_endpoint": "auth", "token_endpoint": "token", "issuer": "iss"}`
 	expectedTDR := &TenantDiscoveryResponse{
 		AuthorizationEndpoint: "auth",
 		TokenEndpoint:         "token",
 		Issuer:                "iss",
 	}
-	actualTDR, err := CreateTenantDiscoveryResponse(200, tdrText)
+	actualTDR, err := CreateTenantDiscoveryResponse(createFakeResp(http.StatusOK, tdrText))
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

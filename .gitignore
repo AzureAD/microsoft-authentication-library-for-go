@@ -17,3 +17,4 @@
 pkg/
 github.com/
 golang.org/
+.vscode/

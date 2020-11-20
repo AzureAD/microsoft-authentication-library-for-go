@@ -4,6 +4,9 @@
 package requests
 
 import (
+	"io/ioutil"
+	"net/http"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 )
 
@@ -15,8 +18,12 @@ type InstanceDiscoveryResponse struct {
 	AdditionalFields map[string]interface{}
 }
 
-func CreateInstanceDiscoveryResponse(responseData string) (InstanceDiscoveryResponse, error) {
-	resp := InstanceDiscoveryResponse{}
-	err := json.Unmarshal([]byte(responseData), &resp)
-	return resp, err
+func CreateInstanceDiscoveryResponse(resp *http.Response) (InstanceDiscoveryResponse, error) {
+	idr := InstanceDiscoveryResponse{}
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return idr, err
+	}
+	return idr, json.Unmarshal(body, &idr)
 }

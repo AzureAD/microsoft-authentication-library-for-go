@@ -4,6 +4,7 @@
 package requests
 
 import (
+	"context"
 	"errors"
 	"strings"
 
@@ -78,7 +79,7 @@ func (m *AuthorityEndpointResolutionManager) addCachedEndpoints(authorityInfo ms
 }
 
 //ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
-func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
+func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
 	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {
 		return msalbase.AuthorityEndpoints{}, errors.New("UPN required for authority validation for ADFS")
 	}
@@ -94,13 +95,13 @@ func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(authorityInfo msal
 		return msalbase.AuthorityEndpoints{}, err
 	}
 
-	openIDConfigurationEndpoint, err := endpointManager.getOpenIDConfigurationEndpoint(authorityInfo, userPrincipalName)
+	openIDConfigurationEndpoint, err := endpointManager.getOpenIDConfigurationEndpoint(ctx, authorityInfo, userPrincipalName)
 	if err != nil {
 		return msalbase.AuthorityEndpoints{}, err
 	}
 
 	// Discover endpoints via openid-configuration
-	tenantDiscoveryResponse, err := m.webRequestManager.GetTenantDiscoveryResponse(openIDConfigurationEndpoint)
+	tenantDiscoveryResponse, err := m.webRequestManager.GetTenantDiscoveryResponse(ctx, openIDConfigurationEndpoint)
 	if err != nil {
 		return msalbase.AuthorityEndpoints{}, err
 	}

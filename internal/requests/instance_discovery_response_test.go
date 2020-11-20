@@ -4,13 +4,17 @@
 package requests
 
 import (
+	"net/http"
 	"reflect"
 	"testing"
 )
 
-func TestCreateInstanceDiscoveryResponse(t *testing.T) {
-	responseData := `{"tenant_discovery_response": "hello", "metadata":
+const (
+	responseData = `{"tenant_discovery_response": "hello", "metadata":
 				 [{"preferred_network": "hello", "preferred_cache": "hello", "tenant_discovery_endpoint": "hello"}]}`
+)
+
+func TestCreateInstanceDiscoveryResponse(t *testing.T) {
 	expInstDisc := &InstanceDiscoveryResponse{
 		TenantDiscoveryEndpoint: "hello",
 		Metadata: []InstanceDiscoveryMetadata{
@@ -21,7 +25,7 @@ func TestCreateInstanceDiscoveryResponse(t *testing.T) {
 			},
 		},
 	}
-	actualInstDisc, err := CreateInstanceDiscoveryResponse(responseData)
+	actualInstDisc, err := CreateInstanceDiscoveryResponse(createFakeResp(http.StatusOK, responseData))
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

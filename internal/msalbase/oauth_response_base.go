@@ -5,6 +5,7 @@ package msalbase
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 )
@@ -27,20 +28,20 @@ var httpFailureCodes = map[int]string{
 }
 
 // CreateOAuthResponseBase creates a OAuthResponseBase instance from the HTTP client's response.
-func CreateOAuthResponseBase(httpStatusCode int, responseData string) (OAuthResponseBase, error) {
+func CreateOAuthResponseBase(httpStatusCode int, responseData []byte) (OAuthResponseBase, error) {
 	// if the status code corresponds to an error, throw the error
 	if failMessage, ok := httpFailureCodes[httpStatusCode]; ok {
 		return OAuthResponseBase{}, errors.New(failMessage)
 	}
 
 	payload := OAuthResponseBase{}
-	err := json.Unmarshal([]byte(responseData), &payload)
+	err := json.Unmarshal(responseData, &payload)
 	if err != nil {
 		return OAuthResponseBase{}, err
 	}
 	//If the response consists of an error, throw that error
 	if payload.Error != "" {
-		return OAuthResponseBase{}, errors.New(payload.Error)
+		return OAuthResponseBase{}, fmt.Errorf("%s: %s", payload.Error, payload.ErrorDescription)
 	}
 	return payload, nil
 }

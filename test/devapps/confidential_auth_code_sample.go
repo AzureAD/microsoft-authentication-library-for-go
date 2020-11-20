@@ -31,7 +31,7 @@ func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	)
 	authCodeURLParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeURLParams.State = confidentialConfig.State
-	authURL, err := confidentialClientAuthCode.CreateAuthCodeURL(authCodeURLParams)
+	authURL, err := confidentialClientAuthCode.CreateAuthCodeURL(context.Background(), authCodeURLParams)
 	if err != nil {
 		log.Fatal(err)
 	}

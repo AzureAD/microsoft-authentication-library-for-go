@@ -4,13 +4,14 @@
 package requests
 
 import (
+	"context"
 	"fmt"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
 type openIDConfigurationEndpointManager interface {
-	getOpenIDConfigurationEndpoint(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error)
+	getOpenIDConfigurationEndpoint(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error)
 }
 
 type aadOpenIDConfigurationEndpointManager struct {
@@ -40,9 +41,9 @@ func IsInTrustedHostList(host string) bool {
 	return false
 }
 
-func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
+func (m *aadOpenIDConfigurationEndpointManager) getOpenIDConfigurationEndpoint(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
 	if authorityInfo.ValidateAuthority && !IsInTrustedHostList(authorityInfo.Host) {
-		discoveryResponse, err := m.aadInstanceDiscovery.GetMetadataEntry(authorityInfo)
+		discoveryResponse, err := m.aadInstanceDiscovery.GetMetadataEntry(ctx, authorityInfo)
 		if err != nil {
 			return "", err
 		}

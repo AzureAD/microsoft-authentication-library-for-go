@@ -4,6 +4,8 @@
 package requests
 
 import (
+	"context"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
@@ -17,8 +19,8 @@ func CreateAadInstanceDiscovery(webRequestManager WebRequestManager) *AadInstanc
 	return &AadInstanceDiscovery{webRequestManager: webRequestManager}
 }
 
-func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryMetadata, error) {
-	discoveryResponse, err := d.webRequestManager.GetAadinstanceDiscoveryResponse(authorityInfo)
+func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryMetadata, error) {
+	discoveryResponse, err := d.webRequestManager.GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 	if err != nil {
 		return InstanceDiscoveryMetadata{}, err
 	}
@@ -35,11 +37,11 @@ func (d *AadInstanceDiscovery) doInstanceDiscoveryAndCache(authorityInfo msalbas
 	return instanceDiscoveryCache[authorityInfo.Host], nil
 }
 
-func (d *AadInstanceDiscovery) GetMetadataEntry(authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryMetadata, error) {
+func (d *AadInstanceDiscovery) GetMetadataEntry(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryMetadata, error) {
 	if metadata, ok := instanceDiscoveryCache[authorityInfo.Host]; ok {
 		return metadata, nil
 	}
-	metadata, err := d.doInstanceDiscoveryAndCache(authorityInfo)
+	metadata, err := d.doInstanceDiscoveryAndCache(ctx, authorityInfo)
 	if err != nil {
 		return InstanceDiscoveryMetadata{}, err
 	}

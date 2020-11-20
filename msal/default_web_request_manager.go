@@ -4,13 +4,13 @@
 package msal
 
 import (
-	"bytes"
+	"context"
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"runtime"
-	"sort"
 	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
@@ -21,7 +21,7 @@ import (
 
 // defaultWebRequestManager handles the HTTP calls and request building in MSAL
 type defaultWebRequestManager struct {
-	httpManager HTTPManager
+	httpClient HTTPClient
 }
 
 func isErrorAuthorizationPending(err error) bool {
@@ -39,38 +39,47 @@ const (
 	urlEncodedUtf8
 )
 
-func createWebRequestManager(httpManager HTTPManager) requests.WebRequestManager {
-	return &defaultWebRequestManager{httpManager}
+func createWebRequestManager(httpClient HTTPClient) requests.WebRequestManager {
+	return &defaultWebRequestManager{httpClient}
 }
 
-func (wrm *defaultWebRequestManager) GetUserRealm(authParameters msalbase.AuthParametersInternal) (msalbase.UserRealm, error) {
+func (wrm *defaultWebRequestManager) GetUserRealm(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.UserRealm, error) {
 	url := authParameters.Endpoints.GetUserRealmEndpoint(authParameters.Username)
-	httpManagerResponse, err := wrm.httpManager.Get(url, getAadHeaders(authParameters))
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return msalbase.UserRealm{}, err
+	}
+	addAADHeaders(req.Header, authParameters)
+	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return msalbase.UserRealm{}, err
 	}
 
-	if httpManagerResponse.GetResponseCode() != 200 {
+	if httpManagerResponse.StatusCode != http.StatusOK {
 		return msalbase.UserRealm{}, errors.New("invalid response code") // todo: need error struct here
 	}
 
-	return msalbase.CreateUserRealm(httpManagerResponse.GetResponseData())
+	return msalbase.CreateUserRealm(httpManagerResponse)
 }
 
-func (wrm *defaultWebRequestManager) GetMex(federationMetadataURL string) (wstrust.MexDocument, error) {
-	httpManagerResponse, err := wrm.httpManager.Get(federationMetadataURL, nil)
+func (wrm *defaultWebRequestManager) GetMex(ctx context.Context, federationMetadataURL string) (wstrust.MexDocument, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, federationMetadataURL, nil)
+	if err != nil {
+		return wstrust.MexDocument{}, err
+	}
+	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return wstrust.MexDocument{}, err
 	}
 
-	if httpManagerResponse.GetResponseCode() != 200 {
+	if httpManagerResponse.StatusCode != http.StatusOK {
 		return wstrust.MexDocument{}, errors.New("invalid response code") // todo: need error struct here
 	}
 
-	return wstrust.CreateWsTrustMexDocument(httpManagerResponse.GetResponseData())
+	return wstrust.CreateWsTrustMexDocument(httpManagerResponse)
 }
 
-func (wrm *defaultWebRequestManager) GetWsTrustResponse(authParameters msalbase.AuthParametersInternal, cloudAudienceURN string, endpoint wstrust.Endpoint) (*wstrust.Response, error) {
+func (wrm *defaultWebRequestManager) GetWsTrustResponse(ctx context.Context, authParameters msalbase.AuthParametersInternal, cloudAudienceURN string, endpoint wstrust.Endpoint) (wstrust.Response, error) {
 	const (
 		SoapActionWSTrust2005 = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
 		SoapActionDefault     = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue"
@@ -85,11 +94,11 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(authParameters msalbase.
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageUsernamePassword(
 			cloudAudienceURN, authParameters.Username, authParameters.Password)
 	default:
-		return nil, errors.New("unknown auth type")
+		return wstrust.Response{}, errors.New("unknown auth type")
 	}
 
 	if err != nil {
-		return nil, err
+		return wstrust.Response{}, err
 	}
 
 	var soapAction string
@@ -100,78 +109,78 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(authParameters msalbase.
 		soapAction = SoapActionDefault
 	}
 
-	headers := map[string]string{
-		"SOAPAction": soapAction,
-	}
-
-	addContentTypeHeader(headers, soapXMLUtf8)
-
-	response, err := wrm.httpManager.Post(endpoint.URL, wsTrustRequestMessage, headers)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.URL, strings.NewReader(wsTrustRequestMessage))
 	if err != nil {
-		return nil, err
+		return wstrust.Response{}, err
 	}
+	req.Header.Set("SOAPAction", soapAction)
+	addContentTypeHeader(req.Header, soapXMLUtf8)
 
-	return wstrust.CreateWsTrustResponse(response.GetResponseData()), nil
+	response, err := wrm.httpClient.Do(req)
+	if err != nil {
+		return wstrust.Response{}, err
+	}
+	return wstrust.CreateWsTrustResponse(response)
 }
 
-func (wrm *defaultWebRequestManager) GetAccessTokenFromSamlGrant(authParameters msalbase.AuthParametersInternal, samlGrant wstrust.SamlTokenInfo) (msalbase.TokenResponse, error) {
-	decodedQueryParams := map[string]string{
-		"grant_type": msalbase.PasswordGrant,
-		"username":   authParameters.Username,
-		"password":   authParameters.Password,
-	}
+func (wrm *defaultWebRequestManager) GetAccessTokenFromSamlGrant(ctx context.Context, authParameters msalbase.AuthParametersInternal, samlGrant wstrust.SamlTokenInfo) (msalbase.TokenResponse, error) {
+	decodedQueryParams := url.Values{}
+	decodedQueryParams.Set("grant_type", msalbase.PasswordGrant)
+	decodedQueryParams.Set("username", authParameters.Username)
+	decodedQueryParams.Set("password", authParameters.Password)
 
 	switch samlGrant.AssertionType {
 	case msalbase.SAMLV1Grant:
-		decodedQueryParams["grant_type"] = msalbase.SAMLV1Grant
+		decodedQueryParams.Set("grant_type", msalbase.SAMLV1Grant)
+		break
 	case msalbase.SAMLV2Grant:
-		decodedQueryParams["grant_type"] = msalbase.SAMLV2Grant
+		decodedQueryParams.Set("grant_type", msalbase.SAMLV2Grant)
 	default:
 		return msalbase.TokenResponse{}, fmt.Errorf("GetAccessTokenFromSamlGrant returned unknown saml assertion type: %s", samlGrant.AssertionType)
 	}
 
-	decodedQueryParams["assertion"] = base64.StdEncoding.WithPadding(base64.StdPadding).EncodeToString([]byte(samlGrant.Assertion)) //  .EncodeToString([]byte(samlGrant.GetAssertion())) // StringUtils::Base64RFCEncodePadded(samlGrant->GetAssertion());
+	decodedQueryParams.Set("assertion", base64.StdEncoding.WithPadding(base64.StdPadding).EncodeToString([]byte(samlGrant.Assertion))) //  .EncodeToString([]byte(samlGrant.GetAssertion())) // StringUtils::Base64RFCEncodePadded(samlGrant->GetAssertion());
 
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
 
-	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+	return wrm.exchangeGrantForToken(ctx, authParameters, decodedQueryParams)
 }
 
-func (wrm *defaultWebRequestManager) GetAccessTokenFromUsernamePassword(authParameters msalbase.AuthParametersInternal) (msalbase.TokenResponse, error) {
-	decodedQueryParams := map[string]string{
-		"grant_type": msalbase.PasswordGrant,
-		"username":   authParameters.Username,
-		"password":   authParameters.Password,
-	}
+func (wrm *defaultWebRequestManager) GetAccessTokenFromUsernamePassword(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.TokenResponse, error) {
+	decodedQueryParams := url.Values{}
+	decodedQueryParams.Set("grant_type", msalbase.PasswordGrant)
+	decodedQueryParams.Set("username", authParameters.Username)
+	decodedQueryParams.Set("password", authParameters.Password)
 
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
-	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+	return wrm.exchangeGrantForToken(ctx, authParameters, decodedQueryParams)
 }
 
-func (wrm *defaultWebRequestManager) GetDeviceCodeResult(authParameters msalbase.AuthParametersInternal) (msalbase.DeviceCodeResult, error) {
-	decodedQueryParams := map[string]string{}
+func (wrm *defaultWebRequestManager) GetDeviceCodeResult(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.DeviceCodeResult, error) {
+	decodedQueryParams := url.Values{}
 
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 
 	deviceCodeEndpoint := strings.Replace(authParameters.Endpoints.TokenEndpoint, "token", "devicecode", -1)
 
-	headers := getAadHeaders(authParameters)
-	addContentTypeHeader(headers, urlEncodedUtf8)
-
-	response, err := wrm.httpManager.Post(
-		deviceCodeEndpoint,
-		encodeQueryParameters(decodedQueryParams),
-		headers,
-	)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, deviceCodeEndpoint, strings.NewReader(decodedQueryParams.Encode()))
 	if err != nil {
 		return msalbase.DeviceCodeResult{}, err
 	}
-	dcResponse, err := requests.CreateDeviceCodeResponse(response.GetResponseCode(), response.GetResponseData())
+
+	addAADHeaders(req.Header, authParameters)
+	addContentTypeHeader(req.Header, urlEncodedUtf8)
+
+	response, err := wrm.httpClient.Do(req)
+	if err != nil {
+		return msalbase.DeviceCodeResult{}, err
+	}
+	dcResponse, err := requests.CreateDeviceCodeResponse(response)
 	if err != nil {
 		return msalbase.DeviceCodeResult{}, err
 	}
@@ -179,50 +188,49 @@ func (wrm *defaultWebRequestManager) GetDeviceCodeResult(authParameters msalbase
 	return dcResponse.ToDeviceCodeResult(authParameters.ClientID, authParameters.Scopes), nil
 }
 
-func (wrm *defaultWebRequestManager) GetAccessTokenFromDeviceCodeResult(authParameters msalbase.AuthParametersInternal, deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
-	decodedQueryParams := map[string]string{
-		"grant_type":  msalbase.DeviceCodeGrant,
-		"device_code": deviceCodeResult.GetDeviceCode(),
-	}
+func (wrm *defaultWebRequestManager) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters msalbase.AuthParametersInternal, deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
+	decodedQueryParams := url.Values{}
+	decodedQueryParams.Set("grant_type", msalbase.DeviceCodeGrant)
+	decodedQueryParams.Set("device_code", deviceCodeResult.GetDeviceCode())
 
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
 	addScopeQueryParam(decodedQueryParams, authParameters)
 
-	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+	return wrm.exchangeGrantForToken(ctx, authParameters, decodedQueryParams)
 }
 
-func addClientIDQueryParam(queryParams map[string]string, authParameters msalbase.AuthParametersInternal) {
-	queryParams["client_id"] = authParameters.ClientID
+func addClientIDQueryParam(queryParams url.Values, authParameters msalbase.AuthParametersInternal) {
+	queryParams.Set("client_id", authParameters.ClientID)
 }
 
-func addScopeQueryParam(queryParams map[string]string, authParameters msalbase.AuthParametersInternal) {
+func addScopeQueryParam(queryParams url.Values, authParameters msalbase.AuthParametersInternal) {
 	log.Info("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
 	// openid required to get an id token
 	// offline_access required to get a refresh token
 	// profile required to get the client_info field back
 	requestedScopes = append(requestedScopes, "openid", "offline_access", "profile")
-	queryParams["scope"] = msalbase.ConcatenateScopes(requestedScopes)
+	queryParams.Set("scope", msalbase.ConcatenateScopes(requestedScopes))
 }
 
-func addClientInfoQueryParam(queryParams map[string]string) {
-	queryParams["client_info"] = "1"
+func addClientInfoQueryParam(queryParams url.Values) {
+	queryParams.Set("client_info", "1")
 }
 
-func addRedirectURIQueryParam(queryParams map[string]string, authParameters msalbase.AuthParametersInternal) {
-	queryParams["redirect_uri"] = authParameters.Redirecturi
+func addRedirectURIQueryParam(queryParams url.Values, authParameters msalbase.AuthParametersInternal) {
+	queryParams.Set("redirect_uri", authParameters.Redirecturi)
 }
 
-func addContentTypeHeader(headers map[string]string, contentType contentType) {
+func addContentTypeHeader(headers http.Header, contentType contentType) {
 	contentTypeKey := "Content-Type"
 	switch contentType {
 	case soapXMLUtf8:
-		headers[contentTypeKey] = "application/soap+xml; charset=utf-8"
+		headers.Set(contentTypeKey, "application/soap+xml; charset=utf-8")
 		return
 
 	case urlEncodedUtf8:
-		headers[contentTypeKey] = "application/x-www-form-urlencoded; charset=utf-8"
+		headers.Set(contentTypeKey, "application/x-www-form-urlencoded; charset=utf-8")
 		return
 	}
 }
@@ -236,56 +244,34 @@ const (
 	ReqCorrelationIDInResponseHeaderName = "return-client-request-id"
 )
 
-func getAadHeaders(authParameters msalbase.AuthParametersInternal) map[string]string {
-	// TODO(jdoak): Replace with http.Header
-	headers := map[string]string{}
-
-	headers[ProductHeaderName] = ProductHeaderValue
-	headers[OSHeaderName] = runtime.GOOS
+func addAADHeaders(headers http.Header, authParameters msalbase.AuthParametersInternal) {
+	headers.Set(msalbase.ProductHeaderName, msalbase.ProductHeaderValue)
+	headers.Set(msalbase.OSHeaderName, runtime.GOOS)
 	// headers["x-client-Ver"] = todo: client version here;
-	headers[CorrelationIDHeaderName] = authParameters.CorrelationID
-	headers[ReqCorrelationIDInResponseHeaderName] = "false"
-	return headers
+	headers.Set(msalbase.CorrelationIDHeaderName, authParameters.CorrelationID)
+	headers.Set(msalbase.ReqCorrelationIDInResponseHeaderName, "false")
 }
 
-func encodeQueryParameters(queryParameters map[string]string) string {
-	var buffer bytes.Buffer
-	keys := []string{}
-	for k := range queryParameters {
-		keys = append(keys, k)
-	}
-	sort.Strings(keys)
-	first := true
-	for _, k := range keys {
-		if !first {
-			buffer.WriteString("&")
-		}
-		first = false
-		buffer.WriteString(url.QueryEscape(k))
-		buffer.WriteString("=")
-		buffer.WriteString(url.QueryEscape(queryParameters[k]))
-	}
-	result := buffer.String()
-	return result
-}
-
-func (wrm *defaultWebRequestManager) exchangeGrantForToken(authParameters msalbase.AuthParametersInternal, queryParams map[string]string) (msalbase.TokenResponse, error) {
-	headers := getAadHeaders(authParameters)
-	addContentTypeHeader(headers, urlEncodedUtf8)
-
-	response, err := wrm.httpManager.Post(authParameters.Endpoints.TokenEndpoint, encodeQueryParameters(queryParams), headers)
+func (wrm *defaultWebRequestManager) exchangeGrantForToken(ctx context.Context, authParameters msalbase.AuthParametersInternal, queryParams url.Values) (msalbase.TokenResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, authParameters.Endpoints.TokenEndpoint, strings.NewReader(queryParams.Encode()))
 	if err != nil {
 		return msalbase.TokenResponse{}, err
 	}
-	return msalbase.CreateTokenResponse(authParameters, response.GetResponseCode(), response.GetResponseData())
+	addAADHeaders(req.Header, authParameters)
+	addContentTypeHeader(req.Header, urlEncodedUtf8)
+
+	response, err := wrm.httpClient.Do(req)
+	if err != nil {
+		return msalbase.TokenResponse{}, err
+	}
+	return msalbase.CreateTokenResponse(authParameters, response)
 }
 
-func (wrm *defaultWebRequestManager) GetAccessTokenFromAuthCode(authParameters msalbase.AuthParametersInternal, authCode, codeVerifier string, params map[string]string) (msalbase.TokenResponse, error) {
-	decodedQueryParams := map[string]string{
-		"grant_type":    msalbase.AuthCodeGrant,
-		"code":          authCode,
-		"code_verifier": codeVerifier,
-	}
+func (wrm *defaultWebRequestManager) GetAccessTokenFromAuthCode(ctx context.Context, authParameters msalbase.AuthParametersInternal, authCode, codeVerifier string, params url.Values) (msalbase.TokenResponse, error) {
+	decodedQueryParams := url.Values{}
+	decodedQueryParams.Set("grant_type", msalbase.AuthCodeGrant)
+	decodedQueryParams.Set("code", authCode)
+	decodedQueryParams.Set("code_verifier", codeVerifier)
 	for k, v := range params {
 		decodedQueryParams[k] = v
 	}
@@ -294,14 +280,13 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromAuthCode(authParameters m
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
 
-	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+	return wrm.exchangeGrantForToken(ctx, authParameters, decodedQueryParams)
 }
 
-func (wrm *defaultWebRequestManager) GetAccessTokenFromRefreshToken(authParameters msalbase.AuthParametersInternal, refreshToken string, params map[string]string) (msalbase.TokenResponse, error) {
-	decodedQueryParams := map[string]string{
-		"grant_type":    msalbase.RefreshTokenGrant,
-		"refresh_token": refreshToken,
-	}
+func (wrm *defaultWebRequestManager) GetAccessTokenFromRefreshToken(ctx context.Context, authParameters msalbase.AuthParametersInternal, refreshToken string, params url.Values) (msalbase.TokenResponse, error) {
+	decodedQueryParams := url.Values{}
+	decodedQueryParams.Set("grant_type", msalbase.RefreshTokenGrant)
+	decodedQueryParams.Set("refresh_token", refreshToken)
 	for k, v := range params {
 		decodedQueryParams[k] = v
 	}
@@ -309,60 +294,66 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromRefreshToken(authParamete
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
 
-	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+	return wrm.exchangeGrantForToken(ctx, authParameters, decodedQueryParams)
 }
 
-func (wrm *defaultWebRequestManager) GetAccessTokenWithClientSecret(authParameters msalbase.AuthParametersInternal, clientSecret string) (msalbase.TokenResponse, error) {
-	decodedQueryParams := map[string]string{
-		"grant_type":    msalbase.ClientCredentialGrant,
-		"client_secret": clientSecret,
-	}
+func (wrm *defaultWebRequestManager) GetAccessTokenWithClientSecret(ctx context.Context, authParameters msalbase.AuthParametersInternal, clientSecret string) (msalbase.TokenResponse, error) {
+	decodedQueryParams := url.Values{}
+	decodedQueryParams.Set("grant_type", msalbase.ClientCredentialGrant)
+	decodedQueryParams.Set("client_secret", clientSecret)
 	addClientIDQueryParam(decodedQueryParams, authParameters)
 	addScopeQueryParam(decodedQueryParams, authParameters)
-	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+	return wrm.exchangeGrantForToken(ctx, authParameters, decodedQueryParams)
 }
 
-func (wrm *defaultWebRequestManager) GetAccessTokenWithAssertion(authParameters msalbase.AuthParametersInternal, assertion string) (msalbase.TokenResponse, error) {
-	decodedQueryParams := map[string]string{
-		"grant_type":            msalbase.ClientCredentialGrant,
-		"client_assertion_type": msalbase.ClientAssertionGrant,
-		"client_assertion":      assertion,
-	}
+func (wrm *defaultWebRequestManager) GetAccessTokenWithAssertion(ctx context.Context, authParameters msalbase.AuthParametersInternal, assertion string) (msalbase.TokenResponse, error) {
+	decodedQueryParams := url.Values{}
+	decodedQueryParams.Set("grant_type", msalbase.ClientCredentialGrant)
+	decodedQueryParams.Set("client_assertion_type", msalbase.ClientAssertionGrant)
+	decodedQueryParams.Set("client_assertion", assertion)
 
 	addScopeQueryParam(decodedQueryParams, authParameters)
 	addClientInfoQueryParam(decodedQueryParams)
-	return wrm.exchangeGrantForToken(authParameters, decodedQueryParams)
+	return wrm.exchangeGrantForToken(ctx, authParameters, decodedQueryParams)
 }
 
-func (wrm *defaultWebRequestManager) GetAadinstanceDiscoveryResponse(authorityInfo msalbase.AuthorityInfo) (requests.InstanceDiscoveryResponse, error) {
-	queryParams := map[string]string{
-		"api-version":            "1.1",
-		"authorization_endpoint": fmt.Sprintf(msalbase.AuthorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant),
-	}
+func (wrm *defaultWebRequestManager) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (requests.InstanceDiscoveryResponse, error) {
+	queryParams := url.Values{}
+	queryParams.Set("api-version", "1.1")
+	queryParams.Set("authorization_endpoint", fmt.Sprintf(msalbase.AuthorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
 
 	discoveryHost := msalbase.DefaultHost
 	if requests.IsInTrustedHostList(authorityInfo.Host) {
 		discoveryHost = authorityInfo.Host
 	}
 
-	instanceDiscoveryEndpoint := fmt.Sprintf(msalbase.InstanceDiscoveryEndpoint, discoveryHost, encodeQueryParameters(queryParams))
-	httpManagerResponse, err := wrm.httpManager.Get(instanceDiscoveryEndpoint, nil)
+	instanceDiscoveryEndpoint := fmt.Sprintf(msalbase.InstanceDiscoveryEndpoint, discoveryHost)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, instanceDiscoveryEndpoint, nil)
+	if err != nil {
+		return requests.InstanceDiscoveryResponse{}, err
+	}
+	req.URL.RawQuery = queryParams.Encode()
+	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return requests.InstanceDiscoveryResponse{}, err
 	}
 
-	if httpManagerResponse.GetResponseCode() != 200 {
+	if httpManagerResponse.StatusCode != http.StatusOK {
 		return requests.InstanceDiscoveryResponse{}, errors.New("invalid response code") // todo: need error struct here
 	}
 
-	return requests.CreateInstanceDiscoveryResponse(httpManagerResponse.GetResponseData())
+	return requests.CreateInstanceDiscoveryResponse(httpManagerResponse)
 }
 
-func (wrm *defaultWebRequestManager) GetTenantDiscoveryResponse(openIDConfigurationEndpoint string) (requests.TenantDiscoveryResponse, error) {
-	httpManagerResponse, err := wrm.httpManager.Get(openIDConfigurationEndpoint, nil)
+func (wrm *defaultWebRequestManager) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurationEndpoint string) (requests.TenantDiscoveryResponse, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, openIDConfigurationEndpoint, nil)
+	if err != nil {
+		return requests.TenantDiscoveryResponse{}, err
+	}
+	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return requests.TenantDiscoveryResponse{}, err
 	}
 
-	return requests.CreateTenantDiscoveryResponse(httpManagerResponse.GetResponseCode(), httpManagerResponse.GetResponseData())
+	return requests.CreateTenantDiscoveryResponse(httpManagerResponse)
 }

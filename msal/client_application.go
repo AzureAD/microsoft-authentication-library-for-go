@@ -4,6 +4,7 @@
 package msal
 
 import (
+	"context"
 	"errors"
 	"reflect"
 
@@ -25,16 +26,14 @@ type clientApplication struct {
 	cacheAccessor               CacheAccessor
 }
 
-func createClientApplication(clientID string, authority string) (*clientApplication, error) {
+func createClientApplication(httpClient HTTPClient, clientID string, authority string) (*clientApplication, error) {
 	params, err := createClientApplicationParameters(clientID, authority)
 	if err != nil {
 		return nil, err
 	}
 
 	return &clientApplication{
-		webRequestManager: createWebRequestManager(
-			createHTTPManager(),
-		),
+		webRequestManager:           createWebRequestManager(httpClient),
 		clientApplicationParameters: params,
 		cacheAccessor:               noopCacheAccessor{},
 		cacheContext: &CacheContext{
@@ -45,11 +44,11 @@ func createClientApplication(clientID string, authority string) (*clientApplicat
 	}, nil
 }
 
-func (client *clientApplication) createAuthCodeURL(authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
-	return authCodeURLParameters.createURL(client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
+func (client *clientApplication) createAuthCodeURL(ctx context.Context, authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
+	return authCodeURLParameters.createURL(ctx, client.webRequestManager, client.clientApplicationParameters.createAuthenticationParameters())
 }
 
-func (client *clientApplication) acquireTokenSilent(silent AcquireTokenSilentParameters) (msalbase.AuthenticationResult, error) {
+func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (msalbase.AuthenticationResult, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	silent.augmentAuthenticationParameters(&authParams)
 
@@ -58,7 +57,7 @@ func (client *clientApplication) acquireTokenSilent(silent AcquireTokenSilentPar
 	// constructor and defining these methods.
 	client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
 	defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-	storageTokenResponse, err := client.cacheContext.cache.TryReadCache(authParams, client.webRequestManager)
+	storageTokenResponse, err := client.cacheContext.cache.TryReadCache(ctx, authParams, client.webRequestManager)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}
@@ -74,12 +73,12 @@ func (client *clientApplication) acquireTokenSilent(silent AcquireTokenSilentPar
 		if req.RequestType == requests.RefreshTokenConfidential {
 			req.ClientCredential = silent.clientCredential
 		}
-		return client.executeTokenRequestWithCacheWrite(req, authParams)
+		return client.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 	}
 	return result, nil
 }
 
-func (client *clientApplication) acquireTokenByAuthCode(authCodeParams *acquireTokenAuthCodeParameters) (msalbase.AuthenticationResult, error) {
+func (client *clientApplication) acquireTokenByAuthCode(ctx context.Context, authCodeParams *acquireTokenAuthCodeParameters) (msalbase.AuthenticationResult, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(&authParams)
 	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
@@ -88,11 +87,11 @@ func (client *clientApplication) acquireTokenByAuthCode(authCodeParams *acquireT
 	if req.RequestType == requests.AuthCodeConfidential {
 		req.ClientCredential = authCodeParams.clientCredential
 	}
-	return client.executeTokenRequestWithCacheWrite(req, authParams)
+	return client.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 }
 
-func (client *clientApplication) executeTokenRequestWithoutCacheWrite(req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
-	tokenResponse, err := req.Execute()
+func (client *clientApplication) executeTokenRequestWithoutCacheWrite(ctx context.Context, req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
+	tokenResponse, err := req.Execute(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -103,8 +102,8 @@ func (client *clientApplication) executeTokenRequestWithoutCacheWrite(req reques
 	return msalbase.CreateAuthenticationResult(tokenResponse, msalbase.Account{})
 }
 
-func (client *clientApplication) executeTokenRequestWithCacheWrite(req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (msalbase.AuthenticationResult, error) {
-	tokenResponse, err := req.Execute()
+func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.Context, req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (msalbase.AuthenticationResult, error) {
+	tokenResponse, err := req.Execute(ctx)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}

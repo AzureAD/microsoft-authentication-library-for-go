@@ -4,6 +4,7 @@
 package msal
 
 import (
+	"context"
 	"reflect"
 	"testing"
 
@@ -37,7 +38,7 @@ func TestCreateURL(t *testing.T) {
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(tdr, nil)
-	url, err := authCodeURLParams.createURL(urlWRM, testURLAuthParams)
+	url, err := authCodeURLParams.createURL(context.Background(), urlWRM, testURLAuthParams)
 	if err != nil {
 		t.Fatalf("Error is supposed to be nil, instead it is %v", err)
 	}

@@ -3,7 +3,11 @@
 
 package requests
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+import (
+	"context"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+)
 
 //ClientCredentialRequest stores the values required to acquire a token from the authority using a client credentials grant
 type ClientCredentialRequest struct {
@@ -18,20 +22,20 @@ func CreateClientCredentialRequest(wrm WebRequestManager, authParams msalbase.Au
 }
 
 //Execute performs the token acquisition request and returns a token response or an error
-func (req *ClientCredentialRequest) Execute() (msalbase.TokenResponse, error) {
+func (req *ClientCredentialRequest) Execute(ctx context.Context) (msalbase.TokenResponse, error) {
 	resolutionManager := CreateAuthorityEndpointResolutionManager(req.webRequestManager)
-	endpoints, err := resolutionManager.ResolveEndpoints(req.authParameters.AuthorityInfo, "")
+	endpoints, err := resolutionManager.ResolveEndpoints(ctx, req.authParameters.AuthorityInfo, "")
 	if err != nil {
 		return msalbase.TokenResponse{}, err
 	}
 	req.authParameters.Endpoints = endpoints
 
 	if req.clientCredential.GetCredentialType() == msalbase.ClientCredentialSecret {
-		return req.webRequestManager.GetAccessTokenWithClientSecret(req.authParameters, req.clientCredential.GetSecret())
+		return req.webRequestManager.GetAccessTokenWithClientSecret(ctx, req.authParameters, req.clientCredential.GetSecret())
 	}
 	jwt, err := req.clientCredential.GetAssertion().GetJWT(req.authParameters)
 	if err != nil {
 		return msalbase.TokenResponse{}, err
 	}
-	return req.webRequestManager.GetAccessTokenWithAssertion(req.authParameters, jwt)
+	return req.webRequestManager.GetAccessTokenWithAssertion(ctx, req.authParameters, jwt)
 }

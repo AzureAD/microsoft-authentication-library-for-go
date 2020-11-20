@@ -4,6 +4,8 @@
 package requests
 
 import (
+	"io/ioutil"
+	"net/http"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
@@ -27,15 +29,19 @@ type DeviceCodeResponse struct {
 }
 
 // CreateDeviceCodeResponse creates a deviceCodeResponse instance from HTTP response.
-// TODO(jdoak): look at responseData and see if we can get it originally from []byte instead.
-func CreateDeviceCodeResponse(responseCode int, responseData string) (DeviceCodeResponse, error) {
+func CreateDeviceCodeResponse(resp *http.Response) (DeviceCodeResponse, error) {
 	dcResponse := DeviceCodeResponse{}
-	baseResponse, err := msalbase.CreateOAuthResponseBase(responseCode, responseData)
+	body, err := ioutil.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return dcResponse, err
+	}
+	baseResponse, err := msalbase.CreateOAuthResponseBase(resp.StatusCode, body)
 	if err != nil {
 		return dcResponse, err
 	}
 
-	if err := json.Unmarshal([]byte(responseData), &dcResponse); err != nil {
+	if err := json.Unmarshal(body, &dcResponse); err != nil {
 		return dcResponse, err
 	}
 	dcResponse.BaseResponse = baseResponse

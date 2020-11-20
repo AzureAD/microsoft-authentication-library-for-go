@@ -5,6 +5,7 @@ package msal
 
 import (
 	"context"
+	"net/url"
 	"testing"
 	"time"
 
@@ -42,7 +43,7 @@ func TestCreateAuthCodeURL(t *testing.T) {
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(tdr, nil)
-	url, err := testPCA.CreateAuthCodeURL(authCodeURLParams)
+	url, err := testPCA.CreateAuthCodeURL(context.Background(), authCodeURLParams)
 	if err != nil {
 		t.Fatalf("Error should be nil, instead it is %v", err)
 	}
@@ -64,7 +65,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 		mock.AnythingOfType("msalbase.AuthParametersInternal"),
 		"",
 		"",
-		map[string]string{},
+		url.Values{},
 	).Return(actualTokenResp, nil)
 	cacheManager.On(
 		"CacheTokenResponse",
