@@ -30,6 +30,8 @@ type tokenResponseJSONPayload struct {
 type ClientInfoJSONPayload struct {
 	UID  string `json:"uid"`
 	Utid string `json:"utid"`
+
+	AdditionalFields map[string]interface{}
 }
 
 // TokenResponse is the information that is returned from a token endpoint during a token acquisition flow.
