@@ -7,16 +7,16 @@ import (
 	"io/ioutil"
 	"os"
 
-	log "github.com/sirupsen/logrus"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
+	log "github.com/sirupsen/logrus"
 )
 
 type SampleCacheAccessor struct {
 	file string
 }
 
-func (accessor *SampleCacheAccessor) BeforeCacheAccess(context *msal.CacheContext) {
+func (accessor *SampleCacheAccessor) BeforeCacheAccess(cache requests.CacheManager) {
 	jsonFile, err := os.Open(accessor.file)
 	if err != nil {
 		log.Fatal(err)
@@ -26,14 +26,14 @@ func (accessor *SampleCacheAccessor) BeforeCacheAccess(context *msal.CacheContex
 	if err != nil {
 		log.Fatal(err)
 	}
-	err = context.DeserializeCache(data)
+	err = cache.Deserialize(data)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-func (accessor *SampleCacheAccessor) AfterCacheAccess(context *msal.CacheContext) {
-	data, err := context.SerializeCache()
+func (accessor *SampleCacheAccessor) AfterCacheAccess(cache requests.CacheManager) {
+	data, err := cache.Serialize()
 	if err != nil {
 		log.Fatal(err)
 	}
