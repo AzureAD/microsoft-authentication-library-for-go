@@ -27,7 +27,7 @@ var (
 	testClientApplication = &clientApplication{
 		clientApplicationParameters: clientAppParams,
 		webRequestManager:           wrm,
-		cacheContext:                &CacheContext{cacheManager},
+		cache:                       cacheManager,
 		cacheAccessor:               noopCacheAccessor{},
 	}
 )
