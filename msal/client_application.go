@@ -10,8 +10,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/tokencache"
-	log "github.com/sirupsen/logrus"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
 )
 
 type noopCacheAccessor struct{}
@@ -36,9 +35,7 @@ func createClientApplication(httpClient HTTPClient, clientID string, authority s
 		webRequestManager:           createWebRequestManager(httpClient),
 		clientApplicationParameters: params,
 		cacheAccessor:               noopCacheAccessor{},
-		cache: tokencache.CreateCacheManager(
-			tokencache.CreateStorageManager(),
-		),
+		cache:                       storage.New(),
 	}, nil
 }
 
@@ -62,7 +59,6 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 
 	result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
 	if err != nil {
-		log.Error(err)
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
 			return msalbase.AuthenticationResult{}, errors.New("no refresh token found")
 		}
