@@ -25,10 +25,12 @@ func (mock *MockCacheManager) CacheTokenResponse(authParameters msalbase.AuthPar
 	return args.Get(0).(msalbase.Account), args.Error(1)
 }
 
+/*
 func (mock *MockCacheManager) DeleteCachedRefreshToken(authParameters msalbase.AuthParametersInternal) error {
 	args := mock.Called(authParameters)
 	return args.Error(0)
 }
+*/
 
 func (mock *MockCacheManager) GetAllAccounts() ([]msalbase.Account, error) {
 	args := mock.Called()
