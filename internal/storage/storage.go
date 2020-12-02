@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 // Package storage holds all cached token information for MSAL. This storage can be
 // augmented with third-party extensions to provide persistent storage. In that case,
 // reads and writes in upper packages will call Serialize() to take the entire in-memory
@@ -10,7 +13,6 @@ package storage
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"sync"
 	"time"
@@ -20,8 +22,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 )
 
-// TODO(someone): This thing does not expire tokens and DeleteCachedRefreshToken
-// is not implemented (or used anywhere).  Seems bad.
+// TODO(someone): This thing does not expire tokens.
 
 // Manager is an in-memory cache of access tokens, accounts and meta data. This data is
 // updated on read/write calls. Deserialize() replaces all data stored here with whatever
@@ -193,10 +194,6 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 		return msalbase.Account{}, err
 	}
 	return account, nil
-}
-
-func (m *Manager) DeleteCachedRefreshToken(authParameters msalbase.AuthParametersInternal) error {
-	return errors.New("Not implemented")
 }
 
 func (m *Manager) ReadAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (accessTokenCacheItem, error) {
