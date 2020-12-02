@@ -158,10 +158,7 @@ func hasUnmarshalJSON(v reflect.Value) bool {
 
 	if method := v.MethodByName(unmarshalJSON); method.Kind() != reflect.Invalid {
 		_, ok := v.Interface().(json.Unmarshaler)
-		if ok {
-			return true
-		}
-		return false
+		return ok
 	}
 	return false
 }

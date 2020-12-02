@@ -127,12 +127,10 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 				if updateEndpoint(&usernamePasswordEndpoint, endpoint) {
 					log.Tracef("Updated cached username/password endpoint to binding '%v'", bindingName)
 				}
-				break
 			case wsEndpointTypeWindowsTransport:
 				if updateEndpoint(&windowsTransportEndpoint, endpoint) {
 					log.Tracef("Updated cached windows transport endpoint to binding '%v'", bindingName)
 				}
-				break
 			default:
 				return MexDocument{}, errors.New("found unknown port type in MEX document")
 			}
