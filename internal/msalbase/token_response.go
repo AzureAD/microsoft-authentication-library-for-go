@@ -109,8 +109,10 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 	expiresOn := time.Now().Add(time.Second * time.Duration(payload.ExpiresIn))
 	extExpiresOn := time.Now().Add(time.Second * time.Duration(payload.ExtExpiresIn))
 
-	grantedScopes := []string{}
-	declinedScopes := []string{}
+	var (
+		grantedScopes  []string
+		declinedScopes []string
+	)
 
 	if len(payload.Scope) == 0 {
 		// Per OAuth spec, if no scopes are returned, the response should be treated as if all scopes were granted
