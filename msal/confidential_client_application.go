@@ -103,6 +103,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(ctx context.Con
 	if options != nil {
 		authCodeParams.Code = options.Code
 		authCodeParams.CodeChallenge = options.CodeChallenge
+		authCodeParams.RedirectURI = options.RedirectURI
 	}
 	return cca.clientApplication.acquireTokenByAuthCode(ctx, authCodeParams)
 
