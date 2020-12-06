@@ -129,4 +129,5 @@ type AcquireTokenByDeviceCodeOptions struct {
 type AcquireTokenByAuthCodeOptions struct {
 	Code          string
 	CodeChallenge string
+	RedirectURI   string
 }
