@@ -18,6 +18,7 @@ type acquireTokenAuthCodeParameters struct {
 	CodeChallenge    string
 	clientCredential msalbase.ClientCredential
 	requestType      requests.AuthCodeRequestType
+	RedirectURI      string
 }
 
 // createAcquireTokenAuthCodeParameters creates an AcquireTokenAuthCodeParameters instance.
@@ -30,6 +31,11 @@ func createAcquireTokenAuthCodeParameters(scopes []string) *acquireTokenAuthCode
 
 func (p *acquireTokenAuthCodeParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
 	p.commonParameters.augmentAuthenticationParameters(authParams)
-	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
+	if p.RedirectURI != "" {
+		authParams.Redirecturi = p.RedirectURI
+	}
+	if authParams.Redirecturi == "" { // set it to default if it is still not set
+		authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
+	}
 	authParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
 }
