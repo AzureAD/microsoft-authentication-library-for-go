@@ -19,7 +19,7 @@ Quick links:
 To install Go, visit [this link](https://golang.org/dl/).
 
 ### Installing MSAL Go
-`go get -u github.com/AzureAD/microsoft-authentication-library-for-go/`
+`go get -u github.com/AzureAD/microsoft-authentication-library-for-go/msal`
 
 ## Usage
 Before using MSAL Go, you will need to [register your application with the Microsoft identity platform](https://docs.microsoft.com/azure/active-directory/develop/quickstart-v2-register-an-app).
