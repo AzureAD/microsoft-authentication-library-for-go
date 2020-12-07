@@ -20,7 +20,7 @@ func TestAcquireTokenByClientCredential(t *testing.T) {
 		clientApplication: &clientApplication{
 			clientApplicationParameters: clientAppParams,
 			webRequestManager:           testWrm,
-			cacheContext:                &CacheContext{testCacheManager},
+			cache:                       testCacheManager,
 			cacheAccessor:               noopCacheAccessor{},
 		},
 		clientCredential: cred,

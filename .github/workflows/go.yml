@@ -34,13 +34,13 @@ jobs:
         run: if [ $(gofmt -l -s . | wc -l) -ne 0 ]; then echo "fmt failed"; exit 1; fi
 
       - name: Build
-        run: go build -v ./msal
+        run: go build -race ./msal
 
       - name: Build testapp
-        run: go build -v ./test/devapps
+        run: go build -race ./test/devapps
 
       - name: Test
-        run: go test -v ./...
+        run: go test -race ./...
         with :
           clientId: ${{ secrets.LAB_APP_CLIENT_ID }}
           clientSecret: ${{ secrets.LAB_APP_CLIENT_SECRET }}

@@ -108,7 +108,9 @@ func TestDecoderNext(t *testing.T) {
 	for _, test := range tests {
 		dec := newDecoder(json.NewDecoder(bytes.NewBuffer(test.b)), reflect.ValueOf(test.i))
 		for i := 0; i < test.advToken; i++ {
-			dec.dec.Token()
+			if _, err := dec.dec.Token(); err != nil {
+				panic(err)
+			}
 		}
 
 		stateFn, err := dec.next()
@@ -165,8 +167,14 @@ func TestDecoderStoreValue(t *testing.T) {
 	for _, test := range tests {
 		got := StructA{}
 		dec := newDecoder(json.NewDecoder(bytes.NewBuffer(test.b)), reflect.ValueOf(&got).Elem())
-		dec.start() // populates our translator field
-		dec.next()
+		_, err := dec.start() // populates our translator field
+		if err != nil {
+			panic(err)
+		}
+		_, err = dec.next()
+		if err != nil {
+			panic(err)
+		}
 
 		stateFn, err := dec.storeValue()
 		if err != nil {
@@ -226,8 +234,14 @@ func TestDecoderStoreAdditional(t *testing.T) {
 
 	for _, test := range tests {
 		dec := newDecoder(json.NewDecoder(bytes.NewBuffer(test.b)), reflect.ValueOf(&test.got).Elem())
-		dec.start() // populates our translator field
-		dec.next()
+		_, err := dec.start() // populates our translator field
+		if err != nil {
+			panic(err)
+		}
+		_, err = dec.next()
+		if err != nil {
+			panic(err)
+		}
 
 		stateFn, err := dec.storeAdditional()
 		if err != nil {

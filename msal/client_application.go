@@ -10,19 +10,18 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/tokencache"
-	log "github.com/sirupsen/logrus"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
 )
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) BeforeCacheAccess(context *CacheContext) {}
-func (n noopCacheAccessor) AfterCacheAccess(context *CacheContext)  {}
+func (n noopCacheAccessor) BeforeCacheAccess(context requests.CacheManager) {}
+func (n noopCacheAccessor) AfterCacheAccess(context requests.CacheManager)  {}
 
 type clientApplication struct {
 	webRequestManager           requests.WebRequestManager
 	clientApplicationParameters *clientApplicationParameters
-	cacheContext                *CacheContext
+	cache                       requests.CacheManager
 	cacheAccessor               CacheAccessor
 }
 
@@ -36,11 +35,7 @@ func createClientApplication(httpClient HTTPClient, clientID string, authority s
 		webRequestManager:           createWebRequestManager(httpClient),
 		clientApplicationParameters: params,
 		cacheAccessor:               noopCacheAccessor{},
-		cacheContext: &CacheContext{
-			cache: tokencache.CreateCacheManager(
-				tokencache.CreateStorageManager(),
-			),
-		},
+		cache:                       storage.New(),
 	}, nil
 }
 
@@ -55,16 +50,15 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 	// TODO(jdoak/msal): This accessor stuff should be integrated into the
 	// CacheManager instead of here probably by passing the accessor in its
 	// constructor and defining these methods.
-	client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
-	defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-	storageTokenResponse, err := client.cacheContext.cache.TryReadCache(ctx, authParams, client.webRequestManager)
+	client.cacheAccessor.BeforeCacheAccess(client.cache)
+	defer client.cacheAccessor.AfterCacheAccess(client.cache)
+	storageTokenResponse, err := client.cache.TryReadCache(ctx, authParams, client.webRequestManager)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}
 
 	result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
 	if err != nil {
-		log.Error(err)
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
 			return msalbase.AuthenticationResult{}, errors.New("no refresh token found")
 		}
@@ -108,9 +102,9 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 		return msalbase.AuthenticationResult{}, err
 	}
 
-	client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
-	defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-	account, err := client.cacheContext.cache.CacheTokenResponse(authParams, tokenResponse)
+	client.cacheAccessor.BeforeCacheAccess(client.cache)
+	defer client.cacheAccessor.AfterCacheAccess(client.cache)
+	account, err := client.cache.CacheTokenResponse(authParams, tokenResponse)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}
@@ -118,9 +112,9 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 }
 
 func (client *clientApplication) getAccounts() []msalbase.Account {
-	client.cacheAccessor.BeforeCacheAccess(client.cacheContext)
-	defer client.cacheAccessor.AfterCacheAccess(client.cacheContext)
-	accounts, err := client.cacheContext.cache.GetAllAccounts()
+	client.cacheAccessor.BeforeCacheAccess(client.cache)
+	defer client.cacheAccessor.AfterCacheAccess(client.cache)
+	accounts, err := client.cache.GetAllAccounts()
 	if err != nil {
 		return nil
 	}

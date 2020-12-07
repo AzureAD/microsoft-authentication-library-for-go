@@ -44,7 +44,7 @@ func (m *mapWalk) run() error {
 func (m *mapWalk) start() (stateFn, error) {
 	// maps can have custom unmarshaler's.
 	if hasUnmarshalJSON(m.m) {
-		err := m.dec.Decode(m.m)
+		err := m.dec.Decode(m.m.Interface())
 		if err != nil {
 			return nil, err
 		}
