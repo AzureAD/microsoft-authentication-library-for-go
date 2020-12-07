@@ -3,7 +3,6 @@ package integrationtests
 import (
 	"context"
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"os"
 
@@ -73,16 +72,12 @@ func (l *labClient) getLabAccessToken() string {
 }
 
 func (l *labClient) getUser(query map[string]string) user {
-	response, err := sendRequestToLab("https://msidlab.com/api/user", query, l.getLabAccessToken())
-	if err != nil {
-		log.Fatal(err)
-	}
-	body, err := ioutil.ReadAll(response.Body)
+	responseBody, err := sendRequestToLab("https://msidlab.com/api/user", query, l.getLabAccessToken())
 	if err != nil {
 		log.Fatal(err)
 	}
 	var users []user
-	err = json.Unmarshal(body, &users)
+	err = json.Unmarshal(responseBody, &users)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -92,16 +87,12 @@ func (l *labClient) getUser(query map[string]string) user {
 }
 
 func (l *labClient) getSecret(query map[string]string) string {
-	response, err := sendRequestToLab("https://msidlab.com/api/LabUserSecret", query, l.getLabAccessToken())
-	if err != nil {
-		log.Fatal(err)
-	}
-	body, err := ioutil.ReadAll(response.Body)
+	responseBody, err := sendRequestToLab("https://msidlab.com/api/LabUserSecret", query, l.getLabAccessToken())
 	if err != nil {
 		log.Fatal(err)
 	}
 	var secret secret
-	err = json.Unmarshal(body, &secret)
+	err = json.Unmarshal(responseBody, &secret)
 	if err != nil {
 		log.Fatal(err)
 	}
