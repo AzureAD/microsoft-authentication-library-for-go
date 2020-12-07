@@ -1,4 +1,4 @@
-package integration
+package integrationtests
 
 import (
 	"context"
@@ -14,6 +14,8 @@ type labClient struct {
 	labApplication *msal.ConfidentialClientApplication
 }
 
+/*
+Commenting this until it is used in a test case
 type app struct {
 	AppType      string `json:"appType"`
 	AppName      string `json:"appName"`
@@ -23,6 +25,7 @@ type app struct {
 	LabName      string `json:"labName"`
 	ClientSecret string `json:"clientSecret"`
 }
+*/
 
 type user struct {
 	AppID            string `json:"appId"`
@@ -90,6 +93,9 @@ func (l *labClient) getUser(query map[string]string) user {
 
 func (l *labClient) getSecret(query map[string]string) string {
 	response, err := sendRequestToLab("https://msidlab.com/api/LabUserSecret", query, l.getLabAccessToken())
+	if err != nil {
+		log.Fatal(err)
+	}
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
 		log.Fatal(err)
@@ -102,7 +108,10 @@ func (l *labClient) getSecret(query map[string]string) string {
 	return secret.Secret
 }
 
+/*
+Commenting this until we add tests that need this
 func (l *labClient) getApp(query map[string]string) {
 	// TODO: Abhidnya Patil
 	// Implement this for other flows
 }
+*/
