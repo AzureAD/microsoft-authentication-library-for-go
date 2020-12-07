@@ -7,11 +7,9 @@ import (
 	"context"
 	"net/url"
 	"testing"
-	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
-	"github.com/kylelemons/godebug/pretty"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -32,21 +30,24 @@ var tdr = requests.TenantDiscoveryResponse{
 	Issuer:                "https://login.microsoftonline.com/v2.0",
 }
 
-var testAcc = msalbase.Account{}
-var testPCA = &PublicClientApplication{
-	clientApplication: testClientApplication,
-}
-
 func TestCreateAuthCodeURL(t *testing.T) {
 	authCodeURLParams := CreateAuthorizationCodeURLParameters("clientID", "redirect", []string{"openid"})
 	authCodeURLParams.CodeChallenge = "codeChallenge"
+
+	wrm := new(requests.MockWebRequestManager)
+	testPCA := &PublicClientApplication{
+		clientApplication: newTestApplication(nil, wrm),
+	}
+
 	wrm.On("GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(tdr, nil)
+
 	url, err := testPCA.CreateAuthCodeURL(context.Background(), authCodeURLParams)
 	if err != nil {
 		t.Fatalf("Error should be nil, instead it is %v", err)
 	}
+
 	actualURL := "https://login.microsoftonline.com/v2.0/authorize?client_id=clientID&code_challenge=codeChallenge" +
 		"&redirect_uri=redirect&response_type=code&scope=openid"
 	if actualURL != url {
@@ -55,10 +56,18 @@ func TestCreateAuthCodeURL(t *testing.T) {
 }
 
 func TestAcquireTokenByAuthCode(t *testing.T) {
+	wrm := new(requests.MockWebRequestManager)
+	fm := &fakeManager{}
+
+	testPCA := &PublicClientApplication{
+		clientApplication: newTestApplication(fm, wrm),
+	}
+
 	wrm.On(
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(tdr, nil)
+
 	actualTokenResp := msalbase.TokenResponse{}
 	wrm.On(
 		"GetAccessTokenFromAuthCode",
@@ -67,11 +76,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 		"",
 		url.Values{},
 	).Return(actualTokenResp, nil)
-	cacheManager.On(
-		"CacheTokenResponse",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
-		actualTokenResp,
-	).Return(testAcc, nil)
+
 	_, err := testPCA.AcquireTokenByAuthCode(context.Background(), []string{"openid"}, nil)
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
@@ -79,9 +84,17 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 }
 
 func TestAcquireTokenByUsernamePassword(t *testing.T) {
+	wrm := new(requests.MockWebRequestManager)
+	fm := &fakeManager{}
+
+	testPCA := &PublicClientApplication{
+		clientApplication: newTestApplication(fm, wrm),
+	}
+
 	managedUserRealm := msalbase.UserRealm{
 		AccountType: "Managed",
 	}
+
 	wrm.On(
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
@@ -97,35 +110,25 @@ func TestAcquireTokenByUsernamePassword(t *testing.T) {
 		mock.AnythingOfType("msalbase.AuthParametersInternal"),
 	).Return(actualTokenResp, nil)
 
-	cacheManager.On(
-		"CacheTokenResponse",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
-		actualTokenResp,
-	).Return(testAcc, nil)
 	_, err := testPCA.AcquireTokenByUsernamePassword(context.Background(), []string{"openid"}, "username", "password")
 	if err != nil {
 		t.Errorf("Error should be nil, instead it is %v", err)
 	}
 }
 
-func TestGetAllAccounts(t *testing.T) {
-	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
-	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
-	cacheOutput := []msalbase.Account{testAccOne, testAccTwo}
-	want := []AccountProvider{testAccOne, testAccTwo}
-	// TODO(jdoak): I would think we could just create a cacheManager and
-	// simply put something in and then get it out, instead of mocks.
-	cacheManager.On("GetAllAccounts").Return(cacheOutput, nil)
-	got := testPCA.Accounts()
-	if diff := pretty.Compare(want, got); diff != "" {
-		t.Errorf("TestGetAllAccounts: -want/+got:\n%s", diff)
-	}
-}
-
 func TestAcquireTokenByDeviceCode(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
 	callback := func(dcr DeviceCodeResultProvider) {}
-	cancelCtx, cancelFunc := context.WithTimeout(context.Background(), time.Duration(100)*time.Second)
-	defer cancelFunc()
+
+	wrm := new(requests.MockWebRequestManager)
+	fm := &fakeManager{}
+
+	testPCA := &PublicClientApplication{
+		clientApplication: newTestApplication(fm, wrm),
+	}
+
 	wrm.On(
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
@@ -142,12 +145,8 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		mock.AnythingOfType("msalbase.AuthParametersInternal"),
 		devCodeResult,
 	).Return(actualTokenResp, nil)
-	cacheManager.On(
-		"CacheTokenResponse",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
-		actualTokenResp,
-	).Return(testAcc, nil)
-	_, err := testPCA.AcquireTokenByDeviceCode(cancelCtx, []string{"openid"}, callback, nil)
+
+	_, err := testPCA.AcquireTokenByDeviceCode(ctx, []string{"openid"}, callback, nil)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}

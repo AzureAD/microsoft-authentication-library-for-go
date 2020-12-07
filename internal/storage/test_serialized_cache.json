@@ -48,7 +48,7 @@
     },
     "unknownEntity": {"field1":"1","field2":"whats"},
     "AppMetadata": {
-      "appmetadata-login.windows.net-my_client_id": {
+      "AppMetadata-login.windows.net-my_client_id": {
         "environment": "login.windows.net",
         "client_id": "my_client_id"
       }

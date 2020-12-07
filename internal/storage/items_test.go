@@ -26,7 +26,7 @@ var (
 	expiresOn     = "1592049600"
 	extExpiresOn  = "1592049600"
 	cachedAt      = "1592049600"
-	atCacheEntity = &accessTokenCacheItem{
+	atCacheEntity = &AccessTokenCacheItem{
 		HomeAccountID:                  testHID,
 		Environment:                    env,
 		CredentialType:                 credential,
@@ -80,7 +80,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 	}
 
 	testCachedAt := "100"
-	want := &accessTokenCacheItem{
+	want := &AccessTokenCacheItem{
 		HomeAccountID: testHID,
 		Environment:   env,
 		CachedAt:      testCachedAt,
@@ -88,7 +88,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 			"extra": json.MarshalRaw("this_is_extra"),
 		},
 	}
-	got := &accessTokenCacheItem{}
+	got := &AccessTokenCacheItem{}
 	err = json.Unmarshal(jsonData, got)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
@@ -100,7 +100,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 
 func TestAccessTokenMarshal(t *testing.T) {
 	testCachedAt := "100"
-	accessToken := &accessTokenCacheItem{
+	accessToken := &AccessTokenCacheItem{
 		HomeAccountID:  testHID,
 		Environment:    "",
 		CachedAt:       testCachedAt,
@@ -113,7 +113,7 @@ func TestAccessTokenMarshal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestAccessTokenMarshal: unable to marshal: %s", err)
 	}
-	got := accessTokenCacheItem{}
+	got := AccessTokenCacheItem{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("TestAccessTokenMarshal: unable to take JSON byte output and unmarshal: %s", err)
 	}
@@ -126,7 +126,7 @@ func TestAccessTokenMarshal(t *testing.T) {
 var (
 	appClient = "cid"
 	appEnv    = "env"
-	appMeta   = &appMetadata{
+	appMeta   = &AppMetadata{
 		ClientID:    appClient,
 		Environment: appEnv,
 		FamilyID:    "",
@@ -134,7 +134,7 @@ var (
 )
 
 func TestCreateKeyForAppMetadata(t *testing.T) {
-	want := "appmetadata-env-cid"
+	want := "AppMetadata-env-cid"
 	got := appMeta.CreateKey()
 	if want != got {
 		t.Errorf("actual key %v differs from expected key %v", want, got)
@@ -149,7 +149,7 @@ func TestAppMetadataUnmarshal(t *testing.T) {
 		"client_id":   "cid",
 		"family_id":   nil,
 	}
-	want := appMetadata{
+	want := AppMetadata{
 		ClientID:    "cid",
 		Environment: "env",
 		AdditionalFields: map[string]interface{}{
@@ -162,7 +162,7 @@ func TestAppMetadataUnmarshal(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	got := appMetadata{}
+	got := AppMetadata{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("TestAppMetadataUnmarshal(unmarshal): got err == %s, want err == nil", err)
 	}
@@ -173,7 +173,7 @@ func TestAppMetadataUnmarshal(t *testing.T) {
 }
 
 func TestAppMetadataMarshal(t *testing.T) {
-	appMetadata := appMetadata{
+	AppMetadata := AppMetadata{
 		Environment: "",
 		ClientID:    appClient,
 		FamilyID:    "",
@@ -189,7 +189,7 @@ func TestAppMetadataMarshal(t *testing.T) {
 		"cached_at": "100",
 	}
 
-	b, err := json.Marshal(appMetadata)
+	b, err := json.Marshal(AppMetadata)
 	if err != nil {
 		panic(err)
 	}
@@ -215,14 +215,14 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 		panic(err)
 	}
 
-	got := cacheSerializationContract{}
+	got := CacheSerializationContract{}
 	err = json.Unmarshal(testCache, &got)
 	if err != nil {
 		t.Fatalf("TestCacheSerializationContractUnmarshalJSON(unmarshal): %v", err)
 	}
 
-	want := cacheSerializationContract{
-		AccessTokens: map[string]accessTokenCacheItem{
+	want := CacheSerializationContract{
+		AccessTokens: map[string]AccessTokenCacheItem{
 			"an-entry": {
 				AdditionalFields: map[string]interface{}{
 					"foo": json.MarshalRaw("bar"),
@@ -251,7 +251,7 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 				AuthorityType:     "MSSTS",
 			},
 		},
-		RefreshTokens: map[string]refreshTokenCacheItem{
+		RefreshTokens: map[string]RefreshTokenCacheItem{
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
@@ -261,7 +261,7 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		IDTokens: map[string]idTokenCacheItem{
+		IDTokens: map[string]IDTokenCacheItem{
 			"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
 				Realm:          defaultRealm,
 				Environment:    defaultEnvironment,
@@ -271,8 +271,8 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		AppMetadata: map[string]appMetadata{
-			"appmetadata-login.windows.net-my_client_id": {
+		AppMetadata: map[string]AppMetadata{
+			"AppMetadata-login.windows.net-my_client_id": {
 				Environment: defaultEnvironment,
 				FamilyID:    "",
 				ClientID:    defaultClientID,
@@ -294,8 +294,8 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 }
 
 func TestCacheSerializationContractMarshalJSON(t *testing.T) {
-	want := cacheSerializationContract{
-		AccessTokens: map[string]accessTokenCacheItem{
+	want := CacheSerializationContract{
+		AccessTokens: map[string]AccessTokenCacheItem{
 			"an-entry": {
 				AdditionalFields: map[string]interface{}{
 					"foo": json.MarshalRaw("bar"),
@@ -314,7 +314,7 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 				ExtendedExpiresOnUnixTimestamp: atExpires,
 			},
 		},
-		RefreshTokens: map[string]refreshTokenCacheItem{
+		RefreshTokens: map[string]RefreshTokenCacheItem{
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
@@ -324,7 +324,7 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		IDTokens: map[string]idTokenCacheItem{
+		IDTokens: map[string]IDTokenCacheItem{
 			"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
 				Realm:          defaultRealm,
 				Environment:    defaultEnvironment,
@@ -344,8 +344,8 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 				AuthorityType:     accAuth,
 			},
 		},
-		AppMetadata: map[string]appMetadata{
-			"appmetadata-login.windows.net-my_client_id": {
+		AppMetadata: map[string]AppMetadata{
+			"AppMetadata-login.windows.net-my_client_id": {
 				Environment: defaultEnvironment,
 				FamilyID:    "",
 				ClientID:    defaultClientID,
@@ -364,7 +364,7 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestCacheSerializationContractMarshalJSON(marshal): got err == %s, want err == nil", err)
 	}
-	got := cacheSerializationContract{}
+	got := CacheSerializationContract{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("TestCacheSerializationContractMarshalJSON(unmarshal back): got err == %s, want err == nil", err)
 	}
@@ -383,7 +383,7 @@ var (
 	idTokSecret  = "id"
 )
 
-var idToken = idTokenCacheItem{
+var idToken = IDTokenCacheItem{
 	HomeAccountID:  idHid,
 	Environment:    idEnv,
 	CredentialType: idCredential,
@@ -410,7 +410,7 @@ func TestIDTokenUnmarshal(t *testing.T) {
 		panic(err)
 	}
 
-	want := idTokenCacheItem{
+	want := IDTokenCacheItem{
 		HomeAccountID: "HID",
 		Environment:   "env",
 		AdditionalFields: map[string]interface{}{
@@ -418,7 +418,7 @@ func TestIDTokenUnmarshal(t *testing.T) {
 		},
 	}
 
-	got := idTokenCacheItem{}
+	got := IDTokenCacheItem{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		panic(err)
 	}
@@ -429,7 +429,7 @@ func TestIDTokenUnmarshal(t *testing.T) {
 }
 
 func TestIDTokenMarshal(t *testing.T) {
-	idToken := idTokenCacheItem{
+	idToken := IDTokenCacheItem{
 		HomeAccountID:    idHid,
 		Environment:      idEnv,
 		Realm:            "",
@@ -465,7 +465,7 @@ var (
 	refSecret    = "secret"
 )
 
-var rt = &refreshTokenCacheItem{
+var rt = &RefreshTokenCacheItem{
 	HomeAccountID:  hid,
 	Environment:    env,
 	ClientID:       rtClientID,
@@ -474,7 +474,7 @@ var rt = &refreshTokenCacheItem{
 }
 
 func TestCreateRefreshTokenCacheItem(t *testing.T) {
-	got := createRefreshTokenCacheItem("HID", "env", "clientID", "secret", "")
+	got := CreateRefreshTokenCacheItem("HID", "env", "clientID", "secret", "")
 	if refSecret != got.Secret {
 		t.Errorf("expected secret %s differs from actualSecret %s", refSecret, got.Secret)
 	}
@@ -499,7 +499,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	want := refreshTokenCacheItem{
+	want := RefreshTokenCacheItem{
 		HomeAccountID: "hid",
 		Environment:   "env",
 		Secret:        "secret",
@@ -508,7 +508,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 		},
 	}
 
-	got := refreshTokenCacheItem{}
+	got := RefreshTokenCacheItem{}
 	err = json.Unmarshal(b, &got)
 	if err != nil {
 		panic(err)
@@ -520,7 +520,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 }
 
 func TestRefreshTokenMarshal(t *testing.T) {
-	refreshToken := refreshTokenCacheItem{
+	refreshToken := RefreshTokenCacheItem{
 		HomeAccountID:  "",
 		Environment:    rtEnv,
 		CredentialType: rtCredential,
