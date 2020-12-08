@@ -172,6 +172,7 @@ func TestWriteAccessToken(t *testing.T) {
 		"openid",
 		"secret",
 	)
+
 	key := testAccessToken.Key()
 	err := storageManager.writeAccessToken(testAccessToken)
 	if err != nil {
@@ -211,6 +212,7 @@ func TestReadAccount(t *testing.T) {
 func TestWriteAccount(t *testing.T) {
 	storageManager := New()
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+
 	key := testAcc.Key()
 	err := storageManager.writeAccount(testAcc)
 	if err != nil {
@@ -248,6 +250,7 @@ func TestReadAppMetaData(t *testing.T) {
 
 func TestWriteAppMetaData(t *testing.T) {
 	storageManager := New()
+
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
 	key := testAppMeta.Key()
 	err := storageManager.writeAppMetaData(testAppMeta)
@@ -309,7 +312,9 @@ func TestWriteIDToken(t *testing.T) {
 		"cid",
 		"secret",
 	)
+
 	key := testIDToken.Key()
+
 	err := storageManager.writeIDToken(testIDToken)
 	if err != nil {
 		t.Fatalf("TestwriteIDToken: got err == %s, want err == nil", err)
@@ -322,6 +327,7 @@ func TestWriteIDToken(t *testing.T) {
 
 func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 	testRefreshTokenWithFID := NewRefreshToken(
+
 		"hid",
 		"env",
 		"cid",
@@ -544,7 +550,9 @@ func TestWriteRefreshToken(t *testing.T) {
 		"secret",
 		"fid",
 	)
+
 	key := testRefreshToken.Key()
+
 	err := storageManager.writeRefreshToken(testRefreshToken)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)

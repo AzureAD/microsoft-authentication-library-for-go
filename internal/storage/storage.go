@@ -323,6 +323,7 @@ func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm s
 
 func (m *Manager) writeAccount(account msalbase.Account) error {
 	key := account.Key()
+
 	cache := m.Contract().copy()
 	cache.Accounts[key] = account
 	m.contract.Store(cache)
