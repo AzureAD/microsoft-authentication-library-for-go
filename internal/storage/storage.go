@@ -39,8 +39,7 @@ type Manager struct {
 	// gets updated. Should reduce contention.
 	contract atomic.Value // Stores a *CacheSerializationContract
 
-	mu      sync.Mutex
-	cacheMu sync.Mutex // TODO(jdoak): Remove on next PR
+	mu sync.Mutex
 }
 
 // New is the constructor for Manager.
@@ -84,7 +83,7 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 		return msalbase.StorageTokenResponse{}, err
 	}
 
-	accessToken, err := m.ReadAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
+	accessToken, err := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
@@ -93,22 +92,22 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 		return msalbase.StorageTokenResponse{}, err
 	}
 
-	idToken, err := m.ReadIDToken(homeAccountID, metadata.Aliases, realm, clientID)
+	idToken, err := m.readIDToken(homeAccountID, metadata.Aliases, realm, clientID)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
 
-	AppMetadata, err := m.ReadAppMetadata(metadata.Aliases, clientID)
+	AppMetadata, err := m.readAppMetadata(metadata.Aliases, clientID)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
 	familyID := AppMetadata.FamilyID
 
-	refreshToken, err := m.ReadRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
+	refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
-	account, err := m.ReadAccount(homeAccountID, metadata.Aliases, realm)
+	account, err := m.readAccount(homeAccountID, metadata.Aliases, realm)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
@@ -116,8 +115,8 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 }
 
 func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
-	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
+	m.mu.Lock()
+	defer m.mu.Unlock()
 
 	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
 	homeAccountID := authParameters.HomeaccountID
@@ -132,7 +131,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 
 	if tokenResponse.HasRefreshToken() {
 		refreshToken := CreateRefreshTokenCacheItem(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
-		if err := m.WriteRefreshToken(refreshToken); err != nil {
+		if err := m.writeRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
 	}
@@ -154,7 +153,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
-			if err := m.WriteAccessToken(accessToken); err != nil {
+			if err := m.writeAccessToken(accessToken); err != nil {
 				return account, err
 			}
 		}
@@ -163,7 +162,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 	idTokenJwt := tokenResponse.IDToken
 	if !idTokenJwt.IsZero() {
 		idToken := CreateIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
-		if err := m.WriteIDToken(idToken); err != nil {
+		if err := m.writeIDToken(idToken); err != nil {
 			return msalbase.Account{}, err
 		}
 
@@ -178,14 +177,14 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 			authorityType,
 			idTokenJwt.PreferredUsername,
 		)
-		if err := m.WriteAccount(account); err != nil {
+		if err := m.writeAccount(account); err != nil {
 			return msalbase.Account{}, err
 		}
 	}
 
 	AppMetadata := CreateAppMetadata(tokenResponse.FamilyID, clientID, environment)
 
-	if err := m.WriteAppMetadata(AppMetadata); err != nil {
+	if err := m.writeAppMetadata(AppMetadata); err != nil {
 		return msalbase.Account{}, err
 	}
 	return account, nil
@@ -196,7 +195,7 @@ func (m *Manager) Contract() *CacheSerializationContract {
 	return m.contract.Load().(*CacheSerializationContract)
 }
 
-func (m *Manager) ReadAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessTokenCacheItem, error) {
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessTokenCacheItem, error) {
 	cache := m.Contract()
 
 	for _, at := range cache.AccessTokens {
@@ -211,10 +210,7 @@ func (m *Manager) ReadAccessToken(homeID string, envAliases []string, realm, cli
 	return AccessTokenCacheItem{}, fmt.Errorf("access token not found")
 }
 
-func (m *Manager) WriteAccessToken(accessToken AccessTokenCacheItem) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+func (m *Manager) writeAccessToken(accessToken AccessTokenCacheItem) error {
 	key := accessToken.CreateKey()
 
 	cache := m.Contract().copy()
@@ -223,7 +219,7 @@ func (m *Manager) WriteAccessToken(accessToken AccessTokenCacheItem) error {
 	return nil
 }
 
-func (m *Manager) ReadRefreshToken(homeID string, envAliases []string, familyID, clientID string) (RefreshTokenCacheItem, error) {
+func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID, clientID string) (RefreshTokenCacheItem, error) {
 	byFamily := func(rt RefreshTokenCacheItem) bool {
 		return matchFamilyRefreshToken(rt, homeID, envAliases)
 	}
@@ -271,10 +267,7 @@ func matchClientIDRefreshToken(rt RefreshTokenCacheItem, homeID string, envAlias
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
 
-func (m *Manager) WriteRefreshToken(refreshToken RefreshTokenCacheItem) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+func (m *Manager) writeRefreshToken(refreshToken RefreshTokenCacheItem) error {
 	key := refreshToken.CreateKey()
 	cache := m.Contract().copy()
 	cache.RefreshTokens[key] = refreshToken
@@ -283,7 +276,7 @@ func (m *Manager) WriteRefreshToken(refreshToken RefreshTokenCacheItem) error {
 	return nil
 }
 
-func (m *Manager) ReadIDToken(homeID string, envAliases []string, realm, clientID string) (IDTokenCacheItem, error) {
+func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientID string) (IDTokenCacheItem, error) {
 	cache := m.Contract()
 	for _, idt := range cache.IDTokens {
 		if idt.HomeAccountID == homeID && idt.Realm == realm && idt.ClientID == clientID {
@@ -295,10 +288,7 @@ func (m *Manager) ReadIDToken(homeID string, envAliases []string, realm, clientI
 	return IDTokenCacheItem{}, fmt.Errorf("token not found")
 }
 
-func (m *Manager) WriteIDToken(idToken IDTokenCacheItem) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+func (m *Manager) writeIDToken(idToken IDTokenCacheItem) error {
 	key := idToken.CreateKey()
 	cache := m.Contract().copy()
 	cache.IDTokens[key] = idToken
@@ -318,7 +308,7 @@ func (m *Manager) GetAllAccounts() ([]msalbase.Account, error) {
 	return accounts, nil
 }
 
-func (m *Manager) ReadAccount(homeAccountID string, envAliases []string, realm string) (msalbase.Account, error) {
+func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (msalbase.Account, error) {
 	cache := m.Contract()
 
 	for _, acc := range cache.Accounts {
@@ -329,10 +319,7 @@ func (m *Manager) ReadAccount(homeAccountID string, envAliases []string, realm s
 	return msalbase.Account{}, fmt.Errorf("account not found")
 }
 
-func (m *Manager) WriteAccount(account msalbase.Account) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+func (m *Manager) writeAccount(account msalbase.Account) error {
 	key := account.CreateKey()
 	cache := m.Contract().copy()
 	cache.Accounts[key] = account
@@ -341,7 +328,7 @@ func (m *Manager) WriteAccount(account msalbase.Account) error {
 	return nil
 }
 
-func (m *Manager) DeleteAccounts(homeID string, envAliases []string) error {
+func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -357,7 +344,7 @@ func (m *Manager) DeleteAccounts(homeID string, envAliases []string) error {
 	return nil
 }
 
-func (m *Manager) ReadAppMetadata(envAliases []string, clientID string) (AppMetadata, error) {
+func (m *Manager) readAppMetadata(envAliases []string, clientID string) (AppMetadata, error) {
 	cache := m.Contract()
 
 	for _, app := range cache.AppMetadata {
@@ -368,10 +355,7 @@ func (m *Manager) ReadAppMetadata(envAliases []string, clientID string) (AppMeta
 	return AppMetadata{}, fmt.Errorf("not found")
 }
 
-func (m *Manager) WriteAppMetadata(AppMetadata AppMetadata) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
+func (m *Manager) writeAppMetadata(AppMetadata AppMetadata) error {
 	key := AppMetadata.CreateKey()
 	cache := m.Contract().copy()
 	cache.AppMetadata[key] = AppMetadata

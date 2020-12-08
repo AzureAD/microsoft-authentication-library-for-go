@@ -108,7 +108,7 @@ func TestDeleteAccounts(t *testing.T) {
 	storageManager := New()
 	storageManager.Update(cache)
 
-	err := storageManager.DeleteAccounts("hid", []string{"hello", "env", "test"})
+	err := storageManager.deleteAccounts("hid", []string{"hello", "env", "test"})
 	if err != nil {
 		t.Errorf("Error is supposed to be nil; instead it is %v", err)
 	}
@@ -134,7 +134,7 @@ func TestReadAccessToken(t *testing.T) {
 	storageManager := New()
 	storageManager.Update(cache)
 
-	retAccessToken, err := storageManager.ReadAccessToken(
+	retAccessToken, err := storageManager.readAccessToken(
 		"hid",
 		[]string{"hello", "env", "test"},
 		"realm",
@@ -142,12 +142,12 @@ func TestReadAccessToken(t *testing.T) {
 		[]string{"user.read", "openid"},
 	)
 	if err != nil {
-		t.Errorf("ReadAccessToken(): got err == %s, want err == nil", err)
+		t.Errorf("readAccessToken(): got err == %s, want err == nil", err)
 	}
 	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
-	_, err = storageManager.ReadAccessToken(
+	_, err = storageManager.readAccessToken(
 		"this_should_break_it",
 		[]string{"hello", "env", "test"},
 		"realm",
@@ -155,7 +155,7 @@ func TestReadAccessToken(t *testing.T) {
 		[]string{"user.read", "openid"},
 	)
 	if err == nil {
-		t.Errorf("ReadAccessToken(): got err == nil, want err != nil")
+		t.Errorf("readAccessToken(): got err == nil, want err != nil")
 	}
 }
 
@@ -173,13 +173,13 @@ func TestWriteAccessToken(t *testing.T) {
 		"secret",
 	)
 	key := testAccessToken.CreateKey()
-	err := storageManager.WriteAccessToken(testAccessToken)
+	err := storageManager.writeAccessToken(testAccessToken)
 	if err != nil {
-		t.Fatalf("TestWriteAccessToken: got err == %s, want err == nil", err)
+		t.Fatalf("TestwriteAccessToken: got err == %s, want err == nil", err)
 	}
 
 	if diff := pretty.Compare(testAccessToken, storageManager.Contract().AccessTokens[key]); diff != "" {
-		t.Errorf("TestWriteAccessToken: -want/+got:\n%s", diff)
+		t.Errorf("TestwriteAccessToken: -want/+got:\n%s", diff)
 	}
 }
 
@@ -194,17 +194,17 @@ func TestReadAccount(t *testing.T) {
 	storageManager := New()
 	storageManager.Update(cache)
 
-	returnedAccount, err := storageManager.ReadAccount("hid", []string{"hello", "env", "test"}, "realm")
+	returnedAccount, err := storageManager.readAccount("hid", []string{"hello", "env", "test"}, "realm")
 	if err != nil {
-		t.Fatalf("TestReadAccount: got err == %s, want err == nil", err)
+		t.Fatalf("TestreadAccount: got err == %s, want err == nil", err)
 	}
 	if diff := pretty.Compare(testAcc, returnedAccount); diff != "" {
-		t.Errorf("TestReadAccount: -want/+got:\n%s", diff)
+		t.Errorf("TestreadAccount: -want/+got:\n%s", diff)
 	}
 
-	_, err = storageManager.ReadAccount("this_should_break_it", []string{"hello", "env", "test"}, "realm")
+	_, err = storageManager.readAccount("this_should_break_it", []string{"hello", "env", "test"}, "realm")
 	if err == nil {
-		t.Errorf("TestReadAccount: got err == nil, want err != nil")
+		t.Errorf("TestreadAccount: got err == nil, want err != nil")
 	}
 }
 
@@ -212,12 +212,12 @@ func TestWriteAccount(t *testing.T) {
 	storageManager := New()
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	key := testAcc.CreateKey()
-	err := storageManager.WriteAccount(testAcc)
+	err := storageManager.writeAccount(testAcc)
 	if err != nil {
-		t.Fatalf("TestWriteAccount: got err == %s, want err == nil", err)
+		t.Fatalf("TestwriteAccount: got err == %s, want err == nil", err)
 	}
 	if diff := pretty.Compare(testAcc, storageManager.Contract().Accounts[key]); diff != "" {
-		t.Errorf("TestWriteAccount: -want/+got:\n%s", diff)
+		t.Errorf("TestwriteAccount: -want/+got:\n%s", diff)
 	}
 }
 
@@ -232,17 +232,17 @@ func TestReadAppMetadata(t *testing.T) {
 	storageManager := New()
 	storageManager.Update(cache)
 
-	returnedAppMeta, err := storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "cid")
+	returnedAppMeta, err := storageManager.readAppMetadata([]string{"hello", "test", "env"}, "cid")
 	if err != nil {
-		t.Fatalf("TestReadAppMetadata(ReadAppMetadata): got err == %s, want err == nil", err)
+		t.Fatalf("TestreadAppMetadata(readAppMetadata): got err == %s, want err == nil", err)
 	}
 	if diff := pretty.Compare(testAppMeta, returnedAppMeta); diff != "" {
-		t.Fatalf("TestReadAppMetadata(ReadAppMetadata): -want/+got:\n%s", diff)
+		t.Fatalf("TestreadAppMetadata(readAppMetadata): -want/+got:\n%s", diff)
 	}
 
-	_, err = storageManager.ReadAppMetadata([]string{"hello", "test", "env"}, "break_this")
+	_, err = storageManager.readAppMetadata([]string{"hello", "test", "env"}, "break_this")
 	if err == nil {
-		t.Fatalf("TestReadAppMetadata(bad ReadAppMetadata): got err == nil, want err != nil")
+		t.Fatalf("TestreadAppMetadata(bad readAppMetadata): got err == nil, want err != nil")
 	}
 }
 
@@ -250,12 +250,12 @@ func TestWriteAppMetadata(t *testing.T) {
 	storageManager := New()
 	testAppMeta := CreateAppMetadata("fid", "cid", "env")
 	key := testAppMeta.CreateKey()
-	err := storageManager.WriteAppMetadata(testAppMeta)
+	err := storageManager.writeAppMetadata(testAppMeta)
 	if err != nil {
-		t.Fatalf("TestWriteAppMetadata: got err == %s, want err == nil", err)
+		t.Fatalf("TestwriteAppMetadata: got err == %s, want err == nil", err)
 	}
 	if diff := pretty.Compare(testAppMeta, storageManager.Contract().AppMetadata[key]); diff != "" {
-		t.Errorf("TestWriteAppMetadata: -want/+got:\n%s", diff)
+		t.Errorf("TestwriteAppMetadata: -want/+got:\n%s", diff)
 	}
 }
 
@@ -275,7 +275,7 @@ func TestReadIDToken(t *testing.T) {
 	storageManager := New()
 	storageManager.Update(cache)
 
-	returnedIDToken, err := storageManager.ReadIDToken(
+	returnedIDToken, err := storageManager.readIDToken(
 		"hid",
 		[]string{"hello", "env", "test"},
 		"realm",
@@ -286,17 +286,17 @@ func TestReadIDToken(t *testing.T) {
 	}
 
 	if diff := pretty.Compare(testIDToken, returnedIDToken); diff != "" {
-		t.Fatalf("TestReadIDToken(good token): -want/+got:\n%s", diff)
+		t.Fatalf("TestreadIDToken(good token): -want/+got:\n%s", diff)
 	}
 
-	_, err = storageManager.ReadIDToken(
+	_, err = storageManager.readIDToken(
 		"this_should_break_it",
 		[]string{"hello", "env", "test"},
 		"realm",
 		"cid",
 	)
 	if err == nil {
-		t.Errorf("TestReadIDToken(bad token): got err == nil, want err != nil")
+		t.Errorf("TestreadIDToken(bad token): got err == nil, want err != nil")
 	}
 }
 
@@ -310,17 +310,17 @@ func TestWriteIDToken(t *testing.T) {
 		"secret",
 	)
 	key := testIDToken.CreateKey()
-	err := storageManager.WriteIDToken(testIDToken)
+	err := storageManager.writeIDToken(testIDToken)
 	if err != nil {
-		t.Fatalf("TestWriteIDToken: got err == %s, want err == nil", err)
+		t.Fatalf("TestwriteIDToken: got err == %s, want err == nil", err)
 	}
 
 	if diff := pretty.Compare(testIDToken, storageManager.Contract().IDTokens[key]); diff != "" {
-		t.Errorf("TestWriteIDToken: -want/+got:\n%s", diff)
+		t.Errorf("TestwriteIDToken: -want/+got:\n%s", diff)
 	}
 }
 
-func TestDefaultStorageManagerReadRefreshToken(t *testing.T) {
+func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 	testRefreshTokenWithFID := CreateRefreshTokenCacheItem(
 		"hid",
 		"env",
@@ -518,19 +518,19 @@ func TestDefaultStorageManagerReadRefreshToken(t *testing.T) {
 	for _, test := range tests {
 		m.Update(test.contract)
 
-		got, err := m.ReadRefreshToken(test.args.homeAccountID, test.args.envAliases, test.args.familyID, test.args.clientID)
+		got, err := m.readRefreshToken(test.args.homeAccountID, test.args.envAliases, test.args.familyID, test.args.clientID)
 		switch {
 		case test.err && err == nil:
-			t.Errorf("TestDefaultStorageManagerReadRefreshToken(%s): got err == nil, want err != nil", test.name)
+			t.Errorf("TestDefaultStorageManagerreadRefreshToken(%s): got err == nil, want err != nil", test.name)
 			continue
 		case !test.err && err != nil:
-			t.Errorf("TestDefaultStorageManagerReadRefreshToken(%s): got err == %s, want err == nil", test.name, err)
+			t.Errorf("TestDefaultStorageManagerreadRefreshToken(%s): got err == %s, want err == nil", test.name, err)
 			continue
 		case err != nil:
 			continue
 		}
 		if diff := pretty.Compare(test.want, got); diff != "" {
-			t.Errorf("TestDefaultStorageManagerReadRefreshToken(%s): -want/+got:\n%s", test.name, diff)
+			t.Errorf("TestDefaultStorageManagerreadRefreshToken(%s): -want/+got:\n%s", test.name, diff)
 		}
 	}
 }
@@ -545,7 +545,7 @@ func TestWriteRefreshToken(t *testing.T) {
 		"fid",
 	)
 	key := testRefreshToken.CreateKey()
-	err := storageManager.WriteRefreshToken(testRefreshToken)
+	err := storageManager.writeRefreshToken(testRefreshToken)
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
