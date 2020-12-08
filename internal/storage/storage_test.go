@@ -95,7 +95,7 @@ func TestGetAllAccounts(t *testing.T) {
 	}
 }
 
-func TestdeleteAccounts(t *testing.T) {
+func TestDeleteAccounts(t *testing.T) {
 
 	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
@@ -114,7 +114,7 @@ func TestdeleteAccounts(t *testing.T) {
 	}
 }
 
-func TestreadAccessToken(t *testing.T) {
+func TestReadAccessToken(t *testing.T) {
 	testAccessToken := createAccessTokenCacheItem(
 		"hid",
 		"env",
@@ -159,7 +159,7 @@ func TestreadAccessToken(t *testing.T) {
 	}
 }
 
-func TestwriteAccessToken(t *testing.T) {
+func TestWriteAccessToken(t *testing.T) {
 	storageManager := New()
 	testAccessToken := createAccessTokenCacheItem(
 		"hid",
@@ -183,7 +183,7 @@ func TestwriteAccessToken(t *testing.T) {
 	}
 }
 
-func TestreadAccount(t *testing.T) {
+func TestReadAccount(t *testing.T) {
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 
 	cache := &CacheSerializationContract{
@@ -208,7 +208,7 @@ func TestreadAccount(t *testing.T) {
 	}
 }
 
-func TestwriteAccount(t *testing.T) {
+func TestWriteAccount(t *testing.T) {
 	storageManager := New()
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 	key := testAcc.CreateKey()
@@ -221,7 +221,7 @@ func TestwriteAccount(t *testing.T) {
 	}
 }
 
-func TestreadAppMetadata(t *testing.T) {
+func TestReadAppMetadata(t *testing.T) {
 	testAppMeta := CreateAppMetadata("fid", "cid", "env")
 
 	cache := &CacheSerializationContract{
@@ -246,7 +246,7 @@ func TestreadAppMetadata(t *testing.T) {
 	}
 }
 
-func TestwriteAppMetadata(t *testing.T) {
+func TestWriteAppMetadata(t *testing.T) {
 	storageManager := New()
 	testAppMeta := CreateAppMetadata("fid", "cid", "env")
 	key := testAppMeta.CreateKey()
@@ -259,7 +259,7 @@ func TestwriteAppMetadata(t *testing.T) {
 	}
 }
 
-func TestreadIDToken(t *testing.T) {
+func TestReadIDToken(t *testing.T) {
 	testIDToken := CreateIDTokenCacheItem(
 		"hid",
 		"env",
@@ -300,7 +300,7 @@ func TestreadIDToken(t *testing.T) {
 	}
 }
 
-func TestwriteIDToken(t *testing.T) {
+func TestWriteIDToken(t *testing.T) {
 	storageManager := New()
 	testIDToken := CreateIDTokenCacheItem(
 		"hid",
@@ -535,7 +535,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 	}
 }
 
-func TestwriteRefreshToken(t *testing.T) {
+func TestWriteRefreshToken(t *testing.T) {
 	storageManager := New()
 	testRefreshToken := CreateRefreshTokenCacheItem(
 		"hid",
