@@ -74,7 +74,7 @@ func TestGetAllAccounts(t *testing.T) {
 	}
 
 	storageManager := New()
-	storageManager.Update(cache)
+	storageManager.update(cache)
 
 	actualAccounts, err := storageManager.GetAllAccounts()
 	if err != nil {
@@ -106,7 +106,7 @@ func TestDeleteAccounts(t *testing.T) {
 		},
 	}
 	storageManager := New()
-	storageManager.Update(cache)
+	storageManager.update(cache)
 
 	err := storageManager.deleteAccounts("hid", []string{"hello", "env", "test"})
 	if err != nil {
@@ -132,7 +132,7 @@ func TestReadAccessToken(t *testing.T) {
 		},
 	}
 	storageManager := New()
-	storageManager.Update(cache)
+	storageManager.update(cache)
 
 	retAccessToken, err := storageManager.readAccessToken(
 		"hid",
@@ -193,7 +193,7 @@ func TestReadAccount(t *testing.T) {
 		},
 	}
 	storageManager := New()
-	storageManager.Update(cache)
+	storageManager.update(cache)
 
 	returnedAccount, err := storageManager.readAccount("hid", []string{"hello", "env", "test"}, "realm")
 	if err != nil {
@@ -232,7 +232,7 @@ func TestReadAppMetaData(t *testing.T) {
 		},
 	}
 	storageManager := New()
-	storageManager.Update(cache)
+	storageManager.update(cache)
 
 	returnedAppMeta, err := storageManager.readAppMetaData([]string{"hello", "test", "env"}, "cid")
 	if err != nil {
@@ -276,7 +276,7 @@ func TestReadIDToken(t *testing.T) {
 		},
 	}
 	storageManager := New()
-	storageManager.Update(cache)
+	storageManager.update(cache)
 
 	returnedIDToken, err := storageManager.readIDToken(
 		"hid",
@@ -522,7 +522,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 
 	m := &Manager{}
 	for _, test := range tests {
-		m.Update(test.contract)
+		m.update(test.contract)
 
 		got, err := m.readRefreshToken(test.args.homeAccountID, test.args.envAliases, test.args.familyID, test.args.clientID)
 		switch {
@@ -625,7 +625,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 	}
 
 	manager := New()
-	manager.Update(contract)
+	manager.update(contract)
 
 	_, err := manager.Serialize()
 	if err != nil {
@@ -756,7 +756,7 @@ func TestRead(t *testing.T) {
 		},
 	}
 	manager := New()
-	manager.Update(contract)
+	manager.update(contract)
 
 	authInfo := msalbase.AuthorityInfo{
 		Host:   "env",

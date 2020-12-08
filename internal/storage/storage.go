@@ -373,9 +373,9 @@ func (m *Manager) writeAppMetaData(AppMetaData AppMetaData) error {
 	return nil
 }
 
-// Update updates the internal cache object. This is for use in tests, other uses are not
+// update updates the internal cache object. This is for use in tests, other uses are not
 // supported.
-func (m *Manager) Update(cache *Contract) {
+func (m *Manager) update(cache *Contract) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
