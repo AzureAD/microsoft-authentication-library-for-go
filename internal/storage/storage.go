@@ -15,6 +15,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
@@ -36,26 +37,17 @@ type Manager struct {
 	// reads.  A write will still need to take a lock as to not loose data from two
 	// different write calls serializing data. That will not block reads while the cache
 	// gets updated. Should reduce contention.
-	accessTokens  map[string]accessTokenCacheItem
-	refreshTokens map[string]refreshTokenCacheItem
-	idTokens      map[string]idTokenCacheItem
-	accounts      map[string]msalbase.Account
-	appMetadatas  map[string]appMetadata
-	cacheContract *cacheSerializationContract
+	contract atomic.Value // Stores a *CacheSerializationContract
 
-	mu sync.Mutex
+	mu      sync.Mutex
+	cacheMu sync.Mutex // TODO(jdoak): Remove on next PR
 }
 
 // New is the constructor for Manager.
 func New() *Manager {
-	return &Manager{
-		accessTokens:  map[string]accessTokenCacheItem{},
-		refreshTokens: map[string]refreshTokenCacheItem{},
-		idTokens:      map[string]idTokenCacheItem{},
-		accounts:      map[string]msalbase.Account{},
-		appMetadatas:  map[string]appMetadata{},
-		cacheContract: createCacheSerializationContract(),
-	}
+	m := &Manager{}
+	m.contract.Store(CreateCacheSerializationContract())
+	return m
 }
 
 func checkAlias(alias string, aliases []string) bool {
@@ -106,11 +98,11 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 		return msalbase.StorageTokenResponse{}, err
 	}
 
-	appMetadata, err := m.ReadAppMetadata(metadata.Aliases, clientID)
+	AppMetadata, err := m.ReadAppMetadata(metadata.Aliases, clientID)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
-	familyID := appMetadata.FamilyID
+	familyID := AppMetadata.FamilyID
 
 	refreshToken, err := m.ReadRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
 	if err != nil {
@@ -124,6 +116,9 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 }
 
 func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
 	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
@@ -136,7 +131,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 	var account msalbase.Account
 
 	if tokenResponse.HasRefreshToken() {
-		refreshToken := createRefreshTokenCacheItem(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
+		refreshToken := CreateRefreshTokenCacheItem(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
 		if err := m.WriteRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
@@ -167,7 +162,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 
 	idTokenJwt := tokenResponse.IDToken
 	if !idTokenJwt.IsZero() {
-		idToken := createIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
+		idToken := CreateIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
 		if err := m.WriteIDToken(idToken); err != nil {
 			return msalbase.Account{}, err
 		}
@@ -188,18 +183,23 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 		}
 	}
 
-	appMetadata := createAppMetadata(tokenResponse.FamilyID, clientID, environment)
+	AppMetadata := CreateAppMetadata(tokenResponse.FamilyID, clientID, environment)
 
-	if err := m.WriteAppMetadata(appMetadata); err != nil {
+	if err := m.WriteAppMetadata(AppMetadata); err != nil {
 		return msalbase.Account{}, err
 	}
 	return account, nil
 }
 
-func (m *Manager) ReadAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (accessTokenCacheItem, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	for _, at := range m.accessTokens {
+// Contract returns the CacheSerializationContract for read operations.
+func (m *Manager) Contract() *CacheSerializationContract {
+	return m.contract.Load().(*CacheSerializationContract)
+}
+
+func (m *Manager) ReadAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessTokenCacheItem, error) {
+	cache := m.Contract()
+
+	for _, at := range cache.AccessTokens {
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
 			if checkAlias(at.Environment, envAliases) {
 				if isMatchingScopes(scopes, at.Scopes) {
@@ -208,36 +208,36 @@ func (m *Manager) ReadAccessToken(homeID string, envAliases []string, realm, cli
 			}
 		}
 	}
-	return accessTokenCacheItem{}, fmt.Errorf("access token not found")
+	return AccessTokenCacheItem{}, fmt.Errorf("access token not found")
 }
 
-func (m *Manager) WriteAccessToken(accessToken accessTokenCacheItem) error {
+func (m *Manager) WriteAccessToken(accessToken AccessTokenCacheItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	key := accessToken.CreateKey()
-	m.accessTokens[key] = accessToken
+
+	cache := m.Contract().copy()
+	cache.AccessTokens[key] = accessToken
+	m.contract.Store(cache)
 	return nil
 }
 
-func (m *Manager) ReadRefreshToken(homeID string, envAliases []string, familyID, clientID string) (refreshTokenCacheItem, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	byFamily := func(rt refreshTokenCacheItem) bool {
+func (m *Manager) ReadRefreshToken(homeID string, envAliases []string, familyID, clientID string) (RefreshTokenCacheItem, error) {
+	byFamily := func(rt RefreshTokenCacheItem) bool {
 		return matchFamilyRefreshToken(rt, homeID, envAliases)
 	}
-	byClient := func(rt refreshTokenCacheItem) bool {
+	byClient := func(rt RefreshTokenCacheItem) bool {
 		return matchClientIDRefreshToken(rt, homeID, envAliases, clientID)
 	}
 
-	var matchers []func(rt refreshTokenCacheItem) bool
+	var matchers []func(rt RefreshTokenCacheItem) bool
 	if familyID == "" {
-		matchers = []func(rt refreshTokenCacheItem) bool{
+		matchers = []func(rt RefreshTokenCacheItem) bool{
 			byClient, byFamily,
 		}
 	} else {
-		matchers = []func(rt refreshTokenCacheItem) bool{
+		matchers = []func(rt RefreshTokenCacheItem) bool{
 			byFamily, byClient,
 		}
 	}
@@ -251,65 +251,67 @@ func (m *Manager) ReadRefreshToken(homeID string, envAliases []string, familyID,
 	// If application is NOT part of the family, search by client_ID
 	// If app is part of the family or if we DO NOT KNOW if it's part of the family, search by family ID, then by client_id (we will know if an app is part of the family after the first token response).
 	// https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/311fe8b16e7c293462806f397e189a6aa1159769/src/client/Microsoft.Identity.Client/Internal/Requests/Silent/CacheSilentStrategy.cs#L95
+	cache := m.Contract()
 	for _, matcher := range matchers {
-		for _, rt := range m.refreshTokens {
+		for _, rt := range cache.RefreshTokens {
 			if matcher(rt) {
 				return rt, nil
 			}
 		}
 	}
 
-	return refreshTokenCacheItem{}, fmt.Errorf("refresh token not found")
+	return RefreshTokenCacheItem{}, fmt.Errorf("refresh token not found")
 }
 
-func matchFamilyRefreshToken(rt refreshTokenCacheItem, homeID string, envAliases []string) bool {
+func matchFamilyRefreshToken(rt RefreshTokenCacheItem, homeID string, envAliases []string) bool {
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.FamilyID != ""
 }
 
-func matchClientIDRefreshToken(rt refreshTokenCacheItem, homeID string, envAliases []string, clientID string) bool {
+func matchClientIDRefreshToken(rt RefreshTokenCacheItem, homeID string, envAliases []string, clientID string) bool {
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
 
-func (m *Manager) WriteRefreshToken(refreshToken refreshTokenCacheItem) error {
+func (m *Manager) WriteRefreshToken(refreshToken RefreshTokenCacheItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	key := refreshToken.CreateKey()
-	m.refreshTokens[key] = refreshToken
+	cache := m.Contract().copy()
+	cache.RefreshTokens[key] = refreshToken
+	m.contract.Store(cache)
 
 	return nil
 }
 
-func (m *Manager) ReadIDToken(homeID string, envAliases []string, realm, clientID string) (idTokenCacheItem, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	for _, idt := range m.idTokens {
+func (m *Manager) ReadIDToken(homeID string, envAliases []string, realm, clientID string) (IDTokenCacheItem, error) {
+	cache := m.Contract()
+	for _, idt := range cache.IDTokens {
 		if idt.HomeAccountID == homeID && idt.Realm == realm && idt.ClientID == clientID {
 			if checkAlias(idt.Environment, envAliases) {
 				return idt, nil
 			}
 		}
 	}
-	return idTokenCacheItem{}, fmt.Errorf("token not found")
+	return IDTokenCacheItem{}, fmt.Errorf("token not found")
 }
 
-func (m *Manager) WriteIDToken(idToken idTokenCacheItem) error {
+func (m *Manager) WriteIDToken(idToken IDTokenCacheItem) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	key := idToken.CreateKey()
-	m.idTokens[key] = idToken
+	cache := m.Contract().copy()
+	cache.IDTokens[key] = idToken
+	m.contract.Store(cache)
 
 	return nil
 }
 
 func (m *Manager) GetAllAccounts() ([]msalbase.Account, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	cache := m.Contract()
 
 	var accounts []msalbase.Account
-	for _, v := range m.accounts {
+	for _, v := range cache.Accounts {
 		accounts = append(accounts, v)
 	}
 
@@ -317,10 +319,9 @@ func (m *Manager) GetAllAccounts() ([]msalbase.Account, error) {
 }
 
 func (m *Manager) ReadAccount(homeAccountID string, envAliases []string, realm string) (msalbase.Account, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	cache := m.Contract()
 
-	for _, acc := range m.accounts {
+	for _, acc := range cache.Accounts {
 		if acc.HomeAccountID == homeAccountID && checkAlias(acc.Environment, envAliases) && acc.Realm == realm {
 			return acc, nil
 		}
@@ -333,92 +334,85 @@ func (m *Manager) WriteAccount(account msalbase.Account) error {
 	defer m.mu.Unlock()
 
 	key := account.CreateKey()
-	m.accounts[key] = account
+	cache := m.Contract().copy()
+	cache.Accounts[key] = account
+	m.contract.Store(cache)
 
 	return nil
 }
 
 func (m *Manager) DeleteAccounts(homeID string, envAliases []string) error {
-	keys := []string{}
-	func() {
-		m.mu.Lock()
-		defer m.mu.Unlock()
-
-		for key, acc := range m.accounts {
-			if acc.HomeAccountID == homeID && checkAlias(acc.Environment, envAliases) {
-				keys = append(keys, key)
-			}
-		}
-	}()
-
-	if len(keys) == 0 {
-		return fmt.Errorf("can't find account for ID(%s)", homeID)
-	}
-
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	for _, key := range keys {
-		delete(m.accounts, key)
+	cache := m.Contract().copy()
+
+	for key, acc := range cache.Accounts {
+		if acc.HomeAccountID == homeID && checkAlias(acc.Environment, envAliases) {
+			delete(cache.Accounts, key)
+		}
 	}
 
+	m.contract.Store(cache)
 	return nil
 }
 
-func (m *Manager) ReadAppMetadata(envAliases []string, clientID string) (appMetadata, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+func (m *Manager) ReadAppMetadata(envAliases []string, clientID string) (AppMetadata, error) {
+	cache := m.Contract()
 
-	for _, app := range m.appMetadatas {
+	for _, app := range cache.AppMetadata {
 		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
 			return app, nil
 		}
 	}
-	return appMetadata{}, fmt.Errorf("not found")
+	return AppMetadata{}, fmt.Errorf("not found")
 }
 
-func (m *Manager) WriteAppMetadata(appMetadata appMetadata) error {
+func (m *Manager) WriteAppMetadata(AppMetadata AppMetadata) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	key := appMetadata.CreateKey()
-	m.appMetadatas[key] = appMetadata
+	key := AppMetadata.CreateKey()
+	cache := m.Contract().copy()
+	cache.AppMetadata[key] = AppMetadata
+	m.contract.Store(cache)
 
 	return nil
 }
 
-func (m *Manager) Serialize() (string, error) {
+// Update updates the internal cache object. This is for use in tests, other uses are not
+// supported.
+func (m *Manager) Update(cache *CacheSerializationContract) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// TODO(jdoak): This looks weird, investigate later.
-	m.cacheContract.AccessTokens = m.accessTokens
-	m.cacheContract.RefreshTokens = m.refreshTokens
-	m.cacheContract.IDTokens = m.idTokens
-	m.cacheContract.Accounts = m.accounts
-	m.cacheContract.AppMetadata = m.appMetadatas
+	m.contract.Store(cache)
+}
 
-	serializedCache, err := json.Marshal(m.cacheContract)
+// TODO(jdoak): Change this to return []byte, not string.
+
+func (m *Manager) Serialize() (string, error) {
+	cache := m.Contract()
+
+	serializedCache, err := json.Marshal(cache)
 	if err != nil {
 		return "", err
 	}
-	return string(serializedCache), nil // TODO(someone): while you can do the string conversion, this is costly. Investigate []byte
+	return string(serializedCache), nil
 }
 
 func (m *Manager) Deserialize(cacheData []byte) error {
-	err := json.Unmarshal(cacheData, m.cacheContract)
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	contract := CreateCacheSerializationContract()
+
+	err := json.Unmarshal(cacheData, contract)
 	if err != nil {
 		return err
 	}
 
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.accessTokens = m.cacheContract.AccessTokens
-	m.refreshTokens = m.cacheContract.RefreshTokens
-	m.idTokens = m.cacheContract.IDTokens
-	m.accounts = m.cacheContract.Accounts
-	m.appMetadatas = m.cacheContract.AppMetadata
+	m.contract.Store(contract)
 
 	return nil
 }

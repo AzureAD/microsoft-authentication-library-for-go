@@ -13,23 +13,54 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
-type cacheSerializationContract struct {
-	AccessTokens  map[string]accessTokenCacheItem  `json:"AccessToken"`
-	RefreshTokens map[string]refreshTokenCacheItem `json:"RefreshToken"`
-	IDTokens      map[string]idTokenCacheItem      `json:"IdToken"`
+type CacheSerializationContract struct {
+	AccessTokens  map[string]AccessTokenCacheItem  `json:"AccessToken"`
+	RefreshTokens map[string]RefreshTokenCacheItem `json:"RefreshToken"`
+	IDTokens      map[string]IDTokenCacheItem      `json:"IdToken"`
 	Accounts      map[string]msalbase.Account      `json:"Account"`
-	AppMetadata   map[string]appMetadata           `json:"AppMetadata"`
+	AppMetadata   map[string]AppMetadata           `json:"AppMetadata"`
 
 	AdditionalFields map[string]interface{}
 }
 
 // TODO(jdoak): I've removed all make() stuff. This should get removed
 // in a future update.
-func createCacheSerializationContract() *cacheSerializationContract {
-	return &cacheSerializationContract{}
+func CreateCacheSerializationContract() *CacheSerializationContract {
+	return &CacheSerializationContract{}
 }
 
-type accessTokenCacheItem struct {
+// copy returns a copy of the CacheSerializationContract.
+func (c *CacheSerializationContract) copy() *CacheSerializationContract {
+	n := &CacheSerializationContract{
+		AccessTokens:     make(map[string]AccessTokenCacheItem, len(c.AccessTokens)),
+		RefreshTokens:    make(map[string]RefreshTokenCacheItem, len(c.RefreshTokens)),
+		IDTokens:         make(map[string]IDTokenCacheItem, len(c.IDTokens)),
+		Accounts:         make(map[string]msalbase.Account, len(c.Accounts)),
+		AppMetadata:      make(map[string]AppMetadata, len(c.AppMetadata)),
+		AdditionalFields: make(map[string]interface{}, len(c.AdditionalFields)),
+	}
+	for k, v := range c.AccessTokens {
+		n.AccessTokens[k] = v
+	}
+	for k, v := range c.RefreshTokens {
+		n.RefreshTokens[k] = v
+	}
+	for k, v := range c.IDTokens {
+		n.IDTokens[k] = v
+	}
+	for k, v := range c.Accounts {
+		n.Accounts[k] = v
+	}
+	for k, v := range c.AppMetadata {
+		n.AppMetadata[k] = v
+	}
+	for k, v := range c.AdditionalFields {
+		n.AdditionalFields[k] = v
+	}
+	return n
+}
+
+type AccessTokenCacheItem struct {
 	HomeAccountID                  string `json:"home_account_id,omitempty"`
 	Environment                    string `json:"environment,omitempty"`
 	Realm                          string `json:"realm,omitempty"`
@@ -44,8 +75,8 @@ type accessTokenCacheItem struct {
 	AdditionalFields map[string]interface{}
 }
 
-func createAccessTokenCacheItem(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn int64, scopes, token string) accessTokenCacheItem {
-	return accessTokenCacheItem{
+func createAccessTokenCacheItem(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn int64, scopes, token string) AccessTokenCacheItem {
+	return AccessTokenCacheItem{
 		HomeAccountID:                  homeID,
 		Environment:                    env,
 		Realm:                          realm,
@@ -59,27 +90,27 @@ func createAccessTokenCacheItem(homeID, env, realm, clientID string, cachedAt, e
 	}
 }
 
-func (a accessTokenCacheItem) CreateKey() string {
+func (a AccessTokenCacheItem) CreateKey() string {
 	return strings.Join(
 		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes},
 		msalbase.CacheKeySeparator,
 	)
 }
 
-func (a accessTokenCacheItem) GetSecret() string {
+func (a AccessTokenCacheItem) GetSecret() string {
 	return a.Secret
 }
 
-func (a accessTokenCacheItem) GetExpiresOn() string {
+func (a AccessTokenCacheItem) GetExpiresOn() string {
 	return a.ExpiresOnUnixTimestamp
 }
 
-func (a accessTokenCacheItem) GetScopes() string {
+func (a AccessTokenCacheItem) GetScopes() string {
 	return a.Scopes
 }
 
-// Validate validates that this accessTokenCacheItem can be used.
-func (a accessTokenCacheItem) Validate() error {
+// Validate validates that this AccessTokenCacheItem can be used.
+func (a AccessTokenCacheItem) Validate() error {
 	cachedAt, err := strconv.ParseInt(a.CachedAt, 10, 64)
 	if err != nil {
 		return fmt.Errorf("access token isn't valid, the cached at field is invalid: %w", err)
@@ -101,7 +132,7 @@ func (a accessTokenCacheItem) Validate() error {
 	return nil
 }
 
-type appMetadata struct {
+type AppMetadata struct {
 	FamilyID    string `json:"family_id,omitempty"`
 	ClientID    string `json:"client_id,omitempty"`
 	Environment string `json:"environment,omitempty"`
@@ -109,22 +140,22 @@ type appMetadata struct {
 	AdditionalFields map[string]interface{}
 }
 
-func createAppMetadata(familyID, clientID, environment string) appMetadata {
-	return appMetadata{
+func CreateAppMetadata(familyID, clientID, environment string) AppMetadata {
+	return AppMetadata{
 		FamilyID:    familyID,
 		ClientID:    clientID,
 		Environment: environment,
 	}
 }
 
-func (appMeta appMetadata) CreateKey() string {
+func (appMeta AppMetadata) CreateKey() string {
 	return strings.Join(
-		[]string{"appmetadata", appMeta.Environment, appMeta.ClientID},
+		[]string{"AppMetadata", appMeta.Environment, appMeta.ClientID},
 		msalbase.CacheKeySeparator,
 	)
 }
 
-type idTokenCacheItem struct {
+type IDTokenCacheItem struct {
 	HomeAccountID    string `json:"home_account_id,omitempty"`
 	Environment      string `json:"environment,omitempty"`
 	Realm            string `json:"realm,omitempty"`
@@ -134,8 +165,8 @@ type idTokenCacheItem struct {
 	AdditionalFields map[string]interface{}
 }
 
-func createIDTokenCacheItem(homeID, env, realm, clientID, idToken string) idTokenCacheItem {
-	return idTokenCacheItem{
+func CreateIDTokenCacheItem(homeID, env, realm, clientID, idToken string) IDTokenCacheItem {
+	return IDTokenCacheItem{
 		HomeAccountID:  homeID,
 		Environment:    env,
 		Realm:          realm,
@@ -145,18 +176,18 @@ func createIDTokenCacheItem(homeID, env, realm, clientID, idToken string) idToke
 	}
 }
 
-func (id idTokenCacheItem) CreateKey() string {
+func (id IDTokenCacheItem) CreateKey() string {
 	return strings.Join(
 		[]string{id.HomeAccountID, id.Environment, id.CredentialType, id.ClientID, id.Realm},
 		msalbase.CacheKeySeparator,
 	)
 }
 
-func (id idTokenCacheItem) GetSecret() string {
+func (id IDTokenCacheItem) GetSecret() string {
 	return id.Secret
 }
 
-type refreshTokenCacheItem struct {
+type RefreshTokenCacheItem struct {
 	HomeAccountID  string `json:"home_account_id,omitempty"`
 	Environment    string `json:"environment,omitempty"`
 	CredentialType string `json:"credential_type,omitempty"`
@@ -169,8 +200,8 @@ type refreshTokenCacheItem struct {
 	AdditionalFields map[string]interface{}
 }
 
-func createRefreshTokenCacheItem(homeID, env, clientID, refreshToken, familyID string) refreshTokenCacheItem {
-	return refreshTokenCacheItem{
+func CreateRefreshTokenCacheItem(homeID, env, clientID, refreshToken, familyID string) RefreshTokenCacheItem {
+	return RefreshTokenCacheItem{
 		HomeAccountID:  homeID,
 		Environment:    env,
 		CredentialType: msalbase.CredentialTypeRefreshToken,
@@ -180,7 +211,7 @@ func createRefreshTokenCacheItem(homeID, env, clientID, refreshToken, familyID s
 	}
 }
 
-func (rt refreshTokenCacheItem) CreateKey() string {
+func (rt RefreshTokenCacheItem) CreateKey() string {
 	var fourth = rt.FamilyID
 	if fourth == "" {
 		fourth = rt.ClientID
@@ -192,6 +223,6 @@ func (rt refreshTokenCacheItem) CreateKey() string {
 	)
 }
 
-func (rt refreshTokenCacheItem) GetSecret() string {
+func (rt RefreshTokenCacheItem) GetSecret() string {
 	return rt.Secret
 }

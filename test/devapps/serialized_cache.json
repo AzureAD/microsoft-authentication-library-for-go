@@ -44,7 +44,7 @@
       }
     },
     "AppMetadata": {
-      "appmetadata-login.windows.net-my_client_id": {
+      "AppMetadata-login.windows.net-my_client_id": {
         "environment": "login.windows.net",
         "family_id": null,
         "client_id": "my_client_id"

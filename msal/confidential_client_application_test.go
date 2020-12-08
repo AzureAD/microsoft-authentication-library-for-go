@@ -13,34 +13,26 @@ import (
 )
 
 func TestAcquireTokenByClientCredential(t *testing.T) {
-	testWrm := new(requests.MockWebRequestManager)
-	testCacheManager := new(requests.MockCacheManager)
+	wrm := new(requests.MockWebRequestManager)
+	fm := &fakeManager{}
+
 	cred, _ := msalbase.CreateClientCredentialFromSecret("client_secret")
 	cca := &ConfidentialClientApplication{
-		clientApplication: &clientApplication{
-			clientApplicationParameters: clientAppParams,
-			webRequestManager:           testWrm,
-			cache:                       testCacheManager,
-			cacheAccessor:               noopCacheAccessor{},
-		},
-		clientCredential: cred,
+		clientApplication: newTestApplication(fm, wrm),
+		clientCredential:  cred,
 	}
 
-	testWrm.On(
+	wrm.On(
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(tdr, nil)
-	actualTokenResp := msalbase.TokenResponse{}
-	testWrm.On(
+
+	wrm.On(
 		"GetAccessTokenWithClientSecret",
 		mock.AnythingOfType("msalbase.AuthParametersInternal"),
 		"client_secret",
-	).Return(actualTokenResp, nil)
-	testCacheManager.On(
-		"CacheTokenResponse",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
-		actualTokenResp,
-	).Return(testAcc, nil)
+	).Return(msalbase.TokenResponse{}, nil)
+
 	_, err := cca.AcquireTokenByClientCredential(context.Background(), []string{"openid"})
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)

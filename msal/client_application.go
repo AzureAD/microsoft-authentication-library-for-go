@@ -15,13 +15,21 @@ import (
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) BeforeCacheAccess(context requests.CacheManager) {}
-func (n noopCacheAccessor) AfterCacheAccess(context requests.CacheManager)  {}
+func (n noopCacheAccessor) BeforeCacheAccess(manager *storage.Manager) {}
+func (n noopCacheAccessor) AfterCacheAccess(manager *storage.Manager)  {}
+
+// cache provides an internal cache. It is defined to allow faking the cache in tests.
+// In all production use it is a *storage.Manager.
+type cache interface {
+	TryReadCache(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error)
+	CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
+	GetAllAccounts() ([]msalbase.Account, error)
+}
 
 type clientApplication struct {
 	webRequestManager           requests.WebRequestManager
 	clientApplicationParameters *clientApplicationParameters
-	cache                       requests.CacheManager
+	cache                       cache // *storage.Manager or fakeManager in tests
 	cacheAccessor               CacheAccessor
 }
 
@@ -47,11 +55,12 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	silent.augmentAuthenticationParameters(&authParams)
 
-	// TODO(jdoak/msal): This accessor stuff should be integrated into the
-	// CacheManager instead of here probably by passing the accessor in its
-	// constructor and defining these methods.
-	client.cacheAccessor.BeforeCacheAccess(client.cache)
-	defer client.cacheAccessor.AfterCacheAccess(client.cache)
+	// TODO(jdoak): Think about removing this after refactor.
+	if sm, ok := client.cache.(*storage.Manager); ok {
+		client.cacheAccessor.BeforeCacheAccess(sm)
+		defer client.cacheAccessor.AfterCacheAccess(sm)
+	}
+
 	storageTokenResponse, err := client.cache.TryReadCache(ctx, authParams, client.webRequestManager)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
@@ -102,8 +111,12 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 		return msalbase.AuthenticationResult{}, err
 	}
 
-	client.cacheAccessor.BeforeCacheAccess(client.cache)
-	defer client.cacheAccessor.AfterCacheAccess(client.cache)
+	// TODO(jdoak): Think about removing this after refactor.
+	if sm, ok := client.cache.(*storage.Manager); ok {
+		client.cacheAccessor.BeforeCacheAccess(sm)
+		defer client.cacheAccessor.AfterCacheAccess(sm)
+	}
+
 	account, err := client.cache.CacheTokenResponse(authParams, tokenResponse)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
@@ -112,8 +125,12 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 }
 
 func (client *clientApplication) getAccounts() []msalbase.Account {
-	client.cacheAccessor.BeforeCacheAccess(client.cache)
-	defer client.cacheAccessor.AfterCacheAccess(client.cache)
+	// TODO(jdoak): Think about removing this after refactor.
+	if sm, ok := client.cache.(*storage.Manager); ok {
+		client.cacheAccessor.BeforeCacheAccess(sm)
+		defer client.cacheAccessor.AfterCacheAccess(sm)
+	}
+
 	accounts, err := client.cache.GetAllAccounts()
 	if err != nil {
 		return nil

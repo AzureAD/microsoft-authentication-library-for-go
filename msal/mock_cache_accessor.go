@@ -4,7 +4,7 @@
 package msal
 
 import (
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
 	"github.com/stretchr/testify/mock"
 )
 
@@ -12,10 +12,10 @@ type mockCacheAccessor struct {
 	mock.Mock
 }
 
-func (mock *mockCacheAccessor) BeforeCacheAccess(context requests.CacheManager) {
+func (mock *mockCacheAccessor) BeforeCacheAccess(context *storage.Manager) {
 	mock.Called(context)
 }
 
-func (mock *mockCacheAccessor) AfterCacheAccess(context requests.CacheManager) {
+func (mock *mockCacheAccessor) AfterCacheAccess(context *storage.Manager) {
 	mock.Called(context)
 }
