@@ -4,7 +4,7 @@
 // Package storage holds all cached token information for MSAL. This storage can be
 // augmented with third-party extensions to provide persistent storage. In that case,
 // reads and writes in upper packages will call Serialize() to take the entire in-memory
-// representation and write it to storage and Deserialize() to update the entire in-memory
+// representation and write it to storage and Unmarshal() to update the entire in-memory
 // storage with what was in the persistent storage.  The persistent storage can only be
 // accessed in this way because multiple MSAL clients written in multiple languages can
 // access the same storage and must adhere to the same method that was defined
@@ -26,7 +26,7 @@ import (
 // TODO(someone): This thing does not expire tokens.
 
 // Manager is an in-memory cache of access tokens, accounts and meta data. This data is
-// updated on read/write calls. Deserialize() replaces all data stored here with whatever
+// updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
 type Manager struct {
 	// TODO(jdoak): Going to refactor this (next PR).
@@ -384,23 +384,23 @@ func (m *Manager) update(cache *Contract) {
 
 // TODO(jdoak): Change this to return []byte, not string.
 
-func (m *Manager) Serialize() (string, error) {
-	cache := m.Contract()
-
-	serializedCache, err := json.Marshal(cache)
+// Marshal implements cache.Marshaler.
+func (m *Manager) Marshal() ([]byte, error) {
+	b, err := json.Marshal(m.Contract())
 	if err != nil {
-		return "", err
+		return nil, err
 	}
-	return string(serializedCache), nil
+	return b, nil
 }
 
-func (m *Manager) Deserialize(cacheData []byte) error {
+// Unmarshal implements cache.Unmarshaler.
+func (m *Manager) Unmarshal(b []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	contract := NewContract()
 
-	err := json.Unmarshal(cacheData, contract)
+	err := json.Unmarshal(b, contract)
 	if err != nil {
 		return err
 	}

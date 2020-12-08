@@ -9,13 +9,14 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
 )
 
 // ConfidentialClientApplicationOptions configures the PublicClientApplication's behavior.
 type ConfidentialClientApplicationOptions struct {
 	// Accessor controls cache persistence.
 	// By default there is no cache persistence.
-	Accessor CacheAccessor
+	Accessor cache.Token
 
 	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
 	Authority string
