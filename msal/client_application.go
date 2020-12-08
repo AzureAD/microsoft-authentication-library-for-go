@@ -16,8 +16,8 @@ import (
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) IntoCache(cache cache.Unmarshaler)      {}
-func (n noopCacheAccessor) AfterCacheAccess(cache cache.Marshaler) {}
+func (n noopCacheAccessor) IntoCache(cache cache.Unmarshaler) {}
+func (n noopCacheAccessor) ExportCache(cache cache.Marshaler) {}
 
 // managet provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
@@ -59,7 +59,7 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 	// TODO(jdoak): Think about removing this after refactor.
 	if sm, ok := client.manager.(*storage.Manager); ok {
 		client.cacheAccessor.IntoCache(sm)
-		defer client.cacheAccessor.AfterCacheAccess(sm)
+		defer client.cacheAccessor.ExportCache(sm)
 	}
 
 	storageTokenResponse, err := client.manager.Read(ctx, authParams, client.webRequestManager)
@@ -115,7 +115,7 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 	// TODO(jdoak): Think about removing this after refactor.
 	if sm, ok := client.manager.(*storage.Manager); ok {
 		client.cacheAccessor.IntoCache(sm)
-		defer client.cacheAccessor.AfterCacheAccess(sm)
+		defer client.cacheAccessor.ExportCache(sm)
 	}
 
 	account, err := client.manager.Write(authParams, tokenResponse)
@@ -129,7 +129,7 @@ func (client *clientApplication) getAccounts() []msalbase.Account {
 	// TODO(jdoak): Think about removing this after refactor.
 	if sm, ok := client.manager.(*storage.Manager); ok {
 		client.cacheAccessor.IntoCache(sm)
-		defer client.cacheAccessor.AfterCacheAccess(sm)
+		defer client.cacheAccessor.ExportCache(sm)
 	}
 
 	accounts, err := client.manager.GetAllAccounts()

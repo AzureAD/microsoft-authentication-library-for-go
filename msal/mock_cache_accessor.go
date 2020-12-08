@@ -16,6 +16,6 @@ func (mock *mockCacheAccessor) IntoCache(context *storage.Manager) {
 	mock.Called(context)
 }
 
-func (mock *mockCacheAccessor) AfterCacheAccess(context *storage.Manager) {
+func (mock *mockCacheAccessor) ExportCache(context *storage.Manager) {
 	mock.Called(context)
 }

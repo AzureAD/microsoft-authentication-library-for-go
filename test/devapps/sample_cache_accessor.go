@@ -32,7 +32,7 @@ func (accessor *SampleCacheAccessor) IntoCache(cache cache.Unmarshaler) {
 	}
 }
 
-func (accessor *SampleCacheAccessor) AfterCacheAccess(cache cache.Marshaler) {
+func (accessor *SampleCacheAccessor) ExportCache(cache cache.Marshaler) {
 	data, err := cache.Marshal()
 	if err != nil {
 		log.Fatal(err)

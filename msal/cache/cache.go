@@ -28,5 +28,5 @@ type Token interface {
 	IntoCache(cache Unmarshaler)
 	// ExportCache writes the binary representation of the cache (cache.Marshal()) to
 	// external storage.
-	AfterCacheAccess(cache Marshaler)
+	ExportCache(cache Marshaler)
 }
