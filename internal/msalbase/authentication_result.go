@@ -39,7 +39,7 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse Sto
 	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
 	var idToken IDToken
 	if storageTokenResponse.IDToken != nil {
-		idToken, err = CreateIDToken(storageTokenResponse.IDToken.GetSecret())
+		idToken, err = NewIDToken(storageTokenResponse.IDToken.GetSecret())
 		if err != nil {
 			return AuthenticationResult{}, err
 		}

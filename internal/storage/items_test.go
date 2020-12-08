@@ -26,7 +26,7 @@ var (
 	expiresOn     = "1592049600"
 	extExpiresOn  = "1592049600"
 	cachedAt      = "1592049600"
-	atCacheEntity = &AccessTokenCacheItem{
+	atCacheEntity = &AccessToken{
 		HomeAccountID:                  testHID,
 		Environment:                    env,
 		CredentialType:                 credential,
@@ -40,11 +40,11 @@ var (
 	}
 )
 
-func TestCreateAccessTokenCacheItem(t *testing.T) {
+func TestCreateAccessToken(t *testing.T) {
 	testExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
 	testExtExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
 	testCachedAt := time.Date(2020, time.June, 13, 11, 0, 0, 0, time.UTC)
-	actualAt := createAccessTokenCacheItem("testHID",
+	actualAt := NewAccessToken("testHID",
 		"env",
 		"realm",
 		"clientID",
@@ -59,11 +59,11 @@ func TestCreateAccessTokenCacheItem(t *testing.T) {
 	}
 }
 
-func TestCreateKeyForAccessToken(t *testing.T) {
+func TestKeyForAccessToken(t *testing.T) {
 	const want = "testHID-env-AccessToken-clientID-realm-user.read"
-	got := atCacheEntity.CreateKey()
+	got := atCacheEntity.Key()
 	if got != want {
-		t.Errorf("TestCreateKeyForAccessToken: got %s, want %s", got, want)
+		t.Errorf("TestKeyForAccessToken: got %s, want %s", got, want)
 	}
 }
 
@@ -80,7 +80,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 	}
 
 	testCachedAt := "100"
-	want := &AccessTokenCacheItem{
+	want := &AccessToken{
 		HomeAccountID: testHID,
 		Environment:   env,
 		CachedAt:      testCachedAt,
@@ -88,7 +88,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 			"extra": json.MarshalRaw("this_is_extra"),
 		},
 	}
-	got := &AccessTokenCacheItem{}
+	got := &AccessToken{}
 	err = json.Unmarshal(jsonData, got)
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
@@ -100,7 +100,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 
 func TestAccessTokenMarshal(t *testing.T) {
 	testCachedAt := "100"
-	accessToken := &AccessTokenCacheItem{
+	accessToken := &AccessToken{
 		HomeAccountID:  testHID,
 		Environment:    "",
 		CachedAt:       testCachedAt,
@@ -113,7 +113,7 @@ func TestAccessTokenMarshal(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestAccessTokenMarshal: unable to marshal: %s", err)
 	}
-	got := AccessTokenCacheItem{}
+	got := AccessToken{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("TestAccessTokenMarshal: unable to take JSON byte output and unmarshal: %s", err)
 	}
@@ -126,22 +126,22 @@ func TestAccessTokenMarshal(t *testing.T) {
 var (
 	appClient = "cid"
 	appEnv    = "env"
-	appMeta   = &AppMetadata{
+	appMeta   = &AppMetaData{
 		ClientID:    appClient,
 		Environment: appEnv,
 		FamilyID:    "",
 	}
 )
 
-func TestCreateKeyForAppMetadata(t *testing.T) {
-	want := "AppMetadata-env-cid"
-	got := appMeta.CreateKey()
+func TestKeyForAppMetaData(t *testing.T) {
+	want := "AppMetaData-env-cid"
+	got := appMeta.Key()
 	if want != got {
 		t.Errorf("actual key %v differs from expected key %v", want, got)
 	}
 }
 
-func TestAppMetadataUnmarshal(t *testing.T) {
+func TestAppMetaDataUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"environment": "env",
 		"extra":       "this_is_extra",
@@ -149,7 +149,7 @@ func TestAppMetadataUnmarshal(t *testing.T) {
 		"client_id":   "cid",
 		"family_id":   nil,
 	}
-	want := AppMetadata{
+	want := AppMetaData{
 		ClientID:    "cid",
 		Environment: "env",
 		AdditionalFields: map[string]interface{}{
@@ -162,18 +162,18 @@ func TestAppMetadataUnmarshal(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	got := AppMetadata{}
+	got := AppMetaData{}
 	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatalf("TestAppMetadataUnmarshal(unmarshal): got err == %s, want err == nil", err)
+		t.Fatalf("TestAppMetaDataUnmarshal(unmarshal): got err == %s, want err == nil", err)
 	}
 
 	if diff := pretty.Compare(want, got); diff != "" {
-		t.Fatalf("TestAppMetadataUnmarshal: -want/+got:\n%s", diff)
+		t.Fatalf("TestAppMetaDataUnmarshal: -want/+got:\n%s", diff)
 	}
 }
 
-func TestAppMetadataMarshal(t *testing.T) {
-	AppMetadata := AppMetadata{
+func TestAppMetaDataMarshal(t *testing.T) {
+	AppMetaData := AppMetaData{
 		Environment: "",
 		ClientID:    appClient,
 		FamilyID:    "",
@@ -189,21 +189,21 @@ func TestAppMetadataMarshal(t *testing.T) {
 		"cached_at": "100",
 	}
 
-	b, err := json.Marshal(AppMetadata)
+	b, err := json.Marshal(AppMetaData)
 	if err != nil {
 		panic(err)
 	}
 	got := map[string]interface{}{}
 	if err := stdJSON.Unmarshal(b, &got); err != nil {
-		t.Fatalf("TestAppMetadataMarshal(unmarshal): err == %s, want err == nil", err)
+		t.Fatalf("TestAppMetaDataMarshal(unmarshal): err == %s, want err == nil", err)
 	}
 
 	if diff := pretty.Compare(want, got); diff != "" {
-		t.Errorf("TestAppMetadataConvertToJSONMap: -want/+got:\n%s", diff)
+		t.Errorf("TestAppMetaDataConvertToJSONMap: -want/+got:\n%s", diff)
 	}
 }
 
-func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
+func TestContractUnmarshalJSON(t *testing.T) {
 	jsonFile, err := os.Open(testFile)
 	if err != nil {
 		panic(err)
@@ -215,14 +215,14 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 		panic(err)
 	}
 
-	got := CacheSerializationContract{}
+	got := Contract{}
 	err = json.Unmarshal(testCache, &got)
 	if err != nil {
-		t.Fatalf("TestCacheSerializationContractUnmarshalJSON(unmarshal): %v", err)
+		t.Fatalf("TestContractUnmarshalJSON(unmarshal): %v", err)
 	}
 
-	want := CacheSerializationContract{
-		AccessTokens: map[string]AccessTokenCacheItem{
+	want := Contract{
+		AccessTokens: map[string]AccessToken{
 			"an-entry": {
 				AdditionalFields: map[string]interface{}{
 					"foo": json.MarshalRaw("bar"),
@@ -251,7 +251,7 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 				AuthorityType:     "MSSTS",
 			},
 		},
-		RefreshTokens: map[string]RefreshTokenCacheItem{
+		RefreshTokens: map[string]RefreshToken{
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
@@ -261,7 +261,7 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		IDTokens: map[string]IDTokenCacheItem{
+		IDTokens: map[string]IDToken{
 			"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
 				Realm:          defaultRealm,
 				Environment:    defaultEnvironment,
@@ -271,7 +271,7 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		AppMetadata: map[string]AppMetadata{
+		AppMetaData: map[string]AppMetaData{
 			"AppMetadata-login.windows.net-my_client_id": {
 				Environment: defaultEnvironment,
 				FamilyID:    "",
@@ -288,14 +288,14 @@ func TestCacheSerializationContractUnmarshalJSON(t *testing.T) {
 		},
 	}
 	if diff := pretty.Compare(want, got); diff != "" {
-		t.Errorf("TestCacheSerializationContractUnmarshalJSON: -want/+got:\n%s", diff)
+		t.Errorf("TestContractUnmarshalJSON: -want/+got:\n%s", diff)
 		t.Errorf(string(got.AdditionalFields["unknownEntity"].(stdJSON.RawMessage)))
 	}
 }
 
-func TestCacheSerializationContractMarshalJSON(t *testing.T) {
-	want := CacheSerializationContract{
-		AccessTokens: map[string]AccessTokenCacheItem{
+func TestContractMarshalJSON(t *testing.T) {
+	want := Contract{
+		AccessTokens: map[string]AccessToken{
 			"an-entry": {
 				AdditionalFields: map[string]interface{}{
 					"foo": json.MarshalRaw("bar"),
@@ -314,7 +314,7 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 				ExtendedExpiresOnUnixTimestamp: atExpires,
 			},
 		},
-		RefreshTokens: map[string]RefreshTokenCacheItem{
+		RefreshTokens: map[string]RefreshToken{
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
@@ -324,7 +324,7 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		IDTokens: map[string]IDTokenCacheItem{
+		IDTokens: map[string]IDToken{
 			"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
 				Realm:          defaultRealm,
 				Environment:    defaultEnvironment,
@@ -344,7 +344,7 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 				AuthorityType:     accAuth,
 			},
 		},
-		AppMetadata: map[string]AppMetadata{
+		AppMetaData: map[string]AppMetaData{
 			"AppMetadata-login.windows.net-my_client_id": {
 				Environment: defaultEnvironment,
 				FamilyID:    "",
@@ -362,15 +362,15 @@ func TestCacheSerializationContractMarshalJSON(t *testing.T) {
 	}
 	b, err := json.Marshal(want)
 	if err != nil {
-		t.Fatalf("TestCacheSerializationContractMarshalJSON(marshal): got err == %s, want err == nil", err)
+		t.Fatalf("TestContractMarshalJSON(marshal): got err == %s, want err == nil", err)
 	}
-	got := CacheSerializationContract{}
+	got := Contract{}
 	if err := json.Unmarshal(b, &got); err != nil {
-		t.Fatalf("TestCacheSerializationContractMarshalJSON(unmarshal back): got err == %s, want err == nil", err)
+		t.Fatalf("TestContractMarshalJSON(unmarshal back): got err == %s, want err == nil", err)
 	}
 
 	if diff := pretty.Compare(want, got); diff != "" {
-		t.Errorf("TestCacheSerializationContractMarshalJSON: -want/+got:\n%s", diff)
+		t.Errorf("TestContractMarshalJSON: -want/+got:\n%s", diff)
 	}
 }
 
@@ -383,7 +383,7 @@ var (
 	idTokSecret  = "id"
 )
 
-var idToken = IDTokenCacheItem{
+var idToken = IDToken{
 	HomeAccountID:  idHid,
 	Environment:    idEnv,
 	CredentialType: idCredential,
@@ -392,10 +392,10 @@ var idToken = IDTokenCacheItem{
 	Secret:         idTokSecret,
 }
 
-func TestCreateKeyForIDToken(t *testing.T) {
+func TestKeyForIDToken(t *testing.T) {
 	want := "HID-env-IdToken-clientID-realm"
-	if idToken.CreateKey() != want {
-		t.Errorf("actual key %v differs from expected key %v", idToken.CreateKey(), want)
+	if idToken.Key() != want {
+		t.Errorf("actual key %v differs from expected key %v", idToken.Key(), want)
 	}
 }
 
@@ -410,7 +410,7 @@ func TestIDTokenUnmarshal(t *testing.T) {
 		panic(err)
 	}
 
-	want := IDTokenCacheItem{
+	want := IDToken{
 		HomeAccountID: "HID",
 		Environment:   "env",
 		AdditionalFields: map[string]interface{}{
@@ -418,7 +418,7 @@ func TestIDTokenUnmarshal(t *testing.T) {
 		},
 	}
 
-	got := IDTokenCacheItem{}
+	got := IDToken{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		panic(err)
 	}
@@ -429,7 +429,7 @@ func TestIDTokenUnmarshal(t *testing.T) {
 }
 
 func TestIDTokenMarshal(t *testing.T) {
-	idToken := IDTokenCacheItem{
+	idToken := IDToken{
 		HomeAccountID:    idHid,
 		Environment:      idEnv,
 		Realm:            "",
@@ -465,7 +465,7 @@ var (
 	refSecret    = "secret"
 )
 
-var rt = &RefreshTokenCacheItem{
+var rt = &RefreshToken{
 	HomeAccountID:  hid,
 	Environment:    env,
 	ClientID:       rtClientID,
@@ -473,16 +473,16 @@ var rt = &RefreshTokenCacheItem{
 	Secret:         refSecret,
 }
 
-func TestCreateRefreshTokenCacheItem(t *testing.T) {
-	got := CreateRefreshTokenCacheItem("HID", "env", "clientID", "secret", "")
+func TestNewRefreshToken(t *testing.T) {
+	got := NewRefreshToken("HID", "env", "clientID", "secret", "")
 	if refSecret != got.Secret {
 		t.Errorf("expected secret %s differs from actualSecret %s", refSecret, got.Secret)
 	}
 }
 
-func TestCreateKeyForRefreshToken(t *testing.T) {
+func TestKeyForRefreshToken(t *testing.T) {
 	want := "HID-env-RefreshToken-clientID"
-	got := rt.CreateKey()
+	got := rt.Key()
 	if want != got {
 		t.Errorf("Actual key %v differs from expected key %v", got, want)
 	}
@@ -499,7 +499,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	want := RefreshTokenCacheItem{
+	want := RefreshToken{
 		HomeAccountID: "hid",
 		Environment:   "env",
 		Secret:        "secret",
@@ -508,7 +508,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 		},
 	}
 
-	got := RefreshTokenCacheItem{}
+	got := RefreshToken{}
 	err = json.Unmarshal(b, &got)
 	if err != nil {
 		panic(err)
@@ -520,7 +520,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 }
 
 func TestRefreshTokenMarshal(t *testing.T) {
-	refreshToken := RefreshTokenCacheItem{
+	refreshToken := RefreshToken{
 		HomeAccountID:  "",
 		Environment:    rtEnv,
 		CredentialType: rtCredential,
