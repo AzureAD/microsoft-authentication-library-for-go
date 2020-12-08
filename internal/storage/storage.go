@@ -313,6 +313,12 @@ func (m *Manager) GetAllAccounts() ([]msalbase.Account, error) {
 func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (msalbase.Account, error) {
 	cache := m.Contract()
 
+	// You might ask why, if cache.Accounts is a map, we would loop through all of these instead of using a key.
+	// We only use a map because the storage contract shared between all language implementations says use a map.
+	// We can't change that. The other is because the keys are made using a specific "env", but here we are allowing
+	// a match in multiple envs (envAlias). That means we either need to hash each possible keyand do the lookup
+	// or just statically check.  Since the design is to have a storage.Manager per use, the amount of keys stored
+	// is really low (say 2).  Each hash is more expensive than the entire iteration.
 	for _, acc := range cache.Accounts {
 		if acc.HomeAccountID == homeAccountID && checkAlias(acc.Environment, envAliases) && acc.Realm == realm {
 			return acc, nil
