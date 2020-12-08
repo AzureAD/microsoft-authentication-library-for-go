@@ -60,14 +60,14 @@ func TestAccountUnmarshal(t *testing.T) {
 	}
 }
 
-func TestAccountCreateKey(t *testing.T) {
+func TestAccountKey(t *testing.T) {
 	acc := &Account{
 		HomeAccountID: accHID,
 		Environment:   accEnv,
 		Realm:         accRealm,
 	}
 	expectedKey := "hid-env-realm"
-	actualKey := acc.CreateKey()
+	actualKey := acc.Key()
 	if expectedKey != actualKey {
 		t.Errorf("Actual key %s differs from expected key %s", actualKey, expectedKey)
 	}

@@ -21,8 +21,8 @@ func (n noopCacheAccessor) AfterCacheAccess(manager *storage.Manager)  {}
 // cache provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type cache interface {
-	TryReadCache(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error)
-	CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
+	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error)
+	Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
 	GetAllAccounts() ([]msalbase.Account, error)
 }
 
@@ -61,7 +61,7 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 		defer client.cacheAccessor.AfterCacheAccess(sm)
 	}
 
-	storageTokenResponse, err := client.cache.TryReadCache(ctx, authParams, client.webRequestManager)
+	storageTokenResponse, err := client.cache.Read(ctx, authParams, client.webRequestManager)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}
@@ -71,7 +71,7 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
 			return msalbase.AuthenticationResult{}, errors.New("no refresh token found")
 		}
-		req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
+		req := requests.NewRefreshTokenExchangeRequest(client.webRequestManager,
 			authParams, storageTokenResponse.RefreshToken, silent.requestType)
 		if req.RequestType == requests.RefreshTokenConfidential {
 			req.ClientCredential = silent.clientCredential
@@ -117,7 +117,7 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 		defer client.cacheAccessor.AfterCacheAccess(sm)
 	}
 
-	account, err := client.cache.CacheTokenResponse(authParams, tokenResponse)
+	account, err := client.cache.Write(authParams, tokenResponse)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}

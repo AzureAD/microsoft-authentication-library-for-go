@@ -20,7 +20,7 @@ type fakeManager struct {
 	trcErr, ctrErr bool
 }
 
-func (f *fakeManager) TryReadCache(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
+func (f *fakeManager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
 	if f.trcErr {
 		return msalbase.StorageTokenResponse{}, errors.New("error")
 	}
@@ -37,7 +37,7 @@ func (f *fakeManager) TryReadCache(ctx context.Context, authParameters msalbase.
 	return msalbase.CreateStorageTokenResponse(at, rt, id, msalbase.Account{}), nil
 }
 
-func (f *fakeManager) CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
+func (f *fakeManager) Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
 	if f.ctrErr {
 		return msalbase.Account{}, errors.New("error")
 	}

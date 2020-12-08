@@ -37,7 +37,7 @@ type Manager struct {
 	// reads.  A write will still need to take a lock as to not loose data from two
 	// different write calls serializing data. That will not block reads while the cache
 	// gets updated. Should reduce contention.
-	contract atomic.Value // Stores a *CacheSerializationContract
+	contract atomic.Value // Stores a *Contract
 
 	mu sync.Mutex
 }
@@ -45,7 +45,7 @@ type Manager struct {
 // New is the constructor for Manager.
 func New() *Manager {
 	m := &Manager{}
-	m.contract.Store(CreateCacheSerializationContract())
+	m.contract.Store(NewContract())
 	return m
 }
 
@@ -72,7 +72,8 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 	return scopeCounter == len(scopesOne)
 }
 
-func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
+// Read reads a storage token from the cache if it exists.
+func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -97,11 +98,11 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 		return msalbase.StorageTokenResponse{}, err
 	}
 
-	AppMetadata, err := m.readAppMetadata(metadata.Aliases, clientID)
+	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
-	familyID := AppMetadata.FamilyID
+	familyID := AppMetaData.FamilyID
 
 	refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
 	if err != nil {
@@ -114,7 +115,8 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 	return msalbase.CreateStorageTokenResponse(accessToken, refreshToken, idToken, account), nil
 }
 
-func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
+// Write writes a token response to the cache and returns the account information the token is stored with.
+func (m *Manager) Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -130,7 +132,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 	var account msalbase.Account
 
 	if tokenResponse.HasRefreshToken() {
-		refreshToken := CreateRefreshTokenCacheItem(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
+		refreshToken := NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
 		if err := m.writeRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
@@ -139,7 +141,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 	if tokenResponse.HasAccessToken() {
 		expiresOn := tokenResponse.ExpiresOn.Unix()
 		extendedExpiresOn := tokenResponse.ExtExpiresOn.Unix()
-		accessToken := createAccessTokenCacheItem(
+		accessToken := NewAccessToken(
 			homeAccountID,
 			environment,
 			realm,
@@ -161,7 +163,7 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 
 	idTokenJwt := tokenResponse.IDToken
 	if !idTokenJwt.IsZero() {
-		idToken := CreateIDTokenCacheItem(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
+		idToken := NewIDToken(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
 		if err := m.writeIDToken(idToken); err != nil {
 			return msalbase.Account{}, err
 		}
@@ -182,20 +184,20 @@ func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInter
 		}
 	}
 
-	AppMetadata := CreateAppMetadata(tokenResponse.FamilyID, clientID, environment)
+	AppMetaData := NewAppMetaData(tokenResponse.FamilyID, clientID, environment)
 
-	if err := m.writeAppMetadata(AppMetadata); err != nil {
+	if err := m.writeAppMetaData(AppMetaData); err != nil {
 		return msalbase.Account{}, err
 	}
 	return account, nil
 }
 
-// Contract returns the CacheSerializationContract for read operations.
-func (m *Manager) Contract() *CacheSerializationContract {
-	return m.contract.Load().(*CacheSerializationContract)
+// Contract returns the Contract for read operations.
+func (m *Manager) Contract() *Contract {
+	return m.contract.Load().(*Contract)
 }
 
-func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessTokenCacheItem, error) {
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessToken, error) {
 	cache := m.Contract()
 
 	for _, at := range cache.AccessTokens {
@@ -207,11 +209,11 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 			}
 		}
 	}
-	return AccessTokenCacheItem{}, fmt.Errorf("access token not found")
+	return AccessToken{}, fmt.Errorf("access token not found")
 }
 
-func (m *Manager) writeAccessToken(accessToken AccessTokenCacheItem) error {
-	key := accessToken.CreateKey()
+func (m *Manager) writeAccessToken(accessToken AccessToken) error {
+	key := accessToken.Key()
 
 	cache := m.Contract().copy()
 	cache.AccessTokens[key] = accessToken
@@ -219,21 +221,21 @@ func (m *Manager) writeAccessToken(accessToken AccessTokenCacheItem) error {
 	return nil
 }
 
-func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID, clientID string) (RefreshTokenCacheItem, error) {
-	byFamily := func(rt RefreshTokenCacheItem) bool {
+func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID, clientID string) (RefreshToken, error) {
+	byFamily := func(rt RefreshToken) bool {
 		return matchFamilyRefreshToken(rt, homeID, envAliases)
 	}
-	byClient := func(rt RefreshTokenCacheItem) bool {
+	byClient := func(rt RefreshToken) bool {
 		return matchClientIDRefreshToken(rt, homeID, envAliases, clientID)
 	}
 
-	var matchers []func(rt RefreshTokenCacheItem) bool
+	var matchers []func(rt RefreshToken) bool
 	if familyID == "" {
-		matchers = []func(rt RefreshTokenCacheItem) bool{
+		matchers = []func(rt RefreshToken) bool{
 			byClient, byFamily,
 		}
 	} else {
-		matchers = []func(rt RefreshTokenCacheItem) bool{
+		matchers = []func(rt RefreshToken) bool{
 			byFamily, byClient,
 		}
 	}
@@ -256,19 +258,19 @@ func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID,
 		}
 	}
 
-	return RefreshTokenCacheItem{}, fmt.Errorf("refresh token not found")
+	return RefreshToken{}, fmt.Errorf("refresh token not found")
 }
 
-func matchFamilyRefreshToken(rt RefreshTokenCacheItem, homeID string, envAliases []string) bool {
+func matchFamilyRefreshToken(rt RefreshToken, homeID string, envAliases []string) bool {
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.FamilyID != ""
 }
 
-func matchClientIDRefreshToken(rt RefreshTokenCacheItem, homeID string, envAliases []string, clientID string) bool {
+func matchClientIDRefreshToken(rt RefreshToken, homeID string, envAliases []string, clientID string) bool {
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
 
-func (m *Manager) writeRefreshToken(refreshToken RefreshTokenCacheItem) error {
-	key := refreshToken.CreateKey()
+func (m *Manager) writeRefreshToken(refreshToken RefreshToken) error {
+	key := refreshToken.Key()
 	cache := m.Contract().copy()
 	cache.RefreshTokens[key] = refreshToken
 	m.contract.Store(cache)
@@ -276,7 +278,7 @@ func (m *Manager) writeRefreshToken(refreshToken RefreshTokenCacheItem) error {
 	return nil
 }
 
-func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientID string) (IDTokenCacheItem, error) {
+func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientID string) (IDToken, error) {
 	cache := m.Contract()
 	for _, idt := range cache.IDTokens {
 		if idt.HomeAccountID == homeID && idt.Realm == realm && idt.ClientID == clientID {
@@ -285,11 +287,11 @@ func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientI
 			}
 		}
 	}
-	return IDTokenCacheItem{}, fmt.Errorf("token not found")
+	return IDToken{}, fmt.Errorf("token not found")
 }
 
-func (m *Manager) writeIDToken(idToken IDTokenCacheItem) error {
-	key := idToken.CreateKey()
+func (m *Manager) writeIDToken(idToken IDToken) error {
+	key := idToken.Key()
 	cache := m.Contract().copy()
 	cache.IDTokens[key] = idToken
 	m.contract.Store(cache)
@@ -311,6 +313,12 @@ func (m *Manager) GetAllAccounts() ([]msalbase.Account, error) {
 func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (msalbase.Account, error) {
 	cache := m.Contract()
 
+	// You might ask why, if cache.Accounts is a map, we would loop through all of these instead of using a key.
+	// We only use a map because the storage contract shared between all language implementations says use a map.
+	// We can't change that. The other is because the keys are made using a specific "env", but here we are allowing
+	// a match in multiple envs (envAlias). That means we either need to hash each possible keyand do the lookup
+	// or just statically check.  Since the design is to have a storage.Manager per user, the amount of keys stored
+	// is really low (say 2).  Each hash is more expensive than the entire iteration.
 	for _, acc := range cache.Accounts {
 		if acc.HomeAccountID == homeAccountID && checkAlias(acc.Environment, envAliases) && acc.Realm == realm {
 			return acc, nil
@@ -320,7 +328,8 @@ func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm s
 }
 
 func (m *Manager) writeAccount(account msalbase.Account) error {
-	key := account.CreateKey()
+	key := account.Key()
+
 	cache := m.Contract().copy()
 	cache.Accounts[key] = account
 	m.contract.Store(cache)
@@ -344,29 +353,29 @@ func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
 	return nil
 }
 
-func (m *Manager) readAppMetadata(envAliases []string, clientID string) (AppMetadata, error) {
+func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {
 	cache := m.Contract()
 
-	for _, app := range cache.AppMetadata {
+	for _, app := range cache.AppMetaData {
 		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
 			return app, nil
 		}
 	}
-	return AppMetadata{}, fmt.Errorf("not found")
+	return AppMetaData{}, fmt.Errorf("not found")
 }
 
-func (m *Manager) writeAppMetadata(AppMetadata AppMetadata) error {
-	key := AppMetadata.CreateKey()
+func (m *Manager) writeAppMetaData(AppMetaData AppMetaData) error {
+	key := AppMetaData.Key()
 	cache := m.Contract().copy()
-	cache.AppMetadata[key] = AppMetadata
+	cache.AppMetaData[key] = AppMetaData
 	m.contract.Store(cache)
 
 	return nil
 }
 
-// Update updates the internal cache object. This is for use in tests, other uses are not
+// update updates the internal cache object. This is for use in tests, other uses are not
 // supported.
-func (m *Manager) Update(cache *CacheSerializationContract) {
+func (m *Manager) update(cache *Contract) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -389,7 +398,7 @@ func (m *Manager) Deserialize(cacheData []byte) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	contract := CreateCacheSerializationContract()
+	contract := NewContract()
 
 	err := json.Unmarshal(cacheData, contract)
 	if err != nil {

@@ -9,8 +9,8 @@ type MockCredential struct {
 	mock.Mock
 }
 
-// CreateKey mocks the CreateKey method of a Credential.
-func (mock *MockCredential) CreateKey() string {
+// Key mocks the Key method of a Credential.
+func (mock *MockCredential) Key() string {
 	args := mock.Called()
 	return args.String(0)
 }

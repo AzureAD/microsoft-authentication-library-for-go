@@ -37,8 +37,8 @@ func NewAccount(homeAccountID, env, realm, localAccountID, authorityType, userna
 	}
 }
 
-// CreateKey creates the key for storing accounts in the cache.
-func (acc Account) CreateKey() string {
+// Key creates the key for storing accounts in the cache.
+func (acc Account) Key() string {
 	return strings.Join([]string{acc.HomeAccountID, acc.Environment, acc.Realm}, CacheKeySeparator)
 }
 

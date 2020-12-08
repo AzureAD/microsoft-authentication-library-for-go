@@ -125,7 +125,7 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
 	}
 
-	idToken, err := CreateIDToken(payload.IDToken)
+	idToken, err := NewIDToken(payload.IDToken)
 	if err != nil {
 		// ID tokens aren't always returned, so the error is just logged
 		// TODO(jdoak): we should probably remove this. Either this is an error or isn't.

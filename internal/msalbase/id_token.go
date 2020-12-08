@@ -35,8 +35,8 @@ type IDToken struct {
 	AdditionalFields map[string]interface{}
 }
 
-// CreateIDToken creates an ID token instance from a JWT.
-func CreateIDToken(jwt string) (IDToken, error) {
+// NewIDToken creates an ID token instance from a JWT.
+func NewIDToken(jwt string) (IDToken, error) {
 	jwtArr := strings.Split(jwt, ".")
 	if len(jwtArr) < 2 {
 		return IDToken{}, errors.New("id token returned from server is invalid")

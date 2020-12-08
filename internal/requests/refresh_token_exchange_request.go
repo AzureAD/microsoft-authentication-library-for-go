@@ -28,8 +28,8 @@ type RefreshTokenExchangeRequest struct {
 	RequestType       RefreshTokenReqType
 }
 
-// CreateRefreshTokenExchangeRequest creates a RefreshTokenExchangeRequest instance
-func CreateRefreshTokenExchangeRequest(webRequestManager WebRequestManager, authParameters msalbase.AuthParametersInternal, refreshToken msalbase.Credential, reqType RefreshTokenReqType) *RefreshTokenExchangeRequest {
+// NewRefreshTokenExchangeRequest creates a RefreshTokenExchangeRequest instance
+func NewRefreshTokenExchangeRequest(webRequestManager WebRequestManager, authParameters msalbase.AuthParametersInternal, refreshToken msalbase.Credential, reqType RefreshTokenReqType) *RefreshTokenExchangeRequest {
 	req := &RefreshTokenExchangeRequest{
 		webRequestManager: webRequestManager,
 		authParameters:    authParameters,
