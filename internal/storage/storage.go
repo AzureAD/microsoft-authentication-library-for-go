@@ -39,7 +39,8 @@ type Manager struct {
 	// gets updated. Should reduce contention.
 	contract atomic.Value // Stores a *CacheSerializationContract
 
-	mu sync.Mutex
+	mu      sync.Mutex
+	cacheMu sync.Mutex // TODO(jdoak): Remove on next PR
 }
 
 // New is the constructor for Manager.
@@ -115,6 +116,9 @@ func (m *Manager) TryReadCache(ctx context.Context, authParameters msalbase.Auth
 }
 
 func (m *Manager) CacheTokenResponse(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
 	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
