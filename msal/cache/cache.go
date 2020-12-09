@@ -21,6 +21,12 @@ type Unmarshaler interface {
 	Unmarshal([]byte) error
 }
 
+// Serializer can seralize the cache to binary or from binary into the cache.
+type Serializer interface {
+	Marshaler
+	Unmarshaler
+}
+
 // Token is used to provide external storage of token data. The data being passed is considered
 // opaque.
 type Token interface {

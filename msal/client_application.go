@@ -57,9 +57,9 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 	silent.augmentAuthenticationParameters(&authParams)
 
 	// TODO(jdoak): Think about removing this after refactor.
-	if sm, ok := client.manager.(*storage.Manager); ok {
-		client.cacheAccessor.IntoCache(sm)
-		defer client.cacheAccessor.ExportCache(sm)
+	if s, ok := client.manager.(cache.Serializer); ok {
+		client.cacheAccessor.IntoCache(s)
+		defer client.cacheAccessor.ExportCache(s)
 	}
 
 	storageTokenResponse, err := client.manager.Read(ctx, authParams, client.webRequestManager)
@@ -113,9 +113,9 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 	}
 
 	// TODO(jdoak): Think about removing this after refactor.
-	if sm, ok := client.manager.(*storage.Manager); ok {
-		client.cacheAccessor.IntoCache(sm)
-		defer client.cacheAccessor.ExportCache(sm)
+	if s, ok := client.manager.(cache.Serializer); ok {
+		client.cacheAccessor.IntoCache(s)
+		defer client.cacheAccessor.ExportCache(s)
 	}
 
 	account, err := client.manager.Write(authParams, tokenResponse)
@@ -127,9 +127,9 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 
 func (client *clientApplication) getAccounts() []msalbase.Account {
 	// TODO(jdoak): Think about removing this after refactor.
-	if sm, ok := client.manager.(*storage.Manager); ok {
-		client.cacheAccessor.IntoCache(sm)
-		defer client.cacheAccessor.ExportCache(sm)
+	if s, ok := client.manager.(cache.Serializer); ok {
+		client.cacheAccessor.IntoCache(s)
+		defer client.cacheAccessor.ExportCache(s)
 	}
 
 	accounts, err := client.manager.GetAllAccounts()
