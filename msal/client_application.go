@@ -138,3 +138,16 @@ func (client *clientApplication) getAccounts() []msalbase.Account {
 	}
 	return accounts
 }
+
+// AcquireTokenSilentOptions contains the optional parameters to acquire a token silently (from cache).
+type AcquireTokenSilentOptions struct {
+	// Account specifies the account to use when acquiring a token from the cache.
+	// TODO(jdoak): Add an .IsZero() to handle switching out for defaults vs nil checks.
+	Account msalbase.Account
+}
+
+// AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
+type AcquireTokenByAuthCodeOptions struct {
+	Code          string
+	CodeChallenge string
+}
