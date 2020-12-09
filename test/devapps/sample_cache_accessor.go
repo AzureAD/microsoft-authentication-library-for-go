@@ -37,7 +37,7 @@ func (t *TokenCache) ExportCache(cache cache.Marshaler) {
 	if err != nil {
 		log.Error(err)
 	}
-	err = ioutil.WriteFile(t.file, data, 0644)
+	err = ioutil.WriteFile(t.file, data, 0600)
 	if err != nil {
 		log.Error(err)
 	}
