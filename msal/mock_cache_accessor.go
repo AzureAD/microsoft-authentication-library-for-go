@@ -12,10 +12,10 @@ type mockCacheAccessor struct {
 	mock.Mock
 }
 
-func (mock *mockCacheAccessor) BeforeCacheAccess(context *storage.Manager) {
+func (mock *mockCacheAccessor) Replace(context *storage.Manager) {
 	mock.Called(context)
 }
 
-func (mock *mockCacheAccessor) AfterCacheAccess(context *storage.Manager) {
+func (mock *mockCacheAccessor) Export(context *storage.Manager) {
 	mock.Called(context)
 }

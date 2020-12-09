@@ -627,44 +627,44 @@ func TestStorageManagerSerialize(t *testing.T) {
 	manager := New()
 	manager.update(contract)
 
-	_, err := manager.Serialize()
+	_, err := manager.Marshal()
 	if err != nil {
 		t.Errorf("Error should be nil; instead it is %v", err)
 	}
 }
 
-func TestStorageManagerDeserialize(t *testing.T) {
+func TestUnmarshal(t *testing.T) {
 	manager := New()
 	b, err := ioutil.ReadFile(testFile)
 	if err != nil {
 		panic(err)
 	}
 
-	err = manager.Deserialize(b)
+	err = manager.Unmarshal(b)
 	if err != nil {
-		t.Fatalf("TestStorageManagerDeserialize(Deserialize): got err == %s, want err == nil", err)
+		t.Fatalf("TestUnmarshal(unmarshal): got err == %s, want err == nil", err)
 	}
 
 	actualAccessTokenSecret := manager.Contract().AccessTokens["uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3"].Secret
 	if accessTokenSecret != actualAccessTokenSecret {
-		t.Errorf("TestStorageManagerDeserialize(access token secret):got %q, want %q", actualAccessTokenSecret, accessTokenSecret)
+		t.Errorf("TestUnmarshal(access token secret):got %q, want %q", actualAccessTokenSecret, accessTokenSecret)
 	}
 
 	actualRTSecret := manager.Contract().RefreshTokens["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
 	if diff := pretty.Compare(rtSecret, actualRTSecret); diff != "" {
-		t.Errorf("TestStorageManagerDeserialize(refresh token secret): -want/+got:\n%s", diff)
+		t.Errorf("TestUnmarshal(refresh token secret): -want/+got:\n%s", diff)
 	}
 
 	actualIDSecret := manager.Contract().IDTokens["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
 	if diff := pretty.Compare(idSecret, actualIDSecret); diff != "" {
-		t.Errorf("TestStorageManagerDeserialize(id secret): -want/+got:\n%s", diff)
+		t.Errorf("TestUnmarshal(id secret): -want/+got:\n%s", diff)
 	}
 	actualUser := manager.Contract().Accounts["uid.utid-login.windows.net-contoso"].PreferredUsername
 	if diff := pretty.Compare(actualUser, accUser); diff != "" {
-		t.Errorf("TestStorageManagerDeserialize(actula user): -want/+got:\n%s", diff)
+		t.Errorf("TestUnmarshal(actula user): -want/+got:\n%s", diff)
 	}
 	if manager.Contract().AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID != "" {
-		t.Errorf("TestStorageManagerDeserialize(app metadata family id): got %q, want empty string", manager.Contract().AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID)
+		t.Errorf("TestUnmarshal(app metadata family id): got %q, want empty string", manager.Contract().AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID)
 	}
 }
 

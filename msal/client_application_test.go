@@ -15,7 +15,7 @@ import (
 )
 
 type fakeManager struct {
-	cache // embed the interface to prevent changes breaking it
+	manager // embed the interface to prevent changes breaking it
 
 	trcErr, ctrErr bool
 }
@@ -54,7 +54,7 @@ func newTestApplication(fm *fakeManager, wrm *requests.MockWebRequestManager) *c
 			},
 		},
 		webRequestManager: wrm,
-		cache:             fm,
+		manager:           fm,
 		cacheAccessor:     noopCacheAccessor{},
 	}
 }
