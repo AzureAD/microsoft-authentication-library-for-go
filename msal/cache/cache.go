@@ -27,12 +27,11 @@ type Serializer interface {
 	Unmarshaler
 }
 
-// Token is used to provide external storage of token data. The data being passed is considered
-// opaque.
-type Token interface {
-	// IntoCache reads the cache in external storage into the internal cache, replacing it.
-	IntoCache(cache Unmarshaler)
-	// ExportCache writes the binary representation of the cache (cache.Marshal()) to
-	// external storage.
-	ExportCache(cache Marshaler)
+// ExportReplace is used export or replace what is in the cache.
+type ExportReplace interface {
+	// Replace replaces the cache with what is in external storage.
+	Replace(cache Unmarshaler)
+	// Export writes the binary representation of the cache (cache.Marshal()) to
+	// external storage. This is considered opaque.
+	Export(cache Marshaler)
 }

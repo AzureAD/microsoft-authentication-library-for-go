@@ -16,7 +16,7 @@ import (
 type ConfidentialClientApplicationOptions struct {
 	// Accessor controls cache persistence.
 	// By default there is no cache persistence.
-	Accessor cache.Token
+	Accessor cache.ExportReplace
 
 	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
 	Authority string

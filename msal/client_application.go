@@ -16,8 +16,8 @@ import (
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) IntoCache(cache cache.Unmarshaler) {}
-func (n noopCacheAccessor) ExportCache(cache cache.Marshaler) {}
+func (n noopCacheAccessor) Replace(cache cache.Unmarshaler) {}
+func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
@@ -31,7 +31,7 @@ type clientApplication struct {
 	webRequestManager           requests.WebRequestManager
 	clientApplicationParameters *clientApplicationParameters
 	manager                     manager // *storage.Manager or fakeManager in tests
-	cacheAccessor               cache.Token
+	cacheAccessor               cache.ExportReplace
 }
 
 func createClientApplication(httpClient HTTPClient, clientID string, authority string) (*clientApplication, error) {
@@ -58,8 +58,8 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 
 	// TODO(jdoak): Think about removing this after refactor.
 	if s, ok := client.manager.(cache.Serializer); ok {
-		client.cacheAccessor.IntoCache(s)
-		defer client.cacheAccessor.ExportCache(s)
+		client.cacheAccessor.Replace(s)
+		defer client.cacheAccessor.Export(s)
 	}
 
 	storageTokenResponse, err := client.manager.Read(ctx, authParams, client.webRequestManager)
@@ -114,8 +114,8 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 
 	// TODO(jdoak): Think about removing this after refactor.
 	if s, ok := client.manager.(cache.Serializer); ok {
-		client.cacheAccessor.IntoCache(s)
-		defer client.cacheAccessor.ExportCache(s)
+		client.cacheAccessor.Replace(s)
+		defer client.cacheAccessor.Export(s)
 	}
 
 	account, err := client.manager.Write(authParams, tokenResponse)
@@ -128,8 +128,8 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 func (client *clientApplication) getAccounts() []msalbase.Account {
 	// TODO(jdoak): Think about removing this after refactor.
 	if s, ok := client.manager.(cache.Serializer); ok {
-		client.cacheAccessor.IntoCache(s)
-		defer client.cacheAccessor.ExportCache(s)
+		client.cacheAccessor.Replace(s)
+		defer client.cacheAccessor.Export(s)
 	}
 
 	accounts, err := client.manager.GetAllAccounts()
