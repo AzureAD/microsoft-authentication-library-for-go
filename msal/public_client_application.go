@@ -118,4 +118,3 @@ func (pca *PublicClientApplication) Accounts() []msalbase.Account {
 type AcquireTokenByDeviceCodeOptions struct {
 	// placeholder for future optional args
 }
-
