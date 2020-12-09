@@ -114,20 +114,7 @@ func (pca *PublicClientApplication) Accounts() []msalbase.Account {
 	return pca.clientApplication.getAccounts()
 }
 
-// AcquireTokenSilentOptions contains the optional parameters to acquire a token silently (from cache).
-type AcquireTokenSilentOptions struct {
-	// Account specifies the account to use when acquiring a token from the cache.
-	// TODO(jdoak): Add an .IsZero() to handle switching out for defaults vs nil checks.
-	Account msalbase.Account
-}
-
 // AcquireTokenByDeviceCodeOptions contains the optional parameters used to acquire an access token using the device code flow.
 type AcquireTokenByDeviceCodeOptions struct {
 	// placeholder for future optional args
-}
-
-// AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
-type AcquireTokenByAuthCodeOptions struct {
-	Code          string
-	CodeChallenge string
 }
