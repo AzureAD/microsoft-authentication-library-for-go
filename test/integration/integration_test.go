@@ -153,9 +153,8 @@ const microsoftAuthorityHost = "https://login.microsoftonline.com/"
 // Authority values.
 const (
 	organizationsAuthority = microsoftAuthorityHost + "organizations/"
-	commonAuthority        = microsoftAuthorityHost + "common/"
 	microsoftAuthority     = microsoftAuthorityHost + "microsoft.onmicrosoft.com"
-	msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com"
+	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the furture
 )
 
 // Tests
