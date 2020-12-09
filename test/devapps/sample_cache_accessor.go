@@ -12,33 +12,33 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-type SampleCacheAccessor struct {
+type TokenCache struct {
 	file string
 }
 
-func (accessor *SampleCacheAccessor) IntoCache(cache cache.Unmarshaler) {
-	jsonFile, err := os.Open(accessor.file)
+func (t *TokenCache) IntoCache(cache cache.Unmarshaler) {
+	jsonFile, err := os.Open(t.file)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 	defer jsonFile.Close()
 	data, err := ioutil.ReadAll(jsonFile)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 	err = cache.Unmarshal(data)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 }
 
-func (accessor *SampleCacheAccessor) ExportCache(cache cache.Marshaler) {
+func (t *TokenCache) ExportCache(cache cache.Marshaler) {
 	data, err := cache.Marshal()
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
-	err = ioutil.WriteFile(accessor.file, data, 0644)
+	err = ioutil.WriteFile(t.file, data, 0644)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 }

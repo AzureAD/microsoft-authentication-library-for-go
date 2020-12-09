@@ -19,7 +19,7 @@ type noopCacheAccessor struct{}
 func (n noopCacheAccessor) IntoCache(cache cache.Unmarshaler) {}
 func (n noopCacheAccessor) ExportCache(cache cache.Marshaler) {}
 
-// managet provides an internal cache. It is defined to allow faking the cache in tests.
+// manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
 	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error)
