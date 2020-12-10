@@ -11,7 +11,7 @@ const port = "3000"
 var (
 	config          = createConfig("config.json")
 	publicClientApp *msal.PublicClientApplication
-	cacheAccessor   = &SampleCacheAccessor{"serialized_cache.json"}
+	cacheAccessor   = &TokenCache{"serialized_cache.json"}
 )
 
 func main() {

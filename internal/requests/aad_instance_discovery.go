@@ -9,6 +9,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 )
 
+// TODO(jdoak): Remove this.
 var instanceDiscoveryCache = map[string]InstanceDiscoveryMetadata{}
 
 type AadInstanceDiscovery struct {

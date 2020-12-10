@@ -11,18 +11,27 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
 )
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) BeforeCacheAccess(context requests.CacheManager) {}
-func (n noopCacheAccessor) AfterCacheAccess(context requests.CacheManager)  {}
+func (n noopCacheAccessor) Replace(cache cache.Unmarshaler) {}
+func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
+
+// manager provides an internal cache. It is defined to allow faking the cache in tests.
+// In all production use it is a *storage.Manager.
+type manager interface {
+	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error)
+	Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
+	GetAllAccounts() ([]msalbase.Account, error)
+}
 
 type clientApplication struct {
 	webRequestManager           requests.WebRequestManager
 	clientApplicationParameters *clientApplicationParameters
-	cache                       requests.CacheManager
-	cacheAccessor               CacheAccessor
+	manager                     manager // *storage.Manager or fakeManager in tests
+	cacheAccessor               cache.ExportReplace
 }
 
 func createClientApplication(httpClient HTTPClient, clientID string, authority string) (*clientApplication, error) {
@@ -35,7 +44,7 @@ func createClientApplication(httpClient HTTPClient, clientID string, authority s
 		webRequestManager:           createWebRequestManager(httpClient),
 		clientApplicationParameters: params,
 		cacheAccessor:               noopCacheAccessor{},
-		cache:                       storage.New(),
+		manager:                     storage.New(),
 	}, nil
 }
 
@@ -47,12 +56,13 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	silent.augmentAuthenticationParameters(&authParams)
 
-	// TODO(jdoak/msal): This accessor stuff should be integrated into the
-	// CacheManager instead of here probably by passing the accessor in its
-	// constructor and defining these methods.
-	client.cacheAccessor.BeforeCacheAccess(client.cache)
-	defer client.cacheAccessor.AfterCacheAccess(client.cache)
-	storageTokenResponse, err := client.cache.TryReadCache(ctx, authParams, client.webRequestManager)
+	// TODO(jdoak): Think about removing this after refactor.
+	if s, ok := client.manager.(cache.Serializer); ok {
+		client.cacheAccessor.Replace(s)
+		defer client.cacheAccessor.Export(s)
+	}
+
+	storageTokenResponse, err := client.manager.Read(ctx, authParams, client.webRequestManager)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}
@@ -62,7 +72,7 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
 			return msalbase.AuthenticationResult{}, errors.New("no refresh token found")
 		}
-		req := requests.CreateRefreshTokenExchangeRequest(client.webRequestManager,
+		req := requests.NewRefreshTokenExchangeRequest(client.webRequestManager,
 			authParams, storageTokenResponse.RefreshToken, silent.requestType)
 		if req.RequestType == requests.RefreshTokenConfidential {
 			req.ClientCredential = silent.clientCredential
@@ -102,9 +112,13 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 		return msalbase.AuthenticationResult{}, err
 	}
 
-	client.cacheAccessor.BeforeCacheAccess(client.cache)
-	defer client.cacheAccessor.AfterCacheAccess(client.cache)
-	account, err := client.cache.CacheTokenResponse(authParams, tokenResponse)
+	// TODO(jdoak): Think about removing this after refactor.
+	if s, ok := client.manager.(cache.Serializer); ok {
+		client.cacheAccessor.Replace(s)
+		defer client.cacheAccessor.Export(s)
+	}
+
+	account, err := client.manager.Write(authParams, tokenResponse)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}
@@ -112,11 +126,28 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 }
 
 func (client *clientApplication) getAccounts() []msalbase.Account {
-	client.cacheAccessor.BeforeCacheAccess(client.cache)
-	defer client.cacheAccessor.AfterCacheAccess(client.cache)
-	accounts, err := client.cache.GetAllAccounts()
+	// TODO(jdoak): Think about removing this after refactor.
+	if s, ok := client.manager.(cache.Serializer); ok {
+		client.cacheAccessor.Replace(s)
+		defer client.cacheAccessor.Export(s)
+	}
+
+	accounts, err := client.manager.GetAllAccounts()
 	if err != nil {
 		return nil
 	}
 	return accounts
+}
+
+// AcquireTokenSilentOptions contains the optional parameters to acquire a token silently (from cache).
+type AcquireTokenSilentOptions struct {
+	// Account specifies the account to use when acquiring a token from the cache.
+	// TODO(jdoak): Add an .IsZero() to handle switching out for defaults vs nil checks.
+	Account msalbase.Account
+}
+
+// AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
+type AcquireTokenByAuthCodeOptions struct {
+	Code          string
+	CodeChallenge string
 }

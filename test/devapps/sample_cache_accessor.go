@@ -7,38 +7,38 @@ import (
 	"io/ioutil"
 	"os"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
 
 	log "github.com/sirupsen/logrus"
 )
 
-type SampleCacheAccessor struct {
+type TokenCache struct {
 	file string
 }
 
-func (accessor *SampleCacheAccessor) BeforeCacheAccess(cache requests.CacheManager) {
-	jsonFile, err := os.Open(accessor.file)
+func (t *TokenCache) Replace(cache cache.Unmarshaler) {
+	jsonFile, err := os.Open(t.file)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 	defer jsonFile.Close()
 	data, err := ioutil.ReadAll(jsonFile)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
-	err = cache.Deserialize(data)
+	err = cache.Unmarshal(data)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 }
 
-func (accessor *SampleCacheAccessor) AfterCacheAccess(cache requests.CacheManager) {
-	data, err := cache.Serialize()
+func (t *TokenCache) Export(cache cache.Marshaler) {
+	data, err := cache.Marshal()
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
-	err = ioutil.WriteFile(accessor.file, []byte(data), 0644)
+	err = ioutil.WriteFile(t.file, data, 0600)
 	if err != nil {
-		log.Fatal(err)
+		log.Error(err)
 	}
 }
