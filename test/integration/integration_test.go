@@ -42,7 +42,7 @@ func httpRequest(url string, query map[string]string, accessToken string) ([]byt
 // Lab Interface
 
 type labClient struct {
-	labApplication *msal.ConfidentialClientApplication
+	app *msal.ConfidentialClientApplication
 }
 
 // TODO : Add app object
@@ -65,7 +65,7 @@ type user struct {
 	Password         string
 }
 type secret struct {
-	Secret string `json:"value"`
+	Value string `json:"value"`
 }
 
 func newLabClient() (*labClient, error) {
@@ -81,13 +81,13 @@ func newLabClient() (*labClient, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &labClient{labApplication: app}, nil
+	return &labClient{app: app}, nil
 }
 func (l *labClient) getLabAccessToken() (string, error) {
 	scopes := []string{msIDlabDefaultScope}
-	result, err := l.labApplication.AcquireTokenSilent(context.Background(), scopes, nil)
+	result, err := l.app.AcquireTokenSilent(context.Background(), scopes, nil)
 	if err != nil {
-		result, err = l.labApplication.AcquireTokenByClientCredential(context.Background(), scopes)
+		result, err = l.app.AcquireTokenByClientCredential(context.Background(), scopes)
 		if err != nil {
 			return "", err
 		}
@@ -134,7 +134,7 @@ func (l *labClient) getSecret(query map[string]string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	return secret.Secret, nil
+	return secret.Value, nil
 }
 
 // TODO: Add getApp() when needed
@@ -162,7 +162,7 @@ const (
 func getTestUser(lc *labClient, query map[string]string) user {
 	testUser, err := lc.getUser(query)
 	if err != nil {
-		panic("Failed to get input user" + err.Error())
+		panic("Failed to get input user. " + err.Error())
 	}
 	return testUser
 }
@@ -170,7 +170,7 @@ func getTestUser(lc *labClient, query map[string]string) user {
 func TestUsernamePassword(t *testing.T) {
 	labClientInstance, err := newLabClient()
 	if err != nil {
-		panic("Failed to get a lab client" + err.Error())
+		panic("Failed to get a lab client. " + err.Error())
 	}
 	tests := map[string]struct {
 		user user
@@ -201,7 +201,7 @@ func TestUsernamePassword(t *testing.T) {
 				t.Error("No access token found")
 			}
 			if result.Account.GetUsername() != tc.user.Upn {
-				t.Errorf("Incorrect user account")
+				t.Error("Incorrect user account")
 			}
 		})
 	}
