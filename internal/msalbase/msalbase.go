@@ -18,6 +18,8 @@ import (
 )
 
 const (
+	scopeSeparator = " "
+
 	// CacheKeySeparator is used in creating the keys of the cache.
 	CacheKeySeparator = "-"
 
@@ -249,7 +251,7 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse Sto
 		return AuthenticationResult{},
 			fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.GetExpiresOn())
 	}
-	grantedScopes := SplitScopes(storageTokenResponse.AccessToken.GetScopes())
+	grantedScopes := strings.Split(storageTokenResponse.AccessToken.GetScopes(), scopeSeparator)
 
 	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
 	var idToken IDToken
@@ -516,7 +518,11 @@ type tokenResponseJSONPayload struct {
 	Foci         string `json:"foci"`
 	Scope        string `json:"scope"`
 	IDToken      string `json:"id_token"`
-	ClientInfo   string `json:"client_info"`
+	// TODO(msal): If this is always going to be a JWT base64 encoded, we should consider
+	// making this a json.RawMessage. Then we can do our decodes in []byte and pass it
+	// to our json decoder directly instead of all the extra copies from using string.
+	// This means changing DecodeJWT().
+	ClientInfo string `json:"client_info"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -614,7 +620,7 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 		// Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
 		grantedScopes = authParameters.Scopes
 	} else {
-		grantedScopes = SplitScopes(strings.ToLower(payload.Scope))
+		grantedScopes = strings.Split(strings.ToLower(payload.Scope), scopeSeparator)
 		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
 	}
 

@@ -14,6 +14,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -51,7 +52,7 @@ func checkAlias(alias string, aliases []string) bool {
 }
 
 func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
-	newScopesTwo := msalbase.SplitScopes(scopesTwo)
+	newScopesTwo := strings.Split(scopesTwo, " ")
 	scopeCounter := 0
 	for _, scope := range scopesOne {
 		for _, otherScope := range newScopesTwo {
@@ -107,6 +108,8 @@ func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParamete
 	return msalbase.CreateStorageTokenResponse(accessToken, refreshToken, idToken, account), nil
 }
 
+const scopeSeparator = " "
+
 // Write writes a token response to the cache and returns the account information the token is stored with.
 func (m *Manager) Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
 	m.mu.Lock()
@@ -117,7 +120,7 @@ func (m *Manager) Write(authParameters msalbase.AuthParametersInternal, tokenRes
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
-	target := msalbase.ConcatenateScopes(tokenResponse.GrantedScopes)
+	target := strings.Join(tokenResponse.GrantedScopes, scopeSeparator)
 
 	cachedAt := time.Now().Unix()
 
