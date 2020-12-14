@@ -30,22 +30,6 @@ func TestCreateOAuthResponseBase(t *testing.T) {
 	}
 }
 
-func TestConcatenateScopes(t *testing.T) {
-	expectedScopes := "profile openid user.read"
-	actualScopes := ConcatenateScopes([]string{"profile", "openid", "user.read"})
-	if !reflect.DeepEqual(expectedScopes, actualScopes) {
-		t.Errorf("Expected scopes %s differ from actual scopes %s", expectedScopes, actualScopes)
-	}
-}
-
-func TestSplitScopes(t *testing.T) {
-	expectedScopes := []string{"profile", "openid", "user.read"}
-	actualScopes := SplitScopes("profile openid user.read")
-	if !reflect.DeepEqual(expectedScopes, actualScopes) {
-		t.Errorf("Expected scopes %v differ from actual scopes %v", expectedScopes, actualScopes)
-	}
-}
-
 func TestDecodeJWT(t *testing.T) {
 	encodedStr := "aGVsbG8"
 	expectedStr := []byte("hello")

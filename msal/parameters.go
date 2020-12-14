@@ -172,7 +172,7 @@ func (p AuthorizationCodeURLParameters) createURL(ctx context.Context, wrm reque
 }
 
 func (p AuthorizationCodeURLParameters) getSeparatedScopes() string {
-	return msalbase.ConcatenateScopes(p.Scopes)
+	return strings.Join(p.Scopes, " ")
 }
 
 // TODO(jdoak): determine in the long run if this is even needed. Looks like

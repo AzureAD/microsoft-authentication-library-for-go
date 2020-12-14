@@ -18,7 +18,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	jwt "github.com/dgrijalva/jwt-go"
 	uuid "github.com/google/uuid"
-	"github.com/shirou/gopsutil/host"
 )
 
 // ClientAssertion holds the assertion parameters required for token acquisition flows needing a client assertion.
@@ -178,20 +177,6 @@ func CreateOAuthResponseBase(httpStatusCode int, responseData []byte) (OAuthResp
 	return payload, nil
 }
 
-// GetOSPlatform gets the OS that the client using MSAL is running on.
-// TODO(jdoak): Remove this.
-func GetOSPlatform() string {
-	h, _ := host.Info()
-	return h.Platform
-}
-
-// GetOSVersion gets the OS version that the client using MSAL is running on.
-// TODO(jdoak): Remove this.
-func GetOSVersion() string {
-	h, _ := host.Info()
-	return h.PlatformVersion
-}
-
 // ConvertStrUnixToUTCTime converts a string representation of unix time to a UTC timestamp.
 func ConvertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 	timeInt, err := strconv.ParseInt(unixTime, 10, 64)
@@ -199,19 +184,6 @@ func ConvertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.Unix(timeInt, 0).UTC(), nil
-}
-
-// DefaultScopeSeparator is used to convert a list of scopes to a string.
-const DefaultScopeSeparator = " "
-
-// ConcatenateScopes combines all scopes into one space-separated string.
-func ConcatenateScopes(scopes []string) string {
-	return strings.Join(scopes, DefaultScopeSeparator)
-}
-
-// SplitScopes splits a space-separated string of scopes to a list.
-func SplitScopes(scopes string) []string {
-	return strings.Split(scopes, DefaultScopeSeparator)
 }
 
 // GetStringKey does a lookup and returns the string at that value or an empty string.
@@ -233,11 +205,7 @@ func DecodeJWT(data string) ([]byte, error) {
 	if i := len(data) % 4; i != 0 {
 		data += strings.Repeat("=", 4-i)
 	}
-	decodedData, err := base64.StdEncoding.DecodeString(data)
-	if err != nil {
-		return nil, err
-	}
-	return decodedData, nil
+	return base64.StdEncoding.DecodeString(data)
 }
 
 // IDToken consists of all the information used to validate a user.
