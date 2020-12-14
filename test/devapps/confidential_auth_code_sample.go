@@ -18,7 +18,7 @@ import (
 
 var (
 	accessToken                string
-	confidentialConfig         = createConfig("confidential_config.json")
+	confidentialConfig         = CreateConfig("confidential_config.json")
 	confidentialClientAuthCode *msal.ConfidentialClientApplication
 )
 

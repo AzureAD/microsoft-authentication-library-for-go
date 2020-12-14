@@ -27,10 +27,6 @@ var (
 	errorUserRealm = msalbase.UserRealm{
 		AccountType: "",
 	}
-	federatedUserRealm = msalbase.UserRealm{
-		AccountType:           "Federated",
-		FederationMetadataURL: "fedMetaURL",
-	}
 )
 
 func init() {
