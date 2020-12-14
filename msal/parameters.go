@@ -196,11 +196,6 @@ func createClientApplicationParameters(clientID, authorityURI string) (*clientAp
 	}, nil
 }
 
-func (p *clientApplicationParameters) validate() error {
-	err := p.commonParameters.validate()
-	return err
-}
-
 func (p *clientApplicationParameters) createAuthenticationParameters() msalbase.AuthParametersInternal {
 	return p.commonParameters.createAuthenticationParameters()
 }
@@ -219,10 +214,6 @@ func createApplicationCommonParameters(clientID, authorityURI string) (*applicat
 		clientID:      clientID,
 		authorityInfo: a,
 	}, nil
-}
-
-func (p *applicationCommonParameters) validate() error {
-	return nil
 }
 
 func (p *applicationCommonParameters) createAuthenticationParameters() msalbase.AuthParametersInternal {
