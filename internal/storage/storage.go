@@ -52,7 +52,7 @@ func checkAlias(alias string, aliases []string) bool {
 }
 
 func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
-	newScopesTwo := strings.Split(scopesTwo, " ")
+	newScopesTwo := strings.Split(scopesTwo, scopeSeparator)
 	scopeCounter := 0
 	for _, scope := range scopesOne {
 		for _, otherScope := range newScopesTwo {
