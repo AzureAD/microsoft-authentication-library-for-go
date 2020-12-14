@@ -21,12 +21,6 @@ import (
 	"github.com/shirou/gopsutil/host"
 )
 
-type accessTokenProvider interface {
-	GetSecret() string
-	GetExpiresOn() string
-	GetScopes() string
-}
-
 // ClientAssertion holds the assertion parameters required for token acquisition flows needing a client assertion.
 // This can be either a JWT or certificate.
 type ClientAssertion struct {
@@ -73,6 +67,12 @@ func (assertion *ClientAssertion) GetJWT(authParams AuthParametersInternal) (str
 		assertion.ClientAssertionJWT = jwt
 	}
 	return assertion.ClientAssertionJWT, nil
+}
+
+type accessTokenProvider interface {
+	GetSecret() string
+	GetExpiresOn() string
+	GetScopes() string
 }
 
 var certHeader = map[string]interface{}{

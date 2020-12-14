@@ -18,6 +18,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/wstrust"
 	"github.com/kylelemons/godebug/pretty"
+	"github.com/stretchr/testify/mock"
 )
 
 const (
@@ -38,6 +39,18 @@ var testHeadersWURLUTF8 = map[string]string{
 	"client-request-id":        "",
 	"return-client-request-id": "false",
 	"Content-Type":             "application/x-www-form-urlencoded; charset=utf-8",
+}
+
+type mockHTTPManager struct {
+	mock.Mock
+}
+
+func (m *mockHTTPManager) Do(req *http.Request) (*http.Response, error) {
+	// reflect.DeepEqual() is used under-the-hood and will always return false when
+	// comparing non-nil funcs.  set this to nil to work around this behavior.
+	req.GetBody = nil
+	args := m.Called(req)
+	return args.Get(0).(*http.Response), args.Error(1)
 }
 
 func TestAddContentTypeHeader(t *testing.T) {

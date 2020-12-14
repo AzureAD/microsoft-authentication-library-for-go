@@ -3,7 +3,37 @@
 
 package msal
 
-import "github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+import (
+	"time"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+)
+
+//AccountProvider is an interface representing an account that is returned to users.
+//This can help with accessing the cache for tokens.
+type AccountProvider interface {
+	GetUsername() string
+	GetHomeAccountID() string
+	GetEnvironment() string
+}
+
+// AuthenticationResultProvider contains the results of one token acquisition operation in PublicClientApplication
+// or ConfidentialClientApplication.
+type AuthenticationResultProvider interface {
+	GetAccessToken() string
+}
+
+// DeviceCodeResultProvider is an interface for DeviceCodeResult that can be returned to users.
+// You can use these functions to show the user different parameters of the device code result.
+type DeviceCodeResultProvider interface {
+	GetMessage() string
+	String() string
+	GetUserCode() string
+	GetDeviceCode() string
+	GetVerificationURL() string
+	GetExpiresOn() time.Time
+	GetInterval() int
+}
 
 type credentialType int
 
