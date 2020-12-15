@@ -3,30 +3,10 @@
 
 package main
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"net/http"
+// TODO(msal expert): This should be refactored into an example maybe?
+// a "main" with a bunch of private functions that can't run isn't a good code sample.
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
-	log "github.com/sirupsen/logrus"
-)
-
-func redirectToURL(w http.ResponseWriter, r *http.Request) {
-	// Getting the URL to redirect to acquire the authorization code
-	authCodeURLParams := msal.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes)
-	authCodeURLParams.CodeChallenge = config.CodeChallenge
-	authCodeURLParams.State = config.State
-	authURL, err := publicClientApp.CreateAuthCodeURL(context.Background(), authCodeURLParams)
-	if err != nil {
-		log.Fatal(err)
-	}
-	// Redirecting to the URL we have received
-	log.Info(authURL)
-	http.Redirect(w, r, authURL, http.StatusSeeOther)
-}
-
+/*
 func getToken(w http.ResponseWriter, r *http.Request) {
 	// Getting the authorization code from the URL's query
 	states, ok := r.URL.Query()["state"]
@@ -53,9 +33,6 @@ func getToken(w http.ResponseWriter, r *http.Request) {
 	fmt.Fprintf(w, "Access token is "+result.GetAccessToken())
 }
 
-// TODO(msal expert): This test doesn't do anything that I can tell. We call msal.NewPublicClientApplication(), but we
-// don't use it.  Someone needs to clarify to me how this is supposed to work.
-/*
 func acquireByAuthorizationCodePublic() {
 	options := msal.DefaultPublicClientApplicationOptions()
 	options.Authority = config.Authority
@@ -67,5 +44,19 @@ func acquireByAuthorizationCodePublic() {
 	// The redirect uri set in our app's registration is http://localhost:port/redirect
 	http.HandleFunc("/redirect", getToken)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
+}
+
+func redirectToURL(w http.ResponseWriter, r *http.Request) {
+	// Getting the URL to redirect to acquire the authorization code
+	authCodeURLParams := msal.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes)
+	authCodeURLParams.CodeChallenge = config.CodeChallenge
+	authCodeURLParams.State = config.State
+	authURL, err := publicClientApp.CreateAuthCodeURL(context.Background(), authCodeURLParams)
+	if err != nil {
+		log.Fatal(err)
+	}
+	// Redirecting to the URL we have received
+	log.Info(authURL)
+	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 */

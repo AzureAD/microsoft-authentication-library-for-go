@@ -13,7 +13,7 @@ import (
 )
 
 func acquireByUsernamePasswordPublic() {
-	config := createConfig("config.json")
+	config := CreateConfig("config.json")
 	// create a PublicClientApplication with a  custom cache accessor
 	options := msal.DefaultPublicClientApplicationOptions()
 	options.Accessor = cacheAccessor

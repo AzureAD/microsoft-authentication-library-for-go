@@ -132,7 +132,6 @@ func (wrm *defaultWebRequestManager) GetAccessTokenFromSamlGrant(ctx context.Con
 	switch samlGrant.AssertionType {
 	case msalbase.SAMLV1Grant:
 		decodedQueryParams.Set("grant_type", msalbase.SAMLV1Grant)
-		break
 	case msalbase.SAMLV2Grant:
 		decodedQueryParams.Set("grant_type", msalbase.SAMLV2Grant)
 	default:

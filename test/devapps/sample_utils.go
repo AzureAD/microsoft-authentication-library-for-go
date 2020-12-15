@@ -11,7 +11,7 @@ import (
 	log "github.com/sirupsen/logrus"
 )
 
-//Config represents the config.json required to run the samples
+// Config represents the config.json required to run the samples
 type Config struct {
 	ClientID            string   `json:"client_id"`
 	Authority           string   `json:"authority"`
@@ -27,14 +27,18 @@ type Config struct {
 	KeyFile             string   `json:"pem_file"`
 }
 
-//CreateConfig creates the Config struct from a json file
-func createConfig(fileName string) *Config {
+// CreateConfig creates the Config struct from a json file.
+func CreateConfig(fileName string) *Config {
 	jsonFile, err := os.Open(fileName)
 	if err != nil {
 		log.Fatal(err)
 	}
 	defer jsonFile.Close()
 	data, err := ioutil.ReadAll(jsonFile)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	config := &Config{}
 	err = json.Unmarshal(data, config)
 	if err != nil {

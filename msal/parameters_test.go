@@ -10,17 +10,18 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 func TestCreateAcquireTokenAuthCodeParameters(t *testing.T) {
-	expectedScopes := []string{"user.read"}
-	params := createAcquireTokenAuthCodeParameters(expectedScopes)
+	want := []string{"user.read"}
+	params := createAcquireTokenAuthCodeParameters(want)
 	if params == nil {
-		t.Error("Parameters cannot be nil.")
+		t.Fatal("TestCreateAcquireTokenAuthCodeParameters: got params == nil, want params != nil")
 	}
-	actualScopes := params.commonParameters.scopes
-	if !reflect.DeepEqual(expectedScopes, actualScopes) {
-		t.Errorf("Actual scopes %v differ from expected scopes %v", actualScopes, expectedScopes)
+	got := params.commonParameters.scopes //nolint
+	if diff := pretty.Compare(want, got); diff != "" {
+		t.Errorf("TestCreateAcquireTokenAuthCodeParameters: -want/+got:\n%s", diff)
 	}
 }
 

@@ -9,7 +9,7 @@ import (
 const port = "3000"
 
 var (
-	config          = createConfig("config.json")
+	config          = CreateConfig("config.json")
 	publicClientApp *msal.PublicClientApplication
 	cacheAccessor   = &TokenCache{"serialized_cache.json"}
 )
