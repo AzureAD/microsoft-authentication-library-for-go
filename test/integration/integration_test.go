@@ -9,24 +9,33 @@ import (
 	"errors"
 	"io/ioutil"
 	"net/http"
+	"net/url"
 	"os"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 )
 
-// HTTP Helper
-func httpRequest(url string, query map[string]string, accessToken string) ([]byte, error) {
+const (
+	msIDlabDefaultScope = "https://msidlab.com/.default"
+	graphDefaultScope   = "https://graph.windows.net/.default"
+)
+
+const microsoftAuthorityHost = "https://login.microsoftonline.com/"
+
+const (
+	organizationsAuthority = microsoftAuthorityHost + "organizations/"
+	microsoftAuthority     = microsoftAuthorityHost + "microsoft.onmicrosoft.com"
+	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the furture
+)
+
+func httpRequest(url string, query url.Values, accessToken string) ([]byte, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
 	}
 	request.Header.Set("Authorization", "Bearer "+accessToken)
-	q := request.URL.Query()
-	for key, value := range query {
-		q.Add(key, value)
-	}
-	request.URL.RawQuery = q.Encode()
+	request.URL.RawQuery = query.Encode()
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		return nil, err
@@ -38,8 +47,6 @@ func httpRequest(url string, query map[string]string, accessToken string) ([]byt
 	}
 	return body, nil
 }
-
-// Lab Interface
 
 type labClient struct {
 	app *msal.ConfidentialClientApplication
@@ -64,6 +71,7 @@ type user struct {
 	LastUpdatedDate  string `json:"lastUpdatedDate"`
 	Password         string
 }
+
 type secret struct {
 	Value string `json:"value"`
 }
@@ -100,7 +108,11 @@ func (l *labClient) getUser(query map[string]string) (user, error) {
 	if err != nil {
 		return user{}, err
 	}
-	responseBody, err := httpRequest("https://msidlab.com/api/user", query, accessToken)
+	q := url.Values{}
+	for key, value := range query {
+		q.Add(key, value)
+	}
+	responseBody, err := httpRequest("https://msidlab.com/api/user", q, accessToken)
 	if err != nil {
 		return user{}, err
 	}
@@ -125,7 +137,11 @@ func (l *labClient) getSecret(query map[string]string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	responseBody, err := httpRequest("https://msidlab.com/api/LabUserSecret", query, accessToken)
+	q := url.Values{}
+	for key, value := range query {
+		q.Add(key, value)
+	}
+	responseBody, err := httpRequest("https://msidlab.com/api/LabUserSecret", q, accessToken)
 	if err != nil {
 		return "", err
 	}
@@ -138,26 +154,6 @@ func (l *labClient) getSecret(query map[string]string) (string, error) {
 }
 
 // TODO: Add getApp() when needed
-
-// TestConstants
-
-// Scopes.
-const (
-	msIDlabDefaultScope = "https://msidlab.com/.default"
-	graphDefaultScope   = "https://graph.windows.net/.default"
-)
-
-// MicrosoftAuthorityHost is the host authority for Microsoft.
-const microsoftAuthorityHost = "https://login.microsoftonline.com/"
-
-// Authority values.
-const (
-	organizationsAuthority = microsoftAuthorityHost + "organizations/"
-	microsoftAuthority     = microsoftAuthorityHost + "microsoft.onmicrosoft.com"
-	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the furture
-)
-
-// Tests
 
 func getTestUser(lc *labClient, query map[string]string) user {
 	testUser, err := lc.getUser(query)
@@ -172,37 +168,36 @@ func TestUsernamePassword(t *testing.T) {
 	if err != nil {
 		panic("Failed to get a lab client. " + err.Error())
 	}
-	tests := map[string]struct {
+	tests := []struct {
+		desc string
 		user user
 	}{
-		"Managed": {user: getTestUser(labClientInstance, map[string]string{"usertype": "cloud"})},
-		"ADFSv2":  {user: getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv2"})},
-		"ADFSv3":  {user: getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv3"})},
-		//"ADFSv4":  {user: getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv2"})},
+		{"Managed", getTestUser(labClientInstance, map[string]string{"usertype": "cloud"})},
+		{"ADFSv2", getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv2"})},
+		{"ADFSv3", getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv3"})},
+		{"ADFSv4", getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv4"})},
 	}
-	for name, tc := range tests {
-		t.Run(name, func(t *testing.T) {
-			options := msal.DefaultPublicClientApplicationOptions()
-			options.Authority = organizationsAuthority
-			publicClientApp, err := msal.NewPublicClientApplication(tc.user.AppID, &options)
-			if err != nil {
-				panic(err)
-			}
-			result, err := publicClientApp.AcquireTokenByUsernamePassword(
-				context.Background(),
-				[]string{graphDefaultScope},
-				tc.user.Upn,
-				tc.user.Password,
-			)
-			if err != nil {
-				t.Error(err)
-			}
-			if result.AccessToken == "" {
-				t.Error("No access token found")
-			}
-			if result.Account.GetUsername() != tc.user.Upn {
-				t.Error("Incorrect user account")
-			}
-		})
+	for _, test := range tests {
+		options := msal.DefaultPublicClientApplicationOptions()
+		options.Authority = organizationsAuthority
+		publicClientApp, err := msal.NewPublicClientApplication(test.user.AppID, &options)
+		if err != nil {
+			panic(err)
+		}
+		result, err := publicClientApp.AcquireTokenByUsernamePassword(
+			context.Background(),
+			[]string{graphDefaultScope},
+			test.user.Upn,
+			test.user.Password,
+		)
+		if err != nil {
+			t.Fatalf("TestUsernamePassword(%s): on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", test.desc, err)
+		}
+		if result.AccessToken == "" {
+			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)
+		}
+		if result.Account.GetUsername() != test.user.Upn {
+			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.GetUsername(), test.user.Upn)
+		}
 	}
 }
