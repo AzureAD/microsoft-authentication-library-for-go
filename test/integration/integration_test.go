@@ -103,16 +103,12 @@ func (l *labClient) getLabAccessToken() (string, error) {
 	return result.GetAccessToken(), nil
 }
 
-func (l *labClient) getUser(query map[string]string) (user, error) {
+func (l *labClient) getUser(query url.Values) (user, error) {
 	accessToken, err := l.getLabAccessToken()
 	if err != nil {
 		return user{}, err
 	}
-	q := url.Values{}
-	for key, value := range query {
-		q.Add(key, value)
-	}
-	responseBody, err := httpRequest("https://msidlab.com/api/user", q, accessToken)
+	responseBody, err := httpRequest("https://msidlab.com/api/user", query, accessToken)
 	if err != nil {
 		return user{}, err
 	}
@@ -125,23 +121,19 @@ func (l *labClient) getUser(query map[string]string) (user, error) {
 		return user{}, errors.New("No user found")
 	}
 	user := users[0]
-	user.Password, err = l.getSecret(map[string]string{"Secret": user.LabName})
+	user.Password, err = l.getSecret(url.Values{"Secret": []string{user.LabName}})
 	if err != nil {
 		return user, err
 	}
 	return user, nil
 }
 
-func (l *labClient) getSecret(query map[string]string) (string, error) {
+func (l *labClient) getSecret(query url.Values) (string, error) {
 	accessToken, err := l.getLabAccessToken()
 	if err != nil {
 		return "", err
 	}
-	q := url.Values{}
-	for key, value := range query {
-		q.Add(key, value)
-	}
-	responseBody, err := httpRequest("https://msidlab.com/api/LabUserSecret", q, accessToken)
+	responseBody, err := httpRequest("https://msidlab.com/api/LabUserSecret", query, accessToken)
 	if err != nil {
 		return "", err
 	}
@@ -155,7 +147,7 @@ func (l *labClient) getSecret(query map[string]string) (string, error) {
 
 // TODO: Add getApp() when needed
 
-func getTestUser(lc *labClient, query map[string]string) user {
+func getTestUser(lc *labClient, query url.Values) user {
 	testUser, err := lc.getUser(query)
 	if err != nil {
 		panic("Failed to get input user. " + err.Error())
@@ -168,18 +160,18 @@ func TestUsernamePassword(t *testing.T) {
 	if err != nil {
 		panic("Failed to get a lab client. " + err.Error())
 	}
+	options := msal.DefaultPublicClientApplicationOptions()
+	options.Authority = organizationsAuthority
 	tests := []struct {
 		desc string
 		user user
 	}{
-		{"Managed", getTestUser(labClientInstance, map[string]string{"usertype": "cloud"})},
-		{"ADFSv2", getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv2"})},
-		{"ADFSv3", getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv3"})},
-		{"ADFSv4", getTestUser(labClientInstance, map[string]string{"usertype": "federated", "federationProvider": "ADFSv4"})},
+		{"Managed", getTestUser(labClientInstance, url.Values{"usertype": []string{"cloud"}})},
+		{"ADFSv2", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}})},
+		{"ADFSv3", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}})},
+		{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
 	}
 	for _, test := range tests {
-		options := msal.DefaultPublicClientApplicationOptions()
-		options.Authority = organizationsAuthority
 		publicClientApp, err := msal.NewPublicClientApplication(test.user.AppID, &options)
 		if err != nil {
 			panic(err)
