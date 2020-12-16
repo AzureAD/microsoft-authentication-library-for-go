@@ -1,0 +1,201 @@
+// Package comm provides helpers for communicating with HTTP backends.
+package comm
+
+import (
+	"bytes"
+	"context"
+	"encoding/json"
+	"encoding/xml"
+	"fmt"
+	"io"
+	"io/ioutil"
+	"net/http"
+	"net/url"
+	"reflect"
+	"runtime"
+	"strings"
+	"time"
+
+	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	"github.com/google/uuid"
+)
+
+const version = "0.1.0"
+
+// Client provides a wrapper to our *http.Client that handles compression and serialization needs.
+type Client struct {
+	client *http.Client
+}
+
+// New returns a new Client object.
+func New(httpClient *http.Client) *Client {
+	if httpClient == nil {
+		panic("http.Client cannot == nil")
+	}
+
+	return &Client{client: httpClient}
+}
+
+// JSONCall connects to the REST endpoint passing the HTTP query values, headers and JSON conversion
+// of body in the HTTP body. It automatically handles compression and decompression with gzip. The response is JSON
+// unmarshalled into resp. resp must be a pointer to a struct. If the body struct contains a field called
+// "AdditionalFields" we use a custom marshal/unmarshal engine.
+func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error {
+	if qv == nil {
+		qv = url.Values{}
+	}
+
+	v := reflect.ValueOf(resp)
+	if err := c.checkResp(v); err != nil {
+		return err
+	}
+
+	// Choose a JSON marshal/unmarshal depending on if we have AdditionalFields attribute.
+	var marshal = json.Marshal
+	var unmarshal = json.Unmarshal
+	if _, ok := v.Type().FieldByName("AdditionalFields"); ok {
+		marshal = customJSON.Marshal
+		unmarshal = customJSON.Unmarshal
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("could not parse path URL(%s): %w", endpoint, err)
+	}
+	u.RawQuery = qv.Encode()
+
+	c.addStdHeaders(headers)
+
+	req := &http.Request{Method: http.MethodGet, URL: u, Header: headers}
+
+	if body != nil {
+		// TODO(jdoak): In case your wondering why I'm not gzip encoding....
+		// I'm not sure if these various services support gzip on send.
+		headers.Add("Content-Type", "application/json; charset=utf-8")
+		data, err := marshal(body)
+		if err != nil {
+			return fmt.Errorf("bug: conn.Call(): could not marshal the body object: %w", err)
+		}
+		headers.Add("Content-Length", fmt.Sprintf("%d", len(data)))
+		req.Body = ioutil.NopCloser(bytes.NewBuffer(data))
+	}
+
+	data, err := c.do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if resp != nil {
+		if err := unmarshal(data, resp); err != nil {
+			return fmt.Errorf("json decode error: %w\nraw message was: %s", err, string(data))
+		}
+	}
+	return nil
+}
+
+// SOAPCall returns the SOAP message given an endpoint, action, body of the request and the response object to marshal into.
+func (c *Client) SOAPCall(ctx context.Context, endpoint, action string, headers http.Header, qv url.Values, body string, resp interface{}) error {
+	if body == "" {
+		return fmt.Errorf("cannot make a SOAP call with body set to empty string")
+	}
+
+	if err := c.checkResp(reflect.ValueOf(resp)); err != nil {
+		return err
+	}
+
+	if qv == nil {
+		qv = url.Values{}
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("could not parse path URL(%s): %w", endpoint, err)
+	}
+	u.RawQuery = qv.Encode()
+
+	headers.Set("Content-Type", "application/soap+xml; charset=utf-8")
+	headers.Set("SOAPAction", action)
+	c.addStdHeaders(headers)
+
+	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers}
+
+	headers.Add("Content-Length", fmt.Sprintf("%d", len(body)))
+	req.Body = ioutil.NopCloser(strings.NewReader(body))
+
+	data, err := c.do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	if err := xml.Unmarshal(data, resp); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+// do makes the call HTTP call the server and returns the contents of the body.
+func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
+		defer cancel()
+	}
+
+	reply, err := c.client.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("server response error:\n %w", err)
+	}
+	defer reply.Body.Close()
+
+	data, err := c.readBody(reply)
+	if err != nil {
+		return nil, err
+	}
+
+	// NOTE: This doesn't happen immediately after the call so that we can get an error message
+	// from the server and include it in our error.
+	switch reply.StatusCode {
+	case 200, 201:
+	default:
+		return nil, fmt.Errorf("reply status code was %d:\n%s", reply.StatusCode, string(data))
+	}
+
+	return data, nil
+}
+
+// checkResp checks a response object o make sure it is a pointer to a struct.
+func (c *Client) checkResp(v reflect.Value) error {
+	if v.Kind() != reflect.Ptr {
+		return fmt.Errorf("bug: resp argument must a *struct, was %T", v.Interface())
+	}
+	v = v.Elem()
+	if v.Kind() != reflect.Struct {
+		return fmt.Errorf("bug: resp argument must be a *struct, was %T", v.Interface())
+	}
+	return nil
+}
+
+// addStdHeaders adds the standard headers we use on all calls.
+func (c *Client) addStdHeaders(headers http.Header) {
+	headers.Set("Accept-Encoding", "gzip")
+	headers.Set("client-request-id", uuid.New().String())
+	headers.Set("x-client-sku", "MSAL.Go")
+	headers.Set("x-client-os", runtime.GOOS)
+	headers.Set("x-client-cpu", runtime.GOARCH)
+	headers.Set("x-client-ver", version)
+}
+
+// readBody reads the body out of an *http.Response. It supports gzip encoded responses.
+func (c *Client) readBody(resp *http.Response) ([]byte, error) {
+	var reader io.Reader = resp.Body
+	switch resp.Header.Get("Content-Encoding") {
+	case "":
+		// Do nothing
+	case "gzip":
+		reader = gzipDecompress(resp.Body)
+	default:
+		return nil, fmt.Errorf("bug: comm.Client.JSONCall(): content was send with unsupported content-encoding %s", resp.Header.Get("Content-Encoding"))
+	}
+	return ioutil.ReadAll(reader)
+}
