@@ -172,7 +172,7 @@ func TestUsernamePassword(t *testing.T) {
 		{"Managed", getTestUser(labClientInstance, url.Values{"usertype": []string{"cloud"}})},
 		{"ADFSv2", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}})},
 		{"ADFSv3", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}})},
-		{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
+		//{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
 	}
 	for _, test := range tests {
 		publicClientApp, err := msal.NewPublicClientApplication(test.user.AppID, &options)
