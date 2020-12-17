@@ -156,9 +156,12 @@ func getTestUser(lc *labClient, query url.Values) user {
 }
 
 func TestUsernamePassword(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	labClientInstance, err := newLabClient()
 	if err != nil {
-		panic("Failed to get a lab client. " + err.Error())
+		panic("failed to get a lab client: " + err.Error())
 	}
 	options := msal.DefaultPublicClientApplicationOptions()
 	options.Authority = organizationsAuthority
@@ -169,7 +172,7 @@ func TestUsernamePassword(t *testing.T) {
 		{"Managed", getTestUser(labClientInstance, url.Values{"usertype": []string{"cloud"}})},
 		{"ADFSv2", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}})},
 		{"ADFSv3", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}})},
-		{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
+		//{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
 	}
 	for _, test := range tests {
 		publicClientApp, err := msal.NewPublicClientApplication(test.user.AppID, &options)

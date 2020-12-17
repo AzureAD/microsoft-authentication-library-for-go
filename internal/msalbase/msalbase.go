@@ -510,7 +510,20 @@ func (u *UserRealm) GetAccountType() UserRealmAccountType {
 	return Unknown
 }
 
+type OAuthResponseBase struct {
+	Error            string `json:"error"`
+	SubError         string `json:"suberror"`
+	ErrorDescription string `json:"error_description"`
+	ErrorCodes       []int  `json:"error_codes"`
+	CorrelationID    string `json:"correlation_id"`
+	Claims           string `json:"claims"`
+
+	AdditionalFields map[string]interface{}
+}
+
 type tokenResponseJSONPayload struct {
+	OAuthResponseBase
+
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 	ExpiresIn    int64  `json:"expires_in"`
@@ -536,8 +549,11 @@ type ClientInfoJSONPayload struct {
 }
 
 // TokenResponse is the information that is returned from a token endpoint during a token acquisition flow.
+// TODO(jdoak): There is this tokenResponsePayload and TokenResponse.  This just needs a custom unmarshaller
+// and we can get rid of having two.
 type TokenResponse struct {
-	baseResponse   OAuthResponseBase
+	OAuthResponseBase
+
 	AccessToken    string
 	RefreshToken   string
 	IDToken        IDToken
@@ -575,14 +591,14 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 	if err != nil {
 		return TokenResponse{}, err
 	}
-	baseResponse, err := CreateOAuthResponseBase(resp.StatusCode, body)
-	if err != nil {
-		return TokenResponse{}, err
-	}
 	payload := tokenResponseJSONPayload{}
 	err = json.Unmarshal(body, &payload)
 	if err != nil {
 		return TokenResponse{}, err
+	}
+
+	if payload.Error != "" {
+		return TokenResponse{}, fmt.Errorf("%s: %s", payload.Error, payload.ErrorDescription)
 	}
 
 	if payload.AccessToken == "" {
@@ -632,17 +648,17 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 	}
 
 	tokenResponse := TokenResponse{
-		baseResponse:   baseResponse,
-		AccessToken:    payload.AccessToken,
-		RefreshToken:   payload.RefreshToken,
-		IDToken:        idToken,
-		FamilyID:       payload.Foci,
-		ExpiresOn:      expiresOn,
-		ExtExpiresOn:   extExpiresOn,
-		GrantedScopes:  grantedScopes,
-		declinedScopes: declinedScopes,
-		rawClientInfo:  rawClientInfo,
-		ClientInfo:     clientInfo,
+		OAuthResponseBase: payload.OAuthResponseBase,
+		AccessToken:       payload.AccessToken,
+		RefreshToken:      payload.RefreshToken,
+		IDToken:           idToken,
+		FamilyID:          payload.Foci,
+		ExpiresOn:         expiresOn,
+		ExtExpiresOn:      extExpiresOn,
+		GrantedScopes:     grantedScopes,
+		declinedScopes:    declinedScopes,
+		rawClientInfo:     rawClientInfo,
+		ClientInfo:        clientInfo,
 	}
 	return tokenResponse, nil
 }
