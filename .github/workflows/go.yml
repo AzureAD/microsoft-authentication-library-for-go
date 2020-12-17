@@ -41,3 +41,6 @@ jobs:
 
       - name: Test
         run: go test -race ./...
+        env :
+          clientId: ${{ secrets.LAB_APP_CLIENT_ID }}
+          clientSecret: ${{ secrets.LAB_APP_CLIENT_SECRET }}
