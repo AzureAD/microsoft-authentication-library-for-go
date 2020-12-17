@@ -43,18 +43,6 @@ func createInstanceDiscoveryMetadata(preferredNetwork string, preferredCache str
 	}
 }
 
-// OAuthResponseBase stores common information when sending a request to get a token.
-type OAuthResponseBase struct {
-	Error            string `json:"error"`
-	SubError         string `json:"suberror"`
-	ErrorDescription string `json:"error_description"`
-	ErrorCodes       []int  `json:"error_codes"`
-	CorrelationID    string `json:"correlation_id"`
-	Claims           string `json:"claims"`
-
-	AdditionalFields map[string]interface{}
-}
-
 type AadInstanceDiscovery struct {
 	webRequestManager WebRequestManager
 }
