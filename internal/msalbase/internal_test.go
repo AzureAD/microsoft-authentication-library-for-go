@@ -4,31 +4,9 @@
 package msalbase
 
 import (
-	"errors"
 	"reflect"
 	"testing"
 )
-
-func TestCreateOAuthResponseBase(t *testing.T) {
-	const (
-		oauthResponse          = `{}`
-		oauthResponseWithError = `{"error" : "invalid request", "error_description": "missing payload content", "error_codes" : [300]}`
-	)
-
-	_, err := CreateOAuthResponseBase(404, []byte(oauthResponse))
-	actualError := errors.New("HTTP 404")
-	if err.Error() != actualError.Error() {
-		t.Errorf("Actual error %v differs from expected error %v", err, actualError)
-	}
-	_, err = CreateOAuthResponseBase(300, []byte(oauthResponseWithError))
-	if err == nil {
-		t.Error("Unexpected nil error")
-	}
-	_, err = CreateOAuthResponseBase(200, []byte(oauthResponse))
-	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
-	}
-}
 
 func TestDecodeJWT(t *testing.T) {
 	encodedStr := "aGVsbG8"

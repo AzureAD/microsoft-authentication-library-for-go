@@ -156,9 +156,12 @@ func getTestUser(lc *labClient, query url.Values) user {
 }
 
 func TestUsernamePassword(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
 	labClientInstance, err := newLabClient()
 	if err != nil {
-		panic("Failed to get a lab client. " + err.Error())
+		panic("failed to get a lab client: " + err.Error())
 	}
 	options := msal.DefaultPublicClientApplicationOptions()
 	options.Authority = organizationsAuthority

@@ -43,6 +43,18 @@ func createInstanceDiscoveryMetadata(preferredNetwork string, preferredCache str
 	}
 }
 
+// OAuthResponseBase stores common information when sending a request to get a token.
+type OAuthResponseBase struct {
+	Error            string `json:"error"`
+	SubError         string `json:"suberror"`
+	ErrorDescription string `json:"error_description"`
+	ErrorCodes       []int  `json:"error_codes"`
+	CorrelationID    string `json:"correlation_id"`
+	Claims           string `json:"claims"`
+
+	AdditionalFields map[string]interface{}
+}
+
 type AadInstanceDiscovery struct {
 	webRequestManager WebRequestManager
 }
@@ -292,12 +304,10 @@ func (req *ClientCredentialRequest) Execute(ctx context.Context) (msalbase.Token
 	return req.webRequestManager.GetAccessTokenWithAssertion(ctx, req.authParameters, jwt)
 }
 
-//DeviceCodeResponse represents the HTTP response received from the device code endpoint
+// DeviceCodeResponse represents the HTTP response received from the device code endpoint
 type DeviceCodeResponse struct {
-	// TODO(jdoak): Ask someone about why BaseResponse doesn't have a tag.
-	// Either it should be encoded and we should tag it or we should tag it
-	// to be omitted on export or private.
-	BaseResponse    msalbase.OAuthResponseBase
+	msalbase.OAuthResponseBase
+
 	UserCode        string `json:"user_code"`
 	DeviceCode      string `json:"device_code"`
 	VerificationURL string `json:"verification_url"`
@@ -316,15 +326,14 @@ func CreateDeviceCodeResponse(resp *http.Response) (DeviceCodeResponse, error) {
 	if err != nil {
 		return dcResponse, err
 	}
-	baseResponse, err := msalbase.CreateOAuthResponseBase(resp.StatusCode, body)
-	if err != nil {
-		return dcResponse, err
-	}
 
 	if err := json.Unmarshal(body, &dcResponse); err != nil {
 		return dcResponse, err
 	}
-	dcResponse.BaseResponse = baseResponse
+
+	if dcResponse.Error != "" {
+		return dcResponse, fmt.Errorf("%s: %s", dcResponse.Error, dcResponse.ErrorDescription)
+	}
 	return dcResponse, nil
 }
 
@@ -354,10 +363,8 @@ func CreateInstanceDiscoveryResponse(resp *http.Response) (InstanceDiscoveryResp
 
 // TenantDiscoveryResponse consists of the tenant endpoints from the OpenID configuration endpoint
 type TenantDiscoveryResponse struct {
-	// TODO(jdoak): Ask someone about why BaseResponse doesn't have a tag.
-	// Either it should be encoded and we should tag it or we should tag it
-	// to be omitted on export or private.
-	BaseResponse          msalbase.OAuthResponseBase
+	msalbase.OAuthResponseBase
+
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
 	Issuer                string `json:"issuer"`
@@ -385,16 +392,16 @@ func CreateTenantDiscoveryResponse(resp *http.Response) (TenantDiscoveryResponse
 	if err != nil {
 		return tdr, err
 	}
-	baseResponse, err := msalbase.CreateOAuthResponseBase(resp.StatusCode, body)
-	if err != nil {
-		return tdr, err
-	}
 
 	err = json.Unmarshal(body, &tdr)
 	if err != nil {
 		return tdr, err
 	}
-	tdr.BaseResponse = baseResponse
+
+	if tdr.Error != "" {
+		return TenantDiscoveryResponse{}, fmt.Errorf("%s: %s", tdr.Error, tdr.ErrorDescription)
+	}
+
 	return tdr, nil
 }
 
