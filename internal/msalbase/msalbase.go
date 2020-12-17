@@ -649,16 +649,16 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 
 	tokenResponse := TokenResponse{
 		OAuthResponseBase: payload.OAuthResponseBase,
-		AccessToken:    payload.AccessToken,
-		RefreshToken:   payload.RefreshToken,
-		IDToken:        idToken,
-		FamilyID:       payload.Foci,
-		ExpiresOn:      expiresOn,
-		ExtExpiresOn:   extExpiresOn,
-		GrantedScopes:  grantedScopes,
-		declinedScopes: declinedScopes,
-		rawClientInfo:  rawClientInfo,
-		ClientInfo:     clientInfo,
+		AccessToken:       payload.AccessToken,
+		RefreshToken:      payload.RefreshToken,
+		IDToken:           idToken,
+		FamilyID:          payload.Foci,
+		ExpiresOn:         expiresOn,
+		ExtExpiresOn:      extExpiresOn,
+		GrantedScopes:     grantedScopes,
+		declinedScopes:    declinedScopes,
+		rawClientInfo:     rawClientInfo,
+		ClientInfo:        clientInfo,
 	}
 	return tokenResponse, nil
 }
