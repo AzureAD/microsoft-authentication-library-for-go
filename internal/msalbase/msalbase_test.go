@@ -345,25 +345,21 @@ func TestCreateTokenResponse(t *testing.T) {
 		Scopes: scopes,
 	}
 	expiresIn := time.Now().Add(time.Second * time.Duration(86399))
-	expTokenResponse := &TokenResponse{
-		baseResponse:  OAuthResponseBase{},
+	want := &TokenResponse{
 		AccessToken:   "secret",
 		ExpiresOn:     expiresIn,
 		ExtExpiresOn:  expiresIn,
 		GrantedScopes: scopes,
 		ClientInfo:    ClientInfoJSONPayload{},
 	}
-	actualTokenResp, err := CreateTokenResponse(testAuthParams, createFakeResp(http.StatusOK, testTokenResponse))
+
+	got, err := CreateTokenResponse(testAuthParams, createFakeResp(http.StatusOK, testTokenResponse))
 	if err != nil {
-		t.Errorf("Error should be nil, but it is %v", err)
+		t.Errorf("TestCreateTokenResponse: got err == %v, want err == nil", err)
 	}
-	if !reflect.DeepEqual(expTokenResponse.baseResponse, actualTokenResp.baseResponse) &&
-		!reflect.DeepEqual(expTokenResponse.AccessToken, actualTokenResp.AccessToken) &&
-		!reflect.DeepEqual(expTokenResponse.ExpiresOn, actualTokenResp.ExpiresOn) &&
-		!reflect.DeepEqual(expTokenResponse.ExtExpiresOn, actualTokenResp.ExtExpiresOn) &&
-		!reflect.DeepEqual(expTokenResponse.GrantedScopes, actualTokenResp.GrantedScopes) &&
-		!reflect.DeepEqual(expTokenResponse.ClientInfo, actualTokenResp.ClientInfo) {
-		t.Errorf("Expected token response %+v differs from actual token response %+v", expTokenResponse, actualTokenResp)
+	// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
+	if diff := (&pretty.Config{IncludeUnexported: false}).Compare(want, got); diff != "" {
+		t.Errorf("TestCreateTokenResponse: -want/+got:\n%s", diff)
 	}
 }
 
