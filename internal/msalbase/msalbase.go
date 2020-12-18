@@ -105,7 +105,9 @@ func (acc Account) GetEnvironment() string {
 // AuthorizationType represents the type of token flow.
 type AuthorizationType int
 
-// These are all the types of token flows
+//go:generate stringer -type=AuthorizationType
+// These are all the types of token flows.
+// TODO(jdoak): Rename all of these and replace AuthorizationTypeNone with Unknown*.
 const (
 	AuthorizationTypeNone                  AuthorizationType = iota
 	AuthorizationTypeUsernamePassword                        = iota
@@ -513,7 +515,7 @@ type OAuthResponseBase struct {
 	AdditionalFields map[string]interface{}
 }
 
-type tokenResponseJSONPayload struct {
+type TokenResponseJSONPayload struct {
 	OAuthResponseBase
 
 	AccessToken  string `json:"access_token"`
@@ -556,6 +558,8 @@ type TokenResponse struct {
 	ExtExpiresOn   time.Time
 	rawClientInfo  string
 	ClientInfo     ClientInfoJSONPayload
+
+	AdditionalFields map[string]interface{}
 }
 
 // HasAccessToken checks if the TokenResponse has an access token.
@@ -583,12 +587,81 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 	if err != nil {
 		return TokenResponse{}, err
 	}
-	payload := tokenResponseJSONPayload{}
+	payload := TokenResponseJSONPayload{}
 	err = json.Unmarshal(body, &payload)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 
+	if payload.Error != "" {
+		return TokenResponse{}, fmt.Errorf("%s: %s", payload.Error, payload.ErrorDescription)
+	}
+
+	if payload.AccessToken == "" {
+		// Access token is required in a token response
+		return TokenResponse{}, errors.New("response is missing access_token")
+	}
+
+	rawClientInfo := payload.ClientInfo
+	clientInfo := ClientInfoJSONPayload{}
+	// Client info may be empty in some flows, e.g. certificate exchange.
+	if len(rawClientInfo) > 0 {
+		rawClientInfoDecoded, err := DecodeJWT(rawClientInfo)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+
+		err = json.Unmarshal(rawClientInfoDecoded, &clientInfo)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+	}
+
+	expiresOn := time.Now().Add(time.Second * time.Duration(payload.ExpiresIn))
+	extExpiresOn := time.Now().Add(time.Second * time.Duration(payload.ExtExpiresIn))
+
+	var (
+		grantedScopes  []string
+		declinedScopes []string
+	)
+
+	if len(payload.Scope) == 0 {
+		// Per OAuth spec, if no scopes are returned, the response should be treated as if all scopes were granted
+		// This behavior can be observed in client assertion flows, but can happen at any time, this check ensures we treat
+		// those special responses properly
+		// Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
+		grantedScopes = authParameters.Scopes
+	} else {
+		grantedScopes = strings.Split(strings.ToLower(payload.Scope), scopeSeparator)
+		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
+	}
+
+	idToken, err := NewIDToken(payload.IDToken)
+	if err != nil {
+		// ID tokens aren't always returned, so the error is just logged
+		// TODO(jdoak): we should probably remove this. Either this is an error or isn't.
+		log.Errorf("ID Token error: %v", err)
+	}
+
+	tokenResponse := TokenResponse{
+		OAuthResponseBase: payload.OAuthResponseBase,
+		AccessToken:       payload.AccessToken,
+		RefreshToken:      payload.RefreshToken,
+		IDToken:           idToken,
+		FamilyID:          payload.Foci,
+		ExpiresOn:         expiresOn,
+		ExtExpiresOn:      extExpiresOn,
+		GrantedScopes:     grantedScopes,
+		declinedScopes:    declinedScopes,
+		rawClientInfo:     rawClientInfo,
+		ClientInfo:        clientInfo,
+	}
+	return tokenResponse, nil
+}
+
+// CreateTokenResponse2 is like CreateTokenResponse except the input is slightly different.
+// TODO(jdoak): Remove once we integrate ops package into the code.
+func CreateTokenResponse2(authParameters AuthParametersInternal, payload TokenResponseJSONPayload) (TokenResponse, error) {
 	if payload.Error != "" {
 		return TokenResponse{}, fmt.Errorf("%s: %s", payload.Error, payload.ErrorDescription)
 	}
