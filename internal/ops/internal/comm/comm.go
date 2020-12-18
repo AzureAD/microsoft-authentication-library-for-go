@@ -217,6 +217,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 	}
+	req = req.WithContext(ctx)
 
 	reply, err := c.client.Do(req)
 	if err != nil {
