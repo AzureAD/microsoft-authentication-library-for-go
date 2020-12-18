@@ -53,7 +53,7 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 	// Choose a JSON marshal/unmarshal depending on if we have AdditionalFields attribute.
 	var marshal = json.Marshal
 	var unmarshal = json.Unmarshal
-	if _, ok := v.Type().FieldByName("AdditionalFields"); ok {
+	if _, ok := v.Elem().Type().FieldByName("AdditionalFields"); ok {
 		marshal = customJSON.Marshal
 		unmarshal = customJSON.Unmarshal
 	}
@@ -64,7 +64,7 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 	}
 	u.RawQuery = qv.Encode()
 
-	c.addStdHeaders(headers)
+	addStdHeaders(headers)
 
 	req := &http.Request{Method: http.MethodGet, URL: u, Header: headers}
 
@@ -76,8 +76,8 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 		if err != nil {
 			return fmt.Errorf("bug: conn.Call(): could not marshal the body object: %w", err)
 		}
-		headers.Add("Content-Length", fmt.Sprintf("%d", len(data)))
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(data))
+		req.Method = http.MethodPost
 	}
 
 	data, err := c.do(ctx, req)
@@ -87,10 +87,33 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 
 	if resp != nil {
 		if err := unmarshal(data, resp); err != nil {
-			return fmt.Errorf("json decode error: %w\nraw message was: %s", err, string(data))
+			return fmt.Errorf("json decode error: %w\njson message bytes were: %s", err, string(data))
 		}
 	}
 	return nil
+}
+
+// XMLCall sends XML encoded in body and decodes the XML response into resp. This is used when
+// sending application/xml . If sending XML via SOAP, use SOAPCall().
+func (c *Client) XMLCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, resp interface{}) error {
+	if err := c.checkResp(reflect.ValueOf(resp)); err != nil {
+		return err
+	}
+
+	if qv == nil {
+		qv = url.Values{}
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("could not parse path URL(%s): %w", endpoint, err)
+	}
+	u.RawQuery = qv.Encode()
+
+	headers.Set("Content-Type", "application/xml; charset=utf-8") // This was not set in he original GetMex(), but...
+	addStdHeaders(headers)
+
+	return c.xmlCall(ctx, u, headers, "", resp)
 }
 
 // SOAPCall returns the SOAP message given an endpoint, action, body of the request and the response object to marshal into.
@@ -115,12 +138,19 @@ func (c *Client) SOAPCall(ctx context.Context, endpoint, action string, headers 
 
 	headers.Set("Content-Type", "application/soap+xml; charset=utf-8")
 	headers.Set("SOAPAction", action)
-	c.addStdHeaders(headers)
+	addStdHeaders(headers)
 
+	return c.xmlCall(ctx, u, headers, body, resp)
+}
+
+// xmlCall sends an XML in body and decodes into resp. This simply does the transport and relies on
+// an upper level call to set things such as SOAP parameters and Content-Type, if required.
+func (c *Client) xmlCall(ctx context.Context, u *url.URL, headers http.Header, body string, resp interface{}) error {
 	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers}
 
-	headers.Add("Content-Length", fmt.Sprintf("%d", len(body)))
-	req.Body = ioutil.NopCloser(strings.NewReader(body))
+	if len(body) > 0 {
+		req.Body = ioutil.NopCloser(strings.NewReader(body))
+	}
 
 	data, err := c.do(ctx, req)
 	if err != nil {
@@ -131,6 +161,52 @@ func (c *Client) SOAPCall(ctx context.Context, endpoint, action string, headers 
 		return err
 	}
 
+	return nil
+}
+
+// URLFormCall is used to make a call where we need to send application/x-www-form-urlencoded data
+// to the backend and receive JSON back. qv will be encoded into the request body.
+func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}) error {
+	if len(qv) == 0 {
+		return fmt.Errorf("URLFormCall() requires qv to have non-zero length")
+	}
+
+	if err := c.checkResp(reflect.ValueOf(resp)); err != nil {
+		return err
+	}
+
+	u, err := url.Parse(endpoint)
+	if err != nil {
+		return fmt.Errorf("could not parse path URL(%s): %w", endpoint, err)
+	}
+
+	headers := http.Header{}
+	headers.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
+	addStdHeaders(headers)
+
+	body := strings.NewReader(qv.Encode())
+	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers, Body: ioutil.NopCloser(body)}
+	headers.Add("Content-Length", fmt.Sprintf("%d", body.Len()))
+
+	data, err := c.do(ctx, req)
+	if err != nil {
+		return err
+	}
+
+	v := reflect.ValueOf(resp)
+	if err := c.checkResp(v); err != nil {
+		return err
+	}
+
+	var unmarshal = json.Unmarshal
+	if _, ok := v.Type().FieldByName("AdditionalFields"); ok {
+		unmarshal = customJSON.Unmarshal
+	}
+	if resp != nil {
+		if err := unmarshal(data, resp); err != nil {
+			return fmt.Errorf("json decode error: %w\nraw message was: %s", err, string(data))
+		}
+	}
 	return nil
 }
 
@@ -176,16 +252,6 @@ func (c *Client) checkResp(v reflect.Value) error {
 	return nil
 }
 
-// addStdHeaders adds the standard headers we use on all calls.
-func (c *Client) addStdHeaders(headers http.Header) {
-	headers.Set("Accept-Encoding", "gzip")
-	headers.Set("client-request-id", uuid.New().String())
-	headers.Set("x-client-sku", "MSAL.Go")
-	headers.Set("x-client-os", runtime.GOOS)
-	headers.Set("x-client-cpu", runtime.GOARCH)
-	headers.Set("x-client-ver", version)
-}
-
 // readBody reads the body out of an *http.Response. It supports gzip encoded responses.
 func (c *Client) readBody(resp *http.Response) ([]byte, error) {
 	var reader io.Reader = resp.Body
@@ -198,4 +264,22 @@ func (c *Client) readBody(resp *http.Response) ([]byte, error) {
 		return nil, fmt.Errorf("bug: comm.Client.JSONCall(): content was send with unsupported content-encoding %s", resp.Header.Get("Content-Encoding"))
 	}
 	return ioutil.ReadAll(reader)
+}
+
+var testID string
+
+// addStdHeaders adds the standard headers we use on all calls.
+func addStdHeaders(headers http.Header) http.Header {
+	headers.Set("Accept-Encoding", "gzip")
+	// So that I can have a static id for tests.
+	if testID != "" {
+		headers.Set("client-request-id", testID)
+	} else {
+		headers.Set("client-request-id", uuid.New().String())
+	}
+	headers.Set("x-client-sku", "MSAL.Go")
+	headers.Set("x-client-os", runtime.GOOS)
+	headers.Set("x-client-cpu", runtime.GOARCH)
+	headers.Set("x-client-ver", version)
+	return headers
 }

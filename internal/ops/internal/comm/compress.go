@@ -5,7 +5,6 @@ import (
 	"io"
 )
 
-// gzipDecompress implements Decompressor for decompressing gzip content.
 func gzipDecompress(r io.Reader) io.Reader {
 	gzipReader, _ := gzip.NewReader(r)
 
