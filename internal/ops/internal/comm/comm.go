@@ -93,7 +93,7 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 	return nil
 }
 
-// XMLCall sends XML encoded in body and decodes the XML response into resp. This is used when
+// XMLCall connects to an endpoint and decodes the XML response into resp. This is used when
 // sending application/xml . If sending XML via SOAP, use SOAPCall().
 func (c *Client) XMLCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, resp interface{}) error {
 	if err := c.checkResp(reflect.ValueOf(resp)); err != nil {
@@ -186,7 +186,6 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 
 	body := strings.NewReader(qv.Encode())
 	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers, Body: ioutil.NopCloser(body)}
-	headers.Add("Content-Length", fmt.Sprintf("%d", body.Len()))
 
 	data, err := c.do(ctx, req)
 	if err != nil {
