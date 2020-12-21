@@ -246,11 +246,11 @@ const (
 )
 
 func addAADHeaders(headers http.Header, authParameters msalbase.AuthParametersInternal) {
-	headers.Set(msalbase.ProductHeaderName, msalbase.ProductHeaderValue)
-	headers.Set(msalbase.OSHeaderName, runtime.GOOS)
+	headers.Set(ProductHeaderName, ProductHeaderValue)
+	headers.Set(OSHeaderName, runtime.GOOS)
 	// headers["x-client-Ver"] = todo: client version here;
-	headers.Set(msalbase.CorrelationIDHeaderName, authParameters.CorrelationID)
-	headers.Set(msalbase.ReqCorrelationIDInResponseHeaderName, "false")
+	headers.Set(CorrelationIDHeaderName, authParameters.CorrelationID)
+	headers.Set(ReqCorrelationIDInResponseHeaderName, "false")
 }
 
 func (wrm *defaultWebRequestManager) exchangeGrantForToken(ctx context.Context, authParameters msalbase.AuthParametersInternal, queryParams url.Values) (msalbase.TokenResponse, error) {
