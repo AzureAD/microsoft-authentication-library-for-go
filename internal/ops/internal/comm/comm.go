@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 // Package comm provides helpers for communicating with HTTP backends.
 package comm
 
@@ -157,11 +160,7 @@ func (c *Client) xmlCall(ctx context.Context, u *url.URL, headers http.Header, b
 		return err
 	}
 
-	if err := xml.Unmarshal(data, resp); err != nil {
-		return err
-	}
-
-	return nil
+	return xml.Unmarshal(data, resp)
 }
 
 // URLFormCall is used to make a call where we need to send application/x-www-form-urlencoded data
@@ -198,7 +197,7 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	}
 
 	var unmarshal = json.Unmarshal
-	if _, ok := v.Type().FieldByName("AdditionalFields"); ok {
+	if _, ok := v.Elem().Type().FieldByName("AdditionalFields"); ok {
 		unmarshal = customJSON.Unmarshal
 	}
 	if resp != nil {

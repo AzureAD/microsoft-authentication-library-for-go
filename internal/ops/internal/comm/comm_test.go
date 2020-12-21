@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 package comm
 
 import (
@@ -11,6 +14,7 @@ import (
 	"testing"
 
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	"github.com/kylelemons/godebug/diff"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -423,6 +427,116 @@ func TestSoapCall(t *testing.T) {
 				t.Errorf("TestXMLCall(%s): body: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
+		}
+
+		if diff := pretty.Compare(test.want, test.resp); diff != "" {
+			t.Errorf("TestXMLCall(%s): result: -want/+got:\n%s", test.desc, diff)
+		}
+	}
+}
+
+func TestURLFormCall(t *testing.T) {
+	tests := []struct {
+		desc       string
+		statusCode int
+		action     string
+		body       string
+		headers    http.Header
+		qv         url.Values
+		resp       interface{}
+
+		expectHeaders  http.Header
+		expectEndpoint string
+
+		want interface{}
+		err  bool
+	}{
+		{
+			desc:       "Error: non-struct resp value",
+			statusCode: http.StatusOK,
+			resp:       new(int),
+			err:        true,
+		},
+		{
+			desc:       "Error: non-pointer resp value",
+			statusCode: http.StatusOK,
+			resp:       SampleData{},
+			err:        true,
+		},
+		{
+			desc:       "Error: empty query values",
+			statusCode: http.StatusOK,
+			headers:    http.Header{"header": []string{"here"}},
+			resp:       &SampleData{Ok: "true"},
+			expectHeaders: addStdHeaders(
+				http.Header{
+					"Content-Type": []string{"application/x-www-form-urlencoded; charset=utf-8"},
+				},
+			),
+			err: true,
+		},
+		{
+			desc:       "Success",
+			statusCode: http.StatusOK,
+			headers:    http.Header{"header": []string{"here"}},
+			qv:         url.Values{"key": []string{"value"}},
+			resp:       &SampleData{Ok: "true"},
+			expectHeaders: addStdHeaders(
+				http.Header{
+					"Content-Type": []string{"application/x-www-form-urlencoded; charset=utf-8"},
+				},
+			),
+			want: &SampleData{Ok: "true"},
+		},
+		{
+			desc:       "Error: non-200 response",
+			statusCode: http.StatusBadRequest,
+			headers:    http.Header{"header": []string{"here"}},
+			qv:         url.Values{"key": []string{"value"}},
+			resp:       &SampleData{Ok: "true"},
+			err:        true,
+		},
+	}
+
+	rec := &recorder{}
+	serv := httptest.NewServer(rec)
+	defer serv.Close()
+
+	for _, test := range tests {
+		rec.reset()
+		rec.statusCode = test.statusCode
+		rec.ret = test.resp
+
+		comm := New(serv.Client())
+		err := comm.URLFormCall(context.Background(), serv.URL, test.qv, test.resp)
+		switch {
+		case err == nil && test.err:
+			t.Errorf("TestURLFormCall(%s): got err == nil, want err != nil", test.desc)
+			continue
+		case err != nil && !test.err:
+			t.Errorf("TestURLFormCall(%s): got err == %s, want err == nil", test.desc, err)
+			continue
+		case err != nil:
+			continue
+		}
+
+		if rec.gotMethod != http.MethodPost {
+			t.Errorf("TestURLFormCall(%s): got method == %s, want http method == POST", test.desc, rec.gotMethod)
+			continue
+		}
+
+		if test.expectHeaders != nil {
+			if diff := pretty.Compare(test.expectHeaders, rec.gotHeaders); diff != "" {
+				t.Errorf("TestURLFormCall(%s): headers: -want/+got:\n%s", test.desc, diff)
+				continue
+			}
+		}
+
+		want := test.qv.Encode()
+		got := string(rec.gotBody)
+		if diff := diff.Diff(want, got); diff != "" {
+			t.Errorf("TestXMLCall(%s): body: -want/+got:\n%s", test.desc, diff)
+			continue
 		}
 
 		if diff := pretty.Compare(test.want, test.resp); diff != "" {
