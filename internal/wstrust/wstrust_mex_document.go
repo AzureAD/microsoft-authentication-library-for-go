@@ -67,12 +67,16 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 
 	for _, policy := range definitions.Policy {
 		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			log.Trace("Found Policy with UsernamePassword 1.3: " + policy.ID)
-			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			if policy.ExactlyOne.All.TransportBinding.Sp != "" {
+				log.Trace("Found Policy with UsernamePassword 1.3: " + policy.ID)
+				policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			}
 		}
 		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			log.Trace("Found Policy with UsernamePassword 2005: " + policy.ID)
-			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			if policy.ExactlyOne.All.TransportBinding.Sp != "" {
+				log.Trace("Found Policy with UsernamePassword 2005: " + policy.ID)
+				policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			}
 		}
 		if policy.ExactlyOne.All.NegotiateAuthentication.XMLName.Local != "" {
 			log.Trace("Found policy with WindowsTransport: " + policy.ID)
