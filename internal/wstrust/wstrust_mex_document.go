@@ -107,9 +107,12 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 		}
 	}
 
-	var usernamePasswordEndpoint Endpoint
-	var windowsTransportEndpoint Endpoint
+	var (
+		usernamePasswordEndpoint Endpoint
+		windowsTransportEndpoint Endpoint
+	)
 
+	log.Println("definitions.Service.Port len: ", len(definitions.Service.Port))
 	for _, port := range definitions.Service.Port {
 		bindingName := port.Binding
 		log.Trace("Parsing port with binding name: " + bindingName)
