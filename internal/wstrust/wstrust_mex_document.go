@@ -36,7 +36,7 @@ type MexDocument struct {
 }
 
 func updateEndpoint(cached *Endpoint, found Endpoint) bool {
-	if cached == nil {
+	if cached == nil || cached.EndpointVersion == UnknownTrust {
 		log.Trace("No endpoint cached, using found endpoint")
 		*cached = found
 		return true
