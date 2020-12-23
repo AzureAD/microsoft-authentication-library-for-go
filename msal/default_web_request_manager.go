@@ -111,6 +111,9 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(ctx context.Context, aut
 		soapAction = SoapActionDefault
 	}
 
+	if endpoint.URL == "" {
+		panic("somewhere above here")
+	}
 	log.Println("before it becomes a request: ", endpoint.URL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.URL, strings.NewReader(wsTrustRequestMessage))
 	if err != nil {

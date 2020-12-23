@@ -32,7 +32,7 @@ type Endpoint struct {
 }
 
 func createWsTrustEndpoint(endpointVersion EndpointVersion, url string) Endpoint {
-	log.Println("got url")
+	log.Println("got url: ", url)
 	return Endpoint{EndpointVersion: endpointVersion, URL: url}
 }
 
