@@ -127,8 +127,8 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 
 		if binding, ok := bindings[bindingName]; ok {
 			log.Println("port.EndpointReference.Address.Text: ", port.EndpointReference.Address.Text)
-			//url := strings.TrimSpace(port.EndpointReference.Address.Text)
-			url := strings.Trim(port.EndpointReference.Address.Text, " ")
+			url := strings.TrimSpace(port.EndpointReference.Address.Text)
+			//url := strings.Trim(port.EndpointReference.Address.Text, " ")
 			endpoint := createWsTrustEndpoint(binding.Version, url)
 
 			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
