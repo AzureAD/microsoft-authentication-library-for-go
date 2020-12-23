@@ -50,6 +50,7 @@ func (wrm *defaultWebRequestManager) GetUserRealm(ctx context.Context, authParam
 		return msalbase.UserRealm{}, err
 	}
 	addAADHeaders(req.Header, authParameters)
+	log.Println("GetUserRealm: ", req.URL.Scheme)
 	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return msalbase.UserRealm{}, err
@@ -67,6 +68,7 @@ func (wrm *defaultWebRequestManager) GetMex(ctx context.Context, federationMetad
 	if err != nil {
 		return wstrust.MexDocument{}, err
 	}
+	log.Println("GetMex: ", req.URL.Scheme)
 	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return wstrust.MexDocument{}, err
@@ -116,6 +118,7 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(ctx context.Context, aut
 	req.Header.Set("SOAPAction", soapAction)
 	addContentTypeHeader(req.Header, soapXMLUtf8)
 
+	log.Println("GetWsTrustResponse: ", req.URL.Scheme)
 	response, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return wstrust.Response{}, err
@@ -175,6 +178,7 @@ func (wrm *defaultWebRequestManager) GetDeviceCodeResult(ctx context.Context, au
 	addAADHeaders(req.Header, authParameters)
 	addContentTypeHeader(req.Header, urlEncodedUtf8)
 
+	log.Println("GetDeviceCodeResult: ", req.URL.Scheme)
 	response, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return msalbase.DeviceCodeResult{}, err
@@ -261,6 +265,7 @@ func (wrm *defaultWebRequestManager) exchangeGrantForToken(ctx context.Context, 
 	addAADHeaders(req.Header, authParameters)
 	addContentTypeHeader(req.Header, urlEncodedUtf8)
 
+	log.Println("exchangeGrantForToken: ", req.URL.Scheme)
 	response, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return msalbase.TokenResponse{}, err
@@ -334,6 +339,7 @@ func (wrm *defaultWebRequestManager) GetAadinstanceDiscoveryResponse(ctx context
 		return requests.InstanceDiscoveryResponse{}, err
 	}
 	req.URL.RawQuery = queryParams.Encode()
+	log.Println("GetAad...: ", req.URL.Scheme)
 	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return requests.InstanceDiscoveryResponse{}, err
@@ -351,6 +357,7 @@ func (wrm *defaultWebRequestManager) GetTenantDiscoveryResponse(ctx context.Cont
 	if err != nil {
 		return requests.TenantDiscoveryResponse{}, err
 	}
+	log.Println("GetTenant...: ", req.URL.Scheme)
 	httpManagerResponse, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return requests.TenantDiscoveryResponse{}, err
