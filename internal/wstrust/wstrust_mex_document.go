@@ -134,10 +134,11 @@ func CreateWsTrustMexDocumentFromDef(definitions *Definitions) (MexDocument, err
 			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
 			switch binding.EndpointType {
 			case wsEndpointTypeUsernamePassword:
-				log.Println("wsEndpointTypeUsernamePassword updated")
+				log.Println("\twsEndpointTypeUsernamePassword updated")
 				if updateEndpoint(&usernamePasswordEndpoint, endpoint) {
 					log.Tracef("Updated cached username/password endpoint to binding '%v'", bindingName)
 				}
+				log.Println("\tafter update: ", usernamePasswordEndpoint.URL)
 			case wsEndpointTypeWindowsTransport:
 				if updateEndpoint(&windowsTransportEndpoint, endpoint) {
 					log.Tracef("Updated cached windows transport endpoint to binding '%v'", bindingName)
