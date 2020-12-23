@@ -63,10 +63,10 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 	if err != nil {
 		return MexDocument{}, err
 	}
-	return CreateWsTrustMexDocumentFromDef(&definitions)
+	return CreateWsTrustMexDocumentFromDef(definitions)
 }
 
-func CreateWsTrustMexDocumentFromDef(definitions *Definitions) (MexDocument, error) {
+func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, error) {
 	log.Println("CreateWsTrustMexDocumentFromDef started")
 	defer log.Println("CreateWsTrustMexDocumentFromDef done")
 
