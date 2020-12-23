@@ -119,6 +119,7 @@ func (wrm *defaultWebRequestManager) GetWsTrustResponse(ctx context.Context, aut
 	addContentTypeHeader(req.Header, soapXMLUtf8)
 
 	log.Println("GetWsTrustResponse: ", req.URL.Scheme)
+	log.Println("and its URL: ", req.URL)
 	response, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return wstrust.Response{}, err

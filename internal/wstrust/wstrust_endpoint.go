@@ -32,7 +32,7 @@ type Endpoint struct {
 }
 
 func createWsTrustEndpoint(endpointVersion EndpointVersion, url string) Endpoint {
-	return Endpoint{endpointVersion, url}
+	return Endpoint{EndpointVersion: endpointVersion, URL: url}
 }
 
 type wsTrustTokenRequestEnvelope struct {

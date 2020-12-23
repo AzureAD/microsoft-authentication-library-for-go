@@ -636,12 +636,9 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
 	}
 
-	idToken, err := NewIDToken(payload.IDToken)
-	if err != nil {
-		// ID tokens aren't always returned, so the error is just logged
-		// TODO(jdoak): we should probably remove this. Either this is an error or isn't.
-		log.Errorf("ID Token error: %v", err)
-	}
+	// Note: error dropped because ID tokens aren't always returned.
+	// This used to be logged, but it just provides unhelpful log messages.
+	idToken, _ := NewIDToken(payload.IDToken)
 
 	tokenResponse := TokenResponse{
 		OAuthResponseBase: payload.OAuthResponseBase,
