@@ -68,7 +68,8 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 
 func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, error) {
 	log.Println("CreateWsTrustMexDocumentFromDef started")
-	log.Println("CreateWsTrustMexDocumentFromDef done")
+	defer log.Println("CreateWsTrustMexDocumentFromDef done")
+
 	policies := make(map[string]wsEndpointType)
 
 	for _, policy := range definitions.Policy {
@@ -126,7 +127,8 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 
 		if binding, ok := bindings[bindingName]; ok {
 			log.Println("port.EndpointReference.Address.Text: ", port.EndpointReference.Address.Text)
-			url := strings.TrimSpace(port.EndpointReference.Address.Text)
+			//url := strings.TrimSpace(port.EndpointReference.Address.Text)
+			url := strings.Trim(port.EndpointReference.Address.Text, " ")
 			endpoint := createWsTrustEndpoint(binding.Version, url)
 
 			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
