@@ -6,7 +6,7 @@ Package accesstokens exposes a REST client for querying backend systems to get v
 access tokens (oauth) for use in authentication.
 
 These calls are of type "application/x-www-form-urlencoded".  This means we use url.Values to
-represent arguements and then encode them into the POST body message.  We receive JSON in
+represent arguments and then encode them into the POST body message.  We receive JSON in
 return for the requests.  The request definition is defined in https://tools.ietf.org/html/rfc7521#section-4.2 .
 */
 package accesstokens
@@ -46,7 +46,7 @@ type Client struct {
 	TokenRespFunc createTokenResp
 }
 
-// GetAccessTokenFromUsernamePassword uses a username and password to get an OIDC access token.
+// GetAccessTokenFromUsernamePassword uses a username and password to get an access token.
 func (c Client) GetAccessTokenFromUsernamePassword(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, msalbase.PasswordGrant)
@@ -59,7 +59,7 @@ func (c Client) GetAccessTokenFromUsernamePassword(ctx context.Context, authPara
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
-// GetAccessTokenFromAuthCode uses an authorization code to retrieve an OIDC token.
+// GetAccessTokenFromAuthCode uses an authorization code to retrieve an access token.
 func (c Client) GetAccessTokenFromAuthCode(ctx context.Context, authParameters msalbase.AuthParametersInternal, authCode string, codeVerifier string, params url.Values) (msalbase.TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, msalbase.AuthCodeGrant)
