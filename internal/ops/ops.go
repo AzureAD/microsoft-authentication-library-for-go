@@ -26,8 +26,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/wstrust"
 )
 
-// IMPORTANT!!!!!!
-// After integration, remove:
+// TODO(jdoak): After integration, remove:
 // 	msalbase.CreateUserRealm()
 //  requests.CreateTenantDiscoveryResponse()
 
