@@ -6,6 +6,7 @@ package wstrust
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -67,9 +68,6 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 }
 
 func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, error) {
-	log.Println("CreateWsTrustMexDocumentFromDef started")
-	defer log.Println("CreateWsTrustMexDocumentFromDef done")
-
 	policies := make(map[string]wsEndpointType)
 
 	for _, policy := range definitions.Policy {
@@ -115,7 +113,6 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 		windowsTransportEndpoint Endpoint
 	)
 
-	log.Println("definitions.Service.Port len: ", len(definitions.Service.Port))
 	for _, port := range definitions.Service.Port {
 		bindingName := port.Binding
 		log.Trace("Parsing port with binding name: " + bindingName)
@@ -126,19 +123,18 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 		}
 
 		if binding, ok := bindings[bindingName]; ok {
-			log.Println("port.EndpointReference.Address.Text: ", port.EndpointReference.Address.Text)
 			url := strings.TrimSpace(port.EndpointReference.Address.Text)
-			//url := strings.Trim(port.EndpointReference.Address.Text, " ")
-			endpoint := createWsTrustEndpoint(binding.Version, url)
+			endpoint, err := createWsTrustEndpoint(binding.Version, url)
+			if err != nil {
+				return MexDocument{}, fmt.Errorf("cannot create MexDocument: %w", err)
+			}
 
 			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
 			switch binding.EndpointType {
 			case wsEndpointTypeUsernamePassword:
-				log.Println("\twsEndpointTypeUsernamePassword updated")
 				if updateEndpoint(&usernamePasswordEndpoint, endpoint) {
 					log.Tracef("Updated cached username/password endpoint to binding '%v'", bindingName)
 				}
-				log.Println("\tafter update: ", usernamePasswordEndpoint.URL)
 			case wsEndpointTypeWindowsTransport:
 				if updateEndpoint(&windowsTransportEndpoint, endpoint) {
 					log.Tracef("Updated cached windows transport endpoint to binding '%v'", bindingName)
@@ -149,7 +145,6 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 		}
 	}
 
-	log.Println("usernamePasswordEndpoint: ", usernamePasswordEndpoint.URL)
 	doc := MexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
 	log.Trace("Created WsTrustMexDocument!")
 	return doc, nil

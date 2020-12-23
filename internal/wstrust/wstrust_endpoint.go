@@ -5,6 +5,7 @@ package wstrust
 
 import (
 	"encoding/xml"
+	"fmt"
 	"time"
 
 	log "github.com/sirupsen/logrus"
@@ -31,9 +32,14 @@ type Endpoint struct {
 	URL string
 }
 
-func createWsTrustEndpoint(endpointVersion EndpointVersion, url string) Endpoint {
-	log.Println("got url: ", url)
-	return Endpoint{EndpointVersion: endpointVersion, URL: url}
+func createWsTrustEndpoint(endpointVersion EndpointVersion, url string) (Endpoint, error) {
+	if endpointVersion == UnknownTrust {
+		return Endpoint{}, fmt.Errorf("wstrust endpoint cannot have an unknown version")
+	}
+	if url == "" {
+		return Endpoint{}, fmt.Errorf("wstrust endpoint cannot have an empty url")
+	}
+	return Endpoint{EndpointVersion: endpointVersion, URL: url}, nil
 }
 
 type wsTrustTokenRequestEnvelope struct {

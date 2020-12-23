@@ -27,7 +27,6 @@ type fakeURLCaller struct {
 
 	gotEndpoint string
 	gotQV       url.Values
-	gotBody     interface{}
 	gotResp     interface{}
 }
 
