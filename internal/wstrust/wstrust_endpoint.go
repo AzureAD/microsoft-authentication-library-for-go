@@ -13,16 +13,22 @@ import (
 	uuid "github.com/google/uuid"
 )
 
+//go:generate stringer -type=EndpointVersion
 type EndpointVersion int
 
 const (
-	Trust2005 EndpointVersion = iota
+	UnknownTrust EndpointVersion = iota
+	Trust2005
 	Trust13
 )
 
+// Endpoint represents a WSTrust endpoint.
+// TODO(jdoak): Remove this, add method to EndpointVersion.URL(), rename that to Endpoint.
 type Endpoint struct {
+	// EndpointVersion is the version of the endpoint.
 	EndpointVersion EndpointVersion
-	URL             string
+	// URL is the URL of the endpoint.
+	URL string
 }
 
 func createWsTrustEndpoint(endpointVersion EndpointVersion, url string) Endpoint {
@@ -149,7 +155,6 @@ func (wte *Endpoint) buildTokenRequestMessage(authType msalbase.AuthorizationTyp
 	envelope.Header.To.Text = wte.URL
 
 	if authType == msalbase.AuthorizationTypeUsernamePassword {
-
 		endpointUUID := uuid.New()
 
 		var trustID string

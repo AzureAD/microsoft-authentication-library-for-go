@@ -5,7 +5,7 @@ package wstrust
 
 import "encoding/xml"
 
-type definitions struct {
+type Definitions struct {
 	XMLName         xml.Name `xml:"definitions"`
 	Text            string   `xml:",chardata"`
 	Name            string   `xml:"name,attr"`

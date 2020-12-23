@@ -8,6 +8,7 @@ type SamlTokenInfo struct {
 	Assertion     string
 }
 
+// TODO(jdoak): Remove this after integrating ops package.
 func createSamlTokenInfo(assertionType, assertion string) SamlTokenInfo {
 	return SamlTokenInfo{assertionType, assertion}
 }
