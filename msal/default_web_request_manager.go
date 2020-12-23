@@ -210,7 +210,6 @@ func addClientIDQueryParam(queryParams url.Values, authParameters msalbase.AuthP
 func addScopeQueryParam(queryParams url.Values, authParameters msalbase.AuthParametersInternal) {
 	const scopeSeparator = " "
 
-	log.Info("Adding scopes 'openid', 'offline_access', 'profile'")
 	requestedScopes := authParameters.Scopes
 	// openid required to get an id token
 	// offline_access required to get a refresh token
