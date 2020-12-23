@@ -67,6 +67,8 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 }
 
 func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, error) {
+	log.Println("CreateWsTrustMexDocumentFromDef started")
+	log.Println("CreateWsTrustMexDocumentFromDef done")
 	policies := make(map[string]wsEndpointType)
 
 	for _, policy := range definitions.Policy {
@@ -130,6 +132,7 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
 			switch binding.EndpointType {
 			case wsEndpointTypeUsernamePassword:
+				log.Println("wsEndpointTypeUsernamePassword updated")
 				if updateEndpoint(&usernamePasswordEndpoint, endpoint) {
 					log.Tracef("Updated cached username/password endpoint to binding '%v'", bindingName)
 				}
@@ -143,6 +146,7 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 		}
 	}
 
+	log.Println("usernamePasswordEndpoint: ", usernamePasswordEndpoint.URL)
 	doc := MexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
 	log.Trace("Created WsTrustMexDocument!")
 	return doc, nil
