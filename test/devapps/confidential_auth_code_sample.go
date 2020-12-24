@@ -8,12 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
-	log "github.com/sirupsen/logrus"
 )
 
 var (
@@ -36,7 +36,7 @@ func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 		log.Fatal(err)
 	}
 	// Redirecting to the URL we have received
-	log.Info(authURL)
+	log.Println(authURL)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
 

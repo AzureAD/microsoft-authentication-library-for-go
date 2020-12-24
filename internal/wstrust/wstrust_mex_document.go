@@ -10,8 +10,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"strings"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type wsEndpointType int
@@ -38,12 +36,10 @@ type MexDocument struct {
 
 func updateEndpoint(cached *Endpoint, found Endpoint) bool {
 	if cached == nil || cached.EndpointVersion == UnknownTrust {
-		log.Trace("No endpoint cached, using found endpoint")
 		*cached = found
 		return true
 	}
 	if (*cached).EndpointVersion == Trust2005 && found.EndpointVersion == Trust13 {
-		log.Trace("Cached endpoint is v2005, replacing with v1.3")
 		*cached = found
 		return true
 	}
@@ -72,15 +68,12 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 
 	for _, policy := range definitions.Policy {
 		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			log.Trace("Found Policy with UsernamePassword 1.3: " + policy.ID)
 			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
 		}
 		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			log.Trace("Found Policy with UsernamePassword 2005: " + policy.ID)
 			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
 		}
 		if policy.ExactlyOne.All.NegotiateAuthentication.XMLName.Local != "" {
-			log.Trace("Found policy with WindowsTransport: " + policy.ID)
 			policies["#"+policy.ID] = wsEndpointTypeWindowsTransport
 		}
 	}
@@ -95,7 +88,6 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 			if policy, ok := policies[policyName]; ok {
 				bindingName := binding.Name
 				specVersion := binding.Operation.Operation.SoapAction
-				log.Tracef("Found binding %v Spec %v", bindingName, specVersion)
 
 				if specVersion == trust13Spec {
 					bindings[bindingName] = wsEndpointData{Trust13, policy}
@@ -115,7 +107,6 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 
 	for _, port := range definitions.Service.Port {
 		bindingName := port.Binding
-		log.Trace("Parsing port with binding name: " + bindingName)
 
 		index := strings.Index(bindingName, ":")
 		if index != -1 {
@@ -129,16 +120,11 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 				return MexDocument{}, fmt.Errorf("cannot create MexDocument: %w", err)
 			}
 
-			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
 			switch binding.EndpointType {
 			case wsEndpointTypeUsernamePassword:
-				if updateEndpoint(&usernamePasswordEndpoint, endpoint) {
-					log.Tracef("Updated cached username/password endpoint to binding '%v'", bindingName)
-				}
+				updateEndpoint(&usernamePasswordEndpoint, endpoint)
 			case wsEndpointTypeWindowsTransport:
-				if updateEndpoint(&windowsTransportEndpoint, endpoint) {
-					log.Tracef("Updated cached windows transport endpoint to binding '%v'", bindingName)
-				}
+				updateEndpoint(&windowsTransportEndpoint, endpoint)
 			default:
 				return MexDocument{}, errors.New("found unknown port type in MEX document")
 			}
@@ -146,6 +132,5 @@ func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, erro
 	}
 
 	doc := MexDocument{usernamePasswordEndpoint, windowsTransportEndpoint, policies, bindings}
-	log.Trace("Created WsTrustMexDocument!")
 	return doc, nil
 }

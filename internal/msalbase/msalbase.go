@@ -14,7 +14,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	uuid "github.com/google/uuid"
-	log "github.com/sirupsen/logrus"
 )
 
 const (
@@ -702,12 +701,9 @@ func CreateTokenResponse2(authParameters AuthParametersInternal, payload TokenRe
 		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
 	}
 
-	idToken, err := NewIDToken(payload.IDToken)
-	if err != nil {
-		// ID tokens aren't always returned, so the error is just logged
-		// TODO(jdoak): we should probably remove this. Either this is an error or isn't.
-		log.Errorf("ID Token error: %v", err)
-	}
+	// ID tokens aren't always returned, which is not a reportable error condition.
+	// So we ignore it.
+	idToken, _ := NewIDToken(payload.IDToken)
 
 	tokenResponse := TokenResponse{
 		OAuthResponseBase: payload.OAuthResponseBase,

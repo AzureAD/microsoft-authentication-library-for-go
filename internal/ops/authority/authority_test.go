@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -32,7 +31,6 @@ func (f *fakeJSONCaller) JSONCall(ctx context.Context, endpoint string, headers 
 	if f.err {
 		return errors.New("error")
 	}
-	log.Println("endpoint: ", endpoint)
 	f.gotEndpoint = endpoint
 	f.gotHeaders = headers
 	f.gotQV = qv

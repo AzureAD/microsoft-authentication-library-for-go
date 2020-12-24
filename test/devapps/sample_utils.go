@@ -6,9 +6,8 @@ package main
 import (
 	"encoding/json"
 	"io/ioutil"
+	"log"
 	"os"
-
-	log "github.com/sirupsen/logrus"
 )
 
 // Config represents the config.json required to run the samples

@@ -6,7 +6,7 @@ package main
 import (
 	"context"
 
-	log "github.com/sirupsen/logrus"
+	"log"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 )
@@ -17,7 +17,7 @@ func tryClientSecretFlow(confidentialClientApp *msal.ConfidentialClientApplicati
 		log.Fatal(err)
 	}
 	accessToken := result.GetAccessToken()
-	log.Info("Access token is: " + accessToken)
+	log.Println("Access token is: " + accessToken)
 }
 
 func acquireTokenClientSecret() {
@@ -34,11 +34,11 @@ func acquireTokenClientSecret() {
 	}
 	result, err := confidentialClientApp.AcquireTokenSilent(context.Background(), confidentialConfig.Scopes, nil)
 	if err != nil {
-		log.Info(err)
+		log.Println(err)
 		tryClientSecretFlow(confidentialClientApp)
 	} else {
 		accessToken := result.GetAccessToken()
-		log.Info("Access token is: " + accessToken)
+		log.Println("Access token is: " + accessToken)
 	}
 
 }
