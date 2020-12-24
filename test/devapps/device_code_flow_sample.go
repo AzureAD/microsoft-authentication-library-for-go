@@ -14,7 +14,7 @@ import (
 )
 
 func deviceCodeCallback(deviceCodeResult msal.DeviceCodeResultProvider) {
-	log.Printf(deviceCodeResult.GetMessage())
+	log.Println(deviceCodeResult.GetMessage())
 }
 
 func acquireTokenDeviceCode() {
