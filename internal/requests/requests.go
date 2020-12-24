@@ -15,7 +15,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	log "github.com/sirupsen/logrus"
 )
 
 // TokenRequester is an interface that handles all token acquisition requests
@@ -209,11 +208,9 @@ func (m *AuthorityEndpointResolutionManager) ResolveEndpoints(ctx context.Contex
 	}
 
 	if endpoints, ok := m.cachedValue(authorityInfo, userPrincipalName); ok {
-		log.Info("Resolving authority endpoints. Using cached value")
 		return endpoints, nil
 	}
 
-	log.Info("Resolving authority endpoints. No cached value.  Performing lookup.")
 	endpointManager, err := createOpenIDConfigurationEndpointManager(authorityInfo)
 	if err != nil {
 		return msalbase.AuthorityEndpoints{}, err

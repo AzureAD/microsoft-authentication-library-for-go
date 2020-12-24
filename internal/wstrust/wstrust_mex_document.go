@@ -6,6 +6,7 @@ package wstrust
 import (
 	"encoding/xml"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"strings"
@@ -36,7 +37,7 @@ type MexDocument struct {
 }
 
 func updateEndpoint(cached *Endpoint, found Endpoint) bool {
-	if cached == nil {
+	if cached == nil || cached.EndpointVersion == UnknownTrust {
 		log.Trace("No endpoint cached, using found endpoint")
 		*cached = found
 		return true
@@ -50,6 +51,7 @@ func updateEndpoint(cached *Endpoint, found Endpoint) bool {
 }
 
 // TODO(jdoak): Refactor into smaller bits
+// TODO(msal): Someone needs to write tests for this.
 
 func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 	body, err := ioutil.ReadAll(resp.Body)
@@ -57,12 +59,15 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 	if err != nil {
 		return MexDocument{}, err
 	}
-	definitions := &definitions{}
-	err = xml.Unmarshal(body, definitions)
+	definitions := Definitions{}
+	err = xml.Unmarshal(body, &definitions)
 	if err != nil {
 		return MexDocument{}, err
 	}
+	return CreateWsTrustMexDocumentFromDef(definitions)
+}
 
+func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, error) {
 	policies := make(map[string]wsEndpointType)
 
 	for _, policy := range definitions.Policy {
@@ -103,8 +108,10 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 		}
 	}
 
-	var usernamePasswordEndpoint Endpoint
-	var windowsTransportEndpoint Endpoint
+	var (
+		usernamePasswordEndpoint Endpoint
+		windowsTransportEndpoint Endpoint
+	)
 
 	for _, port := range definitions.Service.Port {
 		bindingName := port.Binding
@@ -116,10 +123,11 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 		}
 
 		if binding, ok := bindings[bindingName]; ok {
-			url := port.EndpointReference.Address.Text
-			url = strings.Trim(url, " ")
-
-			endpoint := createWsTrustEndpoint(binding.Version, url)
+			url := strings.TrimSpace(port.EndpointReference.Address.Text)
+			endpoint, err := createWsTrustEndpoint(binding.Version, url)
+			if err != nil {
+				return MexDocument{}, fmt.Errorf("cannot create MexDocument: %w", err)
+			}
 
 			log.Tracef("Associated port '%v' with binding, url '%v'", bindingName, url)
 			switch binding.EndpointType {

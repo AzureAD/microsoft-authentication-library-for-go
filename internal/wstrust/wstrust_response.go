@@ -18,6 +18,8 @@ type Response struct {
 	responseData string
 }
 
+// TODO(jdoak): Delete this after integration of "ops" package.
+
 func CreateWsTrustResponse(resp *http.Response) (Response, error) {
 	response := Response{}
 	body, err := ioutil.ReadAll(resp.Body)
@@ -51,7 +53,7 @@ func (wsTrustResponse *Response) GetSAMLAssertion(endpoint Endpoint) (SamlTokenI
 		return SamlTokenInfo{}, errors.New("WS Trust 2005 support is not implemented")
 	case Trust13:
 		log.Trace("Extracting assertion from WS-Trust 1.3 token:")
-		samldefinitions := &samldefinitions{}
+		samldefinitions := &SAMLDefinitions{}
 		var err = xml.Unmarshal([]byte(wsTrustResponse.responseData), samldefinitions)
 		if err != nil {
 			return SamlTokenInfo{}, err
