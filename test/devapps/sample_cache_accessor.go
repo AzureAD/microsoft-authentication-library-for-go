@@ -5,11 +5,10 @@ package main
 
 import (
 	"io/ioutil"
+	"log"
 	"os"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
-
-	log "github.com/sirupsen/logrus"
 )
 
 type TokenCache struct {
@@ -19,26 +18,26 @@ type TokenCache struct {
 func (t *TokenCache) Replace(cache cache.Unmarshaler) {
 	jsonFile, err := os.Open(t.file)
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 	defer jsonFile.Close()
 	data, err := ioutil.ReadAll(jsonFile)
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 	err = cache.Unmarshal(data)
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 }
 
 func (t *TokenCache) Export(cache cache.Marshaler) {
 	data, err := cache.Marshal()
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 	err = ioutil.WriteFile(t.file, data, 0600)
 	if err != nil {
-		log.Error(err)
+		log.Println(err)
 	}
 }

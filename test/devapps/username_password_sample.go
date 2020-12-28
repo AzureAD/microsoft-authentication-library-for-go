@@ -6,10 +6,10 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
-	log "github.com/sirupsen/logrus"
 )
 
 func acquireByUsernamePasswordPublic() {
@@ -43,7 +43,7 @@ func acquireByUsernamePasswordPublic() {
 	)
 	if err != nil {
 		// either there's no applicable token in the cache or something failed
-		log.Info(err)
+		log.Println(err)
 	} else {
 		return
 	}

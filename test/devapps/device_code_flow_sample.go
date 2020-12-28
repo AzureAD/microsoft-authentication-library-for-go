@@ -6,15 +6,15 @@ package main
 import (
 	"context"
 	"fmt"
+	"log"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
-	log "github.com/sirupsen/logrus"
 )
 
 func deviceCodeCallback(deviceCodeResult msal.DeviceCodeResultProvider) {
-	log.Infof(deviceCodeResult.GetMessage())
+	log.Println(deviceCodeResult.GetMessage())
 }
 
 func acquireTokenDeviceCode() {

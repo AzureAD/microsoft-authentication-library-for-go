@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"time"
 
-	log "github.com/sirupsen/logrus"
-
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	uuid "github.com/google/uuid"
 )
@@ -133,13 +131,11 @@ func (wte *Endpoint) buildTokenRequestMessage(authType msalbase.AuthorizationTyp
 	expiresTime := createdTime.Add(10 * time.Minute)
 
 	if wte.EndpointVersion == Trust2005 {
-		log.Trace("Building WS-Trust token request for v2005")
 		soapAction = trust2005Spec
 		trustNamespace = "http://schemas.xmlsoap.org/ws/2005/02/trust"
 		keyType = "http://schemas.xmlsoap.org/ws/2005/05/identity/NoProofKey"
 		requestType = "http://schemas.xmlsoap.org/ws/2005/02/trust/Issue"
 	} else {
-		log.Trace("Building WS-Trust token request for v1.3")
 		soapAction = trust13Spec
 		trustNamespace = "http://docs.oasis-open.org/ws-sx/ws-trust/200512"
 		keyType = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer"
