@@ -3,17 +3,7 @@
 
 package msal
 
-import (
-	"context"
-	"errors"
-	"net/url"
-	"testing"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
-	"github.com/stretchr/testify/mock"
-)
-
+/*
 type fakeManager struct {
 	manager // embed the interface to prevent changes breaking it
 
@@ -288,3 +278,4 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
 }
+*/

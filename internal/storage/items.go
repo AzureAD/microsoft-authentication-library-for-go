@@ -65,16 +65,19 @@ func (c *Contract) copy() *Contract {
 
 // AccessToken is the JSON representation of a MSAL access token for encoding to storage.
 type AccessToken struct {
-	HomeAccountID                  string `json:"home_account_id,omitempty"`
-	Environment                    string `json:"environment,omitempty"`
-	Realm                          string `json:"realm,omitempty"`
-	CredentialType                 string `json:"credential_type,omitempty"`
-	ClientID                       string `json:"client_id,omitempty"`
-	Secret                         string `json:"secret,omitempty"`
-	Scopes                         string `json:"target,omitempty"`
-	ExpiresOnUnixTimestamp         string `json:"expires_on,omitempty"`
+	HomeAccountID  string `json:"home_account_id,omitempty"`
+	Environment    string `json:"environment,omitempty"`
+	Realm          string `json:"realm,omitempty"`
+	CredentialType string `json:"credential_type,omitempty"`
+	ClientID       string `json:"client_id,omitempty"`
+	Secret         string `json:"secret,omitempty"`
+	Scopes         string `json:"target,omitempty"`
+	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
+	ExpiresOnUnixTimestamp string `json:"expires_on,omitempty"`
+	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
 	ExtendedExpiresOnUnixTimestamp string `json:"extended_expires_on,omitempty"`
-	CachedAt                       string `json:"cached_at,omitempty"`
+	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
+	CachedAt string `json:"cached_at,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }

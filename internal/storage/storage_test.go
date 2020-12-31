@@ -779,7 +779,7 @@ func TestRead(t *testing.T) {
 		discRespErr bool
 		discResp    authority.InstanceDiscoveryResponse
 		err         bool
-		want        msalbase.StorageTokenResponse
+		want        StorageTokenResponse
 	}{
 		{
 			desc:        "Error: AAD Discovery Fails",
@@ -799,7 +799,12 @@ func TestRead(t *testing.T) {
 					},
 				},
 			},
-			want: msalbase.CreateStorageTokenResponse(accessTokenCacheItem, testRefreshToken, testIDToken, testAccount),
+			want: StorageTokenResponse{
+				AccessToken:  accessTokenCacheItem,
+				RefreshToken: testRefreshToken,
+				IDToken:      testIDToken,
+				Account:      testAccount,
+			},
 		},
 	}
 
