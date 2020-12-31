@@ -30,6 +30,14 @@ type getAadinstanceDiscoveryResponser interface {
 	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error)
 }
 
+// StorageTokenResponse mimics a token response that was pulled from the cache.
+type StorageTokenResponse struct {
+	RefreshToken RefreshToken
+	IDToken      IDToken // *Credential
+	AccessToken  AccessToken
+	Account      msalbase.Account
+}
+
 // TODO(someone): This thing does not expire tokens.
 
 // Manager is an in-memory cache of access tokens, accounts and meta data. This data is
@@ -76,7 +84,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.StorageTokenResponse, error) {
+func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -84,38 +92,43 @@ func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParamete
 
 	metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
 	if err != nil {
-		return msalbase.StorageTokenResponse{}, err
+		return StorageTokenResponse{}, err
 	}
 
 	accessToken, err := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 	if err != nil {
-		return msalbase.StorageTokenResponse{}, err
+		return StorageTokenResponse{}, err
 	}
 
 	if err := accessToken.Validate(); err != nil {
-		return msalbase.StorageTokenResponse{}, err
+		return StorageTokenResponse{}, err
 	}
 
 	idToken, err := m.readIDToken(homeAccountID, metadata.Aliases, realm, clientID)
 	if err != nil {
-		return msalbase.StorageTokenResponse{}, err
+		return StorageTokenResponse{}, err
 	}
 
 	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
 	if err != nil {
-		return msalbase.StorageTokenResponse{}, err
+		return StorageTokenResponse{}, err
 	}
 	familyID := AppMetaData.FamilyID
 
 	refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
 	if err != nil {
-		return msalbase.StorageTokenResponse{}, err
+		return StorageTokenResponse{}, err
 	}
 	account, err := m.readAccount(homeAccountID, metadata.Aliases, realm)
 	if err != nil {
-		return msalbase.StorageTokenResponse{}, err
+		return StorageTokenResponse{}, err
 	}
-	return msalbase.CreateStorageTokenResponse(accessToken, refreshToken, idToken, account), nil
+	return StorageTokenResponse{
+		AccessToken:  accessToken,
+		RefreshToken: refreshToken,
+		IDToken:      idToken,
+		Account:      account,
+	}, nil
 }
 
 const scopeSeparator = " "

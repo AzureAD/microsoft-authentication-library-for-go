@@ -140,15 +140,6 @@ func (cert *ClientCertificate) BuildJWT(authParams AuthParametersInternal) (stri
 	return tokenString, nil
 }
 
-// ConvertStrUnixToUTCTime converts a string representation of unix time to a UTC timestamp.
-func ConvertStrUnixToUTCTime(unixTime string) (time.Time, error) {
-	timeInt, err := strconv.ParseInt(unixTime, 10, 64)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Unix(timeInt, 0).UTC(), nil
-}
-
 // GetStringKey does a lookup and returns the string at that value or an empty string.
 func GetStringKey(j map[string]interface{}, key string) string {
 	i := j[key]
@@ -234,8 +225,10 @@ func (i IDToken) GetLocalAccountID() string {
 	return i.Subject
 }
 
+/*
 // Credential is an interface for cache entries such as access, refresh and ID tokens.
 type Credential interface {
 	Key() string
 	GetSecret() string
 }
+*/

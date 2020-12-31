@@ -6,6 +6,7 @@ package storage
 import (
 	"errors"
 	"fmt"
+	"reflect"
 	"strconv"
 	"strings"
 	"time"
@@ -102,21 +103,6 @@ func (a AccessToken) Key() string {
 	)
 }
 
-// TODO(jdoak): These should be renamed to remove the "Get".  This is not just a
-// replace across files.
-
-func (a AccessToken) GetSecret() string {
-	return a.Secret
-}
-
-func (a AccessToken) GetExpiresOn() string {
-	return a.ExpiresOnUnixTimestamp
-}
-
-func (a AccessToken) GetScopes() string {
-	return a.Scopes
-}
-
 // Validate validates that this AccessToken can be used.
 func (a AccessToken) Validate() error {
 	cachedAt, err := strconv.ParseInt(a.CachedAt, 10, 64)
@@ -138,6 +124,79 @@ func (a AccessToken) Validate() error {
 		return fmt.Errorf("access token is expired")
 	}
 	return nil
+}
+
+// IDToken is the JSON representation of an MSAL id token for encoding to storage.
+type IDToken struct {
+	HomeAccountID    string `json:"home_account_id,omitempty"`
+	Environment      string `json:"environment,omitempty"`
+	Realm            string `json:"realm,omitempty"`
+	CredentialType   string `json:"credential_type,omitempty"`
+	ClientID         string `json:"client_id,omitempty"`
+	Secret           string `json:"secret,omitempty"`
+	AdditionalFields map[string]interface{}
+}
+
+// runtime check that makes sure IDToken hasn't added any fields not covered in IsZero().
+// TODO(someone): This should get auto-generated probably.
+func _() {
+	valid := map[string]bool{
+		"HomeAccountID":    true,
+		"Environment":      true,
+		"Realm":            true,
+		"CredentialType":   true,
+		"ClientID":         true,
+		"Secret":           true,
+		"AdditionalFields": true,
+	}
+	t := reflect.TypeOf(IDToken{})
+	for i := 0; i < t.NumField(); i++ {
+		f := t.Field(i)
+		if !valid[f.Name] {
+			panic(fmt.Sprintf("storage.IDToken has new field %q, which must be added to .IsZero()", f.Name))
+		}
+	}
+}
+
+// IsZero determines if IDToken is the zero value.
+func (i IDToken) IsZero() bool {
+	switch {
+	case i.HomeAccountID != "":
+		return false
+	case i.Environment != "":
+		return false
+	case i.Realm != "":
+		return false
+	case i.CredentialType != "":
+		return false
+	case i.ClientID != "":
+		return false
+	case i.Secret != "":
+		return false
+	case i.AdditionalFields != nil:
+		return false
+	}
+	return true
+}
+
+// NewIDToken is the constructor for IDToken.
+func NewIDToken(homeID, env, realm, clientID, idToken string) IDToken {
+	return IDToken{
+		HomeAccountID:  homeID,
+		Environment:    env,
+		Realm:          realm,
+		CredentialType: msalbase.CredentialTypeIDToken,
+		ClientID:       clientID,
+		Secret:         idToken,
+	}
+}
+
+// Key outputs the key that can be used to uniquely look up this entry in a map.
+func (id IDToken) Key() string {
+	return strings.Join(
+		[]string{id.HomeAccountID, id.Environment, id.CredentialType, id.ClientID, id.Realm},
+		msalbase.CacheKeySeparator,
+	)
 }
 
 // AppMetaData is the JSON representation of application metadata for encoding to storage.
@@ -164,41 +223,6 @@ func (a AppMetaData) Key() string {
 		[]string{"AppMetaData", a.Environment, a.ClientID},
 		msalbase.CacheKeySeparator,
 	)
-}
-
-// IDToken is the JSON representation of an MSAL id token for encoding to storage.
-type IDToken struct {
-	HomeAccountID    string `json:"home_account_id,omitempty"`
-	Environment      string `json:"environment,omitempty"`
-	Realm            string `json:"realm,omitempty"`
-	CredentialType   string `json:"credential_type,omitempty"`
-	ClientID         string `json:"client_id,omitempty"`
-	Secret           string `json:"secret,omitempty"`
-	AdditionalFields map[string]interface{}
-}
-
-// NewIDToken is the constructor for IDToken.
-func NewIDToken(homeID, env, realm, clientID, idToken string) IDToken {
-	return IDToken{
-		HomeAccountID:  homeID,
-		Environment:    env,
-		Realm:          realm,
-		CredentialType: msalbase.CredentialTypeIDToken,
-		ClientID:       clientID,
-		Secret:         idToken,
-	}
-}
-
-// Key outputs the key that can be used to uniquely look up this entry in a map.
-func (id IDToken) Key() string {
-	return strings.Join(
-		[]string{id.HomeAccountID, id.Environment, id.CredentialType, id.ClientID, id.Realm},
-		msalbase.CacheKeySeparator,
-	)
-}
-
-func (id IDToken) GetSecret() string {
-	return id.Secret
 }
 
 // RefreshToken is the JSON representation of a MSAL refresh token for encoding to storage.

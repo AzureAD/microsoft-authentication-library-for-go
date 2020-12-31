@@ -6,9 +6,12 @@ package client
 import (
 	"context"
 	"errors"
+	"fmt"
 	"net/url"
 	"reflect"
+	"strconv"
 	"strings"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
@@ -21,6 +24,7 @@ import (
 const (
 	// AuthorityPublicCloud is the default AAD authority host
 	AuthorityPublicCloud = "https://login.microsoftonline.com/common"
+	scopeSeparator       = " "
 )
 
 // This defines shared resources for accessing remove services.
@@ -39,7 +43,7 @@ func init() {
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.StorageTokenResponse, error)
+	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (storage.StorageTokenResponse, error)
 	Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
 	GetAllAccounts() ([]msalbase.Account, error)
 }
@@ -57,20 +61,12 @@ type noopCacheAccessor struct{}
 func (n noopCacheAccessor) Replace(cache cache.Unmarshaler) {}
 func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 
-// toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.
-func toLower(s []string) []string {
-	for i := 0; i < len(s); i++ {
-		s[i] = strings.ToLower(s[i])
-	}
-	return s
-}
-
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
-	Scopes           []string
-	Account          AccountProvider
-	RequestType      requests.RefreshTokenReqType
-	ClientCredential msalbase.ClientCredential
+	Scopes      []string
+	Account     AccountProvider
+	RequestType requests.RefreshTokenReqType
+	Credential  *msalbase.Credential
 }
 
 // TODO(jdoak): augmentAuthenticationParameters == yuck.  Gotta go gotta go!!!!
@@ -85,11 +81,11 @@ func (p AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
-	Scopes           []string
-	Code             string
-	Challenge        string
-	RequestType      requests.AuthCodeRequestType
-	clientCredential msalbase.ClientCredential
+	Scopes      []string
+	Code        string
+	Challenge   string
+	RequestType requests.AuthCodeRequestType
+	Credential  *msalbase.Credential
 }
 
 // AuthCodeURL creates a URL used to acquire an authorization code.
@@ -139,6 +135,67 @@ func AuthCodeURL(ctx context.Context, resolver *resolvers.AuthorityEndpoint, cli
 	return baseURL.String(), nil
 }
 
+// AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
+// or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
+type AuthenticationResult struct {
+	Account        msalbase.Account
+	IDToken        msalbase.IDToken
+	AccessToken    string
+	ExpiresOn      time.Time
+	GrantedScopes  []string
+	DeclinedScopes []string
+}
+
+// CreateAuthenticationResultFromStorageTokenResponse creates an authenication result from a storage token response (which is generated from the cache).
+func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse storage.StorageTokenResponse) (AuthenticationResult, error) {
+	if err := storageTokenResponse.AccessToken.Validate(); err != nil {
+		return AuthenticationResult{}, fmt.Errorf("problem with access token in StorageTokenResponse: %w", err)
+	}
+
+	account := storageTokenResponse.Account
+	accessToken := storageTokenResponse.AccessToken.Secret
+	expiresOn, err := convertStrUnixToUTCTime(storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
+	if err != nil {
+		return AuthenticationResult{}, fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
+	}
+	grantedScopes := strings.Split(storageTokenResponse.AccessToken.Scopes, scopeSeparator)
+
+	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
+	var idToken msalbase.IDToken
+	if !storageTokenResponse.IDToken.IsZero() {
+		idToken, err = msalbase.NewIDToken(storageTokenResponse.IDToken.Secret)
+		if err != nil {
+			return AuthenticationResult{}, err
+		}
+	}
+	return AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, nil}, nil
+}
+
+// CreateAuthenticationResult creates an AuthenticationResult.
+// TODO(jdoak): (maybe, we did a refactor): Make this a method on TokenResponse() that takes only 1 arge, Account.
+func CreateAuthenticationResult(tokenResponse msalbase.TokenResponse, account msalbase.Account) (AuthenticationResult, error) {
+	if len(tokenResponse.DeclinedScopes) > 0 {
+		return AuthenticationResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.DeclinedScopes, ","))
+	}
+	return AuthenticationResult{
+		Account:       account,
+		IDToken:       tokenResponse.IDToken,
+		AccessToken:   tokenResponse.AccessToken,
+		ExpiresOn:     tokenResponse.ExpiresOn,
+		GrantedScopes: tokenResponse.GrantedScopes,
+	}, nil
+}
+
+//GetAccessToken returns the access token of the authentication result
+func (ar AuthenticationResult) GetAccessToken() string {
+	return ar.AccessToken
+}
+
+// GetAccount returns the account of the authentication result
+func (ar AuthenticationResult) GetAccount() msalbase.Account {
+	return ar.Account
+}
+
 // Base is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Base struct {
@@ -169,7 +226,7 @@ func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace
 	}, nil
 }
 
-func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (msalbase.AuthenticationResult, error) {
+func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthenticationResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
 	toLower(silent.Scopes)
 	silent.augmentAuthenticationParameters(&authParams)
@@ -181,23 +238,23 @@ func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentP
 
 	storageTokenResponse, err := b.manager.Read(ctx, authParams)
 	if err != nil {
-		return msalbase.AuthenticationResult{}, err
+		return AuthenticationResult{}, err
 	}
 
-	result, err := msalbase.CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
+	result, err := CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
 	if err != nil {
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
-			return msalbase.AuthenticationResult{}, errors.New("no refresh token found")
+			return AuthenticationResult{}, errors.New("no refresh token found")
 		}
 
-		var cc msalbase.ClientCredential
+		var cc *msalbase.Credential
 		if silent.RequestType == requests.RefreshTokenConfidential {
-			cc = silent.ClientCredential
+			cc = silent.Credential
 		}
 
 		token, err := b.Token.Refresh(ctx, b.AuthParams, cc, storageTokenResponse.RefreshToken, silent.RequestType)
 		if err != nil {
-			return msalbase.AuthenticationResult{}, err
+			return AuthenticationResult{}, err
 		}
 
 		return b.AuthResultFromToken(ctx, authParams, token, true)
@@ -205,33 +262,33 @@ func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentP
 	return result, nil
 }
 
-func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (msalbase.AuthenticationResult, error) {
+func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthenticationResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
 	authParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
 
-	var cc msalbase.ClientCredential
+	var cc *msalbase.Credential
 	if authCodeParams.RequestType == requests.AuthCodeConfidential {
-		cc = authCodeParams.clientCredential
+		cc = authCodeParams.Credential
 	}
 
 	req, err := requests.NewCodeChallengeRequest(authParams, authCodeParams.RequestType, cc, authCodeParams.Code, authCodeParams.Challenge)
 	if err != nil {
-		return msalbase.AuthenticationResult{}, err
+		return AuthenticationResult{}, err
 	}
 
 	token, err := b.Token.AuthCode(ctx, req)
 	if err != nil {
-		return msalbase.AuthenticationResult{}, err
+		return AuthenticationResult{}, err
 	}
 
 	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-func (b Base) AuthResultFromToken(ctx context.Context, authParams msalbase.AuthParametersInternal, token msalbase.TokenResponse, cacheWrite bool) (msalbase.AuthenticationResult, error) {
+func (b Base) AuthResultFromToken(ctx context.Context, authParams msalbase.AuthParametersInternal, token msalbase.TokenResponse, cacheWrite bool) (AuthenticationResult, error) {
 	if !cacheWrite {
-		return msalbase.CreateAuthenticationResult(token, msalbase.Account{})
+		return CreateAuthenticationResult(token, msalbase.Account{})
 	}
 
 	if s, ok := b.manager.(cache.Serializer); ok {
@@ -241,10 +298,10 @@ func (b Base) AuthResultFromToken(ctx context.Context, authParams msalbase.AuthP
 
 	account, err := b.manager.Write(authParams, token)
 	if err != nil {
-		return msalbase.AuthenticationResult{}, err
+		return AuthenticationResult{}, err
 	}
 
-	return msalbase.CreateAuthenticationResult(token, account)
+	return CreateAuthenticationResult(token, account)
 }
 
 func (b Base) GetAccounts() []msalbase.Account {
@@ -258,4 +315,21 @@ func (b Base) GetAccounts() []msalbase.Account {
 		return nil
 	}
 	return accounts
+}
+
+// toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.
+func toLower(s []string) []string {
+	for i := 0; i < len(s); i++ {
+		s[i] = strings.ToLower(s[i])
+	}
+	return s
+}
+
+// convertStrUnixToUTCTime converts a string representation of unix time to a UTC timestamp.
+func convertStrUnixToUTCTime(unixTime string) (time.Time, error) {
+	timeInt, err := strconv.ParseInt(unixTime, 10, 64)
+	if err != nil {
+		return time.Time{}, err
+	}
+	return time.Unix(timeInt, 0).UTC(), nil
 }

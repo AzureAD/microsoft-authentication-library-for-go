@@ -14,6 +14,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/resolvers"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
 )
 
 type resolveEndpointer interface {
@@ -31,26 +32,28 @@ const (
 
 // AuthCodeRequest stores the values required to request a token from the authority using an authorization code
 type AuthCodeRequest struct {
-	authParameters   msalbase.AuthParametersInternal
-	Code             string
-	CodeChallenge    string
-	ClientCredential msalbase.ClientCredential
-	RequestType      AuthCodeRequestType
+	authParameters msalbase.AuthParametersInternal
+	Code           string
+	CodeChallenge  string
+	Credential     *msalbase.Credential
+	RequestType    AuthCodeRequestType
 }
 
 // NewCodeChallengeRequest returns a request
-func NewCodeChallengeRequest(params msalbase.AuthParametersInternal, rt AuthCodeRequestType, cc msalbase.ClientCredential, code, challenge string) (AuthCodeRequest, error) {
+func NewCodeChallengeRequest(params msalbase.AuthParametersInternal, rt AuthCodeRequestType, cc *msalbase.Credential, code, challenge string) (AuthCodeRequest, error) {
 	if rt == UnknownAuthCodeType {
 		return AuthCodeRequest{}, fmt.Errorf("bug: NewCodeChallengeRequest() called with AuthCodeRequestType == UnknownAuthCodeType")
 	}
 	return AuthCodeRequest{
-		authParameters:   params,
-		RequestType:      rt,
-		Code:             code,
-		CodeChallenge:    challenge,
-		ClientCredential: cc,
+		authParameters: params,
+		RequestType:    rt,
+		Code:           code,
+		CodeChallenge:  challenge,
+		Credential:     cc,
 	}, nil
 }
+
+//go:generate stringer -type=RefreshTokenReqType
 
 // RefreshTokenReqType is whether the refresh token flow is for a public or confidential client
 type RefreshTokenReqType int
@@ -82,39 +85,44 @@ func (t *Token) AuthCode(ctx context.Context, req AuthCodeRequest) (msalbase.Tok
 	}
 
 	params := url.Values{}
-	if req.RequestType == AuthCodeConfidential {
+	switch req.RequestType {
+	case UnknownAuthCodeType:
+		return msalbase.TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with RequestType == UnknownAuthCodeType")
+	case AuthCodeConfidential:
 		var err error
-		params, err = t.prepURLVals(req.ClientCredential, req.authParameters)
+		params, err = t.prepURLVals(req.Credential, req.authParameters)
 		if err != nil {
 			return msalbase.TokenResponse{}, err
 		}
+	case AuthCodePublic:
+		tResp, err := t.rest.AccessTokens().GetAccessTokenFromAuthCode(ctx, req.authParameters, req.Code, req.CodeChallenge, params)
+		if err != nil {
+			return msalbase.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
+		}
+		return tResp, nil
 	}
 
-	tResp, err := t.rest.AccessTokens().GetAccessTokenFromAuthCode(ctx, req.authParameters, req.Code, req.CodeChallenge, params)
-	if err != nil {
-		return msalbase.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
-	}
-	return tResp, nil
+	return msalbase.TokenResponse{}, fmt.Errorf("Token.AuthCode() received request with unsupported RequestType == %v", req.RequestType)
 }
 
-// ClientCredential acquires a token from the authority using a client credentials grant.
-func (t *Token) ClientCredential(ctx context.Context, authParams msalbase.AuthParametersInternal, clientCred msalbase.ClientCredential) (msalbase.TokenResponse, error) {
+// Credential acquires a token from the authority using a client credentials grant.
+func (t *Token) Credential(ctx context.Context, authParams msalbase.AuthParametersInternal, cred *msalbase.Credential) (msalbase.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return msalbase.TokenResponse{}, err
 	}
 
-	if clientCred.GetCredentialType() == msalbase.ClientCredentialSecret {
-		return t.rest.AccessTokens().GetAccessTokenWithClientSecret(ctx, authParams, clientCred.GetSecret())
+	if cred.Secret != "" {
+		return t.rest.AccessTokens().GetAccessTokenWithClientSecret(ctx, authParams, cred.Secret)
 	}
 
-	jwt, err := clientCred.GetAssertion().GetJWT(authParams)
+	jwt, err := cred.JWT(authParams)
 	if err != nil {
 		return msalbase.TokenResponse{}, err
 	}
 	return t.rest.AccessTokens().GetAccessTokenWithAssertion(ctx, authParams, jwt)
 }
 
-func (t *Token) Refresh(ctx context.Context, authParams msalbase.AuthParametersInternal, cc msalbase.ClientCredential, refreshToken msalbase.Credential, reqType RefreshTokenReqType) (msalbase.TokenResponse, error) {
+func (t *Token) Refresh(ctx context.Context, authParams msalbase.AuthParametersInternal, cc *msalbase.Credential, refreshToken storage.RefreshToken, reqType RefreshTokenReqType) (msalbase.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return msalbase.TokenResponse{}, err
 	}
@@ -127,7 +135,7 @@ func (t *Token) Refresh(ctx context.Context, authParams msalbase.AuthParametersI
 			return msalbase.TokenResponse{}, err
 		}
 	}
-	return t.rest.AccessTokens().GetAccessTokenFromRefreshToken(ctx, authParams, refreshToken.GetSecret(), params)
+	return t.rest.AccessTokens().GetAccessTokenFromRefreshToken(ctx, authParams, refreshToken.Secret, params)
 }
 
 // UsernamePassword rertieves a token where a username and password is used. However, if this is
@@ -239,14 +247,14 @@ func (t *Token) resolveEndpoint(ctx context.Context, authParams *msalbase.AuthPa
 	return nil
 }
 
-func (t *Token) prepURLVals(cc msalbase.ClientCredential, authParams msalbase.AuthParametersInternal) (url.Values, error) {
+func (t *Token) prepURLVals(cc *msalbase.Credential, authParams msalbase.AuthParametersInternal) (url.Values, error) {
 	params := url.Values{}
-	if cc.GetCredentialType() == msalbase.ClientCredentialSecret {
-		params.Set("client_secret", cc.GetSecret())
+	if cc.Secret != "" {
+		params.Set("client_secret", cc.Secret)
 		return params, nil
 	}
 
-	jwt, err := cc.GetAssertion().GetJWT(authParams)
+	jwt, err := cc.JWT(authParams)
 	if err != nil {
 		return nil, err
 	}

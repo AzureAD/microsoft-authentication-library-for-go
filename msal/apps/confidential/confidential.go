@@ -9,23 +9,16 @@ package confidential
 import (
 	"context"
 	"crypto"
-	"crypto/sha1"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/url"
-	"strconv"
-	"sync"
-	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/client"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
-	"github.com/google/uuid"
-
-	jwt "github.com/dgrijalva/jwt-go"
 )
 
 /*
@@ -35,20 +28,28 @@ confidential.Client uses client.Base as an embedded type. client.Base statically
 during creation. As it doesn't have any pointers in it, anything borrowed from it, such as
 Base.AuthParams is a copy that is free to be manipulated here.
 
-C# people: This uses x509.Certificates and private keys. x509 does not store private keys. .Net
+Duplicate Calls shared between public.Client and this package:
+There is some duplicate call options provided here that are the same as in public.Client . This
+is a design choices. Go proverb(https://www.youtube.com/watch?v=PAAkCSZUG1c&t=9m28s):
+"a little copying is better than a little dependency". Yes, we could have another package with
+shared options (fail).  That divides like 2 options from all others which makes the user look
+through more docs.  We can have all clients in one package, but I think separate packages
+here makes for better naming (public.Client vs client.PublicClient).  So I chose a little
+duplication.
+
+.Net People, Take note on X509:
+This uses x509.Certificates and private keys. x509 does not store private keys. .Net
 has some x509.Certificate2 thing that has private keys, but that is just some bullcrap that .Net
 added, it doesn't exist in real life.  Seriously, "x509.Certificate2", bahahahaha.  As such I've
-put some decoders from certs into here.
+put a PEM decoder into here.
 */
 
 // TODO(msal): This should have example code for each method on client using Go's example doc framework.
 // base usage details should be includee in the package documentation.
 
-// AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
-type AcquireTokenByAuthCodeOptions struct {
-	Code          string
-	CodeChallenge string
-}
+// AuthenticationResult contains the results of one token acquisition operation.
+// For details see https://aka.ms/msal-net-authenticationresult
+type AuthenticationResult = client.AuthenticationResult
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
 // must have the public certificate and the private key encoded. The private key must be encoded
@@ -125,71 +126,32 @@ func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
 
 // Credential represents the credential used in confidential client flows.
 type Credential struct {
-	// If secret is set, we use secret. Otherwise we are going to use assertion.
-	// If assertion is not set, we are going to use cert + der to generate an assertion on first use.
 	secret string
 
 	cert *x509.Certificate
 	key  crypto.PrivateKey
+}
 
-	mu        sync.Mutex
-	assertion string
-	expires   time.Time
+// toMSALBASE returns the msalbase.Credential that is used internally. The current structure of the
+// code requires that client.go, requests.go and confidential.go share a credential type without
+// having import recursion. That requires the type used between is in a shared package. Therefore
+// we have this.
+func (c Credential) toMSALBASE() *msalbase.Credential {
+	return &msalbase.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
 }
 
 // NewCredFromSecret creates a Credential from a secret.
-func NewCredFromSecret(secret string) (*Credential, error) {
+func NewCredFromSecret(secret string) (Credential, error) {
 	if secret == "" {
-		return nil, errors.New("secret can't be empty string")
+		return Credential{}, errors.New("secret can't be empty string")
 	}
-	return &Credential{secret: secret}, nil
+	return Credential{secret: secret}, nil
 }
 
 // NewCredFromCert creates a Credential from an x509.Certificate and a PKCS8 DER encoded private key.
 // CertFromPEM() can be used to get these values from a PEM file storing a PKCS8 private key.
-func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) *Credential {
-	return &Credential{cert: cert, key: key}
-}
-
-// jwt gets the jwt assertion when the credential is not using a secret.
-func (c *Credential) jwt(authParams msalbase.AuthParametersInternal) (string, error) {
-	c.mu.Lock()
-	defer c.mu.Unlock()
-
-	if c.expires.Before(time.Now()) && c.assertion != "" {
-		return c.assertion, nil
-	}
-	expires := time.Now().Add(5 * time.Minute)
-
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
-		"aud": authParams.Endpoints.TokenEndpoint,
-		"exp": strconv.FormatInt(expires.Unix(), 10),
-		"iss": authParams.ClientID,
-		"jti": uuid.New().String(),
-		"nbf": strconv.FormatInt(time.Now().Unix(), 10),
-		"sub": authParams.ClientID,
-	})
-	token.Header = map[string]interface{}{
-		"alg": "RS256",
-		"typ": "JWT",
-		"x5t": base64.StdEncoding.EncodeToString(thumbprint(c.cert)),
-	}
-
-	var err error
-	c.assertion, err = token.SignedString(c.key)
-	if err != nil {
-		return "", err
-	}
-
-	c.expires = expires
-	return c.assertion, err
-}
-
-// thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.
-// https://tools.ietf.org/html/rfc7517#section-4.8
-func thumbprint(cert *x509.Certificate) []byte {
-	a := sha1.Sum(cert.Raw)
-	return a[:]
+func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
+	return Credential{cert: cert, key: key}
 }
 
 // Client is a representation of authentication client for confidential applications as defined in the
@@ -197,7 +159,8 @@ func thumbprint(cert *x509.Certificate) []byte {
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
 	client.Base
-	msalbase.ClientCredential
+
+	cred *msalbase.Credential
 }
 
 // Options are optional settings for New(). These options are set using various functions
@@ -255,78 +218,122 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	cred, err := createInternalClientCredential(clientCredential)
+	base, err := client.New(clientID, opts.Authority, opts.Accessor)
 	if err != nil {
-		return nil, err
+		return Client{}, err
 	}
 
-	clientApp, err := newClientApp(clientID, options.Authority)
-	if err != nil {
-		return nil, err
-	}
-	return &ConfidentialClientApplication{
-		clientApplication: clientApp,
-		clientCredential:  cred,
-		token:             token,
+	return Client{
+		Base: base,
+		cred: cred.toMSALBASE(),
 	}, nil
 }
 
-// This is used to convert the user-facing client credential interface to the internal representation of a client credential
-func createInternalClientCredential(interfaceCred ClientCredentialProvider) (msalbase.ClientCredential, error) {
-	if interfaceCred.GetCredentialType() == msalbase.ClientCredentialSecret {
-		return msalbase.CreateClientCredentialFromSecret(interfaceCred.GetSecret())
-
-	}
-	if interfaceCred.GetAssertion().ClientCertificate != nil {
-		return msalbase.CreateClientCredentialFromCertificateObject(
-			interfaceCred.GetAssertion().ClientCertificate), nil
-	}
-	return msalbase.CreateClientCredentialFromAssertion(interfaceCred.GetAssertion().ClientAssertionJWT)
-}
-
 // CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (cca *ConfidentialClientApplication) CreateAuthCodeURL(ctx context.Context, authCodeURLParameters AuthorizationCodeURLParameters) (string, error) {
-	return cca.clientApplication.createAuthCodeURL(ctx, authCodeURLParameters)
+func (cca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
+	return client.AuthCodeURL(ctx, cca.Resolver, clientID, redirectURI, scopes, cca.AuthParams)
 }
 
-// AcquireTokenSilent acquires a token from either the cache or using a refresh token
-// Users need to create an AcquireTokenSilentParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenSilent(ctx context.Context, scopes []string, options *AcquireTokenSilentOptions) (msalbase.AuthenticationResult, error) {
-	silentParameters := CreateAcquireTokenSilentParameters(scopes)
-	silentParameters.requestType = requests.RefreshTokenConfidential
-	silentParameters.clientCredential = cca.clientCredential
-	if options != nil {
-		silentParameters.account = options.Account
+// AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
+// These are set by using various AcquireTokenSilentOption functions.
+type AcquireTokenSilentOptions struct {
+	// Account represents the account to use. To set, use the SilentAccount() option.
+	Account msalbase.Account
+}
+
+// AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
+type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
+
+// SilentAccount uses the passed account during an AcquireTokenSilent() call.
+func SilentAccount(account msalbase.Account) AcquireTokenSilentOption {
+	return func(a *AcquireTokenSilentOptions) {
+		a.Account = account
 	}
-	return cca.clientApplication.acquireTokenSilent(ctx, silentParameters)
+}
+
+// AcquireTokenSilent acquires a token from either the cache or using a refresh token.
+func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthenticationResult, error) {
+	opts := AcquireTokenSilentOptions{}
+	for _, o := range options {
+		o(&opts)
+	}
+
+	silentParameters := client.AcquireTokenSilentParameters{
+		Scopes:      scopes,
+		Account:     opts.Account,
+		RequestType: requests.RefreshTokenConfidential,
+		Credential:  cca.cred,
+	}
+
+	return cca.Base.AcquireTokenSilent(ctx, silentParameters)
+}
+
+// AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
+type AcquireTokenByAuthCodeOptions struct {
+	Code      string
+	Challenge string
+}
+
+func (a AcquireTokenByAuthCodeOptions) validate() error {
+	if a.Code == "" && a.Challenge == "" {
+		return nil
+	}
+
+	switch "" {
+	case a.Code:
+		return fmt.Errorf("AcquireTokenByAuthCode: if you set the Challenge, you must set the Code")
+	case a.Challenge:
+		return fmt.Errorf("AcquireTokenByAuthCode: if you set the Code, you must set the Challenge")
+	}
+	return nil
+}
+
+// AcquireTokenByAuthCodeOption changes options inside AcquireTokenByAuthCodeOptions used in .AcquireTokenByAuthCode().
+type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
+
+// CodeChallenge allows you to provide a code for the .AcquireTokenByAuthCode() call.
+func CodeChallenge(code, challenge string) AcquireTokenByAuthCodeOption {
+	return func(a *AcquireTokenByAuthCodeOptions) {
+		a.Code = code
+		a.Challenge = challenge
+	}
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-// Users need to create an AcquireTokenAuthCodeParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options *AcquireTokenByAuthCodeOptions) (msalbase.AuthenticationResult, error) {
-	authCodeParams := createAcquireTokenAuthCodeParameters(scopes)
-	authCodeParams.requestType = requests.AuthCodeConfidential
-	authCodeParams.clientCredential = cca.clientCredential
-	if options != nil {
-		authCodeParams.Code = options.Code
-		authCodeParams.CodeChallenge = options.CodeChallenge
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthenticationResult, error) {
+	opts := AcquireTokenByAuthCodeOptions{}
+	for _, o := range options {
+		o(&opts)
 	}
-	return cca.clientApplication.acquireTokenByAuthCode(ctx, authCodeParams)
+	if err := opts.validate(); err != nil {
+		return AuthenticationResult{}, err
+	}
 
+	params := client.AcquireTokenAuthCodeParameters{
+		Scopes:      scopes,
+		Code:        opts.Code,
+		Challenge:   opts.Challenge,
+		RequestType: requests.AuthCodeConfidential,
+		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+	}
+
+	return cca.Base.AcquireTokenByAuthCode(ctx, params)
 }
 
-// AcquireTokenByClientCredential acquires a security token from the authority, using the client credentials grant.
-// Users need to create an AcquireTokenClientCredentialParameters instance and pass it in.
-func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(ctx context.Context, scopes []string) (msalbase.AuthenticationResult, error) {
-	authParams := cca.clientApplication.clientApplicationParameters.createAuthenticationParameters()
-	clientCredParams := createAcquireTokenClientCredentialParameters(scopes)
-	clientCredParams.augmentAuthenticationParameters(&authParams)
+// AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
+func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthenticationResult, error) {
+	authParams := cca.AuthParams
+	authParams.Scopes = scopes
+	authParams.AuthorizationType = msalbase.AuthorizationTypeClientCredentials
 
-	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
-	return cca.clientApplication.executeTokenRequestWithCacheWrite(ctx, req, authParams)
+	token, err := cca.Token.Credential(ctx, authParams, cca.cred)
+	if err != nil {
+		return AuthenticationResult{}, err
+	}
+	return cca.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 // Accounts gets all the accounts in the token cache.
-func (cca *ConfidentialClientApplication) Accounts() []msalbase.Account {
-	return cca.clientApplication.getAccounts()
+func (cca Client) Accounts() []msalbase.Account {
+	return cca.GetAccounts()
 }

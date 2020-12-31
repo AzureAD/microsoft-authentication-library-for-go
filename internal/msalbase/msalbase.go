@@ -4,15 +4,22 @@
 package msalbase
 
 import (
+	"crypto"
+	"crypto/sha1"
+	"crypto/x509"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	jwt "github.com/dgrijalva/jwt-go"
 	uuid "github.com/google/uuid"
 )
 
@@ -238,136 +245,58 @@ func (endpoints AuthorityEndpoints) GetUserRealmEndpoint(username string) string
 	return fmt.Sprintf("https://%s/common/UserRealm/%s?api-version=1.0", endpoints.authorityHost, url.PathEscape(username))
 }
 
-// AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
-// or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult struct {
-	Account        Account
-	idToken        IDToken
-	AccessToken    string
-	ExpiresOn      time.Time
-	GrantedScopes  []string
-	DeclinedScopes []string
+// Credential represents the credential used in confidential client flows. This can be either
+// a Secret or Cert/Key.
+type Credential struct {
+	Secret string
+
+	Cert *x509.Certificate
+	Key  crypto.PrivateKey
+
+	mu        sync.Mutex
+	assertion string
+	expires   time.Time
 }
 
-// CreateAuthenticationResultFromStorageTokenResponse creates an authenication result from a storage token response (which is generated from the cache).
-func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse StorageTokenResponse) (AuthenticationResult, error) {
-	if storageTokenResponse.AccessToken == nil {
-		return AuthenticationResult{}, errors.New("no access token present in cache")
+// JWT gets the jwt assertion when the credential is not using a secret.
+func (c *Credential) JWT(authParams AuthParametersInternal) (string, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	if c.expires.Before(time.Now()) && c.assertion != "" {
+		return c.assertion, nil
+	}
+	expires := time.Now().Add(5 * time.Minute)
+
+	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+		"aud": authParams.Endpoints.TokenEndpoint,
+		"exp": strconv.FormatInt(expires.Unix(), 10),
+		"iss": authParams.ClientID,
+		"jti": uuid.New().String(),
+		"nbf": strconv.FormatInt(time.Now().Unix(), 10),
+		"sub": authParams.ClientID,
+	})
+	token.Header = map[string]interface{}{
+		"alg": "RS256",
+		"typ": "JWT",
+		"x5t": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
 	}
 
-	account := storageTokenResponse.account
-	accessToken := storageTokenResponse.AccessToken.GetSecret()
-	expiresOn, err := ConvertStrUnixToUTCTime(storageTokenResponse.AccessToken.GetExpiresOn())
+	var err error
+	c.assertion, err = token.SignedString(c.Key)
 	if err != nil {
-		return AuthenticationResult{},
-			fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.GetExpiresOn())
+		return "", err
 	}
-	grantedScopes := strings.Split(storageTokenResponse.AccessToken.GetScopes(), scopeSeparator)
 
-	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
-	var idToken IDToken
-	if storageTokenResponse.IDToken != nil {
-		idToken, err = NewIDToken(storageTokenResponse.IDToken.GetSecret())
-		if err != nil {
-			return AuthenticationResult{}, err
-		}
-	}
-	return AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, nil}, nil
+	c.expires = expires
+	return c.assertion, err
 }
 
-// CreateAuthenticationResult creates an AuthenticationResult.
-// TODO(jdoak): Make this a method on TokenResponse() that takes only 1 arge, Account.
-func CreateAuthenticationResult(tokenResponse TokenResponse, account Account) (AuthenticationResult, error) {
-	if len(tokenResponse.declinedScopes) > 0 {
-		return AuthenticationResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.declinedScopes, ","))
-	}
-	return AuthenticationResult{
-		Account:       account,
-		idToken:       tokenResponse.IDToken,
-		AccessToken:   tokenResponse.AccessToken,
-		ExpiresOn:     tokenResponse.ExpiresOn,
-		GrantedScopes: tokenResponse.GrantedScopes,
-	}, nil
-}
-
-//GetAccessToken returns the access token of the authentication result
-func (ar AuthenticationResult) GetAccessToken() string {
-	return ar.AccessToken
-}
-
-// GetAccount returns the account of the authentication result
-func (ar AuthenticationResult) GetAccount() Account {
-	return ar.Account
-}
-
-// ClientCredentialType refers to the type of credential used for confidential client flows.
-type ClientCredentialType int
-
-// Values for ClientCredentialType.
-// TODO(jdoak): This looks suspect.
-const (
-	ClientCredentialSecret ClientCredentialType = iota
-	ClientCredentialAssertion
-)
-
-// ClientCredential represents the credential used in confidential client flows.
-type ClientCredential struct {
-	clientSecret    string
-	clientAssertion *ClientAssertion
-	credentialType  ClientCredentialType
-}
-
-// CreateClientCredentialFromSecret creates a ClientCredential instance from a secret.
-func CreateClientCredentialFromSecret(secret string) (ClientCredential, error) {
-	if secret == "" {
-		return ClientCredential{}, errors.New("client secret can't be blank")
-	}
-	return ClientCredential{clientSecret: secret, clientAssertion: nil, credentialType: ClientCredentialSecret}, nil
-}
-
-// CreateClientCredentialFromCertificate creates a ClientCredential instance from a certificate (thumbprint and private key).
-func CreateClientCredentialFromCertificate(thumbprint string, key []byte) (ClientCredential, error) {
-	if thumbprint == "" || len(key) == 0 {
-		return ClientCredential{}, errors.New("thumbprint can't be blank or private key can't be empty")
-	}
-	return ClientCredential{
-		clientAssertion: CreateClientAssertionFromCertificate(thumbprint, key),
-		credentialType:  ClientCredentialAssertion,
-	}, nil
-}
-
-// CreateClientCredentialFromCertificateObject creates a ClientCredential instance from a ClientCertificate instance.
-func CreateClientCredentialFromCertificateObject(cert *ClientCertificate) ClientCredential {
-	return ClientCredential{
-		clientAssertion: CreateClientAssertionFromCertificateObject(cert),
-		credentialType:  ClientCredentialAssertion,
-	}
-}
-
-// CreateClientCredentialFromAssertion creates a ClientCredential instance from an assertion JWT.
-func CreateClientCredentialFromAssertion(assertion string) (ClientCredential, error) {
-	if assertion == "" {
-		return ClientCredential{}, errors.New("assertion can't be blank")
-	}
-	return ClientCredential{
-		clientAssertion: CreateClientAssertionFromJWT(assertion),
-		credentialType:  ClientCredentialAssertion,
-	}, nil
-}
-
-// GetCredentialType returns the type of the ClientCredential.
-func (cred ClientCredential) GetCredentialType() ClientCredentialType {
-	return cred.credentialType
-}
-
-// GetSecret returns the secret of ClientCredential instance.
-func (cred ClientCredential) GetSecret() string {
-	return cred.clientSecret
-}
-
-// GetAssertion returns the assertion of the ClientCredential instance.
-func (cred ClientCredential) GetAssertion() *ClientAssertion {
-	return cred.clientAssertion
+// thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.
+// https://tools.ietf.org/html/rfc7517#section-4.8
+func thumbprint(cert *x509.Certificate) []byte {
+	a := sha1.Sum(cert.Raw)
+	return a[:]
 }
 
 // DeviceCodeResult stores the response from the STS device code endpoint.
@@ -431,24 +360,6 @@ func (dcr DeviceCodeResult) GetClientID() string {
 // GetScopes returns the scopes used to request access a protected API.
 func (dcr DeviceCodeResult) GetScopes() []string {
 	return dcr.scopes
-}
-
-// StorageTokenResponse mimics a token response that was pulled from the cache.
-type StorageTokenResponse struct {
-	RefreshToken Credential
-	AccessToken  accessTokenProvider
-	IDToken      Credential
-	account      Account
-}
-
-// CreateStorageTokenResponse creates a token response from cache.
-func CreateStorageTokenResponse(accessToken accessTokenProvider, refreshToken Credential, idToken Credential, account Account) StorageTokenResponse {
-	return StorageTokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		IDToken:      idToken,
-		account:      account,
-	}
 }
 
 // UserRealmAccountType refers to the type of user realm.
@@ -571,7 +482,7 @@ type TokenResponse struct {
 	IDToken        IDToken
 	FamilyID       string
 	GrantedScopes  []string
-	declinedScopes []string
+	DeclinedScopes []string
 	ExpiresOn      time.Time
 	ExtExpiresOn   time.Time
 	rawClientInfo  string
@@ -667,7 +578,7 @@ func CreateTokenResponse(authParameters AuthParametersInternal, resp *http.Respo
 		ExpiresOn:         expiresOn,
 		ExtExpiresOn:      extExpiresOn,
 		GrantedScopes:     grantedScopes,
-		declinedScopes:    declinedScopes,
+		DeclinedScopes:    declinedScopes,
 		rawClientInfo:     rawClientInfo,
 		ClientInfo:        clientInfo,
 	}
@@ -733,7 +644,7 @@ func CreateTokenResponse2(authParameters AuthParametersInternal, payload TokenRe
 		ExpiresOn:         expiresOn,
 		ExtExpiresOn:      extExpiresOn,
 		GrantedScopes:     grantedScopes,
-		declinedScopes:    declinedScopes,
+		DeclinedScopes:    declinedScopes,
 		rawClientInfo:     rawClientInfo,
 		ClientInfo:        clientInfo,
 	}

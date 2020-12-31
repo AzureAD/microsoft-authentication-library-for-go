@@ -217,7 +217,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 
 func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 	at := new(MockAccessToken)
-	id := new(MockCredential)
+	id := &Credential{Secret: "x.e30"}
 	acc := Account{}
 	atSecret := "secret"
 	storageToken := StorageTokenResponse{
@@ -228,7 +228,6 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 	at.On("GetSecret").Return(atSecret)
 	at.On("GetExpiresOn").Return("1592049600")
 	at.On("GetScopes").Return("profile openid user.read")
-	id.On("GetSecret").Return("x.e30")
 	expAuthResult := AuthenticationResult{
 		Account:       acc,
 		AccessToken:   atSecret,

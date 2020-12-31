@@ -27,6 +27,10 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
 )
 
+// AuthenticationResult contains the results of one token acquisition operation.
+// For details see https://aka.ms/msal-net-authenticationresult
+type AuthenticationResult = client.AuthenticationResult
+
 // Options configures the Client's behavior.
 type Options struct {
 	// Accessor controls cache persistence. By default there is no cache persistence.
@@ -113,7 +117,7 @@ func SilentAccount(account msalbase.Account) AcquireTokenSilentOption {
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
-func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (msalbase.AuthenticationResult, error) {
+func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthenticationResult, error) {
 	opts := AcquireTokenSilentOptions{}
 	for _, o := range options {
 		o(&opts)
@@ -128,17 +132,9 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	return pca.Base.AcquireTokenSilent(ctx, silentParameters)
 }
 
-// AcquireTokenUsernamePasswordParameters contains the parameters required to acquire an access token using a username and password.
-type acquireTokenUsernamePasswordParameters struct {
-	scopes   []string
-	username string
-	password string
-}
-
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
-// Users need to create an AcquireTokenUsernamePasswordParameters instance and pass it in.
 // NOTE: this flow is NOT recommended.
-func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (msalbase.AuthenticationResult, error) {
+func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthenticationResult, error) {
 	authParams := pca.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = msalbase.AuthorizationTypeUsernamePassword
@@ -147,7 +143,7 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 
 	token, err := pca.Base.Token.UsernamePassword(ctx, authParams)
 	if err != nil {
-		return msalbase.AuthenticationResult{}, nil
+		return AuthenticationResult{}, nil
 	}
 	return pca.Base.AuthResultFromToken(ctx, authParams, token, true)
 }
@@ -168,10 +164,10 @@ type DeviceCode struct {
 // AuthenticationResult retreives the AuthenticationResult once the user enters the code
 // on the second device. Until then it blocks until the .AcquireTokenByDeviceCode() context
 // is cancelled or the token expires.
-func (d DeviceCode) AuthenticationResult() (msalbase.AuthenticationResult, error) {
+func (d DeviceCode) AuthenticationResult() (AuthenticationResult, error) {
 	token, err := d.dc.Token()
 	if err != nil {
-		return msalbase.AuthenticationResult{}, err
+		return AuthenticationResult{}, err
 	}
 	return d.client.AuthResultFromToken(d.ctx, d.authParams, token, true)
 }
@@ -223,13 +219,13 @@ func CodeChallenge(code, challenge string) AcquireTokenByAuthCodeOption {
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (msalbase.AuthenticationResult, error) {
+func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthenticationResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		o(&opts)
 	}
 	if err := opts.validate(); err != nil {
-		return msalbase.AuthenticationResult{}, err
+		return AuthenticationResult{}, err
 	}
 
 	params := client.AcquireTokenAuthCodeParameters{

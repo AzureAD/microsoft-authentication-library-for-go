@@ -34,7 +34,7 @@ func (f *fakeManager) Read(ctx context.Context, authParameters msalbase.AuthPara
 	rt.On("GetSecret").Return("secret")
 	id.On("GetSecret").Return("secret")
 
-	return msalbase.CreateStorageTokenResponse(at, rt, id, msalbase.Account{}), nil
+	return storage.NewStorageTokenResponse(at, rt, id, msalbase.Account{}), nil
 }
 
 func (f *fakeManager) Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
