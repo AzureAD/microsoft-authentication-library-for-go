@@ -21,8 +21,14 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
 )
+
+// getAadinstanceDiscoveryResponser is provider to allow for faking in tests.
+// It is always implemented in production by ops/authority.Client
+type getAadinstanceDiscoveryResponser interface {
+	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error)
+}
 
 // TODO(someone): This thing does not expire tokens.
 
@@ -30,14 +36,18 @@ import (
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
 type Manager struct {
-	contract atomic.Value // Stores a *Contract
+	contract atomic.Value                     // Stores a *Contract
+	rest     getAadinstanceDiscoveryResponser // authority.Client
 
 	mu sync.Mutex
+
+	cacheMu  sync.Mutex
+	aadCache map[string]authority.InstanceDiscoveryMetadata
 }
 
 // New is the constructor for Manager.
-func New() *Manager {
-	m := &Manager{}
+func New(authorityClient authority.Client) *Manager {
+	m := &Manager{rest: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract.Store(NewContract())
 	return m
 }
@@ -66,13 +76,13 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
+func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
-	aadInstanceDiscovery := requests.CreateAadInstanceDiscovery(webRequestManager)
-	metadata, err := aadInstanceDiscovery.GetMetadataEntry(ctx, authParameters.AuthorityInfo)
+
+	metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
 	if err != nil {
 		return msalbase.StorageTokenResponse{}, err
 	}
@@ -190,6 +200,44 @@ func (m *Manager) Write(authParameters msalbase.AuthParametersInternal, tokenRes
 // Contract returns the Contract for read operations.
 func (m *Manager) Contract() *Contract {
 	return m.contract.Load().(*Contract)
+}
+
+func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryMetadata, error) {
+	m.cacheMu.Lock()
+	defer m.cacheMu.Unlock()
+
+	if metadata, ok := m.aadCache[authorityInfo.Host]; ok {
+		return metadata, nil
+	}
+	metadata, err := m.aadMetadata(ctx, authorityInfo)
+	if err != nil {
+		return authority.InstanceDiscoveryMetadata{}, err
+	}
+	return metadata, nil
+}
+
+func (m *Manager) aadMetadata(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryMetadata, error) {
+	discoveryResponse, err := m.rest.GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
+	if err != nil {
+		return authority.InstanceDiscoveryMetadata{}, err
+	}
+
+	for _, metadataEntry := range discoveryResponse.Metadata {
+		metadataEntry.TenantDiscoveryEndpoint = discoveryResponse.TenantDiscoveryEndpoint
+		for _, aliasedAuthority := range metadataEntry.Aliases {
+			m.aadCache[aliasedAuthority] = metadataEntry
+		}
+	}
+	// TODO(msal): Don't understand this logic.  We query fir this data, we enter all the data that
+	// the server has.  If our host was not detailed by the server, we just insert it???
+	// This is either broken or needs to be explained with a comment.
+	if _, ok := m.aadCache[authorityInfo.Host]; !ok {
+		m.aadCache[authorityInfo.Host] = authority.InstanceDiscoveryMetadata{
+			PreferredNetwork: authorityInfo.Host,
+			PreferredCache:   authorityInfo.Host,
+		}
+	}
+	return m.aadCache[authorityInfo.Host], nil
 }
 
 func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessToken, error) {

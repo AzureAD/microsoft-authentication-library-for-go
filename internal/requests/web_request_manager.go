@@ -3,6 +3,7 @@
 
 package requests
 
+/*
 import (
 	"context"
 	"net/url"
@@ -27,3 +28,4 @@ type WebRequestManager interface {
 	GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurationEndpoint string) (TenantDiscoveryResponse, error)
 	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryResponse, error)
 }
+*/

@@ -13,7 +13,6 @@ import (
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -140,7 +139,7 @@ func TestGetTenantDiscoveryResponse(t *testing.T) {
 		{
 			desc:     "Success",
 			endpoint: "endpoint",
-			resp:     &requests.TenantDiscoveryResponse{},
+			resp:     &TenantDiscoveryResponse{},
 		},
 	}
 
@@ -193,7 +192,7 @@ func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
 				"api-version":            []string{"1.1"},
 				"authorization_endpoint": []string{fmt.Sprintf(msalbase.AuthorizationEndpoint, "host", "tenant")},
 			},
-			resp: &requests.InstanceDiscoveryResponse{},
+			resp: &InstanceDiscoveryResponse{},
 		},
 		{
 			desc:     "Success with authorityInfo.Host in trusted list",
@@ -206,7 +205,7 @@ func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
 				"api-version":            []string{"1.1"},
 				"authorization_endpoint": []string{fmt.Sprintf(msalbase.AuthorizationEndpoint, "login.microsoftonline.de", "tenant")},
 			},
-			resp: &requests.InstanceDiscoveryResponse{},
+			resp: &InstanceDiscoveryResponse{},
 		},
 	}
 

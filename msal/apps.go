@@ -3,18 +3,19 @@
 
 package msal
 
-import (
-	"context"
-	"errors"
-	"net/http"
-	"reflect"
-	"time"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
+/*
+// This defines shared resources for accessing remove services.
+var (
+	token      *requests.Token
+	rest       *ops.REST
+	aeResolver *resolvers.AuthorityEndpoint
 )
+
+func init() {
+	rest = ops.New()
+	aeResolver = resolvers.New(rest)
+	token = requests.NewToken(aeResolver)
+}
 
 type noopCacheAccessor struct{}
 
@@ -24,29 +25,32 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error)
+	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.StorageTokenResponse, error)
 	Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
 	GetAllAccounts() ([]msalbase.Account, error)
 }
 
 type clientApplication struct {
-	webRequestManager           requests.WebRequestManager
+	rest    *ops.REST
+	token   *requests.Token
+	manager manager // *storage.Manager or fakeManager in tests
+
 	clientApplicationParameters *clientApplicationParameters
-	manager                     manager // *storage.Manager or fakeManager in tests
 	cacheAccessor               cache.ExportReplace
 }
 
-func createClientApplication(httpClient HTTPClient, clientID string, authority string) (*clientApplication, error) {
-	params, err := createClientApplicationParameters(clientID, authority)
+func newClientApp(clientID string, authority string) (clientApplication, error) {
+	params, err := newClientAppParameters(clientID, authority)
 	if err != nil {
 		return nil, err
 	}
 
-	return &clientApplication{
-		webRequestManager:           createWebRequestManager(httpClient),
+	return clientApplication{
+		rest:                        rest,
+		token:                       token,
 		clientApplicationParameters: params,
 		cacheAccessor:               noopCacheAccessor{},
-		manager:                     storage.New(),
+		manager:                     storage.New(rest.Authority()),
 	}, nil
 }
 
@@ -64,7 +68,7 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 		defer client.cacheAccessor.Export(s)
 	}
 
-	storageTokenResponse, err := client.manager.Read(ctx, authParams, client.webRequestManager)
+	storageTokenResponse, err := client.manager.Read(ctx, authParams)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
 	}
@@ -87,12 +91,17 @@ func (client *clientApplication) acquireTokenSilent(ctx context.Context, silent 
 func (client *clientApplication) acquireTokenByAuthCode(ctx context.Context, authCodeParams *acquireTokenAuthCodeParameters) (msalbase.AuthenticationResult, error) {
 	authParams := client.clientApplicationParameters.createAuthenticationParameters()
 	authCodeParams.augmentAuthenticationParameters(&authParams)
-	req := requests.CreateAuthCodeRequest(client.webRequestManager, authParams, authCodeParams.requestType)
-	req.Code = authCodeParams.Code
-	req.CodeChallenge = authCodeParams.CodeChallenge
-	if req.RequestType == requests.AuthCodeConfidential {
-		req.ClientCredential = authCodeParams.clientCredential
+
+	var cc msalbase.ClientCredential
+	if authCodeParams.requestType == requests.AuthCodeConfidential {
+		cc = authCodeParams.clientCredential
 	}
+
+	req, err := requests.NewCodeChallengeRequest(authParams, authCodeParams.requestType, cc, authCodeParams.Code, authCodeParams.CodeChallenge)
+	if err != nil {
+		return msalbase.AuthenticationResult{}, err
+	}
+
 	return client.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 }
 
@@ -114,7 +123,6 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 		return msalbase.AuthenticationResult{}, err
 	}
 
-	// TODO(jdoak): Think about removing this after refactor.
 	if s, ok := client.manager.(cache.Serializer); ok {
 		client.cacheAccessor.Replace(s)
 		defer client.cacheAccessor.Export(s)
@@ -140,6 +148,9 @@ func (client *clientApplication) getAccounts() []msalbase.Account {
 	}
 	return accounts
 }
+*/
+
+/*
 
 // PublicClientApplicationOptions configures the PublicClientApplication's behavior.
 type PublicClientApplicationOptions struct {
@@ -149,36 +160,28 @@ type PublicClientApplicationOptions struct {
 
 	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
 	Authority string
-
-	// Client sets the transport for making HTTP requests.
-	// Leave this as nil to use the default HTTP transport.
-	HTTPClient HTTPClient
 }
 
-// DefaultPublicClientApplicationOptions returns an instance of PublicClientApplicationOptions initialized with default values.
-func DefaultPublicClientApplicationOptions() PublicClientApplicationOptions {
-	return PublicClientApplicationOptions{
-		Authority:  authorityPublicCloud,
-		HTTPClient: http.DefaultClient,
+func (p *PublicClientApplicationOptions) defaults() {
+	if p.Authority == "" {
+		p.Authority = authorityPublicCloud
 	}
 }
+
+
 
 // PublicClientApplication is a representation of public client applications.
 // These are apps that run on devices or desktop computers or in a web browser and are not trusted to safely keep application secrets.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications.
 type PublicClientApplication struct {
-	clientApplication *clientApplication
+	clientApplication
 }
 
 // NewPublicClientApplication creates a PublicClientApplication instance given a client ID and authority URL.
-// Pass nil for options to accept the default values; this is the same as passing the result
-// from a call to DefaultPublicClientApplicationOptions().
-func NewPublicClientApplication(clientID string, options *PublicClientApplicationOptions) (*PublicClientApplication, error) {
-	if options == nil {
-		def := DefaultPublicClientApplicationOptions()
-		options = &def
-	}
-	clientApp, err := createClientApplication(options.HTTPClient, clientID, options.Authority)
+func NewPublicClientApplication(clientID string, options PublicClientApplicationOptions) (*PublicClientApplication, error) {
+	options.defaults()
+
+	clientApp, err := newClientApp(clientID, options.Authority)
 	if err != nil {
 		return nil, err
 	}
@@ -242,7 +245,9 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(ctx context.Context, 
 func (pca *PublicClientApplication) Accounts() []msalbase.Account {
 	return pca.clientApplication.getAccounts()
 }
+*/
 
+/*
 // AcquireTokenSilentOptions contains the optional parameters to acquire a token silently (from cache).
 type AcquireTokenSilentOptions struct {
 	// Account specifies the account to use when acquiring a token from the cache.
@@ -260,7 +265,9 @@ type AcquireTokenByAuthCodeOptions struct {
 	Code          string
 	CodeChallenge string
 }
+*/
 
+/*
 // ConfidentialClientApplicationOptions configures the PublicClientApplication's behavior.
 type ConfidentialClientApplicationOptions struct {
 	// Accessor controls cache persistence.
@@ -269,17 +276,11 @@ type ConfidentialClientApplicationOptions struct {
 
 	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
 	Authority string
-
-	// Client sets the transport for making HTTP requests.
-	// Leave this as nil to use the default HTTP transport.
-	HTTPClient HTTPClient
 }
 
-// DefaultConfidentialClientApplicationOptions returns an instance of ConfidentialClientApplicationOptions initialized with default values.
-func DefaultConfidentialClientApplicationOptions() ConfidentialClientApplicationOptions {
-	return ConfidentialClientApplicationOptions{
-		Authority:  authorityPublicCloud,
-		HTTPClient: http.DefaultClient,
+func (c *ConfidentialClientApplicationOptions) defaults() {
+	if c.Authority == "" {
+		c.Authority = authorityPublicCloud
 	}
 }
 
@@ -293,24 +294,22 @@ type ConfidentialClientApplication struct {
 }
 
 // NewConfidentialClientApplication creates a ConfidentialClientApplication instance given a client ID, authority URL and client credential.
-// Pass nil for options to accept the default values; this is the same as passing the result
-// from a call to DefaultConfidentialClientApplicationOptions().
-func NewConfidentialClientApplication(clientID string, clientCredential ClientCredentialProvider, options *ConfidentialClientApplicationOptions) (*ConfidentialClientApplication, error) {
+func NewConfidentialClientApplication(clientID string, clientCredential ClientCredentialProvider, options ConfidentialClientApplicationOptions) (*ConfidentialClientApplication, error) {
+	options.defaults()
+
 	cred, err := createInternalClientCredential(clientCredential)
 	if err != nil {
 		return nil, err
 	}
-	if options == nil {
-		def := DefaultConfidentialClientApplicationOptions()
-		options = &def
-	}
-	clientApp, err := createClientApplication(options.HTTPClient, clientID, options.Authority)
+
+	clientApp, err := newClientApp(clientID, options.Authority)
 	if err != nil {
 		return nil, err
 	}
 	return &ConfidentialClientApplication{
 		clientApplication: clientApp,
 		clientCredential:  cred,
+		token:             token,
 	}, nil
 }
 
@@ -365,6 +364,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(ctx con
 	clientCredParams := createAcquireTokenClientCredentialParameters(scopes)
 	clientCredParams.augmentAuthenticationParameters(&authParams)
 
+	token.
 	req := requests.CreateClientCredentialRequest(cca.clientApplication.webRequestManager, authParams, cca.clientCredential)
 	return cca.clientApplication.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 }
@@ -373,7 +373,9 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(ctx con
 func (cca *ConfidentialClientApplication) Accounts() []msalbase.Account {
 	return cca.clientApplication.getAccounts()
 }
+*/
 
+/*
 // deviceCodeRequest stores the values required to request a token from the authority using device code flow
 type deviceCodeRequest struct {
 	webRequestManager  requests.WebRequestManager
@@ -440,3 +442,4 @@ func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCo
 	}
 	return msalbase.TokenResponse{}, errors.New("verification code expired before contacting the server")
 }
+*/

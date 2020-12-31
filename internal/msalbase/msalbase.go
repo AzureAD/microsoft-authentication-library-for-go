@@ -52,6 +52,24 @@ const (
 	DefaultHost               = "login.microsoftonline.com"
 )
 
+var aadTrustedHostList = map[string]bool{
+	"login.windows.net":            true, // Microsoft Azure Worldwide - Used in validation scenarios where host is not this list
+	"login.chinacloudapi.cn":       true, // Microsoft Azure China
+	"login.microsoftonline.de":     true, // Microsoft Azure Blackforest
+	"login-us.microsoftonline.com": true, // Microsoft Azure US Government - Legacy
+	"login.microsoftonline.us":     true, // Microsoft Azure US Government
+	"login.microsoftonline.com":    true, // Microsoft Azure Worldwide
+	"login.cloudgovapi.us":         true, // Microsoft Azure US Government
+}
+
+// TrustedHost checks if an AAD host is trusted/valid.
+func TrustedHost(host string) bool {
+	if _, ok := aadTrustedHostList[host]; ok {
+		return true
+	}
+	return false
+}
+
 type Account struct {
 	HomeAccountID     string `json:"home_account_id,omitempty"`
 	Environment       string `json:"environment,omitempty"`
@@ -353,6 +371,7 @@ func (cred ClientCredential) GetAssertion() *ClientAssertion {
 }
 
 // DeviceCodeResult stores the response from the STS device code endpoint.
+// TODO(jdoak): Make these attributes public, maybe remove .String().
 type DeviceCodeResult struct {
 	userCode        string
 	deviceCode      string

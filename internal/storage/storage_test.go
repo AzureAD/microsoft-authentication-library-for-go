@@ -5,6 +5,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"io/ioutil"
 	"reflect"
 	"sort"
@@ -12,7 +13,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -38,6 +39,24 @@ var (
 	accessTokenCred = msalbase.CredentialTypeAccessToken
 	rtCredType      = msalbase.CredentialTypeRefreshToken
 )
+
+func newForTest(authorityClient getAadinstanceDiscoveryResponser) *Manager {
+	m := &Manager{rest: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
+	m.contract.Store(NewContract())
+	return m
+}
+
+type fakeDiscoveryResponser struct {
+	err bool
+	ret authority.InstanceDiscoveryResponse
+}
+
+func (f *fakeDiscoveryResponser) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error) {
+	if f.err {
+		return authority.InstanceDiscoveryResponse{}, errors.New("error")
+	}
+	return f.ret, nil
+}
 
 func TestCheckAlias(t *testing.T) {
 	aliases := []string{"testOne", "testTwo", "testThree"}
@@ -73,7 +92,7 @@ func TestGetAllAccounts(t *testing.T) {
 		},
 	}
 
-	storageManager := New()
+	storageManager := New(authority.Client{})
 	storageManager.update(cache)
 
 	actualAccounts, err := storageManager.GetAllAccounts()
@@ -105,7 +124,7 @@ func TestDeleteAccounts(t *testing.T) {
 			testAccTwo.Key(): testAccTwo,
 		},
 	}
-	storageManager := New()
+	storageManager := newForTest(nil)
 	storageManager.update(cache)
 
 	err := storageManager.deleteAccounts("hid", []string{"hello", "env", "test"})
@@ -131,7 +150,7 @@ func TestReadAccessToken(t *testing.T) {
 			testAccessToken.Key(): testAccessToken,
 		},
 	}
-	storageManager := New()
+	storageManager := newForTest(nil)
 	storageManager.update(cache)
 
 	retAccessToken, err := storageManager.readAccessToken(
@@ -160,7 +179,7 @@ func TestReadAccessToken(t *testing.T) {
 }
 
 func TestWriteAccessToken(t *testing.T) {
-	storageManager := New()
+	storageManager := newForTest(nil)
 	testAccessToken := NewAccessToken(
 		"hid",
 		"env",
@@ -192,7 +211,7 @@ func TestReadAccount(t *testing.T) {
 			testAcc.Key(): testAcc,
 		},
 	}
-	storageManager := New()
+	storageManager := newForTest(nil)
 	storageManager.update(cache)
 
 	returnedAccount, err := storageManager.readAccount("hid", []string{"hello", "env", "test"}, "realm")
@@ -210,7 +229,7 @@ func TestReadAccount(t *testing.T) {
 }
 
 func TestWriteAccount(t *testing.T) {
-	storageManager := New()
+	storageManager := newForTest(nil)
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 
 	key := testAcc.Key()
@@ -231,7 +250,7 @@ func TestReadAppMetaData(t *testing.T) {
 			testAppMeta.Key(): testAppMeta,
 		},
 	}
-	storageManager := New()
+	storageManager := newForTest(nil)
 	storageManager.update(cache)
 
 	returnedAppMeta, err := storageManager.readAppMetaData([]string{"hello", "test", "env"}, "cid")
@@ -249,7 +268,7 @@ func TestReadAppMetaData(t *testing.T) {
 }
 
 func TestWriteAppMetaData(t *testing.T) {
-	storageManager := New()
+	storageManager := newForTest(nil)
 
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
 	key := testAppMeta.Key()
@@ -275,7 +294,7 @@ func TestReadIDToken(t *testing.T) {
 			testIDToken.Key(): testIDToken,
 		},
 	}
-	storageManager := New()
+	storageManager := newForTest(nil)
 	storageManager.update(cache)
 
 	returnedIDToken, err := storageManager.readIDToken(
@@ -304,7 +323,7 @@ func TestReadIDToken(t *testing.T) {
 }
 
 func TestWriteIDToken(t *testing.T) {
-	storageManager := New()
+	storageManager := newForTest(nil)
 	testIDToken := NewIDToken(
 		"hid",
 		"env",
@@ -542,7 +561,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 }
 
 func TestWriteRefreshToken(t *testing.T) {
-	storageManager := New()
+	storageManager := newForTest(nil)
 	testRefreshToken := NewRefreshToken(
 		"hid",
 		"env",
@@ -624,7 +643,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 		},
 	}
 
-	manager := New()
+	manager := newForTest(nil)
 	manager.update(contract)
 
 	_, err := manager.Marshal()
@@ -634,7 +653,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 }
 
 func TestUnmarshal(t *testing.T) {
-	manager := New()
+	manager := newForTest(nil)
 	b, err := ioutil.ReadFile(testFile)
 	if err != nil {
 		panic(err)
@@ -707,9 +726,9 @@ func TestIsAccessTokenValid(t *testing.T) {
 	}
 }
 
+// TODO(msal): I(jdoak) refactored this some to allow for a table driven approach. But I'm sure
+// this could use more functional testa dn
 func TestRead(t *testing.T) {
-	mockWebRequestManager := new(requests.MockWebRequestManager)
-
 	accessTokenCacheItem := NewAccessToken(
 		"hid",
 		"env",
@@ -721,21 +740,9 @@ func TestRead(t *testing.T) {
 		"openid profile",
 		"secret",
 	)
-	testIDToken := NewIDToken(
-		"hid",
-		"env",
-		"realm",
-		"cid",
-		"secret",
-	)
+	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
-	testRefreshToken := NewRefreshToken(
-		"hid",
-		"env",
-		"cid",
-		"secret",
-		"fid",
-	)
+	testRefreshToken := NewRefreshToken("hid", "env", "cid", "secret", "fid")
 	testAccount := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
 
 	contract := &Contract{
@@ -755,8 +762,6 @@ func TestRead(t *testing.T) {
 			accessTokenCacheItem.Key(): accessTokenCacheItem,
 		},
 	}
-	manager := New()
-	manager.update(contract)
 
 	authInfo := msalbase.AuthorityInfo{
 		Host:   "env",
@@ -768,31 +773,61 @@ func TestRead(t *testing.T) {
 		ClientID:      "cid",
 		Scopes:        []string{"openid", "profile"},
 	}
-	metadata1 := requests.InstanceDiscoveryMetadata{
-		Aliases: []string{"env", "alias2"},
-	}
-	metadata2 := requests.InstanceDiscoveryMetadata{
-		Aliases: []string{"alias3", "alias4"},
-	}
-	metadata := []requests.InstanceDiscoveryMetadata{metadata1, metadata2}
-	mockInstDiscResponse := requests.InstanceDiscoveryResponse{
-		TenantDiscoveryEndpoint: "tenant",
-		Metadata:                metadata,
-	}
-	mockWebRequestManager.On("GetAadinstanceDiscoveryResponse", authInfo).Return(mockInstDiscResponse, nil)
 
-	want := msalbase.CreateStorageTokenResponse(accessTokenCacheItem, testRefreshToken, testIDToken, testAccount)
-	got, err := manager.Read(context.Background(), authParameters, mockWebRequestManager)
-	if err != nil {
-		t.Fatalf("TestRead: got err == %s, want err == nil", err)
+	tests := []struct {
+		desc        string
+		discRespErr bool
+		discResp    authority.InstanceDiscoveryResponse
+		err         bool
+		want        msalbase.StorageTokenResponse
+	}{
+		{
+			desc:        "Error: AAD Discovery Fails",
+			discRespErr: true,
+			err:         true,
+		},
+		{
+			desc: "Success",
+			discResp: authority.InstanceDiscoveryResponse{
+				TenantDiscoveryEndpoint: "tenant",
+				Metadata: []authority.InstanceDiscoveryMetadata{
+					authority.InstanceDiscoveryMetadata{
+						Aliases: []string{"env", "alias2"},
+					},
+					authority.InstanceDiscoveryMetadata{
+						Aliases: []string{"alias3", "alias4"},
+					},
+				},
+			},
+			want: msalbase.CreateStorageTokenResponse(accessTokenCacheItem, testRefreshToken, testIDToken, testAccount),
+		},
 	}
-	if diff := pretty.Compare(want, got); diff != "" {
-		t.Errorf("TestRead: -want/+got:\n%s", diff)
+
+	for _, test := range tests {
+		responder := &fakeDiscoveryResponser{err: test.discRespErr, ret: test.discResp}
+		manager := newForTest(responder)
+		manager.update(contract)
+
+		got, err := manager.Read(context.Background(), authParameters)
+		switch {
+		case err == nil && test.err:
+			t.Errorf("TestRead(%s): got err == nil, want err != nil", test.desc)
+			continue
+		case err != nil && !test.err:
+			t.Errorf("TestRead(%s): got err == %s, want err == nil", test.desc, err)
+			continue
+		case err != nil:
+			continue
+		}
+
+		if diff := pretty.Compare(test.want, got); diff != "" {
+			t.Errorf("TestRead(%s): -want/+got:\n%s", test.desc, diff)
+		}
 	}
 }
 
 func TestWrite(t *testing.T) {
-	cacheManager := New()
+	cacheManager := newForTest(nil)
 	clientInfo := msalbase.ClientInfoJSONPayload{
 		UID:  "testUID",
 		Utid: "testUtid",

@@ -17,9 +17,9 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/wstrust"
 )
 
@@ -38,6 +38,26 @@ type urlFormCaller interface {
 }
 
 type createTokenResp func(authParameters msalbase.AuthParametersInternal, payload msalbase.TokenResponseJSONPayload) (msalbase.TokenResponse, error)
+
+// DeviceCodeResponse represents the HTTP response received from the device code endpoint
+type DeviceCodeResponse struct {
+	msalbase.OAuthResponseBase
+
+	UserCode        string `json:"user_code"`
+	DeviceCode      string `json:"device_code"`
+	VerificationURL string `json:"verification_url"`
+	ExpiresIn       int    `json:"expires_in"`
+	Interval        int    `json:"interval"`
+	Message         string `json:"message"`
+
+	AdditionalFields map[string]interface{}
+}
+
+// ToDeviceCodeResult converts the DeviceCodeResponse to a DeviceCodeResult
+func (dcr DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) msalbase.DeviceCodeResult {
+	expiresOn := time.Now().UTC().Add(time.Duration(dcr.ExpiresIn) * time.Second)
+	return msalbase.CreateDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
+}
 
 // Client represents the REST calls to get tokens from token generator backends.
 type Client struct {
@@ -123,7 +143,7 @@ func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters msalbase
 
 	endpoint := strings.Replace(authParameters.Endpoints.TokenEndpoint, "token", "devicecode", -1)
 
-	resp := requests.DeviceCodeResponse{}
+	resp := DeviceCodeResponse{}
 	err := c.Comm.URLFormCall(ctx, endpoint, qv, &resp)
 	if err != nil {
 		return msalbase.DeviceCodeResult{}, err

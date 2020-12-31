@@ -322,7 +322,7 @@ func (wrm *defaultWebRequestManager) GetAadinstanceDiscoveryResponse(ctx context
 	queryParams.Set("authorization_endpoint", fmt.Sprintf(msalbase.AuthorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
 
 	discoveryHost := msalbase.DefaultHost
-	if requests.IsInTrustedHostList(authorityInfo.Host) {
+	if requests.msalbase.TrustedHost(authorityInfo.Host) {
 		discoveryHost = authorityInfo.Host
 	}
 

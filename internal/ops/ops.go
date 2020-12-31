@@ -36,8 +36,8 @@ type REST struct {
 }
 
 // New is the constructor for REST.
-func New() (*REST, error) {
-	return &REST{client: comm.New(&http.Client{})}, nil
+func New() *REST {
+	return &REST{client: comm.New(&http.Client{})}
 }
 
 // Authority returns a client for querying information about various authorities.

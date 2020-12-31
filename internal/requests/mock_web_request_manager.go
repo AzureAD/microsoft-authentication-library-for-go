@@ -8,6 +8,7 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/wstrust"
 	"github.com/stretchr/testify/mock"
 )
@@ -71,12 +72,12 @@ func (mock *MockWebRequestManager) GetAccessTokenFromDeviceCodeResult(ctx contex
 	return args.Get(0).(msalbase.TokenResponse), args.Error(1)
 }
 
-func (mock *MockWebRequestManager) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurationEndpoint string) (TenantDiscoveryResponse, error) {
+func (mock *MockWebRequestManager) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurationEndpoint string) (authority.TenantDiscoveryResponse, error) {
 	args := mock.Called(openIDConfigurationEndpoint)
-	return args.Get(0).(TenantDiscoveryResponse), args.Error(1)
+	return args.Get(0).(authority.TenantDiscoveryResponse), args.Error(1)
 }
 
-func (mock *MockWebRequestManager) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryResponse, error) {
+func (mock *MockWebRequestManager) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error) {
 	args := mock.Called(authorityInfo)
-	return args.Get(0).(InstanceDiscoveryResponse), args.Error(1)
+	return args.Get(0).(authority.InstanceDiscoveryResponse), args.Error(1)
 }
