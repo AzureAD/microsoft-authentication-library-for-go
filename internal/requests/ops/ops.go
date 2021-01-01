@@ -20,10 +20,10 @@ import (
 	"net/http"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/internal/comm"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/internal/comm"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/wstrust"
 )
 
 // TODO(jdoak): After integration, remove:

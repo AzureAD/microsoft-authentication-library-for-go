@@ -15,7 +15,7 @@ import (
 	"sync"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops"
 )
 
 type cacheEntry struct {

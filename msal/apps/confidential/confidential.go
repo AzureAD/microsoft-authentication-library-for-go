@@ -16,7 +16,6 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/client"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
@@ -219,7 +218,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := client.New(clientID, opts.Authority, opts.Accessor, ops.New())
+	base, err := client.New(clientID, opts.Authority, opts.Accessor, requests.NewToken())
 	if err != nil {
 		return Client{}, err
 	}

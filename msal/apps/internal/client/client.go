@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
@@ -138,7 +137,6 @@ func (ar AuthenticationResult) GetAccount() msalbase.Account {
 // Base is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Base struct {
-	rest    *ops.REST
 	Token   *requests.Token
 	manager manager // *storage.Manager or fakeManager in tests
 
@@ -147,17 +145,14 @@ type Base struct {
 }
 
 // New is the constructor for Base.
-func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, rest *ops.REST) (Base, error) {
+func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *requests.Token) (Base, error) {
 	authInfo, err := msalbase.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return Base{}, err
 	}
 	authParams := msalbase.CreateAuthParametersInternal(clientID, authInfo)
 
-	token := requests.NewToken(rest)
-
 	return Base{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
-		rest:          rest,
 		Token:         token,
 		AuthParams:    authParams,
 		cacheAccessor: noopCacheAccessor{},

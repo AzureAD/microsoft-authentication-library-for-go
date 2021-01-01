@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/authority"
 )
 
 type resolveEndpointer interface {
@@ -73,9 +73,11 @@ type Token struct {
 }
 
 // NewToken is the constructor for Token.
-func NewToken(rest *ops.REST) *Token {
+func NewToken() *Token {
+	r := ops.New()
 	return &Token{
-		resolver: newAuthorityEndpoint(rest),
+		rest:     r,
+		resolver: newAuthorityEndpoint(r),
 	}
 }
 
