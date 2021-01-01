@@ -126,6 +126,8 @@ func (acc Account) GetEnvironment() string {
 	return acc.Environment
 }
 
+//go:generate stringer -type=AuthorizationType
+
 // AuthorizationType represents the type of token flow.
 type AuthorizationType int
 
@@ -361,6 +363,8 @@ func (dcr DeviceCodeResult) GetClientID() string {
 func (dcr DeviceCodeResult) GetScopes() []string {
 	return dcr.scopes
 }
+
+//go:generate stringer -type=UserRealmAccountType
 
 // UserRealmAccountType refers to the type of user realm.
 type UserRealmAccountType int

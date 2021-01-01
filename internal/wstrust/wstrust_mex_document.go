@@ -12,6 +12,8 @@ import (
 	"strings"
 )
 
+//go:generate stringer -type=wsEndpointType
+
 type wsEndpointType int
 
 const (

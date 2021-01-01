@@ -21,6 +21,8 @@ type resolveEndpointer interface {
 	ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error)
 }
 
+//go:generate stringer -type=AuthCodeRequestType
+
 // AuthCodeRequestType is whether the authorization code flow is for a public or confidential client
 type AuthCodeRequestType int
 
