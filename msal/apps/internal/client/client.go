@@ -16,7 +16,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/resolvers"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
 )
@@ -29,15 +28,13 @@ const (
 
 // This defines shared resources for accessing remove services.
 var (
-	token      *requests.Token
-	rest       *ops.REST
-	aeResolver *resolvers.AuthorityEndpoint
+	token *requests.Token
+	rest  *ops.REST
 )
 
 func init() {
 	rest = ops.New()
-	aeResolver = resolvers.New(rest)
-	token = requests.NewToken(aeResolver)
+	token = requests.NewToken(rest)
 }
 
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
@@ -86,53 +83,6 @@ type AcquireTokenAuthCodeParameters struct {
 	Challenge   string
 	RequestType requests.AuthCodeRequestType
 	Credential  *msalbase.Credential
-}
-
-// AuthCodeURL creates a URL used to acquire an authorization code.
-func AuthCodeURL(ctx context.Context, resolver *resolvers.AuthorityEndpoint, clientID, redirectURI string, scopes []string, authParams msalbase.AuthParametersInternal) (string, error) {
-	endpoints, err := resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, "")
-	if err != nil {
-		return "", err
-	}
-
-	baseURL, err := url.Parse(endpoints.AuthorizationEndpoint)
-	if err != nil {
-		return "", err
-	}
-
-	v := url.Values{}
-	v.Add("client_id", clientID)
-	v.Add("response_type", "code")
-	v.Add("redirect_uri", redirectURI)
-	v.Add("scope", strings.Join(scopes, " "))
-
-	// There were left over from an implementation that didn't use any of these.  We may
-	// need to add them later, but as of now aren't needed.
-	/*
-		if p.CodeChallenge != "" {
-			urlParams.Add("code_challenge", p.CodeChallenge)
-		}
-		if p.State != "" {
-			urlParams.Add("state", p.State)
-		}
-		if p.ResponseMode != "" {
-			urlParams.Add("response_mode", p.ResponseMode)
-		}
-		if p.Prompt != "" {
-			urlParams.Add("prompt", p.Prompt)
-		}
-		if p.LoginHint != "" {
-			urlParams.Add("login_hint", p.LoginHint)
-		}
-		if p.DomainHint != "" {
-			urlParams.Add("domain_hint", p.DomainHint)
-		}
-		if p.CodeChallengeMethod != "" {
-			urlParams.Add("code_challenge_method", p.CodeChallengeMethod)
-		}
-	*/
-	baseURL.RawQuery = v.Encode()
-	return baseURL.String(), nil
 }
 
 // AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
@@ -199,10 +149,9 @@ func (ar AuthenticationResult) GetAccount() msalbase.Account {
 // Base is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Base struct {
-	rest     *ops.REST
-	Token    *requests.Token
-	Resolver *resolvers.AuthorityEndpoint
-	manager  manager // *storage.Manager or fakeManager in tests
+	rest    *ops.REST
+	Token   *requests.Token
+	manager manager // *storage.Manager or fakeManager in tests
 
 	AuthParams    msalbase.AuthParametersInternal // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
 	cacheAccessor cache.ExportReplace
@@ -219,11 +168,57 @@ func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace
 	return Base{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
 		rest:          rest,
 		Token:         token,
-		Resolver:      aeResolver,
 		AuthParams:    authParams,
 		cacheAccessor: noopCacheAccessor{},
 		manager:       storage.New(rest.Authority()),
 	}, nil
+}
+
+// AuthCodeURL creates a URL used to acquire an authorization code.
+func (b Base) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, authParams msalbase.AuthParametersInternal) (string, error) {
+	endpoints, err := b.Token.ResolveEndpoints(ctx, authParams.AuthorityInfo, "")
+	if err != nil {
+		return "", err
+	}
+
+	baseURL, err := url.Parse(endpoints.AuthorizationEndpoint)
+	if err != nil {
+		return "", err
+	}
+
+	v := url.Values{}
+	v.Add("client_id", clientID)
+	v.Add("response_type", "code")
+	v.Add("redirect_uri", redirectURI)
+	v.Add("scope", strings.Join(scopes, " "))
+
+	// There were left over from an implementation that didn't use any of these.  We may
+	// need to add them later, but as of now aren't needed.
+	/*
+		if p.CodeChallenge != "" {
+			urlParams.Add("code_challenge", p.CodeChallenge)
+		}
+		if p.State != "" {
+			urlParams.Add("state", p.State)
+		}
+		if p.ResponseMode != "" {
+			urlParams.Add("response_mode", p.ResponseMode)
+		}
+		if p.Prompt != "" {
+			urlParams.Add("prompt", p.Prompt)
+		}
+		if p.LoginHint != "" {
+			urlParams.Add("login_hint", p.LoginHint)
+		}
+		if p.DomainHint != "" {
+			urlParams.Add("domain_hint", p.DomainHint)
+		}
+		if p.CodeChallengeMethod != "" {
+			urlParams.Add("code_challenge_method", p.CodeChallengeMethod)
+		}
+	*/
+	baseURL.RawQuery = v.Encode()
+	return baseURL.String(), nil
 }
 
 func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthenticationResult, error) {

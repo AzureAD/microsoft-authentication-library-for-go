@@ -5,7 +5,7 @@
 // tired at this point to do it. It, like many other *Manager code I found was broken because
 // they didn't have mutex protection.
 
-package resolvers
+package requests
 
 import (
 	"context"
@@ -28,21 +28,21 @@ func createcacheEntry(endpoints msalbase.AuthorityEndpoints) cacheEntry {
 }
 
 // AuthorityEndpoint retrieves endpoints from an authority for auth and token acquisition.
-type AuthorityEndpoint struct {
+type authorityEndpoint struct {
 	rest *ops.REST
 
 	mu    sync.Mutex
 	cache map[string]cacheEntry
 }
 
-// New is the constructor for AuthorityEndpoint.
-func New(rest *ops.REST) *AuthorityEndpoint {
-	m := &AuthorityEndpoint{rest: rest}
+// newAuthorityEndpoint is the constructor for AuthorityEndpoint.
+func newAuthorityEndpoint(rest *ops.REST) *authorityEndpoint {
+	m := &authorityEndpoint{rest: rest}
 	return m
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
-func (m *AuthorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
+func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
 	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {
 		return msalbase.AuthorityEndpoints{}, errors.New("UPN required for authority validation for ADFS")
 	}
@@ -78,7 +78,7 @@ func (m *AuthorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 }
 
 // cachedEndpoints returns a the cached endpoints if they exists. If not, we return false.
-func (m *AuthorityEndpoint) cachedEndpoints(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, bool) {
+func (m *authorityEndpoint) cachedEndpoints(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -96,7 +96,7 @@ func (m *AuthorityEndpoint) cachedEndpoints(authorityInfo msalbase.AuthorityInfo
 	return msalbase.AuthorityEndpoints{}, false
 }
 
-func (m *AuthorityEndpoint) addCachedEndpoints(authorityInfo msalbase.AuthorityInfo, userPrincipalName string, endpoints msalbase.AuthorityEndpoints) {
+func (m *authorityEndpoint) addCachedEndpoints(authorityInfo msalbase.AuthorityInfo, userPrincipalName string, endpoints msalbase.AuthorityEndpoints) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -119,7 +119,7 @@ func (m *AuthorityEndpoint) addCachedEndpoints(authorityInfo msalbase.AuthorityI
 	m.cache[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
-func (m *AuthorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
+func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
 	if authorityInfo.ValidateAuthority && !msalbase.TrustedHost(authorityInfo.Host) {
 		resp, err := m.rest.Authority().GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 		if err != nil {

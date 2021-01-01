@@ -231,7 +231,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 func (cca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return client.AuthCodeURL(ctx, cca.Resolver, clientID, redirectURI, scopes, cca.AuthParams)
+	return cca.Base.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.

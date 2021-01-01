@@ -13,7 +13,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/resolvers"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
 )
 
@@ -71,13 +70,18 @@ const (
 type Token struct {
 	resolver resolveEndpointer
 	rest     *ops.REST
-
-	//manager manager // *storage.Manager or fakeManager in tests
 }
 
 // NewToken is the constructor for Token.
-func NewToken(resolver *resolvers.AuthorityEndpoint) *Token {
-	return &Token{resolver: resolver}
+func NewToken(rest *ops.REST) *Token {
+	return &Token{
+		resolver: newAuthorityEndpoint(rest),
+	}
+}
+
+// ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance.
+func (t *Token) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
+	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
 // AuthCode requturns a token based on an authorization code.

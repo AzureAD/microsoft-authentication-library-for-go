@@ -96,7 +96,7 @@ func New(clientID string, options ...Option) (Client, error) {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
 func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return client.AuthCodeURL(ctx, pca.Resolver, clientID, redirectURI, scopes, pca.AuthParams)
+	return pca.Base.AuthCodeURL(ctx, clientID, redirectURI, scopes, pca.AuthParams)
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
