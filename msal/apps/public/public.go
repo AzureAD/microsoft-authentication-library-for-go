@@ -23,8 +23,8 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/client"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/cache"
 )
 
 // AuthenticationResult contains the results of one token acquisition operation.
