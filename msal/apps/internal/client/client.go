@@ -26,17 +26,6 @@ const (
 	scopeSeparator       = " "
 )
 
-// This defines shared resources for accessing remove services.
-var (
-	token *requests.Token
-	rest  *ops.REST
-)
-
-func init() {
-	rest = ops.New()
-	token = requests.NewToken(rest)
-}
-
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
@@ -158,19 +147,21 @@ type Base struct {
 }
 
 // New is the constructor for Base.
-func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace) (Base, error) {
+func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, rest *ops.REST) (Base, error) {
 	authInfo, err := msalbase.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return Base{}, err
 	}
 	authParams := msalbase.CreateAuthParametersInternal(clientID, authInfo)
 
+	token := requests.NewToken(rest)
+
 	return Base{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
 		rest:          rest,
 		Token:         token,
 		AuthParams:    authParams,
 		cacheAccessor: noopCacheAccessor{},
-		manager:       storage.New(rest.Authority()),
+		manager:       storage.New(token),
 	}, nil
 }
 

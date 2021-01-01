@@ -13,7 +13,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
 )
 
 type resolveEndpointer interface {
@@ -84,6 +84,10 @@ func (t *Token) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.Aut
 	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
+func (t *Token) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error) {
+	return t.rest.Authority().GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
+}
+
 // AuthCode requturns a token based on an authorization code.
 func (t *Token) AuthCode(ctx context.Context, req AuthCodeRequest) (msalbase.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &req.authParameters, ""); err != nil {
@@ -128,7 +132,7 @@ func (t *Token) Credential(ctx context.Context, authParams msalbase.AuthParamete
 	return t.rest.AccessTokens().GetAccessTokenWithAssertion(ctx, authParams, jwt)
 }
 
-func (t *Token) Refresh(ctx context.Context, authParams msalbase.AuthParametersInternal, cc *msalbase.Credential, refreshToken storage.RefreshToken, reqType RefreshTokenReqType) (msalbase.TokenResponse, error) {
+func (t *Token) Refresh(ctx context.Context, authParams msalbase.AuthParametersInternal, cc *msalbase.Credential, refreshToken msalbase.RefreshToken, reqType RefreshTokenReqType) (msalbase.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return msalbase.TokenResponse{}, err
 	}

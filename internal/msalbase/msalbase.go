@@ -475,6 +475,49 @@ type ClientInfoJSONPayload struct {
 	AdditionalFields map[string]interface{}
 }
 
+// RefreshToken is the JSON representation of a MSAL refresh token for encoding to storage.
+type RefreshToken struct {
+	HomeAccountID  string `json:"home_account_id,omitempty"`
+	Environment    string `json:"environment,omitempty"`
+	CredentialType string `json:"credential_type,omitempty"`
+	ClientID       string `json:"client_id,omitempty"`
+	FamilyID       string `json:"family_id,omitempty"`
+	Secret         string `json:"secret,omitempty"`
+	Realm          string `json:"realm,omitempty"`
+	Target         string `json:"target,omitempty"`
+
+	AdditionalFields map[string]interface{}
+}
+
+// NewRefreshToken is the constructor for RefreshToken.
+func NewRefreshToken(homeID, env, clientID, refreshToken, familyID string) RefreshToken {
+	return RefreshToken{
+		HomeAccountID:  homeID,
+		Environment:    env,
+		CredentialType: CredentialTypeRefreshToken,
+		ClientID:       clientID,
+		FamilyID:       familyID,
+		Secret:         refreshToken,
+	}
+}
+
+// Key outputs the key that can be used to uniquely look up this entry in a map.
+func (rt RefreshToken) Key() string {
+	var fourth = rt.FamilyID
+	if fourth == "" {
+		fourth = rt.ClientID
+	}
+
+	return strings.Join(
+		[]string{rt.HomeAccountID, rt.Environment, rt.CredentialType, fourth},
+		CacheKeySeparator,
+	)
+}
+
+func (rt RefreshToken) GetSecret() string {
+	return rt.Secret
+}
+
 // TokenResponse is the information that is returned from a token endpoint during a token acquisition flow.
 // TODO(jdoak): There is this tokenResponsePayload and TokenResponse.  This just needs a custom unmarshaller
 // and we can get rid of having two.

@@ -18,11 +18,11 @@ import (
 // the internal cache. This design is shared between MSAL versions in many languages.
 // This cannot be changed without design that includes other SDKs.
 type Contract struct {
-	AccessTokens  map[string]AccessToken      `json:"AccessToken"`
-	RefreshTokens map[string]RefreshToken     `json:"RefreshToken"`
-	IDTokens      map[string]IDToken          `json:"IdToken"`
-	Accounts      map[string]msalbase.Account `json:"Account"`
-	AppMetaData   map[string]AppMetaData      `json:"AppMetadata"`
+	AccessTokens  map[string]AccessToken           `json:"AccessToken"`
+	RefreshTokens map[string]msalbase.RefreshToken `json:"RefreshToken"`
+	IDTokens      map[string]IDToken               `json:"IdToken"`
+	Accounts      map[string]msalbase.Account      `json:"Account"`
+	AppMetaData   map[string]AppMetaData           `json:"AppMetadata"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -36,7 +36,7 @@ func NewContract() *Contract {
 func (c *Contract) copy() *Contract {
 	n := &Contract{
 		AccessTokens:     make(map[string]AccessToken, len(c.AccessTokens)),
-		RefreshTokens:    make(map[string]RefreshToken, len(c.RefreshTokens)),
+		RefreshTokens:    make(map[string]msalbase.RefreshToken, len(c.RefreshTokens)),
 		IDTokens:         make(map[string]IDToken, len(c.IDTokens)),
 		Accounts:         make(map[string]msalbase.Account, len(c.Accounts)),
 		AppMetaData:      make(map[string]AppMetaData, len(c.AppMetaData)),
@@ -226,47 +226,4 @@ func (a AppMetaData) Key() string {
 		[]string{"AppMetaData", a.Environment, a.ClientID},
 		msalbase.CacheKeySeparator,
 	)
-}
-
-// RefreshToken is the JSON representation of a MSAL refresh token for encoding to storage.
-type RefreshToken struct {
-	HomeAccountID  string `json:"home_account_id,omitempty"`
-	Environment    string `json:"environment,omitempty"`
-	CredentialType string `json:"credential_type,omitempty"`
-	ClientID       string `json:"client_id,omitempty"`
-	FamilyID       string `json:"family_id,omitempty"`
-	Secret         string `json:"secret,omitempty"`
-	Realm          string `json:"realm,omitempty"`
-	Target         string `json:"target,omitempty"`
-
-	AdditionalFields map[string]interface{}
-}
-
-// NewRefreshToken is the constructor for RefreshToken.
-func NewRefreshToken(homeID, env, clientID, refreshToken, familyID string) RefreshToken {
-	return RefreshToken{
-		HomeAccountID:  homeID,
-		Environment:    env,
-		CredentialType: msalbase.CredentialTypeRefreshToken,
-		ClientID:       clientID,
-		FamilyID:       familyID,
-		Secret:         refreshToken,
-	}
-}
-
-// Key outputs the key that can be used to uniquely look up this entry in a map.
-func (rt RefreshToken) Key() string {
-	var fourth = rt.FamilyID
-	if fourth == "" {
-		fourth = rt.ClientID
-	}
-
-	return strings.Join(
-		[]string{rt.HomeAccountID, rt.Environment, rt.CredentialType, fourth},
-		msalbase.CacheKeySeparator,
-	)
-}
-
-func (rt RefreshToken) GetSecret() string {
-	return rt.Secret
 }
