@@ -6,7 +6,8 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/client/internal/storage"
+
 	"github.com/kylelemons/godebug/pretty"
 )
 
