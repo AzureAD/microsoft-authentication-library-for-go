@@ -95,6 +95,53 @@ This is the general way to add a new feature to MSAL:
 - Add the higher level manipulations to requests.Token
 - Add your logic to the app/\<client\> and access the services via your requests.Token
 
+## Notable Differences To Other Clients
+
+### Confidential applications have a user ID
+
+The MSAL caching design is rather simple. These design decisions and the fact that multiple applications in different languages can share a cache mean it cannot be easily changed.
+
+Because of this, the entire cache contents of a confidential.Client is read and written on 
+almost any action to and from an external cache. 
+
+It is not clear to the user that a confidential client should be per user to prevent scalling
+problems. 
+
+Because we cannot change the MSAL cache design at this time, we want to make it clear that
+confidential.Client should be done per user. We felt this must go beyond a simple doc entry
+that can be ignored. Its great to say: "we told you in the doc", but that is AFTER a support call.
+
+To make it clear, we require the user to pass a userID field. This forces the user to read what
+a userID is. 
+
+### Use of x509.Certificate and CertFromPEM() function
+
+The original version of this package used an thumbprint and a private key to do authorizations
+based on a certificate. But there wasn't a real way to get a thumbprint.
+
+A thumbprint is defined in the Oauth spec, which we had to track down. It is an SHA-1 hash
+from the x509 certificate's DER encdoed ASN1 bytes. 
+
+Since the user was going to need the x509, we moved to having the user provide the x509.Certificate
+object. 
+
+We wrote the thumbprint creator for the internals. 
+
+Since we also require the private key and it is not straightforward to get, we added a CertFromPEM()
+function that will extract the x509.Certificate and private key as long as PEM is PKCS8 encoded. We
+probably could add PKCS1 support, but didn't.  We did support encrypted PEM.
+
+It should be noted that Keyvault stores things in PKCS12 and PEM. Keyvault is not straight forward
+in how it works. Frankly, I'm in serious doubt that a regular Go user can get certs out of
+Keyvault's Go API.  
+
+Before I began working on MSAL I was re-writing the Keyvault Go API.  https://github.com/element-of-surprise/keyvault . It does the right things to extract cers for TLS now. 
+I was still working on the Cert() API and hadn't exposed the public surface when I stopped.
+
+Since we have representation from the Go SDK team, we might have them go bridge this problem in
+the current implementation using some of that code so its possible for our users to store the
+cert in Keyvault.
+
 ## Notes:
 
 Do we need: AcquireTokenSilent()??  Seems like we could just bake this into other acquire calls automatically????
