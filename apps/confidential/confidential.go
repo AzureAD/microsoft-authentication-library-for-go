@@ -1,7 +1,7 @@
 /*
 Package confidential provides a client for authentication of "confidential" applications.
-A "confidential" application is defined as an app that run on servers. They're considered
-difficult to access, and for that reason capable of keeping an application secret.
+A "confidential" application is defined as an app that run on servers. They are considered
+difficult to access and for that reason capable of keeping an application secret.
 Confidential clients can hold configuration-time secrets.
 */
 package confidential
@@ -157,12 +157,16 @@ func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
 }
 
 // Client is a representation of authentication client for confidential applications as defined in the
-// package doc.
+// package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
 	client.Base
 
 	cred *msalbase.Credential
+
+	// userID is some unique identifier for a user. It actually isn't used by us at all, it
+	// simply acts as another hint that a confidential.Client is for a single user.
+	userID string
 }
 
 // Options are optional settings for New(). These options are set using various functions
@@ -207,8 +211,15 @@ func Accessor(accessor cache.ExportReplace) Option {
 	}
 }
 
-// New is the constructor for Client.
-func New(clientID string, cred Credential, options ...Option) (Client, error) {
+// tokener has a shared requests.Token object. I (jdoak) am not a fan. But at this point, that
+// object is internal/ and I don't want to pull it out. A confidential.Client is mean to be made
+// per user, so we don't want to be creating a bunch of requests.Token objects.
+var tokener = requests.NewToken()
+
+// New is the constructor for Client. userID is the unique identifier of the user this client
+// will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
+// the type of credential to use.
+func New(userID, clientID string, cred Credential, options ...Option) (Client, error) {
 	opts := Options{
 		Authority: client.AuthorityPublicCloud,
 	}
@@ -220,7 +231,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := client.New(clientID, opts.Authority, opts.Accessor, requests.NewToken())
+	base, err := client.New(clientID, opts.Authority, opts.Accessor, tokener)
 	if err != nil {
 		return Client{}, err
 	}
@@ -229,6 +240,11 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		Base: base,
 		cred: cred.toMSALBASE(),
 	}, nil
+}
+
+// UserID is the unique user identifier this client if for.
+func (cca Client) UserID() string {
+	return cca.userID
 }
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
