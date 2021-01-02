@@ -12,8 +12,8 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/authority"
 )
 
 type resolveEndpointer interface {

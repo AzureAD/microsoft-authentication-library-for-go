@@ -16,9 +16,9 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/client"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests"
 )
 
 /*

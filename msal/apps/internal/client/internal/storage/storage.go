@@ -21,8 +21,8 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/authority"
 )
 
 // getAadinstanceDiscoveryResponser is provider to allow for faking in tests.

@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/wstrust"
 	"github.com/kylelemons/godebug/pretty"
 )
 

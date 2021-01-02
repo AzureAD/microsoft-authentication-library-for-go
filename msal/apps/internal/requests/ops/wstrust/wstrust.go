@@ -16,7 +16,7 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/wstrust/internal/defs"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/wstrust/internal/defs"
 )
 
 type xmlCaller interface {
