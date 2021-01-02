@@ -51,6 +51,8 @@ put a PEM decoder into here.
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthenticationResult = client.AuthenticationResult
 
+type Account = msalbase.Account
+
 // CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
 // must have the public certificate and the private key encoded. The private key must be encoded
 // in PKCS8 (not PKCS1). This is usally denoted by the section "PRIVATE KEY" (instead of PKCS1's
@@ -238,14 +240,14 @@ func (cca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 // These are set by using various AcquireTokenSilentOption functions.
 type AcquireTokenSilentOptions struct {
 	// Account represents the account to use. To set, use the SilentAccount() option.
-	Account msalbase.Account
+	Account Account
 }
 
 // AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
 type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
 
 // SilentAccount uses the passed account during an AcquireTokenSilent() call.
-func SilentAccount(account msalbase.Account) AcquireTokenSilentOption {
+func SilentAccount(account Account) AcquireTokenSilentOption {
 	return func(a *AcquireTokenSilentOptions) {
 		a.Account = account
 	}
@@ -334,6 +336,6 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 }
 
 // Accounts gets all the accounts in the token cache.
-func (cca Client) Accounts() []msalbase.Account {
+func (cca Client) Accounts() []Account {
 	return cca.GetAccounts()
 }

@@ -56,7 +56,7 @@ type DeviceCodeResponse struct {
 // ToDeviceCodeResult converts the DeviceCodeResponse to a DeviceCodeResult
 func (dcr DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) msalbase.DeviceCodeResult {
 	expiresOn := time.Now().UTC().Add(time.Duration(dcr.ExpiresIn) * time.Second)
-	return msalbase.CreateDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
+	return msalbase.NewDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
 }
 
 // Client represents the REST calls to get tokens from token generator backends.
@@ -155,7 +155,7 @@ func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters msalbase
 func (c Client) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters msalbase.AuthParametersInternal, deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, msalbase.DeviceCodeGrant)
-	qv.Set(deviceCode, deviceCodeResult.GetDeviceCode())
+	qv.Set(deviceCode, deviceCodeResult.DeviceCode)
 	qv.Set(clientID, authParameters.ClientID)
 	qv.Set(clientInfo, clientInfoVal)
 	addScopeQueryParam(qv, authParameters)

@@ -240,9 +240,9 @@ func (t *Token) DeviceCode(ctx context.Context, authParams msalbase.AuthParamete
 	}
 
 	var cancel context.CancelFunc
-	dcr.GetExpiresOn().Sub(time.Now().UTC())
-	if deadline, ok := ctx.Deadline(); !ok || dcr.GetExpiresOn().Before(deadline) {
-		ctx, cancel = context.WithDeadline(ctx, dcr.GetExpiresOn())
+	dcr.ExpiresOn.Sub(time.Now().UTC())
+	if deadline, ok := ctx.Deadline(); !ok || dcr.ExpiresOn.Before(deadline) {
+		ctx, cancel = context.WithDeadline(ctx, dcr.ExpiresOn)
 	} else {
 		ctx, cancel = context.WithCancel(ctx)
 	}

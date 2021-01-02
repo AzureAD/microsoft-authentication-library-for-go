@@ -31,6 +31,8 @@ import (
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthenticationResult = client.AuthenticationResult
 
+type Account = msalbase.Account
+
 // Options configures the Client's behavior.
 type Options struct {
 	// Accessor controls cache persistence. By default there is no cache persistence.
@@ -103,14 +105,14 @@ func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 // These are set by using various AcquireTokenSilentOption functions.
 type AcquireTokenSilentOptions struct {
 	// Account represents the account to use. To set, use the SilentAccount() option.
-	Account msalbase.Account
+	Account Account
 }
 
 // AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
 type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
 
 // SilentAccount uses the passed account during an AcquireTokenSilent() call.
-func SilentAccount(account msalbase.Account) AcquireTokenSilentOption {
+func SilentAccount(account Account) AcquireTokenSilentOption {
 	return func(a *AcquireTokenSilentOptions) {
 		a.Account = account
 	}
@@ -153,13 +155,15 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 // once that code has been entered and verified.
 type DeviceCode struct {
 	// Result holds the information about the device code (such as the code).
-	Result msalbase.DeviceCodeResult
+	Result DeviceCodeResult
 
 	ctx        context.Context
 	authParams msalbase.AuthParametersInternal
 	client     Client
 	dc         requests.DeviceCode
 }
+
+type DeviceCodeResult = msalbase.DeviceCodeResult
 
 // AuthenticationResult retreives the AuthenticationResult once the user enters the code
 // on the second device. Until then it blocks until the .AcquireTokenByDeviceCode() context
@@ -240,6 +244,6 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 
 // Accounts gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
-func (pca Client) Accounts() []msalbase.Account {
+func (pca Client) Accounts() []Account {
 	return pca.GetAccounts()
 }

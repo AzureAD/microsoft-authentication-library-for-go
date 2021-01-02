@@ -509,7 +509,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 			desc:    "Error: comm returns error",
 			err:     true,
 			commErr: true,
-			deviceCodeResult: msalbase.CreateDeviceCodeResult(
+			deviceCodeResult: msalbase.NewDeviceCodeResult(
 				"userCode",
 				"deviceCode",
 				"verificationURL",
@@ -528,7 +528,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 		},
 		{
 			desc: "Success",
-			deviceCodeResult: msalbase.CreateDeviceCodeResult(
+			deviceCodeResult: msalbase.NewDeviceCodeResult(
 				"userCode",
 				"deviceCode",
 				"verificationURL",

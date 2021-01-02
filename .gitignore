@@ -4,6 +4,7 @@
 *.dll
 *.so
 *.dylib
+*.golangci.yml
 
 # OSX specific os files
 *.DS_Store
