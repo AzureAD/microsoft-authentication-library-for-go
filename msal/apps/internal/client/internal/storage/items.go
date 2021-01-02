@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/msalbase"
 )
 
 // Contract is the JSON structure that is written to any storage medium when serializing

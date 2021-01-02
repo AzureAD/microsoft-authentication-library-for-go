@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/msalbase"
 	uuid "github.com/google/uuid"
 )
 

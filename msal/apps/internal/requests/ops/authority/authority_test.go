@@ -12,7 +12,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/msalbase"
 	"github.com/kylelemons/godebug/pretty"
 )
 

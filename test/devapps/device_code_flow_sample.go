@@ -9,8 +9,8 @@ import (
 	"log"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/msalbase"
 )
 
 func deviceCodeCallback(deviceCodeResult msal.DeviceCodeResultProvider) {

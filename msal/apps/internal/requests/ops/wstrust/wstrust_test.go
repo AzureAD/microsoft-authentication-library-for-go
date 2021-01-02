@@ -15,7 +15,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/wstrust"
 	"github.com/kylelemons/godebug/diff"
 	"github.com/kylelemons/godebug/pretty"

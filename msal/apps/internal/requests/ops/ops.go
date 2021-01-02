@@ -19,7 +19,7 @@ package ops
 import (
 	"net/http"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/requests/ops/internal/comm"
