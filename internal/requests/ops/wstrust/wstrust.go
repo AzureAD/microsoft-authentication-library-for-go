@@ -16,12 +16,17 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests/ops/wstrust/internal/defs"
 )
 
 type xmlCaller interface {
 	XMLCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, resp interface{}) error
 	SOAPCall(ctx context.Context, endpoint, action string, headers http.Header, qv url.Values, body string, resp interface{}) error
+}
+
+type SamlTokenInfo struct {
+	AssertionType string // Should be either constants SAMLV1Grant or SAMLV2Grant.
+	Assertion     string
 }
 
 // Client represents the REST calls to get tokens from token generator backends.
@@ -31,8 +36,8 @@ type Client struct {
 }
 
 // GetMex provides metadata about a wstrust service.
-func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (wstrust.MexDocument, error) {
-	resp := wstrust.Definitions{}
+func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
+	resp := defs.Definitions{}
 	err := c.Comm.XMLCall(
 		ctx,
 		federationMetadataURL,
@@ -41,10 +46,10 @@ func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (wstru
 		&resp,
 	)
 	if err != nil {
-		return wstrust.MexDocument{}, err
+		return defs.MexDocument{}, err
 	}
 
-	return wstrust.CreateWsTrustMexDocumentFromDef(resp)
+	return defs.CreateWsTrustMexDocumentFromDef(resp)
 }
 
 const (
@@ -60,7 +65,7 @@ const (
 )
 
 // GetSAMLTokenInfo provides SAML information that is used to generate a SAML token.
-func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters msalbase.AuthParametersInternal, cloudAudienceURN string, endpoint wstrust.Endpoint) (wstrust.SamlTokenInfo, error) {
+func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters msalbase.AuthParametersInternal, cloudAudienceURN string, endpoint defs.Endpoint) (SamlTokenInfo, error) {
 	var wsTrustRequestMessage string
 	var err error
 
@@ -68,32 +73,32 @@ func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters msalbase.Au
 	case msalbase.AuthorizationTypeWindowsIntegratedAuth:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageWIA(cloudAudienceURN)
 		if err != nil {
-			return wstrust.SamlTokenInfo{}, err
+			return SamlTokenInfo{}, err
 		}
 	case msalbase.AuthorizationTypeUsernamePassword:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageUsernamePassword(
 			cloudAudienceURN, authParameters.Username, authParameters.Password)
 		if err != nil {
-			return wstrust.SamlTokenInfo{}, err
+			return SamlTokenInfo{}, err
 		}
 	default:
-		return wstrust.SamlTokenInfo{}, fmt.Errorf("unknown auth type %v", authParameters.AuthorizationType)
+		return SamlTokenInfo{}, fmt.Errorf("unknown auth type %v", authParameters.AuthorizationType)
 	}
 
 	var soapAction string
 	switch endpoint.EndpointVersion {
-	case wstrust.Trust13:
+	case defs.Trust13:
 		soapAction = SoapActionDefault
-	case wstrust.Trust2005:
-		return wstrust.SamlTokenInfo{}, errors.New("WS Trust 2005 support is not implemented")
+	case defs.Trust2005:
+		return SamlTokenInfo{}, errors.New("WS Trust 2005 support is not implemented")
 	default:
-		return wstrust.SamlTokenInfo{}, fmt.Errorf("the SOAP endpoint for a wstrust call had an invalid version: %v", endpoint.EndpointVersion)
+		return SamlTokenInfo{}, fmt.Errorf("the SOAP endpoint for a wstrust call had an invalid version: %v", endpoint.EndpointVersion)
 	}
 
-	resp := wstrust.SAMLDefinitions{}
+	resp := defs.SAMLDefinitions{}
 	err = c.Comm.SOAPCall(ctx, endpoint.URL, soapAction, http.Header{}, nil, wsTrustRequestMessage, &resp)
 	if err != nil {
-		return wstrust.SamlTokenInfo{}, err
+		return SamlTokenInfo{}, err
 	}
 
 	return c.samlAssertion(resp)
@@ -104,7 +109,7 @@ const (
 	samlv2Assertion = "urn:oasis:names:tc:SAML:2.0:assertion"
 )
 
-func (c Client) samlAssertion(def wstrust.SAMLDefinitions) (wstrust.SamlTokenInfo, error) {
+func (c Client) samlAssertion(def defs.SAMLDefinitions) (SamlTokenInfo, error) {
 	for _, tokenResponse := range def.Body.RequestSecurityTokenResponseCollection.RequestSecurityTokenResponse {
 		token := tokenResponse.RequestedSecurityToken
 		if token.Assertion.XMLName.Local != "" {
@@ -113,12 +118,12 @@ func (c Client) samlAssertion(def wstrust.SAMLDefinitions) (wstrust.SamlTokenInf
 			samlVersion := token.Assertion.Saml
 			switch samlVersion {
 			case samlv1Assertion:
-				return wstrust.SamlTokenInfo{AssertionType: msalbase.SAMLV1Grant, Assertion: assertion}, nil
+				return SamlTokenInfo{AssertionType: msalbase.SAMLV1Grant, Assertion: assertion}, nil
 			case samlv2Assertion:
-				return wstrust.SamlTokenInfo{AssertionType: msalbase.SAMLV2Grant, Assertion: assertion}, nil
+				return SamlTokenInfo{AssertionType: msalbase.SAMLV2Grant, Assertion: assertion}, nil
 			}
-			return wstrust.SamlTokenInfo{}, fmt.Errorf("couldn't parse SAML assertion, version unknown: %q", samlVersion)
+			return SamlTokenInfo{}, fmt.Errorf("couldn't parse SAML assertion, version unknown: %q", samlVersion)
 		}
 	}
-	return wstrust.SamlTokenInfo{}, errors.New("unknown WS-Trust version")
+	return SamlTokenInfo{}, errors.New("unknown WS-Trust version")
 }

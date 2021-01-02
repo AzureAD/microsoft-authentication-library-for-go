@@ -1,9 +1,12 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package wstrust
+package defs
 
 import "encoding/xml"
+
+// TODO(msal): This needs to be deconstructed to stop using naked structs and instead use named structs.
+// I (jdoak) have already done this for SAMLDefinitions and am going to let someone else have the fun.
 
 type Definitions struct {
 	XMLName         xml.Name `xml:"definitions"`
