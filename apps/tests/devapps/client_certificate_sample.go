@@ -6,21 +6,22 @@ package main
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
 	"log"
-	"os"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
-func tryClientCertificateFlow(confidentialClientApp *msal.ConfidentialClientApplication) {
-	result, err := confidentialClientApp.AcquireTokenByClientCredential(context.Background(), confidentialConfig.Scopes)
+func tryClientCertificateFlow(app confidential.Client) {
+	result, err := app.AcquireTokenByCredential(context.Background(), confidentialConfig.Scopes)
 	if err != nil {
 		log.Fatal(err)
 	}
 	fmt.Println("Access token is " + result.GetAccessToken())
 }
 
+// This needs to be repaired.  We moved from "thumbprint" to requiring the x509 certificate and key
+// as this is how you would do this in a Go world.
+/*
 func acquireTokenClientCertificate() {
 	file, err := os.Open(confidentialConfig.KeyFile)
 	if err != nil {
@@ -31,6 +32,7 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	// confidential.NewCredFromCert()
 	certificate, err := msal.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
 	if err != nil {
 		log.Fatal(err)
@@ -50,3 +52,4 @@ func acquireTokenClientCertificate() {
 		fmt.Println("Access token is " + result.GetAccessToken())
 	}
 }
+*/

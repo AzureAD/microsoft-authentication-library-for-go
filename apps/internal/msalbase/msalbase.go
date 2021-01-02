@@ -77,6 +77,9 @@ func TrustedHost(host string) bool {
 	return false
 }
 
+// TODO(jdoak): This needs to move out of here.  Both apps/public and apps/confidential return
+// this. Or at the least, we need to type alias this up there.
+
 type Account struct {
 	HomeAccountID     string `json:"home_account_id,omitempty"`
 	Environment       string `json:"environment,omitempty"`

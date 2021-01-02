@@ -7,38 +7,36 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"log"
 	"net/http"
-	"os"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
 var (
-	accessToken                string
-	confidentialConfig         = CreateConfig("confidential_config.json")
-	confidentialClientAuthCode *msal.ConfidentialClientApplication
+	accessToken        string
+	confidentialConfig = CreateConfig("confidential_config.json")
+	app                confidential.Client
 )
 
+// TODO(msal): I'm not sure what to do here with the CodeChallenge and State. authCodeURLParams
+// is no more.  CodeChallenge is only used now in a confidential.AcquireTokenByAuthCode(), which
+// this is not using.  Maybe now this is a two step process????
+/*
 func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
-	authCodeURLParams := msal.CreateAuthorizationCodeURLParameters(
-		confidentialConfig.ClientID,
-		confidentialConfig.RedirectURI,
-		confidentialConfig.Scopes,
-	)
 	authCodeURLParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeURLParams.State = confidentialConfig.State
-	authURL, err := confidentialClientAuthCode.CreateAuthCodeURL(context.Background(), authCodeURLParams)
+	authURL, err := app.CreateAuthCodeURL(context.Background(), confidentialConfig.ClientID, confidentialConfig.RedirectURI, confidentialConfig.Scopes)
 	if err != nil {
-		log.Fatal(err)
+		http.Error(w, err.Error(), http.StatusUnauthorized)
+		return
 	}
 	// Redirecting to the URL we have received
-	log.Println(authURL)
+	log.Println("redirecting to auth: ", authURL)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
+*/
 
 func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the authorization code from the URL's query
@@ -55,10 +53,11 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	}
 	code := codes[0]
 	// Getting the access token using the authorization code
-	result, err := confidentialClientAuthCode.AcquireTokenByAuthCode(context.Background(), confidentialConfig.Scopes, &msal.AcquireTokenByAuthCodeOptions{
-		Code:          code,
-		CodeChallenge: confidentialConfig.CodeChallenge,
-	})
+	result, err := app.AcquireTokenByAuthCode(
+		context.Background(),
+		confidentialConfig.Scopes,
+		confidential.CodeChallenge(code, confidentialConfig.CodeChallenge),
+	)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -67,6 +66,9 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	accessToken = result.GetAccessToken()
 }
 
+// TODO(msal): Needs to use an x509 certificate like the other now that we are not using a
+// thumbprint directly.
+/*
 func acquireByAuthorizationCodeConfidential() {
 	file, err := os.Open(confidentialConfig.KeyFile)
 	if err != nil {
@@ -87,17 +89,17 @@ func acquireByAuthorizationCodeConfidential() {
 	options := msal.DefaultConfidentialClientApplicationOptions()
 	options.Accessor = cacheAccessor
 	options.Authority = confidentialConfig.Authority
-	confidentialClientAuthCode, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
+	app, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
 	if err != nil {
 		log.Fatal(err)
 	}
 	var userAccount msalbase.Account
-	for _, account := range confidentialClientAuthCode.Accounts() {
+	for _, account := range app.Accounts() {
 		if account.GetUsername() == confidentialConfig.Username {
 			userAccount = account
 		}
 	}
-	result, err := confidentialClientAuthCode.AcquireTokenSilent(
+	result, err := app.AcquireTokenSilent(
 		context.Background(),
 		confidentialConfig.Scopes,
 		&msal.AcquireTokenSilentOptions{
@@ -115,3 +117,4 @@ func acquireByAuthorizationCodeConfidential() {
 	http.HandleFunc("/redirect", getTokenConfidential)
 	log.Fatal(http.ListenAndServe(":"+port, nil))
 }
+*/

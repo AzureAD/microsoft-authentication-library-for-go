@@ -7,13 +7,15 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
 	"testing"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
 const (
@@ -49,7 +51,7 @@ func httpRequest(url string, query url.Values, accessToken string) ([]byte, erro
 }
 
 type labClient struct {
-	app *msal.ConfidentialClientApplication
+	app confidential.Client
 }
 
 // TODO : Add app object
@@ -77,25 +79,23 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-	secretS := os.Getenv("clientSecret")
-	secret, err := msal.CreateClientCredentialFromSecret(secretS)
-	if err != nil {
-		return nil, err
-	}
-	options := msal.DefaultConfidentialClientApplicationOptions()
 	clientID := os.Getenv("clientId")
-	options.Authority = microsoftAuthority
-	app, err := msal.NewConfidentialClientApplication(clientID, secret, &options)
+	secret := os.Getenv("clientSecret")
+
+	cred, err := confidential.NewCredFromSecret(secret)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
 	}
+
+	app, err := confidential.New(clientID, cred, confidential.Authority(microsoftAuthority))
+
 	return &labClient{app: app}, nil
 }
 func (l *labClient) getLabAccessToken() (string, error) {
 	scopes := []string{msIDlabDefaultScope}
-	result, err := l.app.AcquireTokenSilent(context.Background(), scopes, nil)
+	result, err := l.app.AcquireTokenSilent(context.Background(), scopes)
 	if err != nil {
-		result, err = l.app.AcquireTokenByClientCredential(context.Background(), scopes)
+		result, err = l.app.AcquireTokenByCredential(context.Background(), scopes)
 		if err != nil {
 			return "", err
 		}
@@ -163,8 +163,7 @@ func TestUsernamePassword(t *testing.T) {
 	if err != nil {
 		panic("failed to get a lab client: " + err.Error())
 	}
-	options := msal.DefaultPublicClientApplicationOptions()
-	options.Authority = organizationsAuthority
+
 	tests := []struct {
 		desc string
 		user user
@@ -175,11 +174,11 @@ func TestUsernamePassword(t *testing.T) {
 		//{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
 	}
 	for _, test := range tests {
-		publicClientApp, err := msal.NewPublicClientApplication(test.user.AppID, &options)
+		app, err := public.New(test.user.AppID, public.Authority(organizationsAuthority))
 		if err != nil {
 			panic(err)
 		}
-		result, err := publicClientApp.AcquireTokenByUsernamePassword(
+		result, err := app.AcquireTokenByUsernamePassword(
 			context.Background(),
 			[]string{graphDefaultScope},
 			test.user.Upn,

@@ -2,16 +2,13 @@ package main
 
 import (
 	"os"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/msal"
 )
 
 const port = "3000"
 
 var (
-	config          = CreateConfig("config.json")
-	publicClientApp *msal.PublicClientApplication
-	cacheAccessor   = &TokenCache{"serialized_cache.json"}
+	config        = CreateConfig("config.json")
+	cacheAccessor = &TokenCache{"serialized_cache.json"}
 )
 
 func main() {
@@ -25,10 +22,12 @@ func main() {
 	} else if exampleType == "3" {
 		acquireByUsernamePasswordPublic()
 	} else if exampleType == "4" {
-		acquireByAuthorizationCodeConfidential()
+		panic("currently not implemented")
+		//acquireByAuthorizationCodeConfidential()
 	} else if exampleType == "5" {
 		acquireTokenClientSecret()
 	} else if exampleType == "6" {
-		acquireTokenClientCertificate()
+		panic("currently not implemented")
+		//acquireTokenClientCertificate()
 	}
 }
