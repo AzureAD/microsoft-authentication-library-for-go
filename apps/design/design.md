@@ -20,7 +20,7 @@ Much of this lead to a re-write where we were not seeing the forrest because of 
 The work could not be divided up, because the API and the internals were linked across logical
 boundaries.
 
-What has resulted should be a *more* design that divides code into more logical layers that split 
+What has resulted should be a design that divides code into logical layers and splits
 the public API from the internal structure. 
 
 ## General Structure
@@ -41,6 +41,7 @@ apps/
     json/ - Our own json encoder/decoder for special needs
     msalbase/ - Holds types that need to be in multiple packages and can't be moved into a single one due to import cycles
     requests/ - The pacakge to communicate to services to get tokens
+```
 
 ### Use of the Go special internal/ directory
 
