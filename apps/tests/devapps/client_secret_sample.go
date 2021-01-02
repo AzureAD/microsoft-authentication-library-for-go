@@ -26,7 +26,7 @@ func acquireTokenClientSecret() {
 		log.Fatal(err)
 	}
 
-	app, err := confidential.New(confidentialConfig.ClientID, cred, confidential.Accessor(cacheAccessor), confidential.Authority(confidentialConfig.Authority))
+	app, err := confidential.New("myUser", confidentialConfig.ClientID, cred, confidential.Accessor(cacheAccessor), confidential.Authority(confidentialConfig.Authority))
 	if err != nil {
 		log.Fatal(err)
 	}
