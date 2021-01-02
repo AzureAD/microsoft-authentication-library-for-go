@@ -19,7 +19,7 @@ import (
 	"strings"
 	"time"
 
-	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/json"
 	"github.com/google/uuid"
 )
 

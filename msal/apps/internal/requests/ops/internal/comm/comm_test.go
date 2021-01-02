@@ -13,7 +13,7 @@ import (
 	"net/url"
 	"testing"
 
-	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/json"
 	"github.com/kylelemons/godebug/diff"
 	"github.com/kylelemons/godebug/pretty"
 )

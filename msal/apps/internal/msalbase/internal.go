@@ -14,7 +14,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/json"
 	jwt "github.com/dgrijalva/jwt-go"
 	uuid "github.com/google/uuid"
 )

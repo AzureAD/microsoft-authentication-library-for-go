@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/json"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/msal/apps/internal/msalbase"
 	"github.com/kylelemons/godebug/pretty"
 )
