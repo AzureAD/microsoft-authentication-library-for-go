@@ -21,7 +21,7 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
-var testAuthorityEndpoints = authority.CreateAuthorityEndpoints(
+var testAuthorityEndpoints = authority.NewEndpoints(
 	"https://login.microsoftonline.com/v2.0/authorize",
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
@@ -694,7 +694,7 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 func TestDecodeJWT(t *testing.T) {
 	encodedStr := "aGVsbG8"
 	expectedStr := []byte("hello")
-	actualString, err := DecodeJWT(encodedStr)
+	actualString, err := decodeJWT(encodedStr)
 	if err != nil {
 		t.Errorf("Error should be nil but it is %v", err)
 	}

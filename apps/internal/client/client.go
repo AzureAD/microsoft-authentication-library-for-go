@@ -148,7 +148,7 @@ type Base struct {
 
 // New is the constructor for Base.
 func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *requests.Token) (Base, error) {
-	authInfo, err := authority.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
+	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return Base{}, err
 	}

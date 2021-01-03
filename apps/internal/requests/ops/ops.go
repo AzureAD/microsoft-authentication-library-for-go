@@ -26,7 +26,7 @@ import (
 )
 
 // TODO(jdoak): After integration, remove:
-// 	msalbase.CreateUserRealm()
+// 	msalbase.NewUserRealm()
 //  requests.CreateTenantDiscoveryResponse()
 
 // REST provides REST clients for communicating with various backends used by MSAL.

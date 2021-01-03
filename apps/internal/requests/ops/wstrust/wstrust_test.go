@@ -22,7 +22,7 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
-var testAuthorityEndpoints = authority.CreateAuthorityEndpoints(
+var testAuthorityEndpoints = authority.NewEndpoints(
 	"https://login.microsoftonline.com/v2.0/authorize",
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",

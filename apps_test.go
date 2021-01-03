@@ -149,7 +149,7 @@ var testAuthorityEndpoints = authority.CreateAuthorityEndpoints("https://login.m
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
 	"login.microsoftonline.com")
-var testAuthorityInfo, _ = authority.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
+var testAuthorityInfo, _ = authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
 
 var tdr = requests.TenantDiscoveryResponse{
 	AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",

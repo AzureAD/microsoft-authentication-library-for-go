@@ -22,11 +22,11 @@ import (
 const ADFS = "ADFS"
 
 type cacheEntry struct {
-	Endpoints             authority.AuthorityEndpoints
+	Endpoints             authority.Endpoints
 	ValidForDomainsInList map[string]bool
 }
 
-func createcacheEntry(endpoints authority.AuthorityEndpoints) cacheEntry {
+func createcacheEntry(endpoints authority.Endpoints) cacheEntry {
 	return cacheEntry{endpoints, map[string]bool{}}
 }
 
@@ -45,9 +45,9 @@ func newAuthorityEndpoint(rest *ops.REST) *authorityEndpoint {
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
-func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, error) {
+func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error) {
 	if authorityInfo.AuthorityType == ADFS && len(userPrincipalName) == 0 {
-		return authority.AuthorityEndpoints{}, errors.New("UPN required for authority validation for ADFS")
+		return authority.Endpoints{}, errors.New("UPN required for authority validation for ADFS")
 	}
 
 	if endpoints, found := m.cachedEndpoints(authorityInfo, userPrincipalName); found {
@@ -56,20 +56,20 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 
 	endpoint, err := m.openIDConfigurationEndpoint(ctx, authorityInfo, userPrincipalName)
 	if err != nil {
-		return authority.AuthorityEndpoints{}, err
+		return authority.Endpoints{}, err
 	}
 
 	resp, err := m.rest.Authority().GetTenantDiscoveryResponse(ctx, endpoint)
 	if err != nil {
-		return authority.AuthorityEndpoints{}, err
+		return authority.Endpoints{}, err
 	}
 	if err := resp.Validate(); err != nil {
-		return authority.AuthorityEndpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
+		return authority.Endpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
 	}
 
 	tenant := authorityInfo.Tenant
 
-	endpoints := authority.CreateAuthorityEndpoints(
+	endpoints := authority.NewEndpoints(
 		strings.Replace(resp.AuthorizationEndpoint, "{tenant}", tenant, -1),
 		strings.Replace(resp.TokenEndpoint, "{tenant}", tenant, -1),
 		strings.Replace(resp.Issuer, "{tenant}", tenant, -1),
@@ -81,7 +81,7 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 }
 
 // cachedEndpoints returns a the cached endpoints if they exists. If not, we return false.
-func (m *authorityEndpoint) cachedEndpoints(authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, bool) {
+func (m *authorityEndpoint) cachedEndpoints(authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -96,10 +96,10 @@ func (m *authorityEndpoint) cachedEndpoints(authorityInfo authority.Info, userPr
 		}
 		return cacheEntry.Endpoints, true
 	}
-	return authority.AuthorityEndpoints{}, false
+	return authority.Endpoints{}, false
 }
 
-func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, userPrincipalName string, endpoints authority.AuthorityEndpoints) {
+func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, userPrincipalName string, endpoints authority.Endpoints) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 

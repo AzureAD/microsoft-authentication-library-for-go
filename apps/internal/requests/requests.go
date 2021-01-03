@@ -17,7 +17,7 @@ import (
 )
 
 type resolveEndpointer interface {
-	ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, error)
+	ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error)
 }
 
 // Token provides tokens for various types of token requests.
@@ -36,7 +36,7 @@ func NewToken() *Token {
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance.
-func (t *Token) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, error) {
+func (t *Token) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error) {
 	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
@@ -94,8 +94,8 @@ func (t *Token) UsernamePassword(ctx context.Context, authParams authority.AuthP
 		return accesstokens.TokenResponse{}, err
 	}
 
-	switch accountType := userRealm.GetAccountType(); accountType {
-	case msalbase.Federated:
+	switch userRealm.AccountType {
+	case authority.Federated:
 		mexDoc, err := t.rest.WSTrust().GetMex(ctx, userRealm.FederationMetadataURL)
 		if err != nil {
 			return accesstokens.TokenResponse{}, err
@@ -106,7 +106,7 @@ func (t *Token) UsernamePassword(ctx context.Context, authParams authority.AuthP
 			return accesstokens.TokenResponse{}, err
 		}
 		return t.rest.AccessTokens().GetAccessTokenFromSamlGrant(ctx, authParams, saml)
-	case msalbase.Managed:
+	case authority.Managed:
 		return t.rest.AccessTokens().GetAccessTokenFromUsernamePassword(ctx, authParams)
 	}
 	return accesstokens.TokenResponse{}, errors.New("unknown account type")
