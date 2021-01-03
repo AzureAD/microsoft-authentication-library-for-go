@@ -177,17 +177,6 @@ func (u *UserRealm) GetAccountType() UserRealmAccountType {
 	return Unknown
 }
 
-type OAuthResponseBase struct {
-	Error            string `json:"error"`
-	SubError         string `json:"suberror"`
-	ErrorDescription string `json:"error_description"`
-	ErrorCodes       []int  `json:"error_codes"`
-	CorrelationID    string `json:"correlation_id"`
-	Claims           string `json:"claims"`
-
-	AdditionalFields map[string]interface{}
-}
-
 // RefreshToken is the JSON representation of a MSAL refresh token for encoding to storage.
 type RefreshToken struct {
 	HomeAccountID  string `json:"home_account_id,omitempty"`

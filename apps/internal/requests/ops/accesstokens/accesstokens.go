@@ -67,7 +67,7 @@ type createTokenResp func(authParameters authority.AuthParams, payload TokenResp
 
 // DeviceCodeResponse represents the HTTP response received from the device code endpoint
 type DeviceCodeResponse struct {
-	msalbase.OAuthResponseBase
+	authority.OAuthResponseBase
 
 	UserCode        string `json:"user_code"`
 	DeviceCode      string `json:"device_code"`
@@ -357,7 +357,7 @@ func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthPar
 }
 
 type TokenResponseJSONPayload struct {
-	msalbase.OAuthResponseBase
+	authority.OAuthResponseBase
 
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
@@ -450,7 +450,7 @@ func (i IDToken) GetLocalAccountID() string {
 // TODO(jdoak): There is this tokenResponsePayload and TokenResponse.  This just needs a custom unmarshaller
 // and we can get rid of having two.
 type TokenResponse struct {
-	msalbase.OAuthResponseBase
+	authority.OAuthResponseBase
 
 	AccessToken    string
 	RefreshToken   string

@@ -43,9 +43,18 @@ func TrustedHost(host string) bool {
 	return false
 }
 
+type OAuthResponseBase struct {
+	Error            string `json:"error"`
+	SubError         string `json:"suberror"`
+	ErrorDescription string `json:"error_description"`
+	ErrorCodes       []int  `json:"error_codes"`
+	CorrelationID    string `json:"correlation_id"`
+	Claims           string `json:"claims"`
+}
+
 // TenantDiscoveryResponse is the tenant endpoints from the OpenID configuration endpoint.
 type TenantDiscoveryResponse struct {
-	msalbase.OAuthResponseBase
+	OAuthResponseBase
 
 	AuthorizationEndpoint string `json:"authorization_endpoint"`
 	TokenEndpoint         string `json:"token_endpoint"`
