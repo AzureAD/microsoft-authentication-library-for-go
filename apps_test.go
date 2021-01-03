@@ -24,15 +24,15 @@ func (f *fakeManager) Read(ctx context.Context, authParameters authority.AuthPar
 	rt.On("GetSecret").Return("secret")
 	id.On("GetSecret").Return("secret")
 
-	return storage.NewStorageTokenResponse(at, rt, id, msalbase.Account{}), nil
+	return storage.NewStorageTokenResponse(at, rt, id, shared.Account{}), nil
 }
 
-func (f *fakeManager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error) {
+func (f *fakeManager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
 	if f.ctrErr {
-		return msalbase.Account{}, errors.New("error")
+		return shared.Account{}, errors.New("error")
 	}
 
-	return msalbase.Account{}, nil
+	return shared.Account{}, nil
 }
 
 func newTestApplication(fm *fakeManager, wrm *requests.MockWebRequestManager) *clientApplication {
@@ -58,7 +58,7 @@ func newTestApplication(fm *fakeManager, wrm *requests.MockWebRequestManager) *c
 func TestAcquireTokenSilent(t *testing.T) {
 	silentParams := AcquireTokenSilentParameters{
 		commonParameters: tokenCommonParams,
-		account:          msalbase.Account{},
+		account:          shared.Account{},
 	}
 	wrm := new(requests.MockWebRequestManager)
 	fm := &fakeManager{}

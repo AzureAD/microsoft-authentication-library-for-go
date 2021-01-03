@@ -190,7 +190,7 @@ func TestUsernamePassword(t *testing.T) {
 		if result.AccessToken == "" {
 			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)
 		}
-		if result.Account.GetUsername() != test.user.Upn {
+		if result.Account.PreferredUsername != test.user.Upn {
 			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.GetUsername(), test.user.Upn)
 		}
 	}

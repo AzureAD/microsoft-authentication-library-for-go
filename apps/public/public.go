@@ -23,17 +23,17 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 // AuthenticationResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthenticationResult = client.AuthenticationResult
 
-type Account = msalbase.Account
+type Account = shared.Account
 
 // Options configures the Client's behavior.
 type Options struct {
@@ -165,7 +165,7 @@ type DeviceCode struct {
 	dc         requests.DeviceCode
 }
 
-type DeviceCodeResult = msalbase.DeviceCodeResult
+type DeviceCodeResult = accesstokens.DeviceCodeResult
 
 // AuthenticationResult retreives the AuthenticationResult once the user enters the code
 // on the second device. Until then it blocks until the .AcquireTokenByDeviceCode() context

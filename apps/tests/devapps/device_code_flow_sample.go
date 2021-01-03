@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
@@ -21,7 +21,7 @@ func acquireTokenDeviceCode() {
 	}
 
 	// look in the cache to see if the account to use has been cached
-	var userAccount msalbase.Account
+	var userAccount shared.Account
 	accounts := app.Accounts()
 	for _, account := range accounts {
 		if account.PreferredUsername == config.Username {

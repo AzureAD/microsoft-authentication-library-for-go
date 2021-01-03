@@ -17,10 +17,10 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 /*
@@ -53,7 +53,7 @@ put a PEM decoder into here.
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthenticationResult = client.AuthenticationResult
 
-type Account = msalbase.Account
+type Account = shared.Account
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
 // must have the public certificate and the private key encoded. The private key must be encoded

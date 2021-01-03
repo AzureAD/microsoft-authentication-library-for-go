@@ -10,7 +10,6 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
@@ -116,7 +115,7 @@ func (t *Token) UsernamePassword(ctx context.Context, authParams authority.AuthP
 type DeviceCode struct {
 	// Result is the device code result from the first call in the device code flow. This allows
 	// the caller to retrieve the displayed code that is used to authorize on the second device.
-	Result     msalbase.DeviceCodeResult
+	Result     accesstokens.DeviceCodeResult
 	authParams authority.AuthParams
 
 	// Note: Normally you don't embed a Context, but this is safe as it is only used for a single

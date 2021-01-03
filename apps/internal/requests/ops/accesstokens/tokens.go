@@ -9,8 +9,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 type TokenResponseJSONPayload struct {
@@ -265,10 +265,40 @@ func (rt RefreshToken) Key() string {
 
 	return strings.Join(
 		[]string{rt.HomeAccountID, rt.Environment, rt.CredentialType, fourth},
-		msalbase.CacheKeySeparator,
+		shared.CacheKeySeparator,
 	)
 }
 
 func (rt RefreshToken) GetSecret() string {
 	return rt.Secret
+}
+
+// DeviceCodeResult stores the response from the STS device code endpoint.
+type DeviceCodeResult struct {
+	// UserCode is the code the user needs to provide when authentication at the verification URI.
+	UserCode string
+	// DeviceCode is the code used in the access token request.
+	DeviceCode string
+	// VerificationURL is the the URL where user can authenticate.
+	VerificationURL string
+	// ExpiresOn is the expiration time of device code in seconds.
+	ExpiresOn time.Time
+	// Interval is the interval at which the STS should be polled at.
+	Interval int
+	// Message is the message which should be displayed to the user.
+	Message string
+	// ClientID is the UUID issued by the authorization server for your application.
+	ClientID string
+	// Scopes is the OpenID scopes used to request access a protected API.
+	Scopes []string
+}
+
+// NewDeviceCodeResult creates a DeviceCodeResult instance.
+func NewDeviceCodeResult(userCode, deviceCode, verificationURL string, expiresOn time.Time, interval int, message, clientID string, scopes []string) DeviceCodeResult {
+	return DeviceCodeResult{userCode, deviceCode, verificationURL, expiresOn, interval, message, clientID, scopes}
+}
+
+func (dcr DeviceCodeResult) String() string {
+	return fmt.Sprintf("UserCode: (%v)\nDeviceCode: (%v)\nURL: (%v)\nMessage: (%v)\n", dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, dcr.Message)
+
 }

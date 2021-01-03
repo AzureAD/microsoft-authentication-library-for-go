@@ -16,7 +16,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
@@ -507,14 +506,14 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 		err              bool
 		commErr          bool
 		createErr        bool
-		deviceCodeResult msalbase.DeviceCodeResult
+		deviceCodeResult DeviceCodeResult
 		qv               url.Values
 	}{
 		{
 			desc:    "Error: comm returns error",
 			err:     true,
 			commErr: true,
-			deviceCodeResult: msalbase.NewDeviceCodeResult(
+			deviceCodeResult: NewDeviceCodeResult(
 				"userCode",
 				"deviceCode",
 				"verificationURL",
@@ -533,7 +532,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 		},
 		{
 			desc: "Success",
-			deviceCodeResult: msalbase.NewDeviceCodeResult(
+			deviceCodeResult: NewDeviceCodeResult(
 				"userCode",
 				"deviceCode",
 				"verificationURL",

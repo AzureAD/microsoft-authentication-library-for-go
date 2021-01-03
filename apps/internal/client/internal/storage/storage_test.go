@@ -14,6 +14,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -82,7 +83,7 @@ func TestGetAllAccounts(t *testing.T) {
 	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
-		Accounts: map[string]msalbase.Account{
+		Accounts: map[string]shared.Account{
 			testAccOne.Key(): testAccOne,
 			testAccTwo.Key(): testAccTwo,
 		},
@@ -104,7 +105,7 @@ func TestGetAllAccounts(t *testing.T) {
 		},
 	)
 
-	expectedAccounts := []msalbase.Account{testAccOne, testAccTwo}
+	expectedAccounts := []shared.Account{testAccOne, testAccTwo}
 	if diff := pretty.Compare(expectedAccounts, actualAccounts); diff != "" {
 		t.Errorf("Actual accounts differ from expected accounts: -want/+got:\n%s", diff)
 	}
@@ -115,7 +116,7 @@ func TestDeleteAccounts(t *testing.T) {
 	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
-		Accounts: map[string]msalbase.Account{
+		Accounts: map[string]shared.Account{
 			testAccOne.Key(): testAccOne,
 			testAccTwo.Key(): testAccTwo,
 		},
@@ -203,7 +204,7 @@ func TestReadAccount(t *testing.T) {
 	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
 	cache := &Contract{
-		Accounts: map[string]msalbase.Account{
+		Accounts: map[string]shared.Account{
 			testAcc.Key(): testAcc,
 		},
 	}
@@ -620,7 +621,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		Accounts: map[string]msalbase.Account{
+		Accounts: map[string]shared.Account{
 			"uid.utid-login.windows.net-contoso": {
 				PreferredUsername: accUser,
 				LocalAccountID:    accLID,
@@ -745,7 +746,7 @@ func TestRead(t *testing.T) {
 		RefreshTokens: map[string]RefreshToken{
 			testRefreshToken.Key(): testRefreshToken,
 		},
-		Accounts: map[string]msalbase.Account{
+		Accounts: map[string]shared.Account{
 			testAccount.Key(): testAccount,
 		},
 		AppMetaData: map[string]AppMetaData{

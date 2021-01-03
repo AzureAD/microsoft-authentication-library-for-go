@@ -15,10 +15,10 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client/internal/storage"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 const (
@@ -31,16 +31,8 @@ const (
 // In all production use it is a *storage.Manager.
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams) (storage.StorageTokenResponse, error)
-	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error)
-	GetAllAccounts() ([]msalbase.Account, error)
-}
-
-//AccountProvider is an interface representing an account that is returned to users.
-//This can help with accessing the cache for tokens.
-type AccountProvider interface {
-	GetUsername() string
-	GetHomeAccountID() string
-	GetEnvironment() string
+	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
+	GetAllAccounts() ([]shared.Account, error)
 }
 
 type noopCacheAccessor struct{}
@@ -51,7 +43,7 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
 	Scopes      []string
-	Account     AccountProvider
+	Account     shared.Account
 	RequestType accesstokens.RefreshTokenReqType
 	Credential  *accesstokens.Credential
 }
@@ -60,7 +52,7 @@ type AcquireTokenSilentParameters struct {
 func (p AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *authority.AuthParams) {
 	authParams.Scopes = p.Scopes
 	authParams.AuthorizationType = authority.AuthorizationTypeRefreshTokenExchange
-	authParams.HomeaccountID = p.Account.GetHomeAccountID()
+	authParams.HomeaccountID = p.Account.HomeAccountID
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -78,7 +70,7 @@ type AcquireTokenAuthCodeParameters struct {
 // AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthenticationResult struct {
-	Account        msalbase.Account
+	Account        shared.Account
 	IDToken        accesstokens.IDToken
 	AccessToken    string
 	ExpiresOn      time.Time
@@ -113,7 +105,7 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse sto
 
 // CreateAuthenticationResult creates an AuthenticationResult.
 // TODO(jdoak): (maybe, we did a refactor): Make this a method on TokenResponse() that takes only 1 arge, Account.
-func CreateAuthenticationResult(tokenResponse accesstokens.TokenResponse, account msalbase.Account) (AuthenticationResult, error) {
+func CreateAuthenticationResult(tokenResponse accesstokens.TokenResponse, account shared.Account) (AuthenticationResult, error) {
 	if len(tokenResponse.DeclinedScopes) > 0 {
 		return AuthenticationResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.DeclinedScopes, ","))
 	}
@@ -132,7 +124,7 @@ func (ar AuthenticationResult) GetAccessToken() string {
 }
 
 // GetAccount returns the account of the authentication result
-func (ar AuthenticationResult) GetAccount() msalbase.Account {
+func (ar AuthenticationResult) GetAccount() shared.Account {
 	return ar.Account
 }
 
@@ -271,7 +263,7 @@ func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acquire
 
 func (b Base) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthenticationResult, error) {
 	if !cacheWrite {
-		return CreateAuthenticationResult(token, msalbase.Account{})
+		return CreateAuthenticationResult(token, shared.Account{})
 	}
 
 	if s, ok := b.manager.(cache.Serializer); ok {
@@ -287,7 +279,7 @@ func (b Base) AuthResultFromToken(ctx context.Context, authParams authority.Auth
 	return CreateAuthenticationResult(token, account)
 }
 
-func (b Base) GetAccounts() []msalbase.Account {
+func (b Base) GetAccounts() []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		b.cacheAccessor.Replace(s)
 		defer b.cacheAccessor.Export(s)

@@ -26,8 +26,8 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 // In all production use it is a *storage.Manager.
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams) (msalbase.StorageTokenResponse, error)
-	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error)
-	GetAllAccounts() ([]msalbase.Account, error)
+	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
+	GetAllAccounts() ([]shared.Account, error)
 }
 
 type clientApplication struct {
@@ -114,7 +114,7 @@ func (client *clientApplication) executeTokenRequestWithoutCacheWrite(ctx contex
 	// was really valid or not or had hidden bugs (like the GetAccount() call). This
 	// is safe from a Go standpoint, but I'm not sure that MSAL doesn't acutally depend
 	// on Account here.  If this is ok, I'll just add a bit of documentation here.
-	return msalbase.CreateAuthenticationResult(tokenResponse, msalbase.Account{})
+	return msalbase.CreateAuthenticationResult(tokenResponse, shared.Account{})
 }
 
 func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.Context, req requests.TokenRequester, authParams authority.AuthParams) (msalbase.AuthenticationResult, error) {
@@ -135,7 +135,7 @@ func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.C
 	return msalbase.CreateAuthenticationResult(tokenResponse, account)
 }
 
-func (client *clientApplication) getAccounts() []msalbase.Account {
+func (client *clientApplication) getAccounts() []shared.Account {
 	// TODO(jdoak): Think about removing this after refactor.
 	if s, ok := client.manager.(cache.Serializer); ok {
 		client.cacheAccessor.Replace(s)
@@ -242,7 +242,7 @@ func (pca *PublicClientApplication) AcquireTokenByAuthCode(ctx context.Context, 
 
 // Accounts gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
-func (pca *PublicClientApplication) Accounts() []msalbase.Account {
+func (pca *PublicClientApplication) Accounts() []shared.Account {
 	return pca.clientApplication.getAccounts()
 }
 */
@@ -252,7 +252,7 @@ func (pca *PublicClientApplication) Accounts() []msalbase.Account {
 type AcquireTokenSilentOptions struct {
 	// Account specifies the account to use when acquiring a token from the cache.
 	// TODO(jdoak): Add an .IsZero() to handle switching out for defaults vs nil checks.
-	Account msalbase.Account
+	Account shared.Account
 }
 
 // AcquireTokenByDeviceCodeOptions contains the optional parameters used to acquire an access token using the device code flow.
@@ -370,7 +370,7 @@ func (cca *ConfidentialClientApplication) AcquireTokenByClientCredential(ctx con
 }
 
 // Accounts gets all the accounts in the token cache.
-func (cca *ConfidentialClientApplication) Accounts() []msalbase.Account {
+func (cca *ConfidentialClientApplication) Accounts() []shared.Account {
 	return cca.clientApplication.getAccounts()
 }
 */
@@ -409,7 +409,7 @@ func (req *deviceCodeRequest) Execute(ctx context.Context) (accesstokens.TokenRe
 	return req.waitForTokenResponse(ctx, deviceCodeResult)
 }
 
-func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCodeResult msalbase.DeviceCodeResult) (accesstokens.TokenResponse, error) {
+func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error) {
 	// IntervalAddition is used in device code requests to increase the polling interval if there is a slow down error.
 	const IntervalAddition = 5
 

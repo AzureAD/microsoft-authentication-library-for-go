@@ -11,8 +11,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 // Contract is the JSON structure that is written to any storage medium when serializing
@@ -22,7 +22,7 @@ type Contract struct {
 	AccessTokens  map[string]AccessToken               `json:"AccessToken"`
 	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken"`
 	IDTokens      map[string]IDToken                   `json:"IdToken"`
-	Accounts      map[string]msalbase.Account          `json:"Account"`
+	Accounts      map[string]shared.Account            `json:"Account"`
 	AppMetaData   map[string]AppMetaData               `json:"AppMetadata"`
 
 	AdditionalFields map[string]interface{}
@@ -39,7 +39,7 @@ func (c *Contract) copy() *Contract {
 		AccessTokens:     make(map[string]AccessToken, len(c.AccessTokens)),
 		RefreshTokens:    make(map[string]accesstokens.RefreshToken, len(c.RefreshTokens)),
 		IDTokens:         make(map[string]IDToken, len(c.IDTokens)),
-		Accounts:         make(map[string]msalbase.Account, len(c.Accounts)),
+		Accounts:         make(map[string]shared.Account, len(c.Accounts)),
 		AppMetaData:      make(map[string]AppMetaData, len(c.AppMetaData)),
 		AdditionalFields: make(map[string]interface{}, len(c.AdditionalFields)),
 	}
@@ -103,7 +103,7 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 func (a AccessToken) Key() string {
 	return strings.Join(
 		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes},
-		msalbase.CacheKeySeparator,
+		shared.CacheKeySeparator,
 	)
 }
 
@@ -199,7 +199,7 @@ func NewIDToken(homeID, env, realm, clientID, idToken string) IDToken {
 func (id IDToken) Key() string {
 	return strings.Join(
 		[]string{id.HomeAccountID, id.Environment, id.CredentialType, id.ClientID, id.Realm},
-		msalbase.CacheKeySeparator,
+		shared.CacheKeySeparator,
 	)
 }
 
@@ -225,6 +225,6 @@ func NewAppMetaData(familyID, clientID, environment string) AppMetaData {
 func (a AppMetaData) Key() string {
 	return strings.Join(
 		[]string{"AppMetaData", a.Environment, a.ClientID},
-		msalbase.CacheKeySeparator,
+		shared.CacheKeySeparator,
 	)
 }

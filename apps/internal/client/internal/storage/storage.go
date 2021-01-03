@@ -20,10 +20,10 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 // getAadinstanceDiscoveryResponser is provider to allow for faking in tests.
@@ -37,7 +37,7 @@ type StorageTokenResponse struct {
 	RefreshToken accesstokens.RefreshToken
 	IDToken      IDToken // *Credential
 	AccessToken  AccessToken
-	Account      msalbase.Account
+	Account      shared.Account
 }
 
 // TODO(someone): This thing does not expire tokens.
@@ -136,7 +136,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 const scopeSeparator = " "
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
-func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error) {
+func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -149,7 +149,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 
 	cachedAt := time.Now().Unix()
 
-	var account msalbase.Account
+	var account shared.Account
 
 	if tokenResponse.HasRefreshToken() {
 		refreshToken := accesstokens.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
@@ -185,13 +185,13 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	if !idTokenJwt.IsZero() {
 		idToken := NewIDToken(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
 		if err := m.writeIDToken(idToken); err != nil {
-			return msalbase.Account{}, err
+			return shared.Account{}, err
 		}
 
 		localAccountID := idTokenJwt.GetLocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
-		account = msalbase.NewAccount(
+		account = shared.NewAccount(
 			homeAccountID,
 			environment,
 			realm,
@@ -200,14 +200,14 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			idTokenJwt.PreferredUsername,
 		)
 		if err := m.writeAccount(account); err != nil {
-			return msalbase.Account{}, err
+			return shared.Account{}, err
 		}
 	}
 
 	AppMetaData := NewAppMetaData(tokenResponse.FamilyID, clientID, environment)
 
 	if err := m.writeAppMetaData(AppMetaData); err != nil {
-		return msalbase.Account{}, err
+		return shared.Account{}, err
 	}
 	return account, nil
 }
@@ -357,10 +357,10 @@ func (m *Manager) writeIDToken(idToken IDToken) error {
 	return nil
 }
 
-func (m *Manager) GetAllAccounts() ([]msalbase.Account, error) {
+func (m *Manager) GetAllAccounts() ([]shared.Account, error) {
 	cache := m.Contract()
 
-	var accounts []msalbase.Account
+	var accounts []shared.Account
 	for _, v := range cache.Accounts {
 		accounts = append(accounts, v)
 	}
@@ -368,7 +368,7 @@ func (m *Manager) GetAllAccounts() ([]msalbase.Account, error) {
 	return accounts, nil
 }
 
-func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (msalbase.Account, error) {
+func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (shared.Account, error) {
 	cache := m.Contract()
 
 	// You might ask why, if cache.Accounts is a map, we would loop through all of these instead of using a key.
@@ -382,10 +382,10 @@ func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm s
 			return acc, nil
 		}
 	}
-	return msalbase.Account{}, fmt.Errorf("account not found")
+	return shared.Account{}, fmt.Errorf("account not found")
 }
 
-func (m *Manager) writeAccount(account msalbase.Account) error {
+func (m *Manager) writeAccount(account shared.Account) error {
 	key := account.Key()
 
 	cache := m.Contract().copy()

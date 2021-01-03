@@ -11,7 +11,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -241,7 +241,7 @@ func TestContractUnmarshalJSON(t *testing.T) {
 				ExtendedExpiresOnUnixTimestamp: atExpires,
 			},
 		},
-		Accounts: map[string]msalbase.Account{
+		Accounts: map[string]shared.Account{
 			"uid.utid-login.windows.net-contoso": {
 				PreferredUsername: "John Doe",
 				LocalAccountID:    "object1234",
@@ -334,7 +334,7 @@ func TestContractMarshalJSON(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		Accounts: map[string]msalbase.Account{
+		Accounts: map[string]shared.Account{
 			"uid.utid-login.windows.net-contoso": {
 				PreferredUsername: accUser,
 				LocalAccountID:    accLID,

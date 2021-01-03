@@ -6,8 +6,8 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client/internal/storage"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -49,7 +49,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := CreateAuthenticationResult(test.input, msalbase.Account{})
+		got, err := CreateAuthenticationResult(test.input, shared.Account{})
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestCreateAuthenticationResult(%s): got err == nil, want err != nil", test.desc)

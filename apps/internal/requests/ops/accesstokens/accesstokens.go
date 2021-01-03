@@ -24,7 +24,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
@@ -77,9 +76,9 @@ type DeviceCodeResponse struct {
 }
 
 // ToDeviceCodeResult converts the DeviceCodeResponse to a DeviceCodeResult
-func (dcr DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) msalbase.DeviceCodeResult {
+func (dcr DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) DeviceCodeResult {
 	expiresOn := time.Now().UTC().Add(time.Duration(dcr.ExpiresIn) * time.Second)
-	return msalbase.NewDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
+	return NewDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
 }
 
 // Credential represents the credential used in confidential client flows. This can be either
@@ -264,7 +263,7 @@ func (c Client) GetAccessTokenWithAssertion(ctx context.Context, authParameters 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
-func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (msalbase.DeviceCodeResult, error) {
+func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (DeviceCodeResult, error) {
 	qv := url.Values{}
 	qv.Set(clientID, authParameters.ClientID)
 	addScopeQueryParam(qv, authParameters)
@@ -274,13 +273,13 @@ func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters authorit
 	resp := DeviceCodeResponse{}
 	err := c.Comm.URLFormCall(ctx, endpoint, qv, &resp)
 	if err != nil {
-		return msalbase.DeviceCodeResult{}, err
+		return DeviceCodeResult{}, err
 	}
 
 	return resp.ToDeviceCodeResult(authParameters.ClientID, authParameters.Scopes), nil
 }
 
-func (c Client) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult msalbase.DeviceCodeResult) (TokenResponse, error) {
+func (c Client) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult DeviceCodeResult) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.DeviceCode)
 	qv.Set(deviceCode, deviceCodeResult.DeviceCode)

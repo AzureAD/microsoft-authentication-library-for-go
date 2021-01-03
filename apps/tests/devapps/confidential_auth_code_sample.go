@@ -93,9 +93,9 @@ func acquireByAuthorizationCodeConfidential() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	var userAccount msalbase.Account
+	var userAccount shared.Account
 	for _, account := range app.Accounts() {
-		if account.GetUsername() == confidentialConfig.Username {
+		if account.PreferredUsername == confidentialConfig.Username {
 			userAccount = account
 		}
 	}
