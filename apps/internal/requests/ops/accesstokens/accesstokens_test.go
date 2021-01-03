@@ -8,6 +8,8 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
+	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -61,11 +63,11 @@ type fakeCreateTokenResp struct {
 	err bool
 }
 
-func (f fakeCreateTokenResp) CreateTokenResp(authParameters authority.AuthParams, payload msalbase.TokenResponseJSONPayload) (accesstokens.TokenResponse, error) {
+func (f fakeCreateTokenResp) CreateTokenResp(authParameters authority.AuthParams, payload TokenResponseJSONPayload) (TokenResponse, error) {
 	if f.err {
-		return accesstokens.TokenResponse{}, errors.New("error")
+		return TokenResponse{}, errors.New("error")
 	}
-	return accesstokens.TokenResponse{}, nil
+	return TokenResponse{}, nil
 }
 
 func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
@@ -91,7 +93,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 		{
 			desc: "Success",
 			qv: url.Values{
-				grantType:  []string{passworGrant},
+				grantType:  []string{grant.Password},
 				username:   []string{authParams.Username},
 				password:   []string{authParams.Password},
 				clientID:   []string{authParams.ClientID},
@@ -144,20 +146,15 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		createErr    bool
 		authCode     string
 		codeVerifier string
-		params       url.Values
 		qv           url.Values
 	}{
 		{
-			desc:    "Error: comm returns error",
-			err:     true,
-			commErr: true,
-			params: url.Values{
-				"mine": []string{"set"},
-			},
+			desc:         "Error: comm returns error",
+			err:          true,
+			commErr:      true,
 			authCode:     "authCode",
 			codeVerifier: "codeVerifier",
 			qv: url.Values{
-				"mine":          []string{"set"},
 				"code":          []string{"authCode"},
 				"code_verifier": []string{"codeVerifier"},
 				"redirect_uri":  []string{"redirectURI"},
@@ -167,14 +164,10 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 			},
 		},
 		{
-			desc: "Success",
-			params: url.Values{
-				"mine": []string{"set"},
-			},
+			desc:         "Success",
 			authCode:     "authCode",
 			codeVerifier: "codeVerifier",
 			qv: url.Values{
-				"mine":          []string{"set"},
 				"code":          []string{"authCode"},
 				"code_verifier": []string{"codeVerifier"},
 				"redirect_uri":  []string{"redirectURI"},
@@ -194,10 +187,15 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		fakeCreate := fakeCreateTokenResp{test.createErr}
 		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
 
+		req := AuthCodeRequest{
+			AuthParams:    authParams,
+			Code:          test.authCode,
+			CodeChallenge: test.codeVerifier,
+		}
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromAuthCode(context.Background(), authParams, test.authCode, test.codeVerifier, test.params)
+		_, err := client.GetAccessTokenFromAuthCode(context.Background(), req)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromAuthCode(%s): got err == nil , want err != nil", test.desc)
@@ -227,20 +225,16 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		err          bool
 		commErr      bool
 		createErr    bool
+		cred         *Credential
 		refreshToken string
-		params       url.Values
 		qv           url.Values
 	}{
 		{
-			desc:    "Error: comm returns error",
-			err:     true,
-			commErr: true,
-			params: url.Values{
-				"mine": []string{"set"},
-			},
+			desc:         "Error: comm returns error",
+			err:          true,
+			commErr:      true,
 			refreshToken: "refreshToken",
 			qv: url.Values{
-				"mine":          []string{"set"},
 				"refresh_token": []string{"refreshToken"},
 				grantType:       []string{grant.RefreshToken},
 				clientID:        []string{authParams.ClientID},
@@ -248,19 +242,27 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 			},
 		},
 		{
-			desc: "Success",
-			params: url.Values{
-				"mine": []string{"set"},
-			},
+			desc:         "Success(public app)",
 			refreshToken: "refreshToken",
 			qv: url.Values{
-				"mine":          []string{"set"},
 				"refresh_token": []string{"refreshToken"},
 				grantType:       []string{grant.RefreshToken},
 				clientID:        []string{authParams.ClientID},
 				clientInfo:      []string{clientInfoVal},
 			},
 		},
+		/*
+			{
+				desc: "Success(confidential app)",
+				refreshToken: "refreshToken",
+				qv: url.Values{
+					"refresh_token": []string{"refreshToken"},
+					grantType:       []string{grant.RefreshToken},
+					clientID:        []string{authParams.ClientID},
+					clientInfo:      []string{clientInfoVal},
+				},
+			},
+		*/
 	}
 
 	for _, test := range tests {
@@ -275,7 +277,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromRefreshToken(context.Background(), authParams, test.refreshToken, test.params)
+		_, err := client.GetAccessTokenFromRefreshToken(context.Background(), RefreshTokenPublic, authParams, test.cred, test.refreshToken)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromRefreshToken(%s): got err == nil , want err != nil", test.desc)
@@ -715,5 +717,99 @@ func TestGetLocalAccountID(t *testing.T) {
 	actualLID = id.GetLocalAccountID()
 	if !reflect.DeepEqual("oid", actualLID) {
 		t.Errorf("Expected local account ID oid differs from actual local account ID %s", actualLID)
+	}
+}
+
+func TestCreateTokenResponse(t *testing.T) {
+	authParams := authority.AuthParams{
+		Scopes: []string{"openid", "profile"},
+	}
+
+	tests := []struct {
+		desc    string
+		payload TokenResponseJSONPayload
+		want    TokenResponse
+		err     bool
+	}{
+		{
+			desc: "Error: JSON response had error(no AccessToken set)",
+			payload: TokenResponseJSONPayload{
+				ExpiresIn:    86399,
+				ExtExpiresIn: 86399,
+			},
+			err: true,
+		},
+		{
+			desc: "Success",
+			payload: TokenResponseJSONPayload{
+				AccessToken:  "secret",
+				ExpiresIn:    86399,
+				ExtExpiresIn: 86399,
+			},
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Unix(86399, 0),
+				ExtExpiresOn:  time.Unix(86399, 0),
+				GrantedScopes: []string{"openid", "profile"},
+				ClientInfo:    ClientInfoJSONPayload{},
+			},
+		},
+	}
+
+	for _, test := range tests {
+		got, err := NewTokenResponse(authParams, test.payload)
+		switch {
+		case err == nil && test.err:
+			t.Errorf("TestCreateTokenResponse(%s): got err == nil, want err != nil", test.desc)
+		case err != nil && !test.err:
+			t.Errorf("TestCreateTokenResponse(%s): got err == %v, want err == nil", test.desc, err)
+		case err != nil:
+			continue
+		}
+
+		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
+		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, got); diff != "" {
+			t.Errorf("TestCreateTokenResponse: -want/+got:\n%s", diff)
+		}
+	}
+}
+
+func TestGetHomeAccountIDFromClientInfo(t *testing.T) {
+	clientInfo := ClientInfoJSONPayload{
+		UID:  "uid",
+		Utid: "utid",
+	}
+	tokenResponse := TokenResponse{ClientInfo: clientInfo}
+	expectedHid := "uid.utid"
+	actualHid := tokenResponse.GetHomeAccountIDFromClientInfo()
+	if !reflect.DeepEqual(actualHid, expectedHid) {
+		t.Errorf("Actual home account ID %s differs from expected home account ID %s", actualHid, expectedHid)
+	}
+}
+
+func TestFindDeclinedScopes(t *testing.T) {
+	requestedScopes := []string{"user.read", "openid"}
+	grantedScopes := []string{"user.read"}
+	expectedDeclinedScopes := []string{"openid"}
+	actualDeclinedScopes := findDeclinedScopes(requestedScopes, grantedScopes)
+	if !reflect.DeepEqual(expectedDeclinedScopes, actualDeclinedScopes) {
+		t.Errorf("Actual declined scopes %v differ from expected declined scopes %v", actualDeclinedScopes, expectedDeclinedScopes)
+	}
+}
+
+const (
+	testTokenResponse = `{
+	"access_token" : "secret",
+	"expires_in": 86399,
+	"ext_expires_in": 86399
+	}`
+
+	testTokenResponseErrors = `{"expires_in": 86399, "ext_expires_in": 86399}`
+)
+
+func createFakeResp(code int, body string) *http.Response {
+	return &http.Response{
+		Body:       ioutil.NopCloser(strings.NewReader(body)),
+		StatusCode: code,
 	}
 }

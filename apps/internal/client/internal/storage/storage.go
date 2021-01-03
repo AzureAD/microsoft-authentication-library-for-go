@@ -34,7 +34,7 @@ type getAadinstanceDiscoveryResponser interface {
 
 // StorageTokenResponse mimics a token response that was pulled from the cache.
 type StorageTokenResponse struct {
-	RefreshToken msalbase.RefreshToken
+	RefreshToken accesstokens.RefreshToken
 	IDToken      IDToken // *Credential
 	AccessToken  AccessToken
 	Account      msalbase.Account
@@ -152,7 +152,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	var account msalbase.Account
 
 	if tokenResponse.HasRefreshToken() {
-		refreshToken := msalbase.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
+		refreshToken := accesstokens.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
 		if err := m.writeRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
@@ -279,21 +279,21 @@ func (m *Manager) writeAccessToken(accessToken AccessToken) error {
 	return nil
 }
 
-func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID, clientID string) (msalbase.RefreshToken, error) {
-	byFamily := func(rt msalbase.RefreshToken) bool {
+func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID, clientID string) (accesstokens.RefreshToken, error) {
+	byFamily := func(rt accesstokens.RefreshToken) bool {
 		return matchFamilyRefreshToken(rt, homeID, envAliases)
 	}
-	byClient := func(rt msalbase.RefreshToken) bool {
+	byClient := func(rt accesstokens.RefreshToken) bool {
 		return matchClientIDRefreshToken(rt, homeID, envAliases, clientID)
 	}
 
-	var matchers []func(rt msalbase.RefreshToken) bool
+	var matchers []func(rt accesstokens.RefreshToken) bool
 	if familyID == "" {
-		matchers = []func(rt msalbase.RefreshToken) bool{
+		matchers = []func(rt accesstokens.RefreshToken) bool{
 			byClient, byFamily,
 		}
 	} else {
-		matchers = []func(rt msalbase.RefreshToken) bool{
+		matchers = []func(rt accesstokens.RefreshToken) bool{
 			byFamily, byClient,
 		}
 	}
@@ -316,18 +316,18 @@ func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID,
 		}
 	}
 
-	return msalbase.RefreshToken{}, fmt.Errorf("refresh token not found")
+	return accesstokens.RefreshToken{}, fmt.Errorf("refresh token not found")
 }
 
-func matchFamilyRefreshToken(rt msalbase.RefreshToken, homeID string, envAliases []string) bool {
+func matchFamilyRefreshToken(rt accesstokens.RefreshToken, homeID string, envAliases []string) bool {
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.FamilyID != ""
 }
 
-func matchClientIDRefreshToken(rt msalbase.RefreshToken, homeID string, envAliases []string, clientID string) bool {
+func matchClientIDRefreshToken(rt accesstokens.RefreshToken, homeID string, envAliases []string, clientID string) bool {
 	return rt.HomeAccountID == homeID && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
 
-func (m *Manager) writeRefreshToken(refreshToken msalbase.RefreshToken) error {
+func (m *Manager) writeRefreshToken(refreshToken accesstokens.RefreshToken) error {
 	key := refreshToken.Key()
 	cache := m.Contract().copy()
 	cache.RefreshTokens[key] = refreshToken

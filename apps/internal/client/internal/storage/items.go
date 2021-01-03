@@ -12,17 +12,18 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 )
 
 // Contract is the JSON structure that is written to any storage medium when serializing
 // the internal cache. This design is shared between MSAL versions in many languages.
 // This cannot be changed without design that includes other SDKs.
 type Contract struct {
-	AccessTokens  map[string]AccessToken           `json:"AccessToken"`
-	RefreshTokens map[string]msalbase.RefreshToken `json:"RefreshToken"`
-	IDTokens      map[string]IDToken               `json:"IdToken"`
-	Accounts      map[string]msalbase.Account      `json:"Account"`
-	AppMetaData   map[string]AppMetaData           `json:"AppMetadata"`
+	AccessTokens  map[string]AccessToken               `json:"AccessToken"`
+	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken"`
+	IDTokens      map[string]IDToken                   `json:"IdToken"`
+	Accounts      map[string]msalbase.Account          `json:"Account"`
+	AppMetaData   map[string]AppMetaData               `json:"AppMetadata"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -36,7 +37,7 @@ func NewContract() *Contract {
 func (c *Contract) copy() *Contract {
 	n := &Contract{
 		AccessTokens:     make(map[string]AccessToken, len(c.AccessTokens)),
-		RefreshTokens:    make(map[string]msalbase.RefreshToken, len(c.RefreshTokens)),
+		RefreshTokens:    make(map[string]accesstokens.RefreshToken, len(c.RefreshTokens)),
 		IDTokens:         make(map[string]IDToken, len(c.IDTokens)),
 		Accounts:         make(map[string]msalbase.Account, len(c.Accounts)),
 		AppMetaData:      make(map[string]AppMetaData, len(c.AppMetaData)),

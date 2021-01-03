@@ -74,7 +74,7 @@ func (t *Token) Credential(ctx context.Context, authParams authority.AuthParams,
 	return t.rest.AccessTokens().GetAccessTokenWithAssertion(ctx, authParams, jwt)
 }
 
-func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken msalbase.RefreshToken) (accesstokens.TokenResponse, error) {
+func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
