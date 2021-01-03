@@ -88,7 +88,7 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 		HomeAccountID:                  homeID,
 		Environment:                    env,
 		Realm:                          realm,
-		CredentialType:                 msalbase.CredentialTypeAccessToken,
+		CredentialType:                 "AccessToken",
 		ClientID:                       clientID,
 		Secret:                         token,
 		Scopes:                         scopes,
@@ -188,7 +188,7 @@ func NewIDToken(homeID, env, realm, clientID, idToken string) IDToken {
 		HomeAccountID:  homeID,
 		Environment:    env,
 		Realm:          realm,
-		CredentialType: msalbase.CredentialTypeIDToken,
+		CredentialType: "IDToken",
 		ClientID:       clientID,
 		Secret:         idToken,
 	}

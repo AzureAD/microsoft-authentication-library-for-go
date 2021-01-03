@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -88,7 +89,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 		{
 			desc: "Success",
 			qv: url.Values{
-				grantType:  []string{msalbase.PasswordGrant},
+				grantType:  []string{passworGrant},
 				username:   []string{authParams.Username},
 				password:   []string{authParams.Password},
 				clientID:   []string{authParams.ClientID},
@@ -158,7 +159,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 				"code":          []string{"authCode"},
 				"code_verifier": []string{"codeVerifier"},
 				"redirect_uri":  []string{"redirectURI"},
-				grantType:       []string{msalbase.AuthCodeGrant},
+				grantType:       []string{grant.AuthCode},
 				clientID:        []string{authParams.ClientID},
 				clientInfo:      []string{clientInfoVal},
 			},
@@ -175,7 +176,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 				"code":          []string{"authCode"},
 				"code_verifier": []string{"codeVerifier"},
 				"redirect_uri":  []string{"redirectURI"},
-				grantType:       []string{msalbase.AuthCodeGrant},
+				grantType:       []string{grant.AuthCode},
 				clientID:        []string{authParams.ClientID},
 				clientInfo:      []string{clientInfoVal},
 			},
@@ -239,7 +240,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 			qv: url.Values{
 				"mine":          []string{"set"},
 				"refresh_token": []string{"refreshToken"},
-				grantType:       []string{msalbase.RefreshTokenGrant},
+				grantType:       []string{grant.RefreshToken},
 				clientID:        []string{authParams.ClientID},
 				clientInfo:      []string{clientInfoVal},
 			},
@@ -253,7 +254,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 			qv: url.Values{
 				"mine":          []string{"set"},
 				"refresh_token": []string{"refreshToken"},
-				grantType:       []string{msalbase.RefreshTokenGrant},
+				grantType:       []string{grant.RefreshToken},
 				clientID:        []string{authParams.ClientID},
 				clientInfo:      []string{clientInfoVal},
 			},
@@ -312,7 +313,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 			clientSecret: "clientSecret",
 			qv: url.Values{
 				"client_secret": []string{"clientSecret"},
-				grantType:       []string{msalbase.ClientCredentialGrant},
+				grantType:       []string{grant.ClientCredential},
 				clientID:        []string{authParams.ClientID},
 			},
 		},
@@ -321,7 +322,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 			clientSecret: "clientSecret",
 			qv: url.Values{
 				"client_secret": []string{"clientSecret"},
-				grantType:       []string{msalbase.ClientCredentialGrant},
+				grantType:       []string{grant.ClientCredential},
 				clientID:        []string{authParams.ClientID},
 			},
 		},
@@ -379,9 +380,9 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 			commErr:   true,
 			assertion: "assertion",
 			qv: url.Values{
-				"client_assertion_type": []string{msalbase.ClientAssertionGrant},
+				"client_assertion_type": []string{grant.ClientAssertion},
 				"client_assertion":      []string{"assertion"},
-				grantType:               []string{msalbase.ClientCredentialGrant},
+				grantType:               []string{grant.ClientCredential},
 				clientInfo:              []string{clientInfoVal},
 			},
 		},
@@ -389,9 +390,9 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 			desc:      "Success",
 			assertion: "assertion",
 			qv: url.Values{
-				"client_assertion_type": []string{msalbase.ClientAssertionGrant},
+				"client_assertion_type": []string{grant.ClientAssertion},
 				"client_assertion":      []string{"assertion"},
-				grantType:               []string{msalbase.ClientCredentialGrant},
+				grantType:               []string{grant.ClientCredential},
 				clientInfo:              []string{clientInfoVal},
 			},
 		},
@@ -521,7 +522,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 			),
 			qv: url.Values{
 				deviceCode: []string{"deviceCode"},
-				grantType:  []string{msalbase.DeviceCodeGrant},
+				grantType:  []string{grant.DeviceCode},
 				clientID:   []string{authParams.ClientID},
 				clientInfo: []string{clientInfoVal},
 			},
@@ -540,7 +541,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 			),
 			qv: url.Values{
 				deviceCode: []string{"deviceCode"},
-				grantType:  []string{msalbase.DeviceCodeGrant},
+				grantType:  []string{grant.DeviceCode},
 				clientID:   []string{authParams.ClientID},
 				clientInfo: []string{clientInfoVal},
 			},
@@ -599,13 +600,13 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 			err:     true,
 			commErr: true,
 			samlGrant: wstrust.SamlTokenInfo{
-				AssertionType: msalbase.SAMLV1Grant,
+				AssertionType: grant.SAMLV1,
 				Assertion:     "assertion",
 			},
 			qv: url.Values{
 				username:    []string{"username"},
 				password:    []string{"password"},
-				grantType:   []string{msalbase.SAMLV1Grant},
+				grantType:   []string{grant.SAMLV1},
 				clientID:    []string{authParams.ClientID},
 				clientInfo:  []string{clientInfoVal},
 				"assertion": []string{base64Assertion},
@@ -620,7 +621,7 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 			qv: url.Values{
 				username:    []string{"username"},
 				password:    []string{"password"},
-				grantType:   []string{msalbase.SAMLV1Grant},
+				grantType:   []string{grant.SAMLV1},
 				clientID:    []string{authParams.ClientID},
 				clientInfo:  []string{clientInfoVal},
 				"assertion": []string{base64Assertion},
@@ -629,13 +630,13 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 		{
 			desc: "Success: SAMLV1Grant",
 			samlGrant: wstrust.SamlTokenInfo{
-				AssertionType: msalbase.SAMLV1Grant,
+				AssertionType: grant.SAMLV1,
 				Assertion:     "assertion",
 			},
 			qv: url.Values{
 				username:    []string{"username"},
 				password:    []string{"password"},
-				grantType:   []string{msalbase.SAMLV1Grant},
+				grantType:   []string{grant.SAMLV1},
 				clientID:    []string{authParams.ClientID},
 				clientInfo:  []string{clientInfoVal},
 				"assertion": []string{base64Assertion},
@@ -644,13 +645,13 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 		{
 			desc: "Success: SAMLV2Grant",
 			samlGrant: wstrust.SamlTokenInfo{
-				AssertionType: msalbase.SAMLV2Grant,
+				AssertionType: grant.SAMLV2,
 				Assertion:     "assertion",
 			},
 			qv: url.Values{
 				username:    []string{"username"},
 				password:    []string{"password"},
-				grantType:   []string{msalbase.SAMLV2Grant},
+				grantType:   []string{grant.SAMLV2},
 				clientID:    []string{authParams.ClientID},
 				clientInfo:  []string{clientInfoVal},
 				"assertion": []string{base64Assertion},

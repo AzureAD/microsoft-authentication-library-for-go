@@ -19,6 +19,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 )
 
 /*
@@ -283,7 +284,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	silentParameters := client.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
-		RequestType: requests.RefreshTokenConfidential,
+		RequestType: accesstokens.RefreshTokenConfidential,
 		Credential:  cca.cred,
 	}
 
@@ -335,7 +336,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 		Scopes:      scopes,
 		Code:        opts.Code,
 		Challenge:   opts.Challenge,
-		RequestType: requests.AuthCodeConfidential,
+		RequestType: accesstokens.AuthCodeConfidential,
 		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 	}
 

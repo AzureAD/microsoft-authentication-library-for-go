@@ -16,7 +16,11 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 )
+
+// ADFS is an active directory federation service authority type.
+const ADFS = "ADFS"
 
 type cacheEntry struct {
 	Endpoints             msalbase.AuthorityEndpoints
@@ -43,7 +47,7 @@ func newAuthorityEndpoint(rest *ops.REST) *authorityEndpoint {
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
 func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
-	if authorityInfo.AuthorityType == msalbase.ADFS && len(userPrincipalName) == 0 {
+	if authorityInfo.AuthorityType == ADFS && len(userPrincipalName) == 0 {
 		return msalbase.AuthorityEndpoints{}, errors.New("UPN required for authority validation for ADFS")
 	}
 
@@ -83,7 +87,7 @@ func (m *authorityEndpoint) cachedEndpoints(authorityInfo msalbase.AuthorityInfo
 	defer m.mu.Unlock()
 
 	if cacheEntry, ok := m.cache[authorityInfo.CanonicalAuthorityURI]; ok {
-		if authorityInfo.AuthorityType == msalbase.ADFS {
+		if authorityInfo.AuthorityType == ADFS {
 			domain, err := getAdfsDomainFromUpn(userPrincipalName)
 			if err == nil {
 				if _, ok := cacheEntry.ValidForDomainsInList[domain]; ok {
@@ -102,7 +106,7 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo msalbase.AuthorityI
 
 	updatedCacheEntry := createcacheEntry(endpoints)
 
-	if authorityInfo.AuthorityType == msalbase.ADFS {
+	if authorityInfo.AuthorityType == ADFS {
 		// Since we're here, we've made a call to the backend.  We want to ensure we're caching
 		// the latest values from the server.
 		if cacheEntry, ok := m.cache[authorityInfo.CanonicalAuthorityURI]; ok {
@@ -120,7 +124,7 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo msalbase.AuthorityI
 }
 
 func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
-	if authorityInfo.ValidateAuthority && !msalbase.TrustedHost(authorityInfo.Host) {
+	if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
 		resp, err := m.rest.Authority().GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 		if err != nil {
 			return "", err

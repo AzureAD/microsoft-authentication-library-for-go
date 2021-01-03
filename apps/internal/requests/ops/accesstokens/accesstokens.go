@@ -20,6 +20,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
 )
 
@@ -31,6 +32,20 @@ const (
 	clientInfoVal = "1"
 	username      = "username"
 	password      = "password"
+)
+
+//go:generate stringer -type=AuthCodeRequestType
+
+// AuthCodeRequestType is whether the authorization code flow is for a public or confidential client
+// RefreshTokenReqType
+// TODO(jdoak): Replace this and anything like this(RefreshTokenReqType...) that has "confidential" or "public" with
+// a single type that is called AppType.
+type AuthCodeRequestType int
+
+const (
+	UnknownAuthCodeType AuthCodeRequestType = iota
+	AuthCodePublic
+	AuthCodeConfidential
 )
 
 type urlFormCaller interface {
@@ -69,7 +84,7 @@ type Client struct {
 // GetAccessTokenFromUsernamePassword uses a username and password to get an access token.
 func (c Client) GetAccessTokenFromUsernamePassword(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.TokenResponse, error) {
 	qv := url.Values{}
-	qv.Set(grantType, msalbase.PasswordGrant)
+	qv.Set(grantType, grant.Password)
 	qv.Set(username, authParameters.Username)
 	qv.Set(password, authParameters.Password)
 	qv.Set(clientID, authParameters.ClientID)
@@ -79,45 +94,96 @@ func (c Client) GetAccessTokenFromUsernamePassword(ctx context.Context, authPara
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
-// GetAccessTokenFromAuthCode uses an authorization code to retrieve an access token.
-func (c Client) GetAccessTokenFromAuthCode(ctx context.Context, authParameters msalbase.AuthParametersInternal, authCode string, codeVerifier string, params url.Values) (msalbase.TokenResponse, error) {
-	qv := url.Values{}
-	qv.Set(grantType, msalbase.AuthCodeGrant)
-	qv.Set("code", authCode)
-	qv.Set("code_verifier", codeVerifier)
-	qv.Set("redirect_uri", authParameters.Redirecturi)
-	qv.Set(clientID, authParameters.ClientID)
-	qv.Set(clientInfo, clientInfoVal)
-	// TODO(msal): Hey, if we don't need for these params to override the values above, we
-	// should just do params.Set() for all values above and repeat that for each method in
-	// this client.  Can someone answer that questions?
-	for k, v := range params {
-		qv[k] = v
-	}
-	addScopeQueryParam(qv, authParameters)
-
-	return c.doTokenResp(ctx, authParameters, qv)
+// AuthCodeRequest stores the values required to request a token from the authority using an authorization code
+type AuthCodeRequest struct {
+	AuthParams    msalbase.AuthParametersInternal
+	Code          string
+	CodeChallenge string
+	Credential    *msalbase.Credential
+	RequestType   AuthCodeRequestType
 }
 
+// NewCodeChallengeRequest returns a request
+func NewCodeChallengeRequest(params msalbase.AuthParametersInternal, rt AuthCodeRequestType, cc *msalbase.Credential, code, challenge string) (AuthCodeRequest, error) {
+	if rt == UnknownAuthCodeType {
+		return AuthCodeRequest{}, fmt.Errorf("bug: NewCodeChallengeRequest() called with AuthCodeRequestType == UnknownAuthCodeType")
+	}
+	return AuthCodeRequest{
+		AuthParams:    params,
+		RequestType:   rt,
+		Code:          code,
+		CodeChallenge: challenge,
+		Credential:    cc,
+	}, nil
+}
+
+// GetAccessTokenFromAuthCode uses an authorization code to retrieve an access token.
+func (c Client) GetAccessTokenFromAuthCode(ctx context.Context, req AuthCodeRequest) (msalbase.TokenResponse, error) {
+	var qv url.Values
+
+	switch req.RequestType {
+	case UnknownAuthCodeType:
+		return msalbase.TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with RequestType == UnknownAuthCodeType")
+	case AuthCodeConfidential:
+		var err error
+		qv, err = prepURLVals(req.Credential, req.AuthParams)
+		if err != nil {
+			return msalbase.TokenResponse{}, err
+		}
+	case AuthCodePublic:
+		// Nothing needs to be done, exept to not error.
+	default:
+		return msalbase.TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with RequestType == %s, which we do not recongnize", req.RequestType)
+	}
+
+	qv.Set(grantType, grant.AuthCode)
+	qv.Set("code", req.Code)
+	qv.Set("code_verifier", req.CodeChallenge)
+	qv.Set("redirect_uri", req.AuthParams.Redirecturi)
+	qv.Set(clientID, req.AuthParams.ClientID)
+	qv.Set(clientInfo, clientInfoVal)
+	addScopeQueryParam(qv, req.AuthParams)
+
+	return c.doTokenResp(ctx, req.AuthParams, qv)
+}
+
+//go:generate stringer -type=RefreshTokenReqType
+
+// RefreshTokenReqType is whether the refresh token flow is for a public or confidential client
+// TODO(jdoak): Replace this and anything like this that has "confidential" or "public" with
+// a single type that is called AppType.
+type RefreshTokenReqType int
+
+//These are the different values for RefreshTokenReqType
+const (
+	RefreshTokenUnknown RefreshTokenReqType = iota
+	RefreshTokenPublic
+	RefreshTokenConfidential
+)
+
 // GetAccessTokenFromRefreshToken uses a refresh token (for refreshing credentials) to get a new access token.
-func (c Client) GetAccessTokenFromRefreshToken(ctx context.Context, authParameters msalbase.AuthParametersInternal, refreshToken string, params url.Values) (msalbase.TokenResponse, error) {
-	qv := url.Values{}
-	qv.Set(grantType, msalbase.RefreshTokenGrant)
-	qv.Set(clientID, authParameters.ClientID)
+func (c Client) GetAccessTokenFromRefreshToken(ctx context.Context, rtType RefreshTokenReqType, authParams msalbase.AuthParametersInternal, cc *msalbase.Credential, refreshToken string) (msalbase.TokenResponse, error) {
+	var qv url.Values
+	if rtType == RefreshTokenConfidential {
+		var err error
+		qv, err = prepURLVals(cc, authParams)
+		if err != nil {
+			return msalbase.TokenResponse{}, err
+		}
+	}
+	qv.Set(grantType, grant.RefreshToken)
+	qv.Set(clientID, authParams.ClientID)
 	qv.Set(clientInfo, clientInfoVal)
 	qv.Set("refresh_token", refreshToken)
-	for k, v := range params {
-		qv[k] = v
-	}
-	addScopeQueryParam(qv, authParameters)
+	addScopeQueryParam(qv, authParams)
 
-	return c.doTokenResp(ctx, authParameters, qv)
+	return c.doTokenResp(ctx, authParams, qv)
 }
 
 // GetAccessTokenWithClientSecret uses a client's secret (aka password) to get a new token.
 func (c Client) GetAccessTokenWithClientSecret(ctx context.Context, authParameters msalbase.AuthParametersInternal, clientSecret string) (msalbase.TokenResponse, error) {
 	qv := url.Values{}
-	qv.Set(grantType, msalbase.ClientCredentialGrant)
+	qv.Set(grantType, grant.ClientCredential)
 	qv.Set("client_secret", clientSecret)
 	qv.Set(clientID, authParameters.ClientID)
 	addScopeQueryParam(qv, authParameters)
@@ -127,8 +193,8 @@ func (c Client) GetAccessTokenWithClientSecret(ctx context.Context, authParamete
 
 func (c Client) GetAccessTokenWithAssertion(ctx context.Context, authParameters msalbase.AuthParametersInternal, assertion string) (msalbase.TokenResponse, error) {
 	qv := url.Values{}
-	qv.Set(grantType, msalbase.ClientCredentialGrant)
-	qv.Set("client_assertion_type", msalbase.ClientAssertionGrant)
+	qv.Set(grantType, grant.ClientCredential)
+	qv.Set("client_assertion_type", grant.ClientAssertion)
 	qv.Set("client_assertion", assertion)
 	qv.Set(clientInfo, clientInfoVal)
 	addScopeQueryParam(qv, authParameters)
@@ -154,7 +220,7 @@ func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters msalbase
 
 func (c Client) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters msalbase.AuthParametersInternal, deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
 	qv := url.Values{}
-	qv.Set(grantType, msalbase.DeviceCodeGrant)
+	qv.Set(grantType, grant.DeviceCode)
 	qv.Set(deviceCode, deviceCodeResult.DeviceCode)
 	qv.Set(clientID, authParameters.ClientID)
 	qv.Set(clientInfo, clientInfoVal)
@@ -173,10 +239,10 @@ func (c Client) GetAccessTokenFromSamlGrant(ctx context.Context, authParameters 
 	addScopeQueryParam(qv, authParameters)
 
 	switch samlGrant.AssertionType {
-	case msalbase.SAMLV1Grant:
-		qv.Set(grantType, msalbase.SAMLV1Grant)
-	case msalbase.SAMLV2Grant:
-		qv.Set(grantType, msalbase.SAMLV2Grant)
+	case grant.SAMLV1:
+		qv.Set(grantType, grant.SAMLV1)
+	case grant.SAMLV2:
+		qv.Set(grantType, grant.SAMLV2)
 	default:
 		return msalbase.TokenResponse{}, fmt.Errorf("GetAccessTokenFromSamlGrant returned unknown SAML assertion type: %q", samlGrant.AssertionType)
 	}
@@ -193,6 +259,24 @@ func (c Client) doTokenResp(ctx context.Context, authParameters msalbase.AuthPar
 	}
 	// TODO(jdoak): As above, this shouldn't be needed.
 	return c.TokenRespFunc(authParameters, resp)
+}
+
+// prepURLVals returns an url.Values that sets various key/values if we are doing secrets
+// or JWT assertions.
+func prepURLVals(cc *msalbase.Credential, authParams msalbase.AuthParametersInternal) (url.Values, error) {
+	params := url.Values{}
+	if cc.Secret != "" {
+		params.Set("client_secret", cc.Secret)
+		return params, nil
+	}
+
+	jwt, err := cc.JWT(authParams)
+	if err != nil {
+		return nil, err
+	}
+	params.Set("client_assertion", jwt)
+	params.Set("client_assertion_type", grant.ClientAssertion)
+	return params, nil
 }
 
 // openid required to get an id token

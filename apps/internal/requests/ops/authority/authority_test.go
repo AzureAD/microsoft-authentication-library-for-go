@@ -183,27 +183,27 @@ func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
 		},
 		{
 			desc:     "Success with authorityInfo.Host not in trusted list",
-			endpoint: fmt.Sprintf(msalbase.InstanceDiscoveryEndpoint, msalbase.DefaultHost),
+			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, defaultHost),
 			authInfo: msalbase.AuthorityInfo{
 				Host:   "host",
 				Tenant: "tenant",
 			},
 			qv: url.Values{
 				"api-version":            []string{"1.1"},
-				"authorization_endpoint": []string{fmt.Sprintf(msalbase.AuthorizationEndpoint, "host", "tenant")},
+				"authorization_endpoint": []string{fmt.Sprintf(authorizationEndpoint, "host", "tenant")},
 			},
 			resp: &InstanceDiscoveryResponse{},
 		},
 		{
 			desc:     "Success with authorityInfo.Host in trusted list",
-			endpoint: fmt.Sprintf(msalbase.InstanceDiscoveryEndpoint, "login.microsoftonline.de"),
+			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, "login.microsoftonline.de"),
 			authInfo: msalbase.AuthorityInfo{
 				Host:   "login.microsoftonline.de",
 				Tenant: "tenant",
 			},
 			qv: url.Values{
 				"api-version":            []string{"1.1"},
-				"authorization_endpoint": []string{fmt.Sprintf(msalbase.AuthorizationEndpoint, "login.microsoftonline.de", "tenant")},
+				"authorization_endpoint": []string{fmt.Sprintf(authorizationEndpoint, "login.microsoftonline.de", "tenant")},
 			},
 			resp: &InstanceDiscoveryResponse{},
 		},

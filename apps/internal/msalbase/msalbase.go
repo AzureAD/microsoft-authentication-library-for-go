@@ -28,54 +28,7 @@ const (
 
 	// CacheKeySeparator is used in creating the keys of the cache.
 	CacheKeySeparator = "-"
-
-	// Credential Types.
-
-	CredentialTypeRefreshToken = "RefreshToken"
-	CredentialTypeAccessToken  = "AccessToken"
-	CredentialTypeIDToken      = "IDToken"
-
-	// Authority Types.
-
-	MSSTS = "MSSTS"
-	ADFS  = "ADFS"
-	B2C   = "B2C"
-
-	// Grant Types.
-
-	PasswordGrant         = "password"
-	SAMLV1Grant           = "urn:ietf:params:oauth:grant-type:saml1_1-bearer"
-	SAMLV2Grant           = "urn:ietf:params:oauth:grant-type:saml2-bearer"
-	DeviceCodeGrant       = "device_code"
-	AuthCodeGrant         = "authorization_code"
-	RefreshTokenGrant     = "refresh_token"
-	ClientCredentialGrant = "client_credentials"
-	ClientAssertionGrant  = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-
-	// Endpoints.
-
-	AuthorizationEndpoint     = "https://%v/%v/oauth2/v2.0/authorize"
-	InstanceDiscoveryEndpoint = "https://%v/common/discovery/instance"
-	DefaultHost               = "login.microsoftonline.com"
 )
-
-var aadTrustedHostList = map[string]bool{
-	"login.windows.net":            true, // Microsoft Azure Worldwide - Used in validation scenarios where host is not this list
-	"login.chinacloudapi.cn":       true, // Microsoft Azure China
-	"login.microsoftonline.de":     true, // Microsoft Azure Blackforest
-	"login-us.microsoftonline.com": true, // Microsoft Azure US Government - Legacy
-	"login.microsoftonline.us":     true, // Microsoft Azure US Government
-	"login.microsoftonline.com":    true, // Microsoft Azure Worldwide
-	"login.cloudgovapi.us":         true, // Microsoft Azure US Government
-}
-
-// TrustedHost checks if an AAD host is trusted/valid.
-func TrustedHost(host string) bool {
-	if _, ok := aadTrustedHostList[host]; ok {
-		return true
-	}
-	return false
-}
 
 // TODO(jdoak): This needs to move out of here.  Both apps/public and apps/confidential return
 // this. Or at the least, we need to type alias this up there.
@@ -134,11 +87,10 @@ func (acc Account) GetEnvironment() string {
 // AuthorizationType represents the type of token flow.
 type AuthorizationType int
 
-//go:generate stringer -type=AuthorizationType
 // These are all the types of token flows.
 // TODO(jdoak): Rename all of these and replace AuthorizationTypeNone with Unknown*.
 const (
-	AuthorizationTypeNone                  AuthorizationType = iota
+	AuthorizationTypeUnknown               AuthorizationType = iota
 	AuthorizationTypeUsernamePassword                        = iota
 	AuthorizationTypeWindowsIntegratedAuth                   = iota
 	AuthorizationTypeAuthCode                                = iota
@@ -226,10 +178,11 @@ func CreateAuthorityInfoFromAuthorityURI(authorityURI string, validateAuthority 
 		return AuthorityInfo{}, err
 	}
 
-	// todo: check for other authority types...
-	authorityType := MSSTS
+	// TODO(msal): check for other authority types...
+	//ADFS  = "ADFS"
+	// B2C   = "B2C"
 
-	return createAuthorityInfo(authorityType, canonicalURI, validateAuthority)
+	return createAuthorityInfo("MSST", canonicalURI, validateAuthority)
 }
 
 // AuthorityEndpoints consists of the endpoints from the tenant discovery response.
@@ -465,7 +418,7 @@ func NewRefreshToken(homeID, env, clientID, refreshToken, familyID string) Refre
 	return RefreshToken{
 		HomeAccountID:  homeID,
 		Environment:    env,
-		CredentialType: CredentialTypeRefreshToken,
+		CredentialType: "RefreshToken",
 		ClientID:       clientID,
 		FamilyID:       familyID,
 		Secret:         refreshToken,

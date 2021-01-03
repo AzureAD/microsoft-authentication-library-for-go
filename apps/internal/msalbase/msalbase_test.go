@@ -37,7 +37,7 @@ func TestAccountUnmarshal(t *testing.T) {
 		"home_account_id": "hid",
 		"environment":     "env",
 		"extra":           "this_is_extra",
-		"authority_type":  "MSSTS",
+		"authority_type":  authType,
 	}
 
 	b, err := stdJSON.Marshal(jsonMap)
@@ -48,7 +48,7 @@ func TestAccountUnmarshal(t *testing.T) {
 	want := Account{
 		HomeAccountID: accHID,
 		Environment:   accEnv,
-		AuthorityType: MSSTS,
+		AuthorityType: authType,
 		AdditionalFields: map[string]interface{}{
 			"extra": json.MarshalRaw("this_is_extra"),
 		},
@@ -94,7 +94,7 @@ func TestAccountMarshal(t *testing.T) {
 		"environment":      "env",
 		"realm":            "realm",
 		"local_account_id": "lid",
-		"authority_type":   "MSSTS",
+		"authority_type":   authType,
 		"username":         "user",
 		"extra":            "extra",
 	}
@@ -137,7 +137,7 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 	want := AuthorityInfo{
 		Host:                  "login.microsoftonline.com",
 		CanonicalAuthorityURI: authorityURI,
-		AuthorityType:         MSSTS,
+		AuthorityType:         authType,
 		UserRealmURIPrefix:    "https://login.microsoftonline.com/common/userrealm/",
 		Tenant:                "common",
 		ValidateAuthority:     true,

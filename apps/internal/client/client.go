@@ -17,6 +17,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 )
 
 const (
@@ -50,7 +51,7 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 type AcquireTokenSilentParameters struct {
 	Scopes      []string
 	Account     AccountProvider
-	RequestType requests.RefreshTokenReqType
+	RequestType accesstokens.RefreshTokenReqType
 	Credential  *msalbase.Credential
 }
 
@@ -69,7 +70,7 @@ type AcquireTokenAuthCodeParameters struct {
 	Scopes      []string
 	Code        string
 	Challenge   string
-	RequestType requests.AuthCodeRequestType
+	RequestType accesstokens.AuthCodeRequestType
 	Credential  *msalbase.Credential
 }
 
@@ -229,11 +230,11 @@ func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentP
 		}
 
 		var cc *msalbase.Credential
-		if silent.RequestType == requests.RefreshTokenConfidential {
+		if silent.RequestType == accesstokens.RefreshTokenConfidential {
 			cc = silent.Credential
 		}
 
-		token, err := b.Token.Refresh(ctx, b.AuthParams, cc, storageTokenResponse.RefreshToken, silent.RequestType)
+		token, err := b.Token.Refresh(ctx, silent.RequestType, b.AuthParams, cc, storageTokenResponse.RefreshToken)
 		if err != nil {
 			return AuthenticationResult{}, err
 		}
@@ -250,11 +251,11 @@ func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acquire
 	authParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
 
 	var cc *msalbase.Credential
-	if authCodeParams.RequestType == requests.AuthCodeConfidential {
+	if authCodeParams.RequestType == accesstokens.AuthCodeConfidential {
 		cc = authCodeParams.Credential
 	}
 
-	req, err := requests.NewCodeChallengeRequest(authParams, authCodeParams.RequestType, cc, authCodeParams.Code, authCodeParams.Challenge)
+	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.RequestType, cc, authCodeParams.Code, authCodeParams.Challenge)
 	if err != nil {
 		return AuthenticationResult{}, err
 	}

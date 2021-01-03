@@ -32,12 +32,7 @@ const (
 	idSecret           = "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature"
 	accUser            = "John Doe"
 	accLID             = "object1234"
-	accAuth            = string(msalbase.MSSTS)
-)
-
-var (
-	accessTokenCred = msalbase.CredentialTypeAccessToken
-	rtCredType      = msalbase.CredentialTypeRefreshToken
+	accAuth            = "MSSTS"
 )
 
 func newForTest(authorityClient getAadinstanceDiscoveryResponser) *Manager {
@@ -83,8 +78,8 @@ func TestIsMatchingScopes(t *testing.T) {
 }
 
 func TestGetAllAccounts(t *testing.T) {
-	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
-	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
+	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
 		Accounts: map[string]msalbase.Account{
 			testAccOne.Key(): testAccOne,
@@ -116,8 +111,8 @@ func TestGetAllAccounts(t *testing.T) {
 
 func TestDeleteAccounts(t *testing.T) {
 
-	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
-	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", msalbase.MSSTS, "USERNAME")
+	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
 		Accounts: map[string]msalbase.Account{
 			testAccOne.Key(): testAccOne,
@@ -204,7 +199,7 @@ func TestWriteAccessToken(t *testing.T) {
 }
 
 func TestReadAccount(t *testing.T) {
-	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
 	cache := &Contract{
 		Accounts: map[string]msalbase.Account{
@@ -230,7 +225,7 @@ func TestReadAccount(t *testing.T) {
 
 func TestWriteAccount(t *testing.T) {
 	storageManager := newForTest(nil)
-	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
 	key := testAcc.Key()
 	err := storageManager.writeAccount(testAcc)
@@ -593,7 +588,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 			},
 			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
 				Environment:                    defaultEnvironment,
-				CredentialType:                 accessTokenCred,
+				CredentialType:                 "AccessToken",
 				Secret:                         accessTokenSecret,
 				Realm:                          defaultRealm,
 				Scopes:                         defaultScopes,
@@ -608,7 +603,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
-				CredentialType: rtCredType,
+				CredentialType: "RefreshToken",
 				Secret:         rtSecret,
 				ClientID:       defaultClientID,
 				HomeAccountID:  defaultHID,
@@ -743,7 +738,7 @@ func TestRead(t *testing.T) {
 	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
 	testRefreshToken := NewRefreshToken("hid", "env", "cid", "secret", "fid")
-	testAccount := msalbase.NewAccount("hid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccount := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
 	contract := &Contract{
 		RefreshTokens: map[string]RefreshToken{
@@ -853,7 +848,7 @@ func TestWrite(t *testing.T) {
 		ExpiresOn:     expiresOn,
 		ExtExpiresOn:  time.Now(),
 	}
-	authInfo := msalbase.AuthorityInfo{Host: "env", Tenant: "realm", AuthorityType: msalbase.MSSTS}
+	authInfo := msalbase.AuthorityInfo{Host: "env", Tenant: "realm", AuthorityType: accAuth}
 	authParams := msalbase.AuthParametersInternal{
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
@@ -886,7 +881,7 @@ func TestWrite(t *testing.T) {
 		"idToken",
 	)
 
-	testAccount := msalbase.NewAccount("testUID.testUtid", "env", "realm", "lid", msalbase.MSSTS, "username")
+	testAccount := msalbase.NewAccount("testUID.testUtid", "env", "realm", "lid", accAuth, "username")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
 
 	actualAccount, err := cacheManager.Write(authParams, tokenResponse)

@@ -16,6 +16,7 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/internal/defs"
 )
 
@@ -118,9 +119,9 @@ func (c Client) samlAssertion(def defs.SAMLDefinitions) (SamlTokenInfo, error) {
 			samlVersion := token.Assertion.Saml
 			switch samlVersion {
 			case samlv1Assertion:
-				return SamlTokenInfo{AssertionType: msalbase.SAMLV1Grant, Assertion: assertion}, nil
+				return SamlTokenInfo{AssertionType: grant.SAMLV1, Assertion: assertion}, nil
 			case samlv2Assertion:
-				return SamlTokenInfo{AssertionType: msalbase.SAMLV2Grant, Assertion: assertion}, nil
+				return SamlTokenInfo{AssertionType: grant.SAMLV2, Assertion: assertion}, nil
 			}
 			return SamlTokenInfo{}, fmt.Errorf("couldn't parse SAML assertion, version unknown: %q", samlVersion)
 		}

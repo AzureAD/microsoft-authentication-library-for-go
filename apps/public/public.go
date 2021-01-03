@@ -25,6 +25,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 )
 
 // AuthenticationResult contains the results of one token acquisition operation.
@@ -128,7 +129,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	silentParameters := client.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
-		RequestType: requests.RefreshTokenPublic,
+		RequestType: accesstokens.RefreshTokenPublic,
 	}
 
 	return pca.Base.AcquireTokenSilent(ctx, silentParameters)
@@ -236,7 +237,7 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 		Scopes:      scopes,
 		Code:        opts.Code,
 		Challenge:   opts.Challenge,
-		RequestType: requests.AuthCodePublic,
+		RequestType: accesstokens.AuthCodePublic,
 	}
 
 	return pca.Base.AcquireTokenByAuthCode(ctx, params)

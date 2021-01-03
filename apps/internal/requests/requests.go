@@ -7,64 +7,18 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
 	"regexp"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 )
 
 type resolveEndpointer interface {
 	ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error)
 }
-
-//go:generate stringer -type=AuthCodeRequestType
-
-// AuthCodeRequestType is whether the authorization code flow is for a public or confidential client
-type AuthCodeRequestType int
-
-const (
-	UnknownAuthCodeType AuthCodeRequestType = iota
-	AuthCodePublic
-	AuthCodeConfidential
-)
-
-// AuthCodeRequest stores the values required to request a token from the authority using an authorization code
-type AuthCodeRequest struct {
-	authParameters msalbase.AuthParametersInternal
-	Code           string
-	CodeChallenge  string
-	Credential     *msalbase.Credential
-	RequestType    AuthCodeRequestType
-}
-
-// NewCodeChallengeRequest returns a request
-func NewCodeChallengeRequest(params msalbase.AuthParametersInternal, rt AuthCodeRequestType, cc *msalbase.Credential, code, challenge string) (AuthCodeRequest, error) {
-	if rt == UnknownAuthCodeType {
-		return AuthCodeRequest{}, fmt.Errorf("bug: NewCodeChallengeRequest() called with AuthCodeRequestType == UnknownAuthCodeType")
-	}
-	return AuthCodeRequest{
-		authParameters: params,
-		RequestType:    rt,
-		Code:           code,
-		CodeChallenge:  challenge,
-		Credential:     cc,
-	}, nil
-}
-
-//go:generate stringer -type=RefreshTokenReqType
-
-// RefreshTokenReqType is whether the refresh token flow is for a public or confidential client
-type RefreshTokenReqType int
-
-//These are the different values for RefreshTokenReqType
-const (
-	RefreshTokenUnknown RefreshTokenReqType = iota
-	RefreshTokenPublic
-	RefreshTokenConfidential
-)
 
 // Token provides tokens for various types of token requests.
 type Token struct {
@@ -90,31 +44,17 @@ func (t *Token) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityIn
 	return t.rest.Authority().GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 }
 
-// AuthCode requturns a token based on an authorization code.
-func (t *Token) AuthCode(ctx context.Context, req AuthCodeRequest) (msalbase.TokenResponse, error) {
-	if err := t.resolveEndpoint(ctx, &req.authParameters, ""); err != nil {
+// AuthCode returns a token based on an authorization code.
+func (t *Token) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (msalbase.TokenResponse, error) {
+	if err := t.resolveEndpoint(ctx, &req.AuthParams, ""); err != nil {
 		return msalbase.TokenResponse{}, err
 	}
 
-	params := url.Values{}
-	switch req.RequestType {
-	case UnknownAuthCodeType:
-		return msalbase.TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with RequestType == UnknownAuthCodeType")
-	case AuthCodeConfidential:
-		var err error
-		params, err = t.prepURLVals(req.Credential, req.authParameters)
-		if err != nil {
-			return msalbase.TokenResponse{}, err
-		}
-	case AuthCodePublic:
-		tResp, err := t.rest.AccessTokens().GetAccessTokenFromAuthCode(ctx, req.authParameters, req.Code, req.CodeChallenge, params)
-		if err != nil {
-			return msalbase.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
-		}
-		return tResp, nil
+	tResp, err := t.rest.AccessTokens().GetAccessTokenFromAuthCode(ctx, req)
+	if err != nil {
+		return msalbase.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
 	}
-
-	return msalbase.TokenResponse{}, fmt.Errorf("Token.AuthCode() received request with unsupported RequestType == %v", req.RequestType)
+	return tResp, nil
 }
 
 // Credential acquires a token from the authority using a client credentials grant.
@@ -134,20 +74,12 @@ func (t *Token) Credential(ctx context.Context, authParams msalbase.AuthParamete
 	return t.rest.AccessTokens().GetAccessTokenWithAssertion(ctx, authParams, jwt)
 }
 
-func (t *Token) Refresh(ctx context.Context, authParams msalbase.AuthParametersInternal, cc *msalbase.Credential, refreshToken msalbase.RefreshToken, reqType RefreshTokenReqType) (msalbase.TokenResponse, error) {
+func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams msalbase.AuthParametersInternal, cc *msalbase.Credential, refreshToken msalbase.RefreshToken) (msalbase.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return msalbase.TokenResponse{}, err
 	}
 
-	params := url.Values{}
-	if reqType == RefreshTokenConfidential {
-		var err error
-		params, err = t.prepURLVals(cc, authParams)
-		if err != nil {
-			return msalbase.TokenResponse{}, err
-		}
-	}
-	return t.rest.AccessTokens().GetAccessTokenFromRefreshToken(ctx, authParams, refreshToken.Secret, params)
+	return t.rest.AccessTokens().GetAccessTokenFromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
 }
 
 // UsernamePassword rertieves a token where a username and password is used. However, if this is
@@ -257,20 +189,4 @@ func (t *Token) resolveEndpoint(ctx context.Context, authParams *msalbase.AuthPa
 	}
 	authParams.Endpoints = endpoints
 	return nil
-}
-
-func (t *Token) prepURLVals(cc *msalbase.Credential, authParams msalbase.AuthParametersInternal) (url.Values, error) {
-	params := url.Values{}
-	if cc.Secret != "" {
-		params.Set("client_secret", cc.Secret)
-		return params, nil
-	}
-
-	jwt, err := cc.JWT(authParams)
-	if err != nil {
-		return nil, err
-	}
-	params.Set("client_assertion", jwt)
-	params.Set("client_assertion_type", msalbase.ClientAssertionGrant)
-	return params, nil
 }
