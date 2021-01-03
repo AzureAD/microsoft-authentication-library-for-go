@@ -20,6 +20,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 )
 
 /*
@@ -135,12 +136,12 @@ type Credential struct {
 	key  crypto.PrivateKey
 }
 
-// toMSALBASE returns the msalbase.Credential that is used internally. The current structure of the
+// toMSALBASE returns the accesstokens.Credential that is used internally. The current structure of the
 // code requires that client.go, requests.go and confidential.go share a credential type without
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
-func (c Credential) toMSALBASE() *msalbase.Credential {
-	return &msalbase.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
+func (c Credential) toMSALBASE() *accesstokens.Credential {
+	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
 }
 
 // NewCredFromSecret creates a Credential from a secret.
@@ -163,7 +164,7 @@ func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
 type Client struct {
 	client.Base
 
-	cred *msalbase.Credential
+	cred *accesstokens.Credential
 
 	// userID is some unique identifier for a user. It actually isn't used by us at all, it
 	// simply acts as another hint that a confidential.Client is for a single user.
@@ -347,7 +348,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthenticationResult, error) {
 	authParams := cca.AuthParams
 	authParams.Scopes = scopes
-	authParams.AuthorizationType = msalbase.AuthorizationTypeClientCredentials
+	authParams.AuthorizationType = authority.AuthorizationTypeClientCredentials
 
 	token, err := cca.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {

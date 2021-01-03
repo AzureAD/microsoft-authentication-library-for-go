@@ -14,7 +14,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 )
@@ -23,11 +22,11 @@ import (
 const ADFS = "ADFS"
 
 type cacheEntry struct {
-	Endpoints             msalbase.AuthorityEndpoints
+	Endpoints             authority.AuthorityEndpoints
 	ValidForDomainsInList map[string]bool
 }
 
-func createcacheEntry(endpoints msalbase.AuthorityEndpoints) cacheEntry {
+func createcacheEntry(endpoints authority.AuthorityEndpoints) cacheEntry {
 	return cacheEntry{endpoints, map[string]bool{}}
 }
 
@@ -46,9 +45,9 @@ func newAuthorityEndpoint(rest *ops.REST) *authorityEndpoint {
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
-func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
+func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, error) {
 	if authorityInfo.AuthorityType == ADFS && len(userPrincipalName) == 0 {
-		return msalbase.AuthorityEndpoints{}, errors.New("UPN required for authority validation for ADFS")
+		return authority.AuthorityEndpoints{}, errors.New("UPN required for authority validation for ADFS")
 	}
 
 	if endpoints, found := m.cachedEndpoints(authorityInfo, userPrincipalName); found {
@@ -57,20 +56,20 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 
 	endpoint, err := m.openIDConfigurationEndpoint(ctx, authorityInfo, userPrincipalName)
 	if err != nil {
-		return msalbase.AuthorityEndpoints{}, err
+		return authority.AuthorityEndpoints{}, err
 	}
 
 	resp, err := m.rest.Authority().GetTenantDiscoveryResponse(ctx, endpoint)
 	if err != nil {
-		return msalbase.AuthorityEndpoints{}, err
+		return authority.AuthorityEndpoints{}, err
 	}
 	if err := resp.Validate(); err != nil {
-		return msalbase.AuthorityEndpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
+		return authority.AuthorityEndpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
 	}
 
 	tenant := authorityInfo.Tenant
 
-	endpoints := msalbase.CreateAuthorityEndpoints(
+	endpoints := authority.CreateAuthorityEndpoints(
 		strings.Replace(resp.AuthorizationEndpoint, "{tenant}", tenant, -1),
 		strings.Replace(resp.TokenEndpoint, "{tenant}", tenant, -1),
 		strings.Replace(resp.Issuer, "{tenant}", tenant, -1),
@@ -82,7 +81,7 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 }
 
 // cachedEndpoints returns a the cached endpoints if they exists. If not, we return false.
-func (m *authorityEndpoint) cachedEndpoints(authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, bool) {
+func (m *authorityEndpoint) cachedEndpoints(authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, bool) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -97,10 +96,10 @@ func (m *authorityEndpoint) cachedEndpoints(authorityInfo msalbase.AuthorityInfo
 		}
 		return cacheEntry.Endpoints, true
 	}
-	return msalbase.AuthorityEndpoints{}, false
+	return authority.AuthorityEndpoints{}, false
 }
 
-func (m *authorityEndpoint) addCachedEndpoints(authorityInfo msalbase.AuthorityInfo, userPrincipalName string, endpoints msalbase.AuthorityEndpoints) {
+func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, userPrincipalName string, endpoints authority.AuthorityEndpoints) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -123,7 +122,7 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo msalbase.AuthorityI
 	m.cache[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
-func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (string, error) {
+func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (string, error) {
 	if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
 		resp, err := m.rest.Authority().GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 		if err != nil {

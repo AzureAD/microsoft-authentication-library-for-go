@@ -25,8 +25,8 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.StorageTokenResponse, error)
-	Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
+	Read(ctx context.Context, authParameters authority.AuthParams) (msalbase.StorageTokenResponse, error)
+	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error)
 	GetAllAccounts() ([]msalbase.Account, error)
 }
 
@@ -105,7 +105,7 @@ func (client *clientApplication) acquireTokenByAuthCode(ctx context.Context, aut
 	return client.executeTokenRequestWithCacheWrite(ctx, req, authParams)
 }
 
-func (client *clientApplication) executeTokenRequestWithoutCacheWrite(ctx context.Context, req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (AuthenticationResultProvider, error) {
+func (client *clientApplication) executeTokenRequestWithoutCacheWrite(ctx context.Context, req requests.TokenRequester, authParams authority.AuthParams) (AuthenticationResultProvider, error) {
 	tokenResponse, err := req.Execute(ctx)
 	if err != nil {
 		return nil, err
@@ -117,7 +117,7 @@ func (client *clientApplication) executeTokenRequestWithoutCacheWrite(ctx contex
 	return msalbase.CreateAuthenticationResult(tokenResponse, msalbase.Account{})
 }
 
-func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.Context, req requests.TokenRequester, authParams msalbase.AuthParametersInternal) (msalbase.AuthenticationResult, error) {
+func (client *clientApplication) executeTokenRequestWithCacheWrite(ctx context.Context, req requests.TokenRequester, authParams authority.AuthParams) (msalbase.AuthenticationResult, error) {
 	tokenResponse, err := req.Execute(ctx)
 	if err != nil {
 		return msalbase.AuthenticationResult{}, err
@@ -379,29 +379,29 @@ func (cca *ConfidentialClientApplication) Accounts() []msalbase.Account {
 // deviceCodeRequest stores the values required to request a token from the authority using device code flow
 type deviceCodeRequest struct {
 	webRequestManager  requests.WebRequestManager
-	authParameters     msalbase.AuthParametersInternal
+	authParameters     authority.AuthParams
 	deviceCodeCallback func(DeviceCodeResultProvider)
 	cancelCtx          context.Context
 }
 
 // TODO(jdoak): Make deviceCodeCallback func(DeviceCodeResultProvider) a type.
 
-func createDeviceCodeRequest(ctx context.Context, wrm requests.WebRequestManager, params msalbase.AuthParametersInternal, dcc func(DeviceCodeResultProvider)) *deviceCodeRequest {
+func createDeviceCodeRequest(ctx context.Context, wrm requests.WebRequestManager, params authority.AuthParams, dcc func(DeviceCodeResultProvider)) *deviceCodeRequest {
 	return &deviceCodeRequest{wrm, params, dcc, ctx}
 }
 
 // Execute performs the token acquisition request and returns a token response or an error
-func (req *deviceCodeRequest) Execute(ctx context.Context) (msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) Execute(ctx context.Context) (accesstokens.TokenResponse, error) {
 	// Resolve authority endpoints
 	resolutionManager := requests.CreateAuthorityEndpointResolutionManager(req.webRequestManager)
 	endpoints, err := resolutionManager.ResolveEndpoints(ctx, req.authParameters.AuthorityInfo, "")
 	if err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 	req.authParameters.Endpoints = endpoints
 	deviceCodeResult, err := req.webRequestManager.GetDeviceCodeResult(ctx, req.authParameters)
 	if err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 	// Let the user do what they want with the device code result
 	req.deviceCodeCallback(deviceCodeResult)
@@ -409,7 +409,7 @@ func (req *deviceCodeRequest) Execute(ctx context.Context) (msalbase.TokenRespon
 	return req.waitForTokenResponse(ctx, deviceCodeResult)
 }
 
-func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCodeResult msalbase.DeviceCodeResult) (msalbase.TokenResponse, error) {
+func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCodeResult msalbase.DeviceCodeResult) (accesstokens.TokenResponse, error) {
 	// IntervalAddition is used in device code requests to increase the polling interval if there is a slow down error.
 	const IntervalAddition = 5
 
@@ -420,7 +420,7 @@ func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCo
 		select {
 		// If this request needs to be canceled, this context is used
 		case <-req.cancelCtx.Done():
-			return msalbase.TokenResponse{}, errors.New("token request canceled")
+			return accesstokens.TokenResponse{}, errors.New("token request canceled")
 		default:
 			tokenResponse, err := req.webRequestManager.GetAccessTokenFromDeviceCodeResult(ctx, req.authParameters, deviceCodeResult)
 			if err != nil {
@@ -431,7 +431,7 @@ func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCo
 				} else if isErrorSlowDown(err) {
 					interval += IntervalAddition
 				} else {
-					return msalbase.TokenResponse{}, err
+					return accesstokens.TokenResponse{}, err
 				}
 			} else {
 				return tokenResponse, nil
@@ -440,6 +440,6 @@ func (req *deviceCodeRequest) waitForTokenResponse(ctx context.Context, deviceCo
 			time.Sleep(time.Duration(interval) * time.Second)
 		}
 	}
-	return msalbase.TokenResponse{}, errors.New("verification code expired before contacting the server")
+	return accesstokens.TokenResponse{}, errors.New("verification code expired before contacting the server")
 }
 */

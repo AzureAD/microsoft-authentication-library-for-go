@@ -9,17 +9,19 @@ import (
 	"errors"
 	"fmt"
 	"net/url"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
 	"github.com/kylelemons/godebug/pretty"
 )
 
-var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints(
+var testAuthorityEndpoints = authority.CreateAuthorityEndpoints(
 	"https://login.microsoftonline.com/v2.0/authorize",
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
@@ -59,15 +61,15 @@ type fakeCreateTokenResp struct {
 	err bool
 }
 
-func (f fakeCreateTokenResp) CreateTokenResp(authParameters msalbase.AuthParametersInternal, payload msalbase.TokenResponseJSONPayload) (msalbase.TokenResponse, error) {
+func (f fakeCreateTokenResp) CreateTokenResp(authParameters authority.AuthParams, payload msalbase.TokenResponseJSONPayload) (accesstokens.TokenResponse, error) {
 	if f.err {
-		return msalbase.TokenResponse{}, errors.New("error")
+		return accesstokens.TokenResponse{}, errors.New("error")
 	}
-	return msalbase.TokenResponse{}, nil
+	return accesstokens.TokenResponse{}, nil
 }
 
 func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Username:  "username",
 		Password:  "password",
 		Endpoints: testAuthorityEndpoints,
@@ -129,7 +131,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 }
 
 func TestGetAccessTokenFromAuthCode(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
 		Redirecturi: "redirectURI",
@@ -214,7 +216,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 }
 
 func TestGetAccessTokenFromRefreshToken(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
 		Redirecturi: "redirectURI",
@@ -292,7 +294,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 }
 
 func TestGetAccessTokenWithClientSecret(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
 		Redirecturi: "redirectURI",
@@ -359,7 +361,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 }
 
 func TestGetAccessTokenWithAssertion(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
 		Redirecturi: "redirectURI",
@@ -429,7 +431,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 }
 
 func TestGetDeviceCodeResult(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
 		Redirecturi: "redirectURI",
@@ -492,7 +494,7 @@ func TestGetDeviceCodeResult(t *testing.T) {
 }
 
 func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
 		Redirecturi: "redirectURI",
@@ -579,7 +581,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 }
 
 func TestGetAccessTokenFromSamlGrant(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Username:  "username",
 		Password:  "password",
 		Endpoints: testAuthorityEndpoints,
@@ -686,5 +688,32 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
 			t.Errorf("TestGetAccessTokenFromSamlGrant(%s): %s", test.desc, err)
 		}
+	}
+}
+
+func TestDecodeJWT(t *testing.T) {
+	encodedStr := "aGVsbG8"
+	expectedStr := []byte("hello")
+	actualString, err := DecodeJWT(encodedStr)
+	if err != nil {
+		t.Errorf("Error should be nil but it is %v", err)
+	}
+	if !reflect.DeepEqual(expectedStr, actualString) {
+		t.Errorf("Actual decoded string %s differs from expected decoded string %s", actualString, expectedStr)
+	}
+}
+
+func TestGetLocalAccountID(t *testing.T) {
+	id := &IDToken{
+		Subject: "sub",
+	}
+	actualLID := id.GetLocalAccountID()
+	if !reflect.DeepEqual("sub", actualLID) {
+		t.Errorf("Expected local account ID sub differs from actual local account ID %s", actualLID)
+	}
+	id.Oid = "oid"
+	actualLID = id.GetLocalAccountID()
+	if !reflect.DeepEqual("oid", actualLID) {
+		t.Errorf("Expected local account ID oid differs from actual local account ID %s", actualLID)
 	}
 }

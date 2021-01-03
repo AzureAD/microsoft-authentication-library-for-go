@@ -10,7 +10,7 @@ type fakeManager struct {
 	trcErr, ctrErr bool
 }
 
-func (f *fakeManager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
+func (f *fakeManager) Read(ctx context.Context, authParameters authority.AuthParams, webRequestManager requests.WebRequestManager) (msalbase.StorageTokenResponse, error) {
 	if f.trcErr {
 		return msalbase.StorageTokenResponse{}, errors.New("error")
 	}
@@ -27,7 +27,7 @@ func (f *fakeManager) Read(ctx context.Context, authParameters msalbase.AuthPara
 	return storage.NewStorageTokenResponse(at, rt, id, msalbase.Account{}), nil
 }
 
-func (f *fakeManager) Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
+func (f *fakeManager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error) {
 	if f.ctrErr {
 		return msalbase.Account{}, errors.New("error")
 	}
@@ -70,10 +70,10 @@ func TestAcquireTokenSilent(t *testing.T) {
 	).Return(tdr, nil)
 	wrm.On(
 		"GetAccessTokenFromRefreshToken",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		mock.AnythingOfType("authority.AuthParams"),
 		"secret",
 		url.Values{},
-	).Return(msalbase.TokenResponse{}, nil)
+	).Return(accesstokens.TokenResponse{}, nil)
 
 	_, err := app.acquireTokenSilent(context.Background(), silentParams)
 	if err != nil {
@@ -84,9 +84,9 @@ func TestAcquireTokenSilent(t *testing.T) {
 func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 	app := newTestApplication(nil, nil)
 
-	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
+	testAuthParams := authority.NewAuthParams("clientID", testAuthorityInfo)
 	req := new(requests.MockTokenRequest)
-	actualTokenResp := msalbase.TokenResponse{}
+	actualTokenResp := accesstokens.TokenResponse{}
 	req.On("Execute").Return(actualTokenResp, nil)
 	_, err := app.executeTokenRequestWithoutCacheWrite(context.Background(), req, testAuthParams)
 	if err != nil {
@@ -94,7 +94,7 @@ func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 	}
 	mockError := errors.New("This is a mock error")
 	errorReq := new(requests.MockTokenRequest)
-	errorReq.On("Execute").Return(msalbase.TokenResponse{}, mockError)
+	errorReq.On("Execute").Return(accesstokens.TokenResponse{}, mockError)
 	_, err = app.executeTokenRequestWithoutCacheWrite(context.Background(), errorReq, testAuthParams)
 	if err != mockError {
 		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
@@ -104,10 +104,10 @@ func TestExecuteTokenRequestWithoutCacheWrite(t *testing.T) {
 func TestExecuteTokenRequestWithCacheWrite(t *testing.T) {
 	app := newTestApplication(nil, nil)
 
-	testAuthParams := msalbase.CreateAuthParametersInternal("clientID", testAuthorityInfo)
+	testAuthParams := authority.NewAuthParams("clientID", testAuthorityInfo)
 	mockError := errors.New("this is a mock error")
 	errorReq := new(requests.MockTokenRequest)
-	errorReq.On("Execute").Return(msalbase.TokenResponse{}, mockError)
+	errorReq.On("Execute").Return(accesstokens.TokenResponse{}, mockError)
 	_, err := app.executeTokenRequestWithCacheWrite(context.Background(), errorReq, testAuthParams)
 	if err != mockError {
 		t.Errorf("Actual error is %v, expected error is %v", err, mockError)
@@ -131,9 +131,9 @@ func TestAcquireTokenByClientCredential(t *testing.T) {
 
 	wrm.On(
 		"GetAccessTokenWithClientSecret",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		mock.AnythingOfType("authority.AuthParams"),
 		"client_secret",
-	).Return(msalbase.TokenResponse{}, nil)
+	).Return(accesstokens.TokenResponse{}, nil)
 
 	_, err := cca.AcquireTokenByClientCredential(context.Background(), []string{"openid"})
 	if err != nil {
@@ -145,11 +145,11 @@ func TestAcquireTokenByClientCredential(t *testing.T) {
 var tokenCommonParams = acquireTokenCommonParameters{
 	scopes: []string{"openid"},
 }
-var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints("https://login.microsoftonline.com/v2.0/authorize",
+var testAuthorityEndpoints = authority.CreateAuthorityEndpoints("https://login.microsoftonline.com/v2.0/authorize",
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
 	"login.microsoftonline.com")
-var testAuthorityInfo, _ = msalbase.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
+var testAuthorityInfo, _ = authority.CreateAuthorityInfoFromAuthorityURI("https://login.microsoftonline.com/v2.0/", true)
 
 var tdr = requests.TenantDiscoveryResponse{
 	AuthorizationEndpoint: "https://login.microsoftonline.com/v2.0/authorize",
@@ -195,10 +195,10 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(tdr, nil)
 
-	actualTokenResp := msalbase.TokenResponse{}
+	actualTokenResp := accesstokens.TokenResponse{}
 	wrm.On(
 		"GetAccessTokenFromAuthCode",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		mock.AnythingOfType("authority.AuthParams"),
 		"",
 		"",
 		url.Values{},
@@ -228,13 +228,13 @@ func TestAcquireTokenByUsernamePassword(t *testing.T) {
 	).Return(tdr, nil)
 	wrm.On(
 		"GetUserRealm",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		mock.AnythingOfType("authority.AuthParams"),
 	).Return(managedUserRealm, nil)
-	actualTokenResp := msalbase.TokenResponse{}
+	actualTokenResp := accesstokens.TokenResponse{}
 
 	wrm.On(
 		"GetAccessTokenFromUsernamePassword",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		mock.AnythingOfType("authority.AuthParams"),
 	).Return(actualTokenResp, nil)
 
 	_, err := testPCA.AcquireTokenByUsernamePassword(context.Background(), []string{"openid"}, "username", "password")
@@ -260,16 +260,16 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		"GetTenantDiscoveryResponse",
 		"https://login.microsoftonline.com/v2.0/v2.0/.well-known/openid-configuration",
 	).Return(tdr, nil)
-	actualTokenResp := msalbase.TokenResponse{}
+	actualTokenResp := accesstokens.TokenResponse{}
 	devCodeResp := requests.DeviceCodeResponse{ExpiresIn: 10}
 	devCodeResult := devCodeResp.ToDeviceCodeResult("clientID", tokenCommonParams.scopes)
 	wrm.On(
 		"GetDeviceCodeResult",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		mock.AnythingOfType("authority.AuthParams"),
 	).Return(devCodeResult, nil)
 	wrm.On(
 		"GetAccessTokenFromDeviceCodeResult",
-		mock.AnythingOfType("msalbase.AuthParametersInternal"),
+		mock.AnythingOfType("authority.AuthParams"),
 		devCodeResult,
 	).Return(actualTokenResp, nil)
 

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -46,7 +47,7 @@ type fakeDiscoveryResponser struct {
 	ret authority.InstanceDiscoveryResponse
 }
 
-func (f *fakeDiscoveryResponser) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error) {
+func (f *fakeDiscoveryResponser) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.AuthorityInfo) (authority.InstanceDiscoveryResponse, error) {
 	if f.err {
 		return authority.InstanceDiscoveryResponse{}, errors.New("error")
 	}
@@ -758,11 +759,11 @@ func TestRead(t *testing.T) {
 		},
 	}
 
-	authInfo := msalbase.AuthorityInfo{
+	authInfo := authority.AuthorityInfo{
 		Host:   "env",
 		Tenant: "realm",
 	}
-	authParameters := msalbase.AuthParametersInternal{
+	authParameters := authority.AuthParams{
 		HomeaccountID: "hid",
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
@@ -832,13 +833,13 @@ func TestWrite(t *testing.T) {
 		UID:  "testUID",
 		Utid: "testUtid",
 	}
-	idToken := msalbase.IDToken{
+	idToken := accesstokens.IDToken{
 		RawToken:          "idToken",
 		Oid:               "lid",
 		PreferredUsername: "username",
 	}
 	expiresOn := time.Unix(time.Now().Unix()+1000, 0).UTC()
-	tokenResponse := msalbase.TokenResponse{
+	tokenResponse := accesstokens.TokenResponse{
 		AccessToken:   "accessToken",
 		RefreshToken:  "refreshToken",
 		IDToken:       idToken,
@@ -848,8 +849,8 @@ func TestWrite(t *testing.T) {
 		ExpiresOn:     expiresOn,
 		ExtExpiresOn:  time.Now(),
 	}
-	authInfo := msalbase.AuthorityInfo{Host: "env", Tenant: "realm", AuthorityType: accAuth}
-	authParams := msalbase.AuthParametersInternal{
+	authInfo := authority.AuthorityInfo{Host: "env", Tenant: "realm", AuthorityType: accAuth}
+	authParams := authority.AuthParams{
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
 	}

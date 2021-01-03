@@ -26,6 +26,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 )
 
 // AuthenticationResult contains the results of one token acquisition operation.
@@ -140,7 +141,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthenticationResult, error) {
 	authParams := pca.AuthParams
 	authParams.Scopes = scopes
-	authParams.AuthorizationType = msalbase.AuthorizationTypeUsernamePassword
+	authParams.AuthorizationType = authority.AuthorizationTypeUsernamePassword
 	authParams.Username = username
 	authParams.Password = password
 
@@ -159,7 +160,7 @@ type DeviceCode struct {
 	Result DeviceCodeResult
 
 	ctx        context.Context
-	authParams msalbase.AuthParametersInternal
+	authParams authority.AuthParams
 	client     Client
 	dc         requests.DeviceCode
 }
@@ -182,7 +183,7 @@ func (d DeviceCode) AuthenticationResult() (AuthenticationResult, error) {
 func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (DeviceCode, error) {
 	authParams := pca.AuthParams
 	authParams.Scopes = scopes
-	authParams.AuthorizationType = msalbase.AuthorizationTypeDeviceCode
+	authParams.AuthorizationType = authority.AuthorizationTypeDeviceCode
 
 	dc, err := pca.Token.DeviceCode(ctx, authParams)
 	if err != nil {

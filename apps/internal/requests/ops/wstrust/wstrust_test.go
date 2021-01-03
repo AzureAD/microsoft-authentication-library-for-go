@@ -16,12 +16,13 @@ import (
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
 	"github.com/kylelemons/godebug/diff"
 	"github.com/kylelemons/godebug/pretty"
 )
 
-var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints(
+var testAuthorityEndpoints = authority.CreateAuthorityEndpoints(
 	"https://login.microsoftonline.com/v2.0/authorize",
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
@@ -178,7 +179,7 @@ func TestGetMex(t *testing.T) {
 }
 
 func TestGetSAMLTokenInfo(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Username:  "username",
 		Password:  "password",
 		Endpoints: testAuthorityEndpoints,
@@ -194,7 +195,7 @@ func TestGetSAMLTokenInfo(t *testing.T) {
 		endpoint          wstrust.Endpoint
 		body              string
 		action            string
-		authorizationType msalbase.AuthorizationType
+		authorizationType authority.AuthorizationType
 		giveResp          wstrust.SAMLDefinitions
 	}{
 		{

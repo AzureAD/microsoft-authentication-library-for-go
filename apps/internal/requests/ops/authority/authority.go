@@ -237,9 +237,9 @@ const (
 	AuthorizationTypeRefreshTokenExchange                    = iota
 )
 
-// AuthParametersInternal represents the parameters used for authorization for token acquisition.
-type AuthParametersInternal struct {
-	AuthorityInfo     AuthorityInfo
+// AuthParams represents the parameters used for authorization for token acquisition.
+type AuthParams struct {
+	AuthorityInfo     Info
 	CorrelationID     string
 	Endpoints         AuthorityEndpoints
 	ClientID          string
@@ -251,17 +251,17 @@ type AuthParametersInternal struct {
 	AuthorizationType AuthorizationType
 }
 
-// CreateAuthParametersInternal creates an authorization parameters object.
-func CreateAuthParametersInternal(clientID string, authorityInfo AuthorityInfo) AuthParametersInternal {
-	return AuthParametersInternal{
+// NewAuthParams creates an authorization parameters object.
+func NewAuthParams(clientID string, authorityInfo Info) AuthParams {
+	return AuthParams{
 		ClientID:      clientID,
 		AuthorityInfo: authorityInfo,
 		CorrelationID: uuid.New().String(),
 	}
 }
 
-// AuthorityInfo consists of information about the authority.
-type AuthorityInfo struct {
+// Info consists of information about the authority.
+type Info struct {
 	Host                  string
 	CanonicalAuthorityURI string
 	AuthorityType         string
@@ -289,30 +289,30 @@ func getFirstPathSegment(u *url.URL) (string, error) {
 	return "", errors.New("authority does not have two segments")
 }
 
-func createAuthorityInfo(authorityType string, authorityURI string, validateAuthority bool) (AuthorityInfo, error) {
+func createAuthorityInfo(authorityType string, authorityURI string, validateAuthority bool) (Info, error) {
 	u, err := url.Parse(authorityURI)
 	if err != nil {
-		return AuthorityInfo{}, err
+		return Info{}, err
 	}
 
 	host := u.Hostname()
 	userRealmURIPrefix := fmt.Sprintf("https://%v/common/userrealm/", host)
 	tenant, err := getFirstPathSegment(u)
 	if err != nil {
-		return AuthorityInfo{}, err
+		return Info{}, err
 	}
 
 	canonicalAuthorityURI := fmt.Sprintf("https://%v/%v/", host, tenant)
 
-	return AuthorityInfo{host, canonicalAuthorityURI, authorityType, userRealmURIPrefix, validateAuthority, tenant}, nil
+	return Info{host, canonicalAuthorityURI, authorityType, userRealmURIPrefix, validateAuthority, tenant}, nil
 }
 
 // CreateAuthorityInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
-func CreateAuthorityInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (AuthorityInfo, error) {
+func CreateAuthorityInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info, error) {
 	canonicalURI := canonicalizeAuthorityURI(authorityURI)
 	err := validateAuthorityURI(canonicalURI)
 	if err != nil {
-		return AuthorityInfo{}, err
+		return Info{}, err
 	}
 
 	// todo: check for other authority types...
@@ -345,7 +345,7 @@ type Client struct {
 	Comm jsonCaller // *comm.Client
 }
 
-func (c Client) GetUserRealm(ctx context.Context, authParameters msalbase.AuthParametersInternal) (msalbase.UserRealm, error) {
+func (c Client) GetUserRealm(ctx context.Context, authParameters AuthParams) (msalbase.UserRealm, error) {
 	endpoint := authParameters.Endpoints.GetUserRealmEndpoint(authParameters.Username)
 
 	resp := msalbase.UserRealm{}
@@ -376,7 +376,7 @@ func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurat
 	return resp, err
 }
 
-func (c Client) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (InstanceDiscoveryResponse, error) {
+func (c Client) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
 	qv := url.Values{}
 	qv.Set("api-version", "1.1")
 	qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))

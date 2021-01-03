@@ -19,7 +19,6 @@ package ops
 import (
 	"net/http"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/comm"
@@ -48,7 +47,7 @@ func (r *REST) Authority() authority.Client {
 // AccessTokens returns a client that can be used to get various access tokens for
 // authorization purposes.
 func (r *REST) AccessTokens() accesstokens.Client {
-	return accesstokens.Client{Comm: r.client, TokenRespFunc: msalbase.CreateTokenResponse2}
+	return accesstokens.Client{Comm: r.client, TokenRespFunc: accesstokens.NewTokenResponse}
 }
 
 // WSTrust provides access to various metadata in a WSTrust service. This data can

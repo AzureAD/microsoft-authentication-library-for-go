@@ -17,7 +17,7 @@ import (
 )
 
 type resolveEndpointer interface {
-	ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error)
+	ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, error)
 }
 
 // Token provides tokens for various types of token requests.
@@ -36,31 +36,31 @@ func NewToken() *Token {
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance.
-func (t *Token) ResolveEndpoints(ctx context.Context, authorityInfo msalbase.AuthorityInfo, userPrincipalName string) (msalbase.AuthorityEndpoints, error) {
+func (t *Token) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.AuthorityEndpoints, error) {
 	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
-func (t *Token) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error) {
+func (t *Token) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	return t.rest.Authority().GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 }
 
 // AuthCode returns a token based on an authorization code.
-func (t *Token) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (msalbase.TokenResponse, error) {
+func (t *Token) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &req.AuthParams, ""); err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 
 	tResp, err := t.rest.AccessTokens().GetAccessTokenFromAuthCode(ctx, req)
 	if err != nil {
-		return msalbase.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
+		return accesstokens.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
 	}
 	return tResp, nil
 }
 
 // Credential acquires a token from the authority using a client credentials grant.
-func (t *Token) Credential(ctx context.Context, authParams msalbase.AuthParametersInternal, cred *msalbase.Credential) (msalbase.TokenResponse, error) {
+func (t *Token) Credential(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 
 	if cred.Secret != "" {
@@ -69,14 +69,14 @@ func (t *Token) Credential(ctx context.Context, authParams msalbase.AuthParamete
 
 	jwt, err := cred.JWT(authParams)
 	if err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 	return t.rest.AccessTokens().GetAccessTokenWithAssertion(ctx, authParams, jwt)
 }
 
-func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams msalbase.AuthParametersInternal, cc *msalbase.Credential, refreshToken msalbase.RefreshToken) (msalbase.TokenResponse, error) {
+func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken msalbase.RefreshToken) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 
 	return t.rest.AccessTokens().GetAccessTokenFromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
@@ -84,32 +84,32 @@ func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenRe
 
 // UsernamePassword rertieves a token where a username and password is used. However, if this is
 // a user realm of "Federated", this uses SAML tokens. If "Managed", uses normal username/password.
-func (t *Token) UsernamePassword(ctx context.Context, authParams msalbase.AuthParametersInternal) (msalbase.TokenResponse, error) {
+func (t *Token) UsernamePassword(ctx context.Context, authParams authority.AuthParams) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 
 	userRealm, err := t.rest.Authority().GetUserRealm(ctx, authParams)
 	if err != nil {
-		return msalbase.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, err
 	}
 
 	switch accountType := userRealm.GetAccountType(); accountType {
 	case msalbase.Federated:
 		mexDoc, err := t.rest.WSTrust().GetMex(ctx, userRealm.FederationMetadataURL)
 		if err != nil {
-			return msalbase.TokenResponse{}, err
+			return accesstokens.TokenResponse{}, err
 		}
 
 		saml, err := t.rest.WSTrust().GetSAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
 		if err != nil {
-			return msalbase.TokenResponse{}, err
+			return accesstokens.TokenResponse{}, err
 		}
 		return t.rest.AccessTokens().GetAccessTokenFromSamlGrant(ctx, authParams, saml)
 	case msalbase.Managed:
 		return t.rest.AccessTokens().GetAccessTokenFromUsernamePassword(ctx, authParams)
 	}
-	return msalbase.TokenResponse{}, errors.New("unknown account type")
+	return accesstokens.TokenResponse{}, errors.New("unknown account type")
 }
 
 // DeviceCode is the result of a call to Token.DeviceCode().
@@ -117,7 +117,7 @@ type DeviceCode struct {
 	// Result is the device code result from the first call in the device code flow. This allows
 	// the caller to retrieve the displayed code that is used to authorize on the second device.
 	Result     msalbase.DeviceCodeResult
-	authParams msalbase.AuthParametersInternal
+	authParams authority.AuthParams
 
 	// Note: Normally you don't embed a Context, but this is safe as it is only used for a single
 	// call and it is scoped to that calls lifetime.
@@ -130,7 +130,7 @@ type DeviceCode struct {
 // until either: (1) the code is input by the user and the service releases a token, (2) the token
 // expires, (3) the Context passed to .DeviceCode() is cancelled or expires, (4) some other service
 // error occurs.
-func (d DeviceCode) Token() (msalbase.TokenResponse, error) {
+func (d DeviceCode) Token() (accesstokens.TokenResponse, error) {
 	defer d.cancel()
 
 	var interval = 50 * time.Millisecond
@@ -161,7 +161,7 @@ func isWaitDeviceCodeErr(err error) bool {
 
 // DeviceCode returns a DeviceCode object that can be used to get the code that must be entered on the second
 // device and optionally the token once the code has been entered on the second device.
-func (t *Token) DeviceCode(ctx context.Context, authParams msalbase.AuthParametersInternal) (DeviceCode, error) {
+func (t *Token) DeviceCode(ctx context.Context, authParams authority.AuthParams) (DeviceCode, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return DeviceCode{}, err
 	}
@@ -182,7 +182,7 @@ func (t *Token) DeviceCode(ctx context.Context, authParams msalbase.AuthParamete
 	return DeviceCode{Result: dcr, authParams: authParams, ctx: ctx, cancel: cancel, rest: t.rest}, nil
 }
 
-func (t *Token) resolveEndpoint(ctx context.Context, authParams *msalbase.AuthParametersInternal, userPrincipalName string) error {
+func (t *Token) resolveEndpoint(ctx context.Context, authParams *authority.AuthParams, userPrincipalName string) error {
 	endpoints, err := t.resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, userPrincipalName)
 	if err != nil {
 		return err

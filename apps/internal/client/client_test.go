@@ -7,6 +7,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -16,13 +17,13 @@ func TestCreateAuthenticationResult(t *testing.T) {
 
 	tests := []struct {
 		desc  string
-		input msalbase.TokenResponse
+		input accesstokens.TokenResponse
 		want  AuthenticationResult
 		err   bool
 	}{
 		{
 			desc: "no declined scopes",
-			input: msalbase.TokenResponse{
+			input: accesstokens.TokenResponse{
 				AccessToken:    "accessToken",
 				ExpiresOn:      future,
 				GrantedScopes:  []string{"user.read"},
@@ -37,7 +38,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 		},
 		{
 			desc: "declined scopes",
-			input: msalbase.TokenResponse{
+			input: accesstokens.TokenResponse{
 				AccessToken:    "accessToken",
 				ExpiresOn:      future,
 				GrantedScopes:  []string{"user.read"},
@@ -100,7 +101,7 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 			},
 			want: AuthenticationResult{
 				AccessToken: "secret",
-				IDToken: msalbase.IDToken{
+				IDToken: accesstokens.IDToken{
 					RawToken: "x.e30",
 				},
 				ExpiresOn:     future,

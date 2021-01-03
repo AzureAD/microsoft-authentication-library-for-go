@@ -22,13 +22,14 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 )
 
 // getAadinstanceDiscoveryResponser is provider to allow for faking in tests.
 // It is always implemented in production by ops/authority.Client
 type getAadinstanceDiscoveryResponser interface {
-	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryResponse, error)
+	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
 // StorageTokenResponse mimics a token response that was pulled from the cache.
@@ -85,7 +86,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (StorageTokenResponse, error) {
+func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams) (StorageTokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -135,7 +136,7 @@ func (m *Manager) Read(ctx context.Context, authParameters msalbase.AuthParamete
 const scopeSeparator = " "
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
-func (m *Manager) Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error) {
+func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
@@ -216,7 +217,7 @@ func (m *Manager) Contract() *Contract {
 	return m.contract.Load().(*Contract)
 }
 
-func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryMetadata, error) {
+func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
 	m.cacheMu.Lock()
 	defer m.cacheMu.Unlock()
 
@@ -230,7 +231,7 @@ func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo msalbase.A
 	return metadata, nil
 }
 
-func (m *Manager) aadMetadata(ctx context.Context, authorityInfo msalbase.AuthorityInfo) (authority.InstanceDiscoveryMetadata, error) {
+func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
 	discoveryResponse, err := m.requests.GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err

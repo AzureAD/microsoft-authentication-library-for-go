@@ -15,7 +15,7 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/internal/defs"
 )
@@ -66,17 +66,17 @@ const (
 )
 
 // GetSAMLTokenInfo provides SAML information that is used to generate a SAML token.
-func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters msalbase.AuthParametersInternal, cloudAudienceURN string, endpoint defs.Endpoint) (SamlTokenInfo, error) {
+func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (SamlTokenInfo, error) {
 	var wsTrustRequestMessage string
 	var err error
 
 	switch authParameters.AuthorizationType {
-	case msalbase.AuthorizationTypeWindowsIntegratedAuth:
+	case authority.AuthorizationTypeWindowsIntegratedAuth:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageWIA(cloudAudienceURN)
 		if err != nil {
 			return SamlTokenInfo{}, err
 		}
-	case msalbase.AuthorizationTypeUsernamePassword:
+	case authority.AuthorizationTypeUsernamePassword:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageUsernamePassword(
 			cloudAudienceURN, authParameters.Username, authParameters.Password)
 		if err != nil {

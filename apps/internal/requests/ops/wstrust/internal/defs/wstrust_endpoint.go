@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	uuid "github.com/google/uuid"
 )
 
@@ -121,7 +121,7 @@ func buildTimeString(t time.Time) string {
 	return t.Format("2006-01-02T15:04:05.000Z")
 }
 
-func (wte *Endpoint) buildTokenRequestMessage(authType msalbase.AuthorizationType, cloudAudienceURN string, username string, password string) (string, error) {
+func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizationType, cloudAudienceURN string, username string, password string) (string, error) {
 	var soapAction string
 	var trustNamespace string
 	var keyType string
@@ -157,7 +157,7 @@ func (wte *Endpoint) buildTokenRequestMessage(authType msalbase.AuthorizationTyp
 	envelope.Header.To.MustUnderstand = "1"
 	envelope.Header.To.Text = wte.URL
 
-	if authType == msalbase.AuthorizationTypeUsernamePassword {
+	if authType == authority.AuthorizationTypeUsernamePassword {
 		endpointUUID := uuid.New()
 
 		var trustID string
@@ -192,9 +192,9 @@ func (wte *Endpoint) buildTokenRequestMessage(authType msalbase.AuthorizationTyp
 }
 
 func (wte *Endpoint) BuildTokenRequestMessageWIA(cloudAudienceURN string) (string, error) {
-	return wte.buildTokenRequestMessage(msalbase.AuthorizationTypeWindowsIntegratedAuth, cloudAudienceURN, "", "")
+	return wte.buildTokenRequestMessage(authority.AuthorizationTypeWindowsIntegratedAuth, cloudAudienceURN, "", "")
 }
 
 func (wte *Endpoint) BuildTokenRequestMessageUsernamePassword(cloudAudienceURN string, username string, password string) (string, error) {
-	return wte.buildTokenRequestMessage(msalbase.AuthorizationTypeUsernamePassword, cloudAudienceURN, username, password)
+	return wte.buildTokenRequestMessage(authority.AuthorizationTypeUsernamePassword, cloudAudienceURN, username, password)
 }

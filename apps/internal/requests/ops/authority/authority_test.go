@@ -67,7 +67,7 @@ func (f *fakeJSONCaller) compare(endpoint string, headers http.Header, qv url.Va
 	return nil
 }
 
-var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints(
+var testAuthorityEndpoints = authority.CreateAuthorityEndpoints(
 	"https://login.microsoftonline.com/v2.0/authorize",
 	"https://login.microsoftonline.com/v2.0/token",
 	"https://login.microsoftonline.com/v2.0",
@@ -75,7 +75,7 @@ var testAuthorityEndpoints = msalbase.CreateAuthorityEndpoints(
 )
 
 func TestGetUserRealm(t *testing.T) {
-	authParams := msalbase.AuthParametersInternal{
+	authParams := authority.AuthParams{
 		Username:      "username",
 		Endpoints:     testAuthorityEndpoints,
 		CorrelationID: "id",
@@ -172,7 +172,7 @@ func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
 	tests := []struct {
 		desc     string
 		err      bool
-		authInfo msalbase.AuthorityInfo
+		authInfo authority.AuthorityInfo
 		endpoint string
 		qv       url.Values
 		resp     interface{}
@@ -184,7 +184,7 @@ func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
 		{
 			desc:     "Success with authorityInfo.Host not in trusted list",
 			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, defaultHost),
-			authInfo: msalbase.AuthorityInfo{
+			authInfo: authority.AuthorityInfo{
 				Host:   "host",
 				Tenant: "tenant",
 			},
@@ -197,7 +197,7 @@ func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
 		{
 			desc:     "Success with authorityInfo.Host in trusted list",
 			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, "login.microsoftonline.de"),
-			authInfo: msalbase.AuthorityInfo{
+			authInfo: authority.AuthorityInfo{
 				Host:   "login.microsoftonline.de",
 				Tenant: "tenant",
 			},

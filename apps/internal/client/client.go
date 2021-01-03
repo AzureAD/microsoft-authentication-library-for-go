@@ -18,6 +18,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 )
 
 const (
@@ -29,8 +30,8 @@ const (
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters msalbase.AuthParametersInternal) (storage.StorageTokenResponse, error)
-	Write(authParameters msalbase.AuthParametersInternal, tokenResponse msalbase.TokenResponse) (msalbase.Account, error)
+	Read(ctx context.Context, authParameters authority.AuthParams) (storage.StorageTokenResponse, error)
+	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (msalbase.Account, error)
 	GetAllAccounts() ([]msalbase.Account, error)
 }
 
@@ -52,13 +53,13 @@ type AcquireTokenSilentParameters struct {
 	Scopes      []string
 	Account     AccountProvider
 	RequestType accesstokens.RefreshTokenReqType
-	Credential  *msalbase.Credential
+	Credential  *accesstokens.Credential
 }
 
 // TODO(jdoak): augmentAuthenticationParameters == yuck.  Gotta go gotta go!!!!
-func (p AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *msalbase.AuthParametersInternal) {
+func (p AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *authority.AuthParams) {
 	authParams.Scopes = p.Scopes
-	authParams.AuthorizationType = msalbase.AuthorizationTypeRefreshTokenExchange
+	authParams.AuthorizationType = authority.AuthorizationTypeRefreshTokenExchange
 	authParams.HomeaccountID = p.Account.GetHomeAccountID()
 }
 
@@ -71,14 +72,14 @@ type AcquireTokenAuthCodeParameters struct {
 	Code        string
 	Challenge   string
 	RequestType accesstokens.AuthCodeRequestType
-	Credential  *msalbase.Credential
+	Credential  *accesstokens.Credential
 }
 
 // AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthenticationResult struct {
 	Account        msalbase.Account
-	IDToken        msalbase.IDToken
+	IDToken        accesstokens.IDToken
 	AccessToken    string
 	ExpiresOn      time.Time
 	GrantedScopes  []string
@@ -100,9 +101,9 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse sto
 	grantedScopes := strings.Split(storageTokenResponse.AccessToken.Scopes, scopeSeparator)
 
 	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
-	var idToken msalbase.IDToken
+	var idToken accesstokens.IDToken
 	if !storageTokenResponse.IDToken.IsZero() {
-		idToken, err = msalbase.NewIDToken(storageTokenResponse.IDToken.Secret)
+		idToken, err = accesstokens.NewIDToken(storageTokenResponse.IDToken.Secret)
 		if err != nil {
 			return AuthenticationResult{}, err
 		}
@@ -112,7 +113,7 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse sto
 
 // CreateAuthenticationResult creates an AuthenticationResult.
 // TODO(jdoak): (maybe, we did a refactor): Make this a method on TokenResponse() that takes only 1 arge, Account.
-func CreateAuthenticationResult(tokenResponse msalbase.TokenResponse, account msalbase.Account) (AuthenticationResult, error) {
+func CreateAuthenticationResult(tokenResponse accesstokens.TokenResponse, account msalbase.Account) (AuthenticationResult, error) {
 	if len(tokenResponse.DeclinedScopes) > 0 {
 		return AuthenticationResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.DeclinedScopes, ","))
 	}
@@ -141,17 +142,17 @@ type Base struct {
 	Token   *requests.Token
 	manager manager // *storage.Manager or fakeManager in tests
 
-	AuthParams    msalbase.AuthParametersInternal // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
+	AuthParams    authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
 	cacheAccessor cache.ExportReplace
 }
 
 // New is the constructor for Base.
 func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *requests.Token) (Base, error) {
-	authInfo, err := msalbase.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
+	authInfo, err := authority.CreateAuthorityInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return Base{}, err
 	}
-	authParams := msalbase.CreateAuthParametersInternal(clientID, authInfo)
+	authParams := authority.NewAuthParams(clientID, authInfo)
 
 	return Base{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
 		Token:         token,
@@ -162,7 +163,7 @@ func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace
 }
 
 // AuthCodeURL creates a URL used to acquire an authorization code.
-func (b Base) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, authParams msalbase.AuthParametersInternal) (string, error) {
+func (b Base) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, authParams authority.AuthParams) (string, error) {
 	endpoints, err := b.Token.ResolveEndpoints(ctx, authParams.AuthorityInfo, "")
 	if err != nil {
 		return "", err
@@ -229,7 +230,7 @@ func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentP
 			return AuthenticationResult{}, errors.New("no refresh token found")
 		}
 
-		var cc *msalbase.Credential
+		var cc *accesstokens.Credential
 		if silent.RequestType == accesstokens.RefreshTokenConfidential {
 			cc = silent.Credential
 		}
@@ -248,9 +249,9 @@ func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acquire
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
-	authParams.AuthorizationType = msalbase.AuthorizationTypeAuthCode
+	authParams.AuthorizationType = authority.AuthorizationTypeAuthCode
 
-	var cc *msalbase.Credential
+	var cc *accesstokens.Credential
 	if authCodeParams.RequestType == accesstokens.AuthCodeConfidential {
 		cc = authCodeParams.Credential
 	}
@@ -268,7 +269,7 @@ func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acquire
 	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-func (b Base) AuthResultFromToken(ctx context.Context, authParams msalbase.AuthParametersInternal, token msalbase.TokenResponse, cacheWrite bool) (AuthenticationResult, error) {
+func (b Base) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthenticationResult, error) {
 	if !cacheWrite {
 		return CreateAuthenticationResult(token, msalbase.Account{})
 	}
