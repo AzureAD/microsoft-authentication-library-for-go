@@ -22,7 +22,7 @@ func ExampleNewCredFromCert_pem() {
 
 	// PEM files can have multiple certs. This is usually for certificate chaining where roots
 	// sign to leafs. Usefule for TLS, not for this use case.
-	if len(certs) > 0 {
+	if len(certs) > 1 {
 		log.Fatal("too many certificates in PEM file")
 	}
 

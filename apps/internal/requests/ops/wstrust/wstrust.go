@@ -17,7 +17,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/internal/defs"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/defs"
 )
 
 type xmlCaller interface {

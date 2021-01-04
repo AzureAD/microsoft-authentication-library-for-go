@@ -84,14 +84,22 @@ func (dcr DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []strin
 // Credential represents the credential used in confidential client flows. This can be either
 // a Secret or Cert/Key.
 type Credential struct {
+	// Secret contains the credential secret if we are doing auth by secret.
 	Secret string
 
+	// Cert is the public x509 certificate if we are doing any auth other than secret.
 	Cert *x509.Certificate
-	Key  crypto.PrivateKey
+	// Key is the private key for signing if we are doing any auth other than secret.
+	Key crypto.PrivateKey
 
-	mu        sync.Mutex
-	assertion string
-	expires   time.Time
+	// mu protects everything below.
+	mu sync.Mutex
+	// Assertion is the JWT assertion if we have retrieved it. Public to allow faking in tests.
+	// Any use outside msal is not supported by a compatibility promise.
+	Assertion string
+	// Expires is when the Assertion expires. Public to allow faking in tests.
+	// Any use outside msal is not supported by a compatibility promise.
+	Expires time.Time
 }
 
 // JWT gets the jwt assertion when the credential is not using a secret.
@@ -99,9 +107,12 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	if c.expires.Before(time.Now()) && c.assertion != "" {
-		return c.assertion, nil
+	if c.Expires.Before(time.Now()) && c.Assertion != "" {
+		return c.Assertion, nil
 	}
+	// TODO(msal): The reasoning for this needs to be documented somewhere.
+	// I don't have any logical reason that the JWT should expire at any certain time.
+	// Why ask for only 5 minutes, why not 10, 20, 30, 1hour...
 	expires := time.Now().Add(5 * time.Minute)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
@@ -119,13 +130,13 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 	}
 
 	var err error
-	c.assertion, err = token.SignedString(c.Key)
+	c.Assertion, err = token.SignedString(c.Key)
 	if err != nil {
 		return "", err
 	}
 
-	c.expires = expires
-	return c.assertion, err
+	c.Expires = expires
+	return c.Assertion, err
 }
 
 // thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.
