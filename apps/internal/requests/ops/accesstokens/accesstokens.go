@@ -187,6 +187,9 @@ func (c Client) GetAccessTokenFromAuthCode(ctx context.Context, req AuthCodeRequ
 		return TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with RequestType == UnknownAuthCodeType")
 	case AuthCodeConfidential:
 		var err error
+		if req.Credential == nil {
+			return TokenResponse{}, fmt.Errorf("AuthCodeRequest had nil Credential for Confidential app")
+		}
 		qv, err = prepURLVals(req.Credential, req.AuthParams)
 		if err != nil {
 			return TokenResponse{}, err
@@ -224,7 +227,7 @@ const (
 
 // GetAccessTokenFromRefreshToken uses a refresh token (for refreshing credentials) to get a new access token.
 func (c Client) GetAccessTokenFromRefreshToken(ctx context.Context, rtType RefreshTokenReqType, authParams authority.AuthParams, cc *Credential, refreshToken string) (TokenResponse, error) {
-	var qv url.Values
+	qv := url.Values{}
 	if rtType == RefreshTokenConfidential {
 		var err error
 		qv, err = prepURLVals(cc, authParams)

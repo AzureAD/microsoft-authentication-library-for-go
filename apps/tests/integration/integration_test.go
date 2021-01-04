@@ -87,7 +87,7 @@ func newLabClient() (*labClient, error) {
 		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
 	}
 
-	app, err := confidential.New(clientID, cred, confidential.Authority(microsoftAuthority))
+	app, err := confidential.New("userID", clientID, cred, confidential.Authority(microsoftAuthority))
 
 	return &labClient{app: app}, nil
 }
@@ -191,7 +191,7 @@ func TestUsernamePassword(t *testing.T) {
 			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)
 		}
 		if result.Account.PreferredUsername != test.user.Upn {
-			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.GetUsername(), test.user.Upn)
+			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.PreferredUsername, test.user.Upn)
 		}
 	}
 }

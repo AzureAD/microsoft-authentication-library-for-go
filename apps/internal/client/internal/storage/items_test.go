@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -230,7 +231,7 @@ func TestContractUnmarshalJSON(t *testing.T) {
 			},
 			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
 				Environment:                    defaultEnvironment,
-				CredentialType:                 accessTokenCred,
+				CredentialType:                 "AccessToken",
 				Secret:                         accessTokenSecret,
 				Realm:                          defaultRealm,
 				Scopes:                         defaultScopes,
@@ -251,11 +252,11 @@ func TestContractUnmarshalJSON(t *testing.T) {
 				AuthorityType:     "MSSTS",
 			},
 		},
-		RefreshTokens: map[string]RefreshToken{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
-				CredentialType: rtCredType,
+				CredentialType: "RefreshToken",
 				Secret:         rtSecret,
 				ClientID:       defaultClientID,
 				HomeAccountID:  defaultHID,
@@ -303,7 +304,7 @@ func TestContractMarshalJSON(t *testing.T) {
 			},
 			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
 				Environment:                    defaultEnvironment,
-				CredentialType:                 accessTokenCred,
+				CredentialType:                 "AccessToken",
 				Secret:                         accessTokenSecret,
 				Realm:                          defaultRealm,
 				Scopes:                         defaultScopes,
@@ -314,11 +315,11 @@ func TestContractMarshalJSON(t *testing.T) {
 				ExtendedExpiresOnUnixTimestamp: atExpires,
 			},
 		},
-		RefreshTokens: map[string]RefreshToken{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
-				CredentialType: rtCredType,
+				CredentialType: "RefreshToken",
 				Secret:         rtSecret,
 				ClientID:       defaultClientID,
 				HomeAccountID:  defaultHID,
@@ -461,11 +462,11 @@ var (
 	hid          = "HID"
 	rtEnv        = "env"
 	rtClientID   = "clientID"
-	rtCredential = "RefreshToken"
+	rtCredential = "accesstokens.RefreshToken"
 	refSecret    = "secret"
 )
 
-var rt = &RefreshToken{
+var rt = &accesstokens.RefreshToken{
 	HomeAccountID:  hid,
 	Environment:    env,
 	ClientID:       rtClientID,
@@ -474,14 +475,14 @@ var rt = &RefreshToken{
 }
 
 func TestNewRefreshToken(t *testing.T) {
-	got := NewRefreshToken("HID", "env", "clientID", "secret", "")
+	got := accesstokens.NewRefreshToken("HID", "env", "clientID", "secret", "")
 	if refSecret != got.Secret {
 		t.Errorf("expected secret %s differs from actualSecret %s", refSecret, got.Secret)
 	}
 }
 
 func TestKeyForRefreshToken(t *testing.T) {
-	want := "HID-env-RefreshToken-clientID"
+	want := "HID-env-accesstokens.RefreshToken-clientID"
 	got := rt.Key()
 	if want != got {
 		t.Errorf("Actual key %v differs from expected key %v", got, want)
@@ -499,7 +500,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 	if err != nil {
 		panic(err)
 	}
-	want := RefreshToken{
+	want := accesstokens.RefreshToken{
 		HomeAccountID: "hid",
 		Environment:   "env",
 		Secret:        "secret",
@@ -508,7 +509,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 		},
 	}
 
-	got := RefreshToken{}
+	got := accesstokens.RefreshToken{}
 	err = json.Unmarshal(b, &got)
 	if err != nil {
 		panic(err)
@@ -520,7 +521,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 }
 
 func TestRefreshTokenMarshal(t *testing.T) {
-	refreshToken := RefreshToken{
+	refreshToken := accesstokens.RefreshToken{
 		HomeAccountID:  "",
 		Environment:    rtEnv,
 		CredentialType: rtCredential,
@@ -531,7 +532,7 @@ func TestRefreshTokenMarshal(t *testing.T) {
 	}
 	want := map[string]interface{}{
 		"environment":     "env",
-		"credential_type": "RefreshToken",
+		"credential_type": "accesstokens.RefreshToken",
 		"secret":          "secret",
 		"extra":           "this_is_extra",
 	}

@@ -15,9 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/internal/defs"
 	"github.com/kylelemons/godebug/diff"
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -172,7 +171,7 @@ func TestGetMex(t *testing.T) {
 			continue
 		}
 
-		if err := fake.compareXML("http://something", &wstrust.Definitions{}); err != nil {
+		if err := fake.compareXML("http://something", &defs.Definitions{}); err != nil {
 			t.Errorf("TestGetMex(%s): %s", test.desc, err)
 		}
 	}
@@ -192,27 +191,27 @@ func TestGetSAMLTokenInfo(t *testing.T) {
 		desc              string
 		err               bool
 		commErr           bool
-		endpoint          wstrust.Endpoint
+		endpoint          defs.Endpoint
 		body              string
 		action            string
 		authorizationType authority.AuthorizationType
-		giveResp          wstrust.SAMLDefinitions
+		giveResp          defs.SAMLDefinitions
 	}{
 		{
 			desc:              "Error: comm returns error",
 			err:               true,
 			commErr:           true,
-			endpoint:          wstrust.Endpoint{EndpointVersion: wstrust.Trust13, URL: "upEndpoint"},
+			endpoint:          defs.Endpoint{EndpointVersion: defs.Trust13, URL: "upEndpoint"},
 			action:            SoapActionDefault,
-			authorizationType: msalbase.AuthorizationTypeWindowsIntegratedAuth,
+			authorizationType: authority.AuthorizationTypeWindowsIntegratedAuth,
 			body:              "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:wsa=\"http://www.w3.org/2005/08/addressing\" xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\"><s:Header><wsa:Action s:mustUnderstand=\"1\">http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue</wsa:Action><wsa:messageID>urn:uuid:fb8ec65b-f117-468f-b4e8-50c5e802affe</wsa:messageID><wsa:ReplyTo><wsa:Address>http://www.w3.org/2005/08/addressing/anonymous</wsa:Address></wsa:ReplyTo><wsa:To s:mustUnderstand=\"1\">upEndpoint</wsa:To><wsse:Security s:mustUnderstand=\"\" xmlns:wsse=\"\"><wsu:Timestamp wsu:Id=\"\"><wsu:Created></wsu:Created><wsu:Expires></wsu:Expires></wsu:Timestamp><wsse:UsernameToken wsu:Id=\"\"><wsse:Username></wsse:Username><wsse:Password></wsse:Password></wsse:UsernameToken></wsse:Security></s:Header><s:Body><wst:RequestSecurityToken xmlns:wst=\"http://docs.oasis-open.org/ws-sx/ws-trust/200512\"><wsp:AppliesTo xmlns:wsp=\"http://schemas.xmlsoap.org/ws/2004/09/policy\"><wsa:EndpointReference><wsa:Address>urn</wsa:Address></wsa:EndpointReference></wsp:AppliesTo><wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType><wst:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType></wst:RequestSecurityToken></s:Body></s:Envelope>",
-			giveResp: wstrust.SAMLDefinitions{
-				Body: wstrust.Body{
-					RequestSecurityTokenResponseCollection: wstrust.RequestSecurityTokenResponseCollection{
-						RequestSecurityTokenResponse: []wstrust.RequestSecurityTokenResponse{
+			giveResp: defs.SAMLDefinitions{
+				Body: defs.Body{
+					RequestSecurityTokenResponseCollection: defs.RequestSecurityTokenResponseCollection{
+						RequestSecurityTokenResponse: []defs.RequestSecurityTokenResponse{
 							{
-								RequestedSecurityToken: wstrust.RequestedSecurityToken{
-									Assertion: wstrust.Assertion{
+								RequestedSecurityToken: defs.RequestedSecurityToken{
+									Assertion: defs.Assertion{
 										Text: "hello",
 										XMLName: xml.Name{
 											Local: "Assertion",
@@ -229,17 +228,17 @@ func TestGetSAMLTokenInfo(t *testing.T) {
 		{
 			desc:              "Error: Trust2005 endpoint, which isn't supported",
 			err:               true,
-			endpoint:          wstrust.Endpoint{EndpointVersion: wstrust.Trust2005, URL: "upEndpoint"},
+			endpoint:          defs.Endpoint{EndpointVersion: defs.Trust2005, URL: "upEndpoint"},
 			action:            SoapActionDefault,
-			authorizationType: msalbase.AuthorizationTypeWindowsIntegratedAuth,
+			authorizationType: authority.AuthorizationTypeWindowsIntegratedAuth,
 			body:              "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:wsa=\"http://www.w3.org/2005/08/addressing\" xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\"><s:Header><wsa:Action s:mustUnderstand=\"1\">http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue</wsa:Action><wsa:messageID>urn:uuid:fb8ec65b-f117-468f-b4e8-50c5e802affe</wsa:messageID><wsa:ReplyTo><wsa:Address>http://www.w3.org/2005/08/addressing/anonymous</wsa:Address></wsa:ReplyTo><wsa:To s:mustUnderstand=\"1\">upEndpoint</wsa:To><wsse:Security s:mustUnderstand=\"\" xmlns:wsse=\"\"><wsu:Timestamp wsu:Id=\"\"><wsu:Created></wsu:Created><wsu:Expires></wsu:Expires></wsu:Timestamp><wsse:UsernameToken wsu:Id=\"\"><wsse:Username></wsse:Username><wsse:Password></wsse:Password></wsse:UsernameToken></wsse:Security></s:Header><s:Body><wst:RequestSecurityToken xmlns:wst=\"http://docs.oasis-open.org/ws-sx/ws-trust/200512\"><wsp:AppliesTo xmlns:wsp=\"http://schemas.xmlsoap.org/ws/2004/09/policy\"><wsa:EndpointReference><wsa:Address>urn</wsa:Address></wsa:EndpointReference></wsp:AppliesTo><wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType><wst:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType></wst:RequestSecurityToken></s:Body></s:Envelope>",
-			giveResp: wstrust.SAMLDefinitions{
-				Body: wstrust.Body{
-					RequestSecurityTokenResponseCollection: wstrust.RequestSecurityTokenResponseCollection{
-						RequestSecurityTokenResponse: []wstrust.RequestSecurityTokenResponse{
+			giveResp: defs.SAMLDefinitions{
+				Body: defs.Body{
+					RequestSecurityTokenResponseCollection: defs.RequestSecurityTokenResponseCollection{
+						RequestSecurityTokenResponse: []defs.RequestSecurityTokenResponse{
 							{
-								RequestedSecurityToken: wstrust.RequestedSecurityToken{
-									Assertion: wstrust.Assertion{
+								RequestedSecurityToken: defs.RequestedSecurityToken{
+									Assertion: defs.Assertion{
 										Text: "hello",
 										XMLName: xml.Name{
 											Local: "Assertion",
@@ -255,17 +254,17 @@ func TestGetSAMLTokenInfo(t *testing.T) {
 		},
 		{
 			desc:              "Success: SAMLV1 assertion with AuthorizationTypeWindowsIntegratedAuth",
-			endpoint:          wstrust.Endpoint{EndpointVersion: wstrust.Trust13, URL: "upEndpoint"},
+			endpoint:          defs.Endpoint{EndpointVersion: defs.Trust13, URL: "upEndpoint"},
 			action:            SoapActionDefault,
-			authorizationType: msalbase.AuthorizationTypeWindowsIntegratedAuth,
+			authorizationType: authority.AuthorizationTypeWindowsIntegratedAuth,
 			body:              "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:wsa=\"http://www.w3.org/2005/08/addressing\" xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\"><s:Header><wsa:Action s:mustUnderstand=\"1\">http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue</wsa:Action><wsa:messageID>urn:uuid:fb8ec65b-f117-468f-b4e8-50c5e802affe</wsa:messageID><wsa:ReplyTo><wsa:Address>http://www.w3.org/2005/08/addressing/anonymous</wsa:Address></wsa:ReplyTo><wsa:To s:mustUnderstand=\"1\">upEndpoint</wsa:To><wsse:Security s:mustUnderstand=\"\" xmlns:wsse=\"\"><wsu:Timestamp wsu:Id=\"\"><wsu:Created></wsu:Created><wsu:Expires></wsu:Expires></wsu:Timestamp><wsse:UsernameToken wsu:Id=\"\"><wsse:Username></wsse:Username><wsse:Password></wsse:Password></wsse:UsernameToken></wsse:Security></s:Header><s:Body><wst:RequestSecurityToken xmlns:wst=\"http://docs.oasis-open.org/ws-sx/ws-trust/200512\"><wsp:AppliesTo xmlns:wsp=\"http://schemas.xmlsoap.org/ws/2004/09/policy\"><wsa:EndpointReference><wsa:Address>urn</wsa:Address></wsa:EndpointReference></wsp:AppliesTo><wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType><wst:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType></wst:RequestSecurityToken></s:Body></s:Envelope>",
-			giveResp: wstrust.SAMLDefinitions{
-				Body: wstrust.Body{
-					RequestSecurityTokenResponseCollection: wstrust.RequestSecurityTokenResponseCollection{
-						RequestSecurityTokenResponse: []wstrust.RequestSecurityTokenResponse{
+			giveResp: defs.SAMLDefinitions{
+				Body: defs.Body{
+					RequestSecurityTokenResponseCollection: defs.RequestSecurityTokenResponseCollection{
+						RequestSecurityTokenResponse: []defs.RequestSecurityTokenResponse{
 							{
-								RequestedSecurityToken: wstrust.RequestedSecurityToken{
-									Assertion: wstrust.Assertion{
+								RequestedSecurityToken: defs.RequestedSecurityToken{
+									Assertion: defs.Assertion{
 										Text: "hello",
 										XMLName: xml.Name{
 											Local: "Assertion",
@@ -281,17 +280,17 @@ func TestGetSAMLTokenInfo(t *testing.T) {
 		},
 		{
 			desc:              "Success: SAMLV2 assertion with AuthorizationTypeUsernamePassword",
-			endpoint:          wstrust.Endpoint{EndpointVersion: wstrust.Trust13, URL: "upEndpoint"},
+			endpoint:          defs.Endpoint{EndpointVersion: defs.Trust13, URL: "upEndpoint"},
 			action:            SoapActionDefault,
-			authorizationType: msalbase.AuthorizationTypeUsernamePassword,
+			authorizationType: authority.AuthorizationTypeUsernamePassword,
 			body:              "<s:Envelope xmlns:s=\"http://www.w3.org/2003/05/soap-envelope\" xmlns:wsa=\"http://www.w3.org/2005/08/addressing\" xmlns:wsu=\"http://docs.oasis-open.org/wss/2004/01/oasis-200401-wss-wssecurity-utility-1.0.xsd\"><s:Header><wsa:Action s:mustUnderstand=\"1\">http://docs.oasis-open.org/ws-sx/ws-trust/200512/RST/Issue</wsa:Action><wsa:messageID>urn:uuid:fb8ec65b-f117-468f-b4e8-50c5e802affe</wsa:messageID><wsa:ReplyTo><wsa:Address>http://www.w3.org/2005/08/addressing/anonymous</wsa:Address></wsa:ReplyTo><wsa:To s:mustUnderstand=\"1\">upEndpoint</wsa:To><wsse:Security s:mustUnderstand=\"\" xmlns:wsse=\"\"><wsu:Timestamp wsu:Id=\"\"><wsu:Created></wsu:Created><wsu:Expires></wsu:Expires></wsu:Timestamp><wsse:UsernameToken wsu:Id=\"\"><wsse:Username></wsse:Username><wsse:Password></wsse:Password></wsse:UsernameToken></wsse:Security></s:Header><s:Body><wst:RequestSecurityToken xmlns:wst=\"http://docs.oasis-open.org/ws-sx/ws-trust/200512\"><wsp:AppliesTo xmlns:wsp=\"http://schemas.xmlsoap.org/ws/2004/09/policy\"><wsa:EndpointReference><wsa:Address>urn</wsa:Address></wsa:EndpointReference></wsp:AppliesTo><wst:KeyType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer</wst:KeyType><wst:RequestType>http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue</wst:RequestType></wst:RequestSecurityToken></s:Body></s:Envelope>",
-			giveResp: wstrust.SAMLDefinitions{
-				Body: wstrust.Body{
-					RequestSecurityTokenResponseCollection: wstrust.RequestSecurityTokenResponseCollection{
-						RequestSecurityTokenResponse: []wstrust.RequestSecurityTokenResponse{
+			giveResp: defs.SAMLDefinitions{
+				Body: defs.Body{
+					RequestSecurityTokenResponseCollection: defs.RequestSecurityTokenResponseCollection{
+						RequestSecurityTokenResponse: []defs.RequestSecurityTokenResponse{
 							{
-								RequestedSecurityToken: wstrust.RequestedSecurityToken{
-									Assertion: wstrust.Assertion{
+								RequestedSecurityToken: defs.RequestedSecurityToken{
+									Assertion: defs.Assertion{
 										Text: "hello",
 										XMLName: xml.Name{
 											Local: "Assertion",
@@ -328,7 +327,7 @@ func TestGetSAMLTokenInfo(t *testing.T) {
 			continue
 		}
 
-		if err := fake.compareSOAP(test.action, test.endpoint.URL, test.body, &wstrust.SAMLDefinitions{}); err != nil {
+		if err := fake.compareSOAP(test.action, test.endpoint.URL, test.body, &defs.SAMLDefinitions{}); err != nil {
 			t.Errorf("TestGetSAMLTokenInfo(%s): %s", test.desc, err)
 		}
 	}

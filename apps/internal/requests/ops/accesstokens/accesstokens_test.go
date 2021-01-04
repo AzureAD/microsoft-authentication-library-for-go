@@ -139,20 +139,28 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 	}
 
 	tests := []struct {
-		desc         string
-		err          bool
-		commErr      bool
-		createErr    bool
-		authCode     string
-		codeVerifier string
-		qv           url.Values
+		desc string
+		err  bool
+		// commErr causes the comm call to return an error.
+		commErr bool
+		// createErr causes the TokenResponse creation to error.
+		createErr       bool
+		authCodeRequest AuthCodeRequest
+		authCode        string
+		codeVerifier    string
+		qv              url.Values
 	}{
 		{
-			desc:         "Error: comm returns error",
-			err:          true,
-			commErr:      true,
-			authCode:     "authCode",
-			codeVerifier: "codeVerifier",
+			desc:    "Error: comm returns error",
+			err:     true,
+			commErr: true,
+			authCodeRequest: AuthCodeRequest{
+				AuthParams:    authParams,
+				Code:          "authCode",
+				CodeChallenge: "codeVerifier",
+				Credential:    &Credential{Secret: "secret"},
+				RequestType:   AuthCodeConfidential,
+			},
 			qv: url.Values{
 				"code":          []string{"authCode"},
 				"code_verifier": []string{"codeVerifier"},
@@ -163,13 +171,37 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 			},
 		},
 		{
-			desc:         "Success",
-			authCode:     "authCode",
-			codeVerifier: "codeVerifier",
+			desc: "Error: Credential is nil",
+			authCodeRequest: AuthCodeRequest{
+				AuthParams:    authParams,
+				Code:          "authCode",
+				CodeChallenge: "codeVerifier",
+				RequestType:   AuthCodeConfidential,
+			},
 			qv: url.Values{
 				"code":          []string{"authCode"},
 				"code_verifier": []string{"codeVerifier"},
 				"redirect_uri":  []string{"redirectURI"},
+				grantType:       []string{grant.AuthCode},
+				clientID:        []string{authParams.ClientID},
+				clientInfo:      []string{clientInfoVal},
+			},
+			err: true,
+		},
+		{
+			desc: "Success",
+			authCodeRequest: AuthCodeRequest{
+				AuthParams:    authParams,
+				Code:          "authCode",
+				CodeChallenge: "codeVerifier",
+				RequestType:   AuthCodeConfidential,
+				Credential:    &Credential{Secret: "secret"},
+			},
+			qv: url.Values{
+				"code":          []string{"authCode"},
+				"code_verifier": []string{"codeVerifier"},
+				"redirect_uri":  []string{"redirectURI"},
+				"client_secret": []string{"secret"},
 				grantType:       []string{grant.AuthCode},
 				clientID:        []string{authParams.ClientID},
 				clientInfo:      []string{clientInfoVal},
@@ -186,15 +218,10 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		fakeCreate := fakeCreateTokenResp{test.createErr}
 		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
 
-		req := AuthCodeRequest{
-			AuthParams:    authParams,
-			Code:          test.authCode,
-			CodeChallenge: test.codeVerifier,
-		}
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromAuthCode(context.Background(), req)
+		_, err := client.GetAccessTokenFromAuthCode(context.Background(), test.authCodeRequest)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromAuthCode(%s): got err == nil , want err != nil", test.desc)

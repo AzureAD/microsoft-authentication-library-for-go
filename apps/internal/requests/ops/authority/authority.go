@@ -7,12 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/google/uuid"
 )
 
@@ -298,21 +296,6 @@ func (u UserRealm) validate() error {
 		}
 	}
 	return nil
-}
-
-// NewUserRealm creates a UserRealm instance from the HTTP response.
-func NewUserRealm(resp *http.Response) (UserRealm, error) {
-	u := UserRealm{}
-	body, err := ioutil.ReadAll(resp.Body)
-	resp.Body.Close()
-	if err != nil {
-		return u, err
-	}
-	err = json.Unmarshal(body, &u)
-	if err != nil {
-		return u, err
-	}
-	return u, u.validate()
 }
 
 // Client represents the REST calls to authority backends.

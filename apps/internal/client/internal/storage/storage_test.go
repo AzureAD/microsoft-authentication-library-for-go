@@ -12,10 +12,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/ops/authority"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -38,7 +37,7 @@ const (
 )
 
 func newForTest(authorityClient getAadinstanceDiscoveryResponser) *Manager {
-	m := &Manager{rest: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
+	m := &Manager{requests: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract.Store(NewContract())
 	return m
 }
@@ -48,7 +47,7 @@ type fakeDiscoveryResponser struct {
 	ret authority.InstanceDiscoveryResponse
 }
 
-func (f *fakeDiscoveryResponser) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.AuthorityInfo) (authority.InstanceDiscoveryResponse, error) {
+func (f *fakeDiscoveryResponser) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	if f.err {
 		return authority.InstanceDiscoveryResponse{}, errors.New("error")
 	}
@@ -80,8 +79,8 @@ func TestIsMatchingScopes(t *testing.T) {
 }
 
 func TestGetAllAccounts(t *testing.T) {
-	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
-	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
+	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
 		Accounts: map[string]shared.Account{
 			testAccOne.Key(): testAccOne,
@@ -89,7 +88,7 @@ func TestGetAllAccounts(t *testing.T) {
 		},
 	}
 
-	storageManager := New(authority.Client{})
+	storageManager := Manager{}
 	storageManager.update(cache)
 
 	actualAccounts, err := storageManager.GetAllAccounts()
@@ -113,8 +112,8 @@ func TestGetAllAccounts(t *testing.T) {
 
 func TestDeleteAccounts(t *testing.T) {
 
-	testAccOne := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
-	testAccTwo := msalbase.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
+	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
 		Accounts: map[string]shared.Account{
 			testAccOne.Key(): testAccOne,
@@ -201,7 +200,7 @@ func TestWriteAccessToken(t *testing.T) {
 }
 
 func TestReadAccount(t *testing.T) {
-	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	testAcc := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
 	cache := &Contract{
 		Accounts: map[string]shared.Account{
@@ -227,7 +226,7 @@ func TestReadAccount(t *testing.T) {
 
 func TestWriteAccount(t *testing.T) {
 	storageManager := newForTest(nil)
-	testAcc := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	testAcc := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
 	key := testAcc.Key()
 	err := storageManager.writeAccount(testAcc)
@@ -342,7 +341,7 @@ func TestWriteIDToken(t *testing.T) {
 }
 
 func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
-	testRefreshTokenWithFID := NewRefreshToken(
+	testRefreshTokenWithFID := accesstokens.NewRefreshToken(
 
 		"hid",
 		"env",
@@ -350,14 +349,14 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		"secret",
 		"fid",
 	)
-	testRefreshTokenWoFID := NewRefreshToken(
+	testRefreshTokenWoFID := accesstokens.NewRefreshToken(
 		"hid",
 		"env",
 		"cid",
 		"secret",
 		"",
 	)
-	testRefreshTokenWoFIDAltCID := NewRefreshToken(
+	testRefreshTokenWoFIDAltCID := accesstokens.NewRefreshToken(
 		"hid",
 		"env",
 		"cid2",
@@ -375,13 +374,13 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		name     string
 		contract *Contract
 		args     args
-		want     RefreshToken
+		want     accesstokens.RefreshToken
 		err      bool
 	}{
 		{
 			name: "Token without fid, read with fid, cid, env, and hid",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
 			},
@@ -396,7 +395,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Token without fid, read with cid, env, and hid",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
 			},
@@ -411,7 +410,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Token without fid, verify CID is required",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
 			},
@@ -426,7 +425,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Token without fid, Verify env is required",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
 			},
@@ -441,7 +440,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Token without fid, read with fid, cid, env, and hid",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
 			},
@@ -456,7 +455,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Token with fid, read with cid, env, and hid",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
 			},
@@ -471,7 +470,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Token with fid, verify CID is not required", // match on hid, env, and has fid
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
 			},
@@ -486,7 +485,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Token with fid, Verify env is required",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
 			},
@@ -501,7 +500,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Multiple items in cache, given a fid, item with fid will be returned",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key():       testRefreshTokenWoFID,
 					testRefreshTokenWithFID.Key():     testRefreshTokenWithFID,
 					testRefreshTokenWoFIDAltCID.Key(): testRefreshTokenWoFIDAltCID,
@@ -520,7 +519,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		{
 			name: "Multiple items in cache, without a fid and with alternate CID, token with alternate CID is returned",
 			contract: &Contract{
-				RefreshTokens: map[string]RefreshToken{
+				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key():       testRefreshTokenWoFID,
 					testRefreshTokenWithFID.Key():     testRefreshTokenWithFID,
 					testRefreshTokenWoFIDAltCID.Key(): testRefreshTokenWoFIDAltCID,
@@ -559,7 +558,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 
 func TestWriteRefreshToken(t *testing.T) {
 	storageManager := newForTest(nil)
-	testRefreshToken := NewRefreshToken(
+	testRefreshToken := accesstokens.NewRefreshToken(
 		"hid",
 		"env",
 		"cid",
@@ -601,7 +600,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 				ExtendedExpiresOnUnixTimestamp: atExpires,
 			},
 		},
-		RefreshTokens: map[string]RefreshToken{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
 			"uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
 				Target:         defaultScopes,
 				Environment:    defaultEnvironment,
@@ -739,11 +738,11 @@ func TestRead(t *testing.T) {
 	)
 	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
-	testRefreshToken := NewRefreshToken("hid", "env", "cid", "secret", "fid")
-	testAccount := msalbase.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
+	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
 	contract := &Contract{
-		RefreshTokens: map[string]RefreshToken{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
 			testRefreshToken.Key(): testRefreshToken,
 		},
 		Accounts: map[string]shared.Account{
@@ -760,7 +759,7 @@ func TestRead(t *testing.T) {
 		},
 	}
 
-	authInfo := authority.AuthorityInfo{
+	authInfo := authority.Info{
 		Host:   "env",
 		Tenant: "realm",
 	}
@@ -830,7 +829,7 @@ func TestRead(t *testing.T) {
 
 func TestWrite(t *testing.T) {
 	cacheManager := newForTest(nil)
-	clientInfo := msalbase.ClientInfoJSONPayload{
+	clientInfo := accesstokens.ClientInfoJSONPayload{
 		UID:  "testUID",
 		Utid: "testUtid",
 	}
@@ -850,12 +849,12 @@ func TestWrite(t *testing.T) {
 		ExpiresOn:     expiresOn,
 		ExtExpiresOn:  time.Now(),
 	}
-	authInfo := authority.AuthorityInfo{Host: "env", Tenant: "realm", AuthorityType: accAuth}
+	authInfo := authority.Info{Host: "env", Tenant: "realm", AuthorityType: accAuth}
 	authParams := authority.AuthParams{
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
 	}
-	testRefreshToken := NewRefreshToken(
+	testRefreshToken := accesstokens.NewRefreshToken(
 		"testUID.testUtid",
 		"env",
 		"cid",
@@ -883,7 +882,7 @@ func TestWrite(t *testing.T) {
 		"idToken",
 	)
 
-	testAccount := msalbase.NewAccount("testUID.testUtid", "env", "realm", "lid", accAuth, "username")
+	testAccount := shared.NewAccount("testUID.testUtid", "env", "realm", "lid", accAuth, "username")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
 
 	actualAccount, err := cacheManager.Write(authParams, tokenResponse)

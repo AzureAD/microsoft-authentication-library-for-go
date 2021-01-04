@@ -25,10 +25,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
 )
 
-// TODO(jdoak): After integration, remove:
-// 	msalbase.NewUserRealm()
-//  requests.CreateTenantDiscoveryResponse()
-
 // REST provides REST clients for communicating with various backends used by MSAL.
 type REST struct {
 	client *comm.Client
