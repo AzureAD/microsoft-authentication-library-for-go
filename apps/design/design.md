@@ -39,7 +39,7 @@ apps/
   internal/
     client/ - Shared package for common calls that Public and Confidential apps share
     json/ - Our own json encoder/decoder for special needs
-    msalbase/ - Holds types that need to be in multiple packages and can't be moved into a single one due to import cycles
+    shared/ - Holds types that need to be in multiple packages and can't be moved into a single one due to import cycles
     requests/ - The pacakge to communicate to services to get tokens
 ```
 
@@ -101,18 +101,30 @@ This is the general way to add a new feature to MSAL:
 
 The MSAL caching design is rather simple. These design decisions and the fact that multiple applications in different languages can share a cache mean it cannot be easily changed.
 
-Because of this, the entire cache contents of a confidential.Client is read and written on 
+The entire cache contents of a confidential.Client is read and written on 
 almost any action to and from an external cache. 
 
-It is not clear to the user that a confidential client should be per user to prevent scalling
+It is not clear to a user that a confidential client should be per user to prevent scaling
 problems. 
 
-Because we cannot change the MSAL cache design at this time, we want to make it clear that
-confidential.Client should be done per user. We felt this must go beyond a simple doc entry
+We cannot change the MSAL cache design at this time, therefore it should be clear that
+confidential.Client should be done per user. This must go beyond a simple doc entry
 that can be ignored. Its great to say: "we told you in the doc", but that is AFTER a support call.
 
 To make it clear, we require the user to pass a userID field. This forces the user to read what
-a userID is. 
+a userID is and recognize that it is per user.
+
+A future design might include a parent client to Confidential that keeps track of the "users".
+This way we manage the lifecycle of the clients. The current design forces the user to deal with
+this, probably via a map. We could design an implementation with features from an LRU (to avoid
+memory growth), deletion schemantics, etc.... that is more efficient than what a normal user is
+going to implement (and eliminate each user from having to do this).
+
+or.....
+
+We could create a new caching mechanism for Confidential that doesn't have this problem.  Treat
+it differently than Public. This would be a larger migration path across all SDKs, but it is
+probably the right long term move.
 
 ### Use of x509.Certificate and CertFromPEM() function
 
