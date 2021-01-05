@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -217,11 +218,15 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	}
 	req = req.WithContext(ctx)
 
-	b, err := ioutil.ReadAll(req.Body)
-	if err != nil {
-		panic(err)
+	if req.Body != nil {
+		b, err := ioutil.ReadAll(req.Body)
+		if err != nil {
+			panic(err)
+		}
+		log.Println("body was: ", string(b))
+	} else {
+		log.Println("body was nil")
 	}
-	fmt.Println("body was: ", string(b))
 
 	reply, err := c.client.Do(req)
 	if err != nil {
