@@ -34,10 +34,7 @@ jobs:
         run: if [ $(gofmt -l -s . | wc -l) -ne 0 ]; then echo "fmt failed"; exit 1; fi
 
       - name: Build
-        run: go build -race ./msal
-
-      - name: Build testapp
-        run: go build -race ./test/devapps
+        run: go build ./apps/...
 
       - name: Test
         run: go test -race ./...
