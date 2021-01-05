@@ -125,6 +125,8 @@ func (l *labClient) getUser(query url.Values) (user, error) {
 	if err != nil {
 		return user, err
 	}
+
+	panic("I panic here on purpose")
 	return user, nil
 }
 
