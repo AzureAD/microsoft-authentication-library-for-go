@@ -45,7 +45,6 @@ type fetchWSTrust interface {
 // Token provides tokens for various types of token requests.
 type Token struct {
 	resolver     resolveEndpointer
-	rest         *ops.REST
 	accessTokens accessTokens
 	authority    fetchAuthority
 	wsTrust      fetchWSTrust
@@ -55,11 +54,10 @@ type Token struct {
 func NewToken() *Token {
 	r := ops.New()
 	return &Token{
-		rest:         r,
+		resolver:     newAuthorityEndpoint(r),
 		accessTokens: r.AccessTokens(),
 		authority:    r.Authority(),
 		wsTrust:      r.WSTrust(),
-		resolver:     newAuthorityEndpoint(r),
 	}
 }
 

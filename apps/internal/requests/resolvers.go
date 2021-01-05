@@ -40,7 +40,7 @@ type authorityEndpoint struct {
 
 // newAuthorityEndpoint is the constructor for AuthorityEndpoint.
 func newAuthorityEndpoint(rest *ops.REST) *authorityEndpoint {
-	m := &authorityEndpoint{rest: rest}
+	m := &authorityEndpoint{rest: rest, cache: map[string]cacheEntry{}}
 	return m
 }
 
