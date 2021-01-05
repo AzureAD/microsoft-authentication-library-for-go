@@ -18,6 +18,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"fmt"
+	"log"
 	"net/url"
 	"strconv"
 	"strings"
@@ -259,8 +260,10 @@ func (c Client) GetAccessTokenFromRefreshToken(ctx context.Context, rtType Refre
 func (c Client) GetAccessTokenWithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.ClientCredential)
+	log.Println("client_secret up here: ", clientSecret)
 	qv.Set("client_secret", clientSecret)
 	qv.Set(clientID, authParameters.ClientID)
+	log.Println("client_id up here: ", clientID)
 	addScopeQueryParam(qv, authParameters)
 
 	token, err := c.doTokenResp(ctx, authParameters, qv)
