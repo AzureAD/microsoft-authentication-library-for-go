@@ -147,10 +147,10 @@ func (l *labClient) getSecret(query url.Values) (string, error) {
 
 // TODO: Add getApp() when needed
 
-func getTestUser(lc *labClient, query url.Values) user {
+func getTestUser(desc string, lc *labClient, query url.Values) user {
 	testUser, err := lc.getUser(query)
 	if err != nil {
-		panic("Failed to get input user. " + err.Error())
+		panic(fmt.Sprintf("TestUsernamePassword(%s) setup: getTestUser(): Failed to get input user: %s", desc, err))
 	}
 	return testUser
 }
@@ -166,23 +166,24 @@ func TestUsernamePassword(t *testing.T) {
 
 	tests := []struct {
 		desc string
-		user user
+		vals url.Values
 	}{
-		{"Managed", getTestUser(labClientInstance, url.Values{"usertype": []string{"cloud"}})},
-		{"ADFSv2", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}})},
-		{"ADFSv3", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}})},
+		{"Managed", url.Values{"usertype": []string{"cloud"}}},
+		{"ADFSv2", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}}},
+		{"ADFSv3", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}}},
 		//{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
 	}
 	for _, test := range tests {
-		app, err := public.New(test.user.AppID, public.Authority(organizationsAuthority))
+		user := getTestUser(test.desc, labClientInstance, test.vals)
+		app, err := public.New(user.AppID, public.Authority(organizationsAuthority))
 		if err != nil {
 			panic(err)
 		}
 		result, err := app.AcquireTokenByUsernamePassword(
 			context.Background(),
 			[]string{graphDefaultScope},
-			test.user.Upn,
-			test.user.Password,
+			user.Upn,
+			user.Password,
 		)
 		if err != nil {
 			t.Fatalf("TestUsernamePassword(%s): on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", test.desc, err)
@@ -190,8 +191,8 @@ func TestUsernamePassword(t *testing.T) {
 		if result.AccessToken == "" {
 			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)
 		}
-		if result.Account.PreferredUsername != test.user.Upn {
-			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.PreferredUsername, test.user.Upn)
+		if result.Account.PreferredUsername != user.Upn {
+			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.PreferredUsername, user.Upn)
 		}
 	}
 }
