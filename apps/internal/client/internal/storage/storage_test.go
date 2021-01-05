@@ -787,10 +787,10 @@ func TestRead(t *testing.T) {
 			discResp: authority.InstanceDiscoveryResponse{
 				TenantDiscoveryEndpoint: "tenant",
 				Metadata: []authority.InstanceDiscoveryMetadata{
-					authority.InstanceDiscoveryMetadata{
+					{
 						Aliases: []string{"env", "alias2"},
 					},
-					authority.InstanceDiscoveryMetadata{
+					{
 						Aliases: []string{"alias3", "alias4"},
 					},
 				},
