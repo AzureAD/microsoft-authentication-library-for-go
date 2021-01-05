@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -258,11 +259,15 @@ func (wrm *defaultWebRequestManager) exchangeGrantForToken(ctx context.Context, 
 	}
 	addAADHeaders(req.Header, authParameters)
 	addContentTypeHeader(req.Header, urlEncodedUtf8)
-
+	log.Println("method: ", req.Method)
+	log.Println("url: ", req.URL.String())
+	log.Println("headers: ", req.Header)
+	log.Println("body: ", queryParams.Encode())
 	response, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return msalbase.TokenResponse{}, err
 	}
+	log.Println("response code: ", response.StatusCode)
 	return msalbase.CreateTokenResponse(authParameters, response)
 }
 
