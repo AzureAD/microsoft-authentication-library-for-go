@@ -365,11 +365,27 @@ func prepURLVals(cc *Credential, authParams authority.AuthParams) (url.Values, e
 // openid required to get an id token
 // offline_access required to get a refresh token
 // profile required to get the client_info field back
+var detectDefaultScopes = map[string]bool{
+	"openid":         true,
+	"offline_access": true,
+	"profile":        true,
+}
+
 var defaultScopes = []string{"openid", "offline_access", "profile"}
 
 func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthParams) {
-	scopes := make([]string, len(authParameters.Scopes)+len(defaultScopes))
-	copy(scopes, authParameters.Scopes)
+	scopes := make([]string, 0, len(authParameters.Scopes)+len(defaultScopes))
+	for _, scope := range authParameters.Scopes {
+		s := strings.TrimSpace(scope)
+		if s == "" {
+			continue
+		}
+		if detectDefaultScopes[scope] {
+			continue
+		}
+		scopes = append(scopes, scope)
+	}
 	scopes = append(scopes, defaultScopes...)
+
 	queryParams.Set("scope", strings.Join(scopes, " "))
 }
