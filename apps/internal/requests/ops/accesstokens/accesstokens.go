@@ -263,7 +263,7 @@ func (c Client) GetAccessTokenWithClientSecret(ctx context.Context, authParamete
 	log.Println("client_secret up here: ", clientSecret)
 	qv.Set("client_secret", clientSecret)
 	qv.Set(clientID, authParameters.ClientID)
-	log.Println("client_id up here: ", clientID)
+	log.Println("client_id up here: ", authParameters.ClientID)
 	addScopeQueryParam(qv, authParameters)
 
 	token, err := c.doTokenResp(ctx, authParameters, qv)
