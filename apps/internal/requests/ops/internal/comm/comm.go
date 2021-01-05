@@ -22,6 +22,7 @@ import (
 
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/google/uuid"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 const version = "0.1.0"
@@ -233,6 +234,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 		defer cancel()
 	}
 	req = req.WithContext(ctx)
+	log.Println(pretty.Sprint(req))
 
 	reply, err := c.client.Do(req)
 	if err != nil {
