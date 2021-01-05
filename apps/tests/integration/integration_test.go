@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -35,7 +34,7 @@ const (
 func httpRequest(url string, query url.Values, accessToken string) ([]byte, error) {
 	request, err := http.NewRequest("GET", url, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed to build new http request: %w", err)
 	}
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	request.URL.RawQuery = query.Encode()
@@ -100,7 +99,7 @@ func (l *labClient) getLabAccessToken() (string, error) {
 	if err != nil {
 		result, err = l.app.AcquireTokenByCredential(context.Background(), scopes)
 		if err != nil {
-			return "", err
+			return "", fmt.Errorf("AcquireTokenByCredential() error: %w", err)
 		}
 	}
 	return result.GetAccessToken(), nil
@@ -109,9 +108,8 @@ func (l *labClient) getLabAccessToken() (string, error) {
 func (l *labClient) getUser(query url.Values) (user, error) {
 	accessToken, err := l.getLabAccessToken()
 	if err != nil {
-		return user{}, err
+		return user{}, fmt.Errorf("problem getting lab access token: %w", err)
 	}
-	log.Println("access token: ", accessToken)
 
 	responseBody, err := httpRequest("https://msidlab.com/api/user", query, accessToken)
 	if err != nil {
