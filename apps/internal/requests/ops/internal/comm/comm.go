@@ -184,7 +184,7 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	headers.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	addStdHeaders(headers)
 	headers.Set("Return-Client-Request-Id", "false")
-	headers.Set("X-Client-Ver", "0.1.0")
+	headers.Del("X-Client-Ver")
 
 	body := strings.NewReader(qv.Encode())
 	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers, Body: ioutil.NopCloser(body)}
