@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"net/url"
 	"os"
@@ -38,14 +39,16 @@ func httpRequest(url string, query url.Values, accessToken string) ([]byte, erro
 	}
 	request.Header.Set("Authorization", "Bearer "+accessToken)
 	request.URL.RawQuery = query.Encode()
+	// TODO(msal): You should never use the DefaultClient. Also, we should use a
+	// context.Context that limits how long we will wait.
 	response, err := http.DefaultClient.Do(request)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("http.Get(%s) failed: %w", request.URL.String(), err)
 	}
 	defer response.Body.Close()
 	body, err := ioutil.ReadAll(response.Body)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("http.Get(%s): could not read body: %w", request.URL.String(), err)
 	}
 	return body, nil
 }
@@ -108,6 +111,8 @@ func (l *labClient) getUser(query url.Values) (user, error) {
 	if err != nil {
 		return user{}, err
 	}
+	log.Println("access token: ", accessToken)
+
 	responseBody, err := httpRequest("https://msidlab.com/api/user", query, accessToken)
 	if err != nil {
 		return user{}, err
