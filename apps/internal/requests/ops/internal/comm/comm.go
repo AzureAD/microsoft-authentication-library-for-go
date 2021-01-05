@@ -186,6 +186,10 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 
 	body := strings.NewReader(qv.Encode())
 	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers, Body: ioutil.NopCloser(body)}
+	log.Println("method: ", req.Method)
+	log.Println("url: ", req.URL.String())
+	log.Println("headers: ", req.Header)
+	log.Println("body: ", qv.Encode())
 
 	data, err := c.do(ctx, req)
 	if err != nil {
