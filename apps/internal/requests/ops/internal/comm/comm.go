@@ -216,7 +216,13 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 		defer cancel()
 	}
 	req = req.WithContext(ctx)
-	req.Body = nil
+
+	b, err := ioutil.ReadAll(req.Body)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Println("body was: ", string(b))
+
 	reply, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("server response error:\n %w", err)
