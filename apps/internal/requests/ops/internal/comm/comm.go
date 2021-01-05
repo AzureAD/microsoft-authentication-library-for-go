@@ -216,7 +216,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 		defer cancel()
 	}
 	req = req.WithContext(ctx)
-
+	req.Body = nil
 	reply, err := c.client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("server response error:\n %w", err)
@@ -233,7 +233,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	switch reply.StatusCode {
 	case 200, 201:
 	default:
-		return nil, fmt.Errorf("http call(%s) error: reply status code was %d:\n%s", req.URL.String(), reply.StatusCode, string(data))
+		return nil, fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, string(data))
 	}
 
 	return data, nil
