@@ -208,7 +208,7 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	return nil
 }
 
-// do makes the call HTTP call the server and returns the contents of the body.
+// do makes the HTTP call to the server and returns the contents of the body.
 func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
@@ -225,7 +225,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 
 	data, err := c.readBody(reply)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("could not read the body of an HTTP Response: %w", err)
 	}
 
 	// NOTE: This doesn't happen immediately after the call so that we can get an error message
@@ -233,7 +233,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	switch reply.StatusCode {
 	case 200, 201:
 	default:
-		return nil, fmt.Errorf("reply status code was %d:\n%s", reply.StatusCode, string(data))
+		return nil, fmt.Errorf("http call(%s) error: reply status code was %d:\n%s", req.URL.String(), reply.StatusCode, string(data))
 	}
 
 	return data, nil

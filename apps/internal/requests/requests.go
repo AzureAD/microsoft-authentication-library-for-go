@@ -222,7 +222,7 @@ func (t *Token) DeviceCode(ctx context.Context, authParams authority.AuthParams)
 func (t *Token) resolveEndpoint(ctx context.Context, authParams *authority.AuthParams, userPrincipalName string) error {
 	endpoints, err := t.resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, userPrincipalName)
 	if err != nil {
-		return err
+		return fmt.Errorf("unable to resolve an endpoint: %s", err)
 	}
 	authParams.Endpoints = endpoints
 	return nil

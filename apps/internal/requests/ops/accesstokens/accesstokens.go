@@ -132,11 +132,11 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 	var err error
 	c.Assertion, err = token.SignedString(c.Key)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("unable to sign a JWT token using private key: %w", err)
 	}
 
 	c.Expires = expires
-	return c.Assertion, err
+	return c.Assertion, nil
 }
 
 // thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.
@@ -263,7 +263,11 @@ func (c Client) GetAccessTokenWithClientSecret(ctx context.Context, authParamete
 	qv.Set(clientID, authParameters.ClientID)
 	addScopeQueryParam(qv, authParameters)
 
-	return c.doTokenResp(ctx, authParameters, qv)
+	token, err := c.doTokenResp(ctx, authParameters, qv)
+	if err != nil {
+		return token, fmt.Errorf("GetAccessTokenWithClientSecret(): %w", err)
+	}
+	return token, nil
 }
 
 func (c Client) GetAccessTokenWithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (TokenResponse, error) {
@@ -274,7 +278,11 @@ func (c Client) GetAccessTokenWithAssertion(ctx context.Context, authParameters 
 	qv.Set(clientInfo, clientInfoVal)
 	addScopeQueryParam(qv, authParameters)
 
-	return c.doTokenResp(ctx, authParameters, qv)
+	token, err := c.doTokenResp(ctx, authParameters, qv)
+	if err != nil {
+		return token, fmt.Errorf("GetAccessTokenWithAssertion(): %w", err)
+	}
+	return token, nil
 }
 
 func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (DeviceCodeResult, error) {
