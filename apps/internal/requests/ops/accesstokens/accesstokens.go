@@ -336,6 +336,9 @@ func (c Client) GetAccessTokenFromSamlGrant(ctx context.Context, authParameters 
 func (c Client) doTokenResp(ctx context.Context, authParameters authority.AuthParams, qv url.Values) (TokenResponse, error) {
 	// TODO(jdoak): This should really go straight to TokenResponse and not TokenResponseJSONPayload.
 	resp := TokenResponseJSONPayload{}
+	if !strings.HasSuffix(authParameters.Endpoints.TokenEndpoint, "/") {
+		authParameters.Endpoints.TokenEndpoint = authParameters.Endpoints.TokenEndpoint + "/"
+	}
 	err := c.Comm.URLFormCall(ctx, authParameters.Endpoints.TokenEndpoint, qv, &resp)
 	if err != nil {
 		return TokenResponse{}, err
