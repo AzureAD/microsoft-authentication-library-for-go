@@ -17,6 +17,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/msalbase"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/wstrust"
+
+	"github.com/kylelemons/godebug/pretty"
 )
 
 // defaultWebRequestManager handles the HTTP calls and request building in MSAL
@@ -263,6 +265,7 @@ func (wrm *defaultWebRequestManager) exchangeGrantForToken(ctx context.Context, 
 	log.Println("url: ", req.URL.String())
 	log.Println("headers: ", req.Header)
 	log.Println("body: ", queryParams.Encode())
+	log.Println(pretty.Sprint(req))
 	response, err := wrm.httpClient.Do(req)
 	if err != nil {
 		return msalbase.TokenResponse{}, err
