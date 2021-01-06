@@ -117,19 +117,19 @@ func (t *Token) UsernamePassword(ctx context.Context, authParams authority.AuthP
 
 	userRealm, err := t.authority.GetUserRealm(ctx, authParams)
 	if err != nil {
-		return accesstokens.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting user realm(user: %s) from authority error: %w", authParams.Username, err)
 	}
 
 	switch userRealm.AccountType {
 	case authority.Federated:
 		mexDoc, err := t.wsTrust.GetMex(ctx, userRealm.FederationMetadataURL)
 		if err != nil {
-			return accesstokens.TokenResponse{}, err
+			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
 		}
 
 		saml, err := t.wsTrust.GetSAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
 		if err != nil {
-			return accesstokens.TokenResponse{}, err
+			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting SAML token info: %w", err)
 		}
 		return t.accessTokens.GetAccessTokenFromSamlGrant(ctx, authParams, saml)
 	case authority.Managed:

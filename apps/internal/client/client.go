@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/url"
 	"reflect"
 	"strconv"
@@ -20,7 +19,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/kylelemons/godebug/pretty"
 )
 
 const (
@@ -277,7 +275,6 @@ func (b Base) AuthResultFromToken(ctx context.Context, authParams authority.Auth
 	if err != nil {
 		return AuthenticationResult{}, err
 	}
-	log.Println("AuthResultFromToken(token): ", pretty.Sprint(token))
 	return CreateAuthenticationResult(token, account)
 }
 

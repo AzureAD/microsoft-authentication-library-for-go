@@ -304,8 +304,8 @@ type Client struct {
 	Comm jsonCaller // *comm.Client
 }
 
-func (c Client) GetUserRealm(ctx context.Context, authParameters AuthParams) (UserRealm, error) {
-	endpoint := authParameters.Endpoints.UserRealmEndpoint(authParameters.Username)
+func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRealm, error) {
+	endpoint := authParams.Endpoints.UserRealmEndpoint(authParams.Username)
 
 	resp := UserRealm{}
 	err := c.Comm.JSONCall(
@@ -313,7 +313,7 @@ func (c Client) GetUserRealm(ctx context.Context, authParameters AuthParams) (Us
 		endpoint,
 		// TODO(jdoak): not thrilled about this, because all calls should have this but
 		// only calls with authParameters is using this.
-		http.Header{"client-request-id": []string{authParameters.CorrelationID}},
+		http.Header{"client-request-id": []string{authParams.CorrelationID}},
 		nil,
 		nil,
 		&resp,
