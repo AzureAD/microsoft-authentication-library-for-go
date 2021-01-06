@@ -190,7 +190,15 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	headers.Del("X-Client-Cpu")
 
 	body := strings.NewReader(qv.Encode())
-	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers, Body: ioutil.NopCloser(body)}
+	req := &http.Request{
+		Method: http.MethodPost,
+		URL:    u,
+		Header: headers,
+		Body:   ioutil.NopCloser(body),
+		GetBody: func() (io.ReadCloser, error) {
+			return ioutil.NopCloser(body), nil
+		},
+	}
 	log.Println("method: ", req.Method)
 	log.Println("url: ", req.URL.String())
 	log.Println("headers: ", req.Header)
