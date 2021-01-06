@@ -185,9 +185,9 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	headers.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	addStdHeaders(headers)
 	headers.Set("Return-Client-Request-Id", "false")
-	headers.Del("X-Client-Ver")
-	headers.Del("Accept-Encoding")
-	headers.Del("X-Client-Cpu")
+	//headers.Del("X-Client-Ver")
+	//headers.Del("Accept-Encoding")
+	//headers.Del("X-Client-Cpu")
 
 	enc := qv.Encode()
 
