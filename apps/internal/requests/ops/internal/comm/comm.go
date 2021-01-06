@@ -184,10 +184,6 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	addStdHeaders(headers)
-	headers.Set("Return-Client-Request-Id", "false")
-	//headers.Del("X-Client-Ver")
-	//headers.Del("Accept-Encoding")
-	//headers.Del("X-Client-Cpu")
 
 	enc := qv.Encode()
 
@@ -304,8 +300,10 @@ func addStdHeaders(headers http.Header) http.Header {
 	// So that I can have a static id for tests.
 	if testID != "" {
 		headers.Set("client-request-id", testID)
+		headers.Set("Return-Client-Request-Id", "false")
 	} else {
 		headers.Set("client-request-id", uuid.New().String())
+		headers.Set("Return-Client-Request-Id", "false")
 	}
 	headers.Set("x-client-sku", "MSAL.Go")
 	headers.Set("x-client-os", runtime.GOOS)
