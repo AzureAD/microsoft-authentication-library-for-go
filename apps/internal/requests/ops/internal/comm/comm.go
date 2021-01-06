@@ -192,10 +192,11 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	enc := qv.Encode()
 
 	req := &http.Request{
-		Method: http.MethodPost,
-		URL:    u,
-		Header: headers,
-		Body:   ioutil.NopCloser(strings.NewReader(enc)),
+		Method:        http.MethodPost,
+		URL:           u,
+		Header:        headers,
+		ContentLength: int64(len(enc)),
+		Body:          ioutil.NopCloser(strings.NewReader(enc)),
 		GetBody: func() (io.ReadCloser, error) {
 			return ioutil.NopCloser(strings.NewReader(enc)), nil
 		},
