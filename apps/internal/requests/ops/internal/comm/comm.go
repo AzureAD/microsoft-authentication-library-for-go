@@ -189,14 +189,15 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	headers.Del("Accept-Encoding")
 	headers.Del("X-Client-Cpu")
 
-	body := strings.NewReader(qv.Encode())
+	enc := qv.Encode()
+
 	req := &http.Request{
 		Method: http.MethodPost,
 		URL:    u,
 		Header: headers,
-		Body:   ioutil.NopCloser(body),
+		Body:   ioutil.NopCloser(strings.NewReader(enc)),
 		GetBody: func() (io.ReadCloser, error) {
-			return ioutil.NopCloser(body), nil
+			return ioutil.NopCloser(strings.NewReader(enc)), nil
 		},
 	}
 	log.Println("method: ", req.Method)
