@@ -149,7 +149,7 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 
 	token, err := pca.Base.Token.UsernamePassword(ctx, authParams)
 	if err != nil {
-		return AuthenticationResult{}, nil
+		return AuthenticationResult{}, err
 	}
 	log.Println("AcquireTokenByUsernamePassword(token)", pretty.Sprint(token))
 	return pca.Base.AuthResultFromToken(ctx, authParams, token, true)
