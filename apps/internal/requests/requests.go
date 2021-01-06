@@ -117,7 +117,7 @@ func (t *Token) UsernamePassword(ctx context.Context, authParams authority.AuthP
 
 	userRealm, err := t.authority.GetUserRealm(ctx, authParams)
 	if err != nil {
-		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting user realm(user: %s) from authority error: %w", authParams.Username, err)
+		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting user realm(user: %s) from authority: %w", authParams.Username, err)
 	}
 
 	switch userRealm.AccountType {
