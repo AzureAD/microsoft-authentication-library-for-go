@@ -19,6 +19,7 @@ Base.AuthParams is a copy that is free to be manipulated here.
 import (
 	"context"
 	"fmt"
+	"log"
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
@@ -27,6 +28,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 // AuthenticationResult contains the results of one token acquisition operation.
@@ -149,6 +151,7 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 	if err != nil {
 		return AuthenticationResult{}, nil
 	}
+	log.Println("AcquireTokenByUsernamePassword(token)", pretty.Sprint(token))
 	return pca.Base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
