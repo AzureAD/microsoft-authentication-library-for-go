@@ -14,7 +14,6 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
-	"log"
 	"testing"
 	"time"
 
@@ -248,7 +247,6 @@ func TestCredential(t *testing.T) {
 
 	token := &Token{}
 	for _, test := range tests {
-		log.Println(test.desc)
 		token.accessTokens = test.at
 		token.resolver = test.re
 

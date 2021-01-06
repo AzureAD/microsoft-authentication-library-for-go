@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -22,7 +21,6 @@ import (
 
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/google/uuid"
-	"github.com/kylelemons/godebug/pretty"
 )
 
 const version = "0.1.0"
@@ -197,20 +195,6 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 			return ioutil.NopCloser(strings.NewReader(enc)), nil
 		},
 	}
-	log.Println("method: ", req.Method)
-	log.Println("url: ", req.URL.String())
-	log.Println("headers: ", req.Header)
-	log.Println("body: ", qv.Encode())
-	log.Println("client_id:", qv["client_id"])
-	log.Println("client_secret: ", qv["client_secret"])
-	log.Println(pretty.Sprint(req))
-	log.Println("============")
-	/*
-		2021/01/05 20:39:55 method:  POST
-		2021/01/05 20:39:55 url:  https://login.microsoftonline.com/72f988bf-86f1-41af-91ab-2d7cd011db47/oauth2/v2.0/token
-		2021/01/05 20:39:55 headers:  map[Accept-Encoding:[gzip] Client-Request-Id:[95805c2b-bb83-47f5-9ef6-88cb37d02dda] Content-Type:[application/x-www-form-urlencoded; charset=utf-8] X-Client-Cpu:[amd64] X-Client-Os:[linux] X-Client-Sku:[MSAL.Go] X-Client-Ver:[0.1.0]]
-		2021/01/05 20:39:55 body:  client_id=***&client_secret=***&grant_type=client_credentials&scope=https%3A%2F%2Fmsidlab.com%2F.default++++openid+offline_access+profile
-	*/
 
 	data, err := c.do(ctx, req)
 	if err != nil {
@@ -242,7 +226,6 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 		defer cancel()
 	}
 	req = req.WithContext(ctx)
-	log.Println(pretty.Sprint(req))
 
 	reply, err := c.client.Do(req)
 	if err != nil {
