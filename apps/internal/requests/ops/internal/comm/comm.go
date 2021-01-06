@@ -247,7 +247,12 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	switch reply.StatusCode {
 	case 200, 201:
 	default:
-		return nil, fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, string(data))
+		sd := strings.TrimSpace(string(data))
+		if sd != "" {
+			// We probably have the error in the body.
+			return nil, fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, sd)
+		}
+		return nil, fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, pretty.Sprint(reply))
 	}
 
 	return data, nil
