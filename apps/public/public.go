@@ -141,6 +141,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // NOTE: this flow is NOT recommended.
 func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthenticationResult, error) {
+	log.Println("I was called")
 	authParams := pca.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.AuthorizationTypeUsernamePassword
@@ -149,9 +150,11 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 
 	token, err := pca.Base.Token.UsernamePassword(ctx, authParams)
 	if err != nil {
+		log.Println("I exited with error: ", err)
 		return AuthenticationResult{}, err
 	}
 	log.Println("AcquireTokenByUsernamePassword(token)", pretty.Sprint(token))
+	log.Println("I exited with call to AuthResultFromToken()")
 	return pca.Base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
