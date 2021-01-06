@@ -197,6 +197,8 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	log.Println("body: ", qv.Encode())
 	log.Println("client_id:", qv["client_id"])
 	log.Println("client_secret: ", qv["client_secret"])
+	log.Println(pretty.Sprint(req))
+	log.Println("============")
 	/*
 		2021/01/05 20:39:55 method:  POST
 		2021/01/05 20:39:55 url:  https://login.microsoftonline.com/72f988bf-86f1-41af-91ab-2d7cd011db47/oauth2/v2.0/token
@@ -233,7 +235,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
 		defer cancel()
 	}
-	// req = req.WithContext(ctx)
+	req = req.WithContext(ctx)
 	log.Println(pretty.Sprint(req))
 
 	reply, err := c.client.Do(req)
