@@ -105,7 +105,7 @@ func (l *labClient) getLabAccessToken() (string, error) {
 			return "", fmt.Errorf("AcquireTokenByCredential() error: %w", err)
 		}
 	}
-	return result.GetAccessToken(), nil
+	return result.AccessToken, nil
 }
 
 func (l *labClient) getUser(query url.Values) (user, error) {

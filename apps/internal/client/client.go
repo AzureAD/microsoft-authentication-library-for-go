@@ -118,16 +118,6 @@ func CreateAuthenticationResult(tokenResponse accesstokens.TokenResponse, accoun
 	}, nil
 }
 
-//GetAccessToken returns the access token of the authentication result
-func (ar AuthenticationResult) GetAccessToken() string {
-	return ar.AccessToken
-}
-
-// GetAccount returns the account of the authentication result
-func (ar AuthenticationResult) GetAccount() shared.Account {
-	return ar.Account
-}
-
 // Base is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Base struct {
