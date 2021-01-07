@@ -3,16 +3,7 @@
 
 package main
 
-import (
-	"context"
-	"errors"
-	"fmt"
-	"log"
-	"net/http"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
-)
-
+/*
 var (
 	accessToken        string
 	confidentialConfig = CreateConfig("confidential_config.json")
@@ -22,7 +13,6 @@ var (
 // TODO(msal): I'm not sure what to do here with the CodeChallenge and State. authCodeURLParams
 // is no more.  CodeChallenge is only used now in a confidential.AcquireTokenByAuthCode(), which
 // this is not using.  Maybe now this is a two step process????
-/*
 func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams.CodeChallenge = confidentialConfig.CodeChallenge
@@ -36,7 +26,6 @@ func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	log.Println("redirecting to auth: ", authURL)
 	http.Redirect(w, r, authURL, http.StatusSeeOther)
 }
-*/
 
 func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the authorization code from the URL's query

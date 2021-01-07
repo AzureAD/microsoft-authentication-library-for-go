@@ -252,8 +252,8 @@ type UserRealmAccountType string
 // These are the different types of user realms.
 const (
 	Unknown   UserRealmAccountType = ""
-	Federated                      = "Federated"
-	Managed                        = "Managed"
+	Federated UserRealmAccountType = "Federated"
+	Managed   UserRealmAccountType = "Managed"
 )
 
 //UserRealm is used for the username password request to determine user type
@@ -305,7 +305,6 @@ func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRe
 		"api-version": []string{"1.0"},
 	}
 
-	// 400 AADSTS90014: The required field 'api-version' is missing from the credential. Ensure that you have all the necessary parameters for the login request."
 	resp := UserRealm{}
 	err := c.Comm.JSONCall(
 		ctx,
@@ -317,7 +316,11 @@ func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRe
 		nil,
 		&resp,
 	)
-	return resp, err
+	if err != nil {
+		return resp, err
+	}
+
+	return resp, resp.validate()
 }
 
 func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurationEndpoint string) (TenantDiscoveryResponse, error) {

@@ -5,6 +5,7 @@ package authority
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -15,15 +16,10 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
-var testRealm = `{"account_type" : "Federated",
-					"domain_name" : "domain",
-					"cloud_instance_name" : "cloud",
-					"cloud_audience_urn" : "urn",
-					"federation_protocol" : "fed_prot",
-					"federation_metadata_url" : "fed_meta"}`
-
 type fakeJSONCaller struct {
 	err bool
+
+	resp []byte
 
 	gotEndpoint string
 	gotHeaders  http.Header
@@ -41,6 +37,10 @@ func (f *fakeJSONCaller) JSONCall(ctx context.Context, endpoint string, headers 
 	f.gotQV = qv
 	f.gotBody = body
 	f.gotResp = resp
+
+	if f.resp != nil {
+		json.Unmarshal(f.resp, resp)
+	}
 
 	return nil
 }
@@ -91,6 +91,7 @@ func TestGetUserRealm(t *testing.T) {
 		desc     string
 		err      bool
 		endpoint string
+		jsonResp *UserRealm
 		headers  http.Header
 		qv       url.Values
 		resp     interface{}
@@ -108,6 +109,12 @@ func TestGetUserRealm(t *testing.T) {
 			qv: url.Values{
 				"api-version": []string{"1.0"},
 			},
+			jsonResp: &UserRealm{
+				AccountType:       "Managed",
+				DomainName:        "microsoftonline.com",
+				CloudInstanceName: "instance",
+				CloudAudienceURN:  "urn",
+			},
 			resp: &UserRealm{},
 		},
 	}
@@ -115,6 +122,13 @@ func TestGetUserRealm(t *testing.T) {
 	for _, test := range tests {
 		fake := &fakeJSONCaller{err: test.err}
 		client := Client{fake}
+		if test.jsonResp != nil {
+			b, err := json.Marshal(test.jsonResp)
+			if err != nil {
+				panic(err)
+			}
+			fake.resp = b
+		}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what

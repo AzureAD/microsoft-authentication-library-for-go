@@ -3,14 +3,7 @@
 
 package main
 
-import (
-	"context"
-
-	"log"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
-)
-
+/*
 func tryClientSecretFlow(app confidential.Client) {
 	result, err := app.AcquireTokenByCredential(context.Background(), confidentialConfig.Scopes)
 	if err != nil {
@@ -40,3 +33,4 @@ func acquireTokenClientSecret() {
 		log.Println("Access token is: " + accessToken)
 	}
 }
+*/

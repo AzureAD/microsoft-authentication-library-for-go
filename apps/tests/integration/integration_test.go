@@ -90,6 +90,9 @@ func newLabClient() (*labClient, error) {
 	}
 
 	app, err := confidential.New("userID", clientID, cred, confidential.Authority(microsoftAuthority))
+	if err != nil {
+		return nil, err
+	}
 
 	return &labClient{app: app}, nil
 }
