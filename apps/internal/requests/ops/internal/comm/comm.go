@@ -20,6 +20,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/google/uuid"
 	"github.com/kylelemons/godebug/pretty"
@@ -250,12 +251,17 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 		sd := strings.TrimSpace(string(data))
 		if sd != "" {
 			// We probably have the error in the body.
-			return nil, fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, sd)
+			return nil, errors.CallErr{
+				Req:  req,
+				Resp: reply,
+				Err:  fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, sd),
+			}
 		}
-		if len(reply.Status) > 3 {
-			return nil, fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, reply.Status)
+		return nil, errors.CallErr{
+			Req:  req,
+			Resp: reply,
+			Err:  fmt.Errorf("http call(%s)(%s) error: reply status code was %d", req.URL.String(), req.Method, reply.StatusCode),
 		}
-		return nil, fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s", req.URL.String(), req.Method, reply.StatusCode, pretty.Sprint(reply))
 	}
 
 	return data, nil
