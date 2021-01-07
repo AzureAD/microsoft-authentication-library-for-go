@@ -112,12 +112,12 @@ func TestGetUserRealm(t *testing.T) {
 		},
 		{
 			desc:     "Success",
-			endpoint: authParams.Endpoints.UserRealmEndpoint(authParams.Username),
+			endpoint: fmt.Sprintf("https://login.microsoftonline.com/common/UserRealm/%s", url.PathEscape(authParams.Username)),
 			headers: http.Header{
 				"client-request-id": []string{"id"},
 			},
 			qv: url.Values{
-				"api-version": []string{"1.1"},
+				"api-version": []string{"1.0"},
 			},
 			resp: &UserRealm{},
 		},

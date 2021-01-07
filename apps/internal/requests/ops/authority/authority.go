@@ -244,11 +244,6 @@ func NewEndpoints(authorizationEndpoint string, tokenEndpoint string, selfSigned
 	return Endpoints{authorizationEndpoint, tokenEndpoint, selfSignedJwtAudience, authorityHost}
 }
 
-// UserRealmEndpoint returns the endpoint to get the user realm.
-func (e Endpoints) UserRealmEndpoint(username string) string {
-	return fmt.Sprintf("https://%s/common/UserRealm/%s?api-version=1.0", e.authorityHost, url.PathEscape(username))
-}
-
 //go:generate stringer -type=UserRealmAccountType
 
 // UserRealmAccountType refers to the type of user realm.
@@ -305,7 +300,10 @@ type Client struct {
 }
 
 func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRealm, error) {
-	endpoint := authParams.Endpoints.UserRealmEndpoint(authParams.Username)
+	endpoint := fmt.Sprintf("https://%s/common/UserRealm/%s", authParams.Endpoints.authorityHost, url.PathEscape(authParams.Username))
+	qv := url.Values{
+		"api-version": []string{"1.0"},
+	}
 
 	// 400 AADSTS90014: The required field 'api-version' is missing from the credential. Ensure that you have all the necessary parameters for the login request."
 	resp := UserRealm{}
@@ -314,12 +312,8 @@ func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRe
 		endpoint,
 		// TODO(jdoak): not thrilled about this, because all calls should have this but
 		// only calls with authParameters is using this.
-		http.Header{
-			"client-request-id": []string{authParams.CorrelationID},
-		},
-		url.Values{
-			"api-version": []string{"1.1"},
-		},
+		http.Header{"client-request-id": []string{authParams.CorrelationID}},
+		qv,
 		nil,
 		&resp,
 	)
