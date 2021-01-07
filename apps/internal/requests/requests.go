@@ -32,6 +32,7 @@ type accessTokens interface {
 	GetAccessTokenFromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error)
 }
 
+// fetchAuthority will be implemented by authority.Authority.
 type fetchAuthority interface {
 	GetUserRealm(context.Context, authority.AuthParams) (authority.UserRealm, error)
 	GetAadinstanceDiscoveryResponse(context.Context, authority.Info) (authority.InstanceDiscoveryResponse, error)

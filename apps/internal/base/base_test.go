@@ -117,7 +117,7 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 			t.Errorf("TestCreateAuthenticationResultFromStorageTokenResponse(%s): got err == nil, want == != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestCreateAuthenticationResultFromStorageTokenResponse(%s): got err == %s, want == == nil", test.desc, err)
+			t.Errorf("TestCreateAuthenticationResultFromStorageTokenResponse(%s): got err == %s, want == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue

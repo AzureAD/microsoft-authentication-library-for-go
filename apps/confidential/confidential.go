@@ -72,17 +72,13 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 		}
 
 		if x509.IsEncryptedPEMBlock(block) {
-			if password != "" {
-				b, err := x509.DecryptPEMBlock(block, []byte(password))
-				if err != nil {
-					return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %w", err)
-				}
-				block, _ = pem.Decode(b)
-				if block == nil {
-					return nil, nil, fmt.Errorf("encounter encrypted PEM block that did not decode")
-				}
-			} else {
-				return nil, nil, fmt.Errorf("encountered encrypted PEM block, but password was not passed")
+			b, err := x509.DecryptPEMBlock(block, []byte(password))
+			if err != nil {
+				return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %w", err)
+			}
+			block, _ = pem.Decode(b)
+			if block == nil {
+				return nil, nil, fmt.Errorf("encounter encrypted PEM block that did not decode")
 			}
 		}
 
