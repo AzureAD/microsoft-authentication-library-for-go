@@ -316,9 +316,10 @@ func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRe
 		// only calls with authParameters is using this.
 		http.Header{
 			"client-request-id": []string{authParams.CorrelationID},
-			"api-version":       []string{"1.1"},
 		},
-		nil,
+		url.Values{
+			"api-version": []string{"1.1"},
+		},
 		nil,
 		&resp,
 	)
