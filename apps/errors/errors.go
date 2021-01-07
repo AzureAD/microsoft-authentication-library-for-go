@@ -3,6 +3,7 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 
 	"github.com/kylelemons/godebug/pretty"
@@ -17,8 +18,10 @@ type verboser interface {
 // Verbose prints the most verbose error that the error message has.
 func Verbose(err error) string {
 	if v, ok := err.(verboser); ok {
+		log.Println("VERBOSE ERROR")
 		return v.Verbose()
 	}
+	log.Printf("NOT VERBOSE ERROR: %T", err)
 	return err.Error()
 }
 

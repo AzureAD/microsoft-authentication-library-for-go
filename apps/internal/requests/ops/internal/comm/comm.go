@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"log"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -23,7 +22,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/google/uuid"
-	"github.com/kylelemons/godebug/pretty"
 )
 
 const version = "0.1.0"
@@ -85,8 +83,6 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 		req.Body = ioutil.NopCloser(bytes.NewBuffer(data))
 		req.Method = http.MethodPost
 	}
-
-	log.Println("json req: \n", pretty.Sprint(req))
 
 	data, err := c.do(ctx, req)
 	if err != nil {
