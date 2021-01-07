@@ -112,8 +112,11 @@ func TestGetUserRealm(t *testing.T) {
 		{
 			desc:     "Success",
 			endpoint: authParams.Endpoints.UserRealmEndpoint(authParams.Username),
-			headers:  http.Header{"client-request-id": []string{"id"}},
-			resp:     &UserRealm{},
+			headers: http.Header{
+				"client-request-id": []string{"id"},
+				"api-version":       []string{"1.1"},
+			},
+			resp: &UserRealm{},
 		},
 	}
 
