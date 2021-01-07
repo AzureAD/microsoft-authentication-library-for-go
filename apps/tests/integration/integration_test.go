@@ -6,7 +6,6 @@ package integration
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io/ioutil"
 	"net/http"
@@ -15,6 +14,7 @@ import (
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
@@ -180,7 +180,7 @@ func TestUsernamePassword(t *testing.T) {
 		user := getTestUser(test.desc, labClientInstance, test.vals)
 		app, err := public.New(user.AppID, public.Authority(organizationsAuthority))
 		if err != nil {
-			panic(err)
+			panic(errors.Verbose(err))
 		}
 		result, err := app.AcquireTokenByUsernamePassword(
 			context.Background(),
@@ -189,7 +189,7 @@ func TestUsernamePassword(t *testing.T) {
 			user.Password,
 		)
 		if err != nil {
-			t.Fatalf("TestUsernamePassword(%s): on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", test.desc, err)
+			t.Fatalf("TestUsernamePassword(%s): on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", test.desc, errors.Verbose(err))
 		}
 		if result.AccessToken == "" {
 			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)

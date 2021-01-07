@@ -1,6 +1,7 @@
 package errors
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -13,12 +14,17 @@ type verboser interface {
 	Verbose() string
 }
 
-// VerboseError prints the most verbose error that the error message has.
-func VerboseError(err error) string {
+// Verbose prints the most verbose error that the error message has.
+func Verbose(err error) string {
 	if v, ok := err.(verboser); ok {
 		return v.Verbose()
 	}
 	return err.Error()
+}
+
+// New is equivalent to errors.New().
+func New(text string) error {
+	return errors.New(text)
 }
 
 // CallErr represents an HTTP call error. Has a Verbose() method that allows getting the
