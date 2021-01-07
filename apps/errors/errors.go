@@ -52,5 +52,5 @@ func (e CallErr) Error() string {
 
 // Verbose prints a versbose error message with the request or response.
 func (e CallErr) Verbose() string {
-	return fmt.Sprintf("%s:\n\tRequest:\n%s\n\tResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
+	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
 }

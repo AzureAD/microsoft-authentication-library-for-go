@@ -274,8 +274,8 @@ func TestXMLCall(t *testing.T) {
 			continue
 		}
 
-		if rec.gotMethod != http.MethodPost {
-			t.Errorf("TestXMLCall(%s): got method == %s, want http method == POST", test.desc, rec.gotMethod)
+		if rec.gotMethod != http.MethodGet {
+			t.Errorf("TestXMLCall(%s): got method == %s, want http method == GET", test.desc, rec.gotMethod)
 			continue
 		}
 

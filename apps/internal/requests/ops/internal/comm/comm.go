@@ -150,9 +150,10 @@ func (c *Client) SOAPCall(ctx context.Context, endpoint, action string, headers 
 // xmlCall sends an XML in body and decodes into resp. This simply does the transport and relies on
 // an upper level call to set things such as SOAP parameters and Content-Type, if required.
 func (c *Client) xmlCall(ctx context.Context, u *url.URL, headers http.Header, body string, resp interface{}) error {
-	req := &http.Request{Method: http.MethodPost, URL: u, Header: headers}
+	req := &http.Request{Method: http.MethodGet, URL: u, Header: headers}
 
 	if len(body) > 0 {
+		req.Method = http.MethodPost
 		req.Body = ioutil.NopCloser(strings.NewReader(body))
 	}
 
