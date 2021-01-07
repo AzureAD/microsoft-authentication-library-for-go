@@ -39,7 +39,9 @@ func (f *fakeJSONCaller) JSONCall(ctx context.Context, endpoint string, headers 
 	f.gotResp = resp
 
 	if f.resp != nil {
-		json.Unmarshal(f.resp, resp)
+		if err := json.Unmarshal(f.resp, resp); err != nil {
+			return err
+		}
 	}
 
 	return nil
