@@ -103,6 +103,7 @@ func TestGetUserRealm(t *testing.T) {
 		err      bool
 		endpoint string
 		headers  http.Header
+		qv       url.Values
 		resp     interface{}
 	}{
 		{
@@ -114,7 +115,9 @@ func TestGetUserRealm(t *testing.T) {
 			endpoint: authParams.Endpoints.UserRealmEndpoint(authParams.Username),
 			headers: http.Header{
 				"client-request-id": []string{"id"},
-				"api-version":       []string{"1.1"},
+			},
+			qv: url.Values{
+				"api-version": []string{"1.1"},
 			},
 			resp: &UserRealm{},
 		},
@@ -139,7 +142,7 @@ func TestGetUserRealm(t *testing.T) {
 			continue
 		}
 
-		if err := fake.compare(test.endpoint, test.headers, nil, nil, test.resp); err != nil {
+		if err := fake.compare(test.endpoint, test.headers, test.qv, nil, test.resp); err != nil {
 			t.Errorf("TestGetUserRealm(%s): %s", test.desc, err)
 		}
 	}
