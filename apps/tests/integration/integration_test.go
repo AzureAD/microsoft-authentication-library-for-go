@@ -89,7 +89,7 @@ func newLabClient() (*labClient, error) {
 		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
 	}
 
-	app, err := confidential.New("userID", clientID, cred, confidential.WithAuthority(microsoftAuthority))
+	app, err := confidential.New(clientID, cred, confidential.WithAuthority(microsoftAuthority))
 	if err != nil {
 		return nil, err
 	}
