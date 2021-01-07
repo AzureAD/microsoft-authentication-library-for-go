@@ -5,9 +5,6 @@ package shared
 
 import (
 	stdJSON "encoding/json"
-	"io/ioutil"
-	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
@@ -23,12 +20,6 @@ var (
 	accLid   = "lid"
 	accUser  = "user"
 )
-
-var testAccount = Account{
-	HomeAccountID:     accHID,
-	PreferredUsername: accUser,
-	Environment:       accEnv,
-}
 
 func TestAccountUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
@@ -108,12 +99,5 @@ func TestAccountMarshal(t *testing.T) {
 
 	if diff := pretty.Compare(want, got); diff != "" {
 		t.Errorf("TestAccountMarshal: -want/+got:\n%s", diff)
-	}
-}
-
-func createFakeResp(code int, body string) *http.Response {
-	return &http.Response{
-		Body:       ioutil.NopCloser(strings.NewReader(body)),
-		StatusCode: code,
 	}
 }

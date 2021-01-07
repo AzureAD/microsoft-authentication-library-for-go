@@ -3,14 +3,7 @@
 
 package main
 
-import (
-	"context"
-	"fmt"
-	"log"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
-)
-
+/*
 func tryClientCertificateFlow(app confidential.Client) {
 	result, err := app.AcquireTokenByCredential(context.Background(), confidentialConfig.Scopes)
 	if err != nil {
@@ -18,6 +11,7 @@ func tryClientCertificateFlow(app confidential.Client) {
 	}
 	fmt.Println("Access token is " + result.GetAccessToken())
 }
+*/
 
 // This needs to be repaired.  We moved from "thumbprint" to requiring the x509 certificate and key
 // as this is how you would do this in a Go world.

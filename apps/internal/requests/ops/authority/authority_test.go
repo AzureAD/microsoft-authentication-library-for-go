@@ -7,23 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"reflect"
-	"strings"
 	"testing"
 
 	"github.com/kylelemons/godebug/pretty"
-)
-
-var (
-	accHID   = "hid"
-	accEnv   = "env"
-	accRealm = "realm"
-	authType = "MSSTS"
-	accLid   = "lid"
-	accUser  = "user"
 )
 
 var testRealm = `{"account_type" : "Federated",
@@ -263,7 +252,7 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 	want := Info{
 		Host:                  "login.microsoftonline.com",
 		CanonicalAuthorityURI: authorityURI,
-		AuthorityType:         authType,
+		AuthorityType:         "MSSTS",
 		UserRealmURIPrefix:    "https://login.microsoftonline.com/common/userrealm/",
 		Tenant:                "common",
 		ValidateAuthority:     true,
@@ -275,12 +264,5 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 
 	if diff := pretty.Compare(want, got); diff != "" {
 		t.Errorf("TestCreateAuthorityInfoFromAuthorityUri: -want/+got:\n%s", diff)
-	}
-}
-
-func createFakeResp(code int, body string) *http.Response {
-	return &http.Response{
-		Body:       ioutil.NopCloser(strings.NewReader(body)),
-		StatusCode: code,
 	}
 }

@@ -8,8 +8,6 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
-	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -820,22 +818,5 @@ func TestFindDeclinedScopes(t *testing.T) {
 	actualDeclinedScopes := findDeclinedScopes(requestedScopes, grantedScopes)
 	if !reflect.DeepEqual(expectedDeclinedScopes, actualDeclinedScopes) {
 		t.Errorf("Actual declined scopes %v differ from expected declined scopes %v", actualDeclinedScopes, expectedDeclinedScopes)
-	}
-}
-
-const (
-	testTokenResponse = `{
-	"access_token" : "secret",
-	"expires_in": 86399,
-	"ext_expires_in": 86399
-	}`
-
-	testTokenResponseErrors = `{"expires_in": 86399, "ext_expires_in": 86399}`
-)
-
-func createFakeResp(code int, body string) *http.Response {
-	return &http.Response{
-		Body:       ioutil.NopCloser(strings.NewReader(body)),
-		StatusCode: code,
 	}
 }

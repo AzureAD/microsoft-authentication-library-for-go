@@ -14,6 +14,8 @@ package accesstokens
 import (
 	"context"
 	"crypto"
+
+	/* #nosec */
 	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
@@ -142,6 +144,7 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 // thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.
 // https://tools.ietf.org/html/rfc7517#section-4.8
 func thumbprint(cert *x509.Certificate) []byte {
+	/* #nosec */
 	a := sha1.Sum(cert.Raw)
 	return a[:]
 }
