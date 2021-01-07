@@ -307,13 +307,17 @@ type Client struct {
 func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRealm, error) {
 	endpoint := authParams.Endpoints.UserRealmEndpoint(authParams.Username)
 
+	// 400 AADSTS90014: The required field 'api-version' is missing from the credential. Ensure that you have all the necessary parameters for the login request."
 	resp := UserRealm{}
 	err := c.Comm.JSONCall(
 		ctx,
 		endpoint,
 		// TODO(jdoak): not thrilled about this, because all calls should have this but
 		// only calls with authParameters is using this.
-		http.Header{"client-request-id": []string{authParams.CorrelationID}},
+		http.Header{
+			"client-request-id": []string{authParams.CorrelationID},
+			"api-version":       []string{"1.1"},
+		},
 		nil,
 		nil,
 		&resp,
