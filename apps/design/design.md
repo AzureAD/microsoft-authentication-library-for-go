@@ -97,7 +97,7 @@ This is the general way to add a new feature to MSAL:
 
 ## Notable Differences To Other Clients
 
-### Confidential applications have a user ID
+### TBD: Confidential applications needs to handle multiple users without one big cache
 
 The MSAL caching design is rather simple. These design decisions and the fact that multiple applications in different languages can share a cache mean it cannot be easily changed.
 
@@ -111,20 +111,7 @@ We cannot change the MSAL cache design at this time, therefore it should be clea
 confidential.Client should be done per user. This must go beyond a simple doc entry
 that can be ignored. Its great to say: "we told you in the doc", but that is AFTER a support call.
 
-To make it clear, we require the user to pass a userID field. This forces the user to read what
-a userID is and recognize that it is per user.
-
-A future design might include a parent client to Confidential that keeps track of the "users".
-This way we manage the lifecycle of the clients. The current design forces the user to deal with
-this, probably via a map. We could design an implementation with features from an LRU (to avoid
-memory growth), deletion schemantics, etc.... that is more efficient than what a normal user is
-going to implement (and eliminate each user from having to do this).
-
-or.....
-
-We could create a new caching mechanism for Confidential that doesn't have this problem.  Treat
-it differently than Public. This would be a larger migration path across all SDKs, but it is
-probably the right long term move.
+TBD ...
 
 ### Use of x509.Certificate and CertFromPEM() function
 

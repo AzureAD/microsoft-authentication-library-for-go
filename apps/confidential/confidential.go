@@ -218,11 +218,7 @@ var tokener = requests.NewToken()
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
-func New(userID, clientID string, cred Credential, options ...Option) (Client, error) {
-	if userID == "" {
-		return Client{}, fmt.Errorf("must provide a userID")
-	}
-
+func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	opts := Options{
 		Authority: base.AuthorityPublicCloud,
 	}
