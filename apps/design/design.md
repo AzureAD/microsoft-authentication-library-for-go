@@ -55,8 +55,8 @@ For example, a package .../a/b/c/internal/d/e/f can be imported only by code in 
 We use this featurs quite liberally to make clear what is using an internal package.  For example:
 
 ```
-apps/internal/client - Only can be used by packages defined at apps/
-apps/internal/client/internal/storage - Only can be use by package client
+apps/internal/base - Only can be used by packages defined at apps/
+apps/internal/base/internal/storage - Only can be use by package client
 ```
 
 ## Public API

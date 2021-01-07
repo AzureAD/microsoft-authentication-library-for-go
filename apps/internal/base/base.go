@@ -1,7 +1,7 @@
 // Package client contains a "Base" client that is used by the external public.Client and confidential.Client.
 // Base holds shared attributes that must be available to both clients and methods that act as
 // shared calls.
-package client
+package base
 
 import (
 	"context"
@@ -14,7 +14,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
@@ -118,9 +118,9 @@ func CreateAuthenticationResult(tokenResponse accesstokens.TokenResponse, accoun
 	}, nil
 }
 
-// Base is a base client that provides access to common methods and primatives that
+// Client is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
-type Base struct {
+type Client struct {
 	Token   *requests.Token
 	manager manager // *storage.Manager or fakeManager in tests
 
@@ -129,14 +129,14 @@ type Base struct {
 }
 
 // New is the constructor for Base.
-func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *requests.Token) (Base, error) {
+func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *requests.Token) (Client, error) {
 	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
-		return Base{}, err
+		return Client{}, err
 	}
 	authParams := authority.NewAuthParams(clientID, authInfo)
 
-	return Base{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
+	return Client{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
 		Token:         token,
 		AuthParams:    authParams,
 		cacheAccessor: noopCacheAccessor{},
@@ -145,7 +145,7 @@ func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace
 }
 
 // AuthCodeURL creates a URL used to acquire an authorization code.
-func (b Base) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, authParams authority.AuthParams) (string, error) {
+func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, authParams authority.AuthParams) (string, error) {
 	endpoints, err := b.Token.ResolveEndpoints(ctx, authParams.AuthorityInfo, "")
 	if err != nil {
 		return "", err
@@ -191,7 +191,7 @@ func (b Base) AuthCodeURL(ctx context.Context, clientID, redirectURI string, sco
 	return baseURL.String(), nil
 }
 
-func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthenticationResult, error) {
+func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthenticationResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
 	toLower(silent.Scopes)
 	silent.augmentAuthenticationParameters(&authParams)
@@ -227,7 +227,7 @@ func (b Base) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentP
 	return result, nil
 }
 
-func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthenticationResult, error) {
+func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthenticationResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
@@ -251,7 +251,7 @@ func (b Base) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acquire
 	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-func (b Base) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthenticationResult, error) {
+func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthenticationResult, error) {
 	if !cacheWrite {
 		return CreateAuthenticationResult(token, shared.Account{})
 	}
@@ -268,7 +268,7 @@ func (b Base) AuthResultFromToken(ctx context.Context, authParams authority.Auth
 	return CreateAuthenticationResult(token, account)
 }
 
-func (b Base) GetAccounts() []shared.Account {
+func (b Client) GetAccounts() []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		b.cacheAccessor.Replace(s)
 		defer b.cacheAccessor.Export(s)

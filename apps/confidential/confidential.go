@@ -16,7 +16,7 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
@@ -26,7 +26,7 @@ import (
 /*
 Design note:
 
-confidential.Client uses client.Base as an embedded type. client.Base statically assigns its attributes
+confidential.Client uses base.Client as an embedded type. base.Client statically assigns its attributes
 during creation. As it doesn't have any pointers in it, anything borrowed from it, such as
 Base.AuthParams is a copy that is free to be manipulated here.
 
@@ -51,7 +51,7 @@ put a PEM decoder into here.
 
 // AuthenticationResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult = client.AuthenticationResult
+type AuthenticationResult = base.AuthenticationResult
 
 type Account = shared.Account
 
@@ -163,7 +163,7 @@ func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
 // package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
-	client.Base
+	base.Client
 
 	cred *accesstokens.Credential
 
@@ -228,7 +228,7 @@ func New(userID, clientID string, cred Credential, options ...Option) (Client, e
 	}
 
 	opts := Options{
-		Authority: client.AuthorityPublicCloud,
+		Authority: base.AuthorityPublicCloud,
 	}
 
 	for _, o := range options {
@@ -238,14 +238,14 @@ func New(userID, clientID string, cred Credential, options ...Option) (Client, e
 		return Client{}, err
 	}
 
-	base, err := client.New(clientID, opts.Authority, opts.Accessor, tokener)
+	base, err := base.New(clientID, opts.Authority, opts.Accessor, tokener)
 	if err != nil {
 		return Client{}, err
 	}
 
 	return Client{
-		Base: base,
-		cred: cred.toMSALBASE(),
+		Client: base,
+		cred:   cred.toMSALBASE(),
 	}, nil
 }
 
@@ -256,7 +256,7 @@ func (cca Client) UserID() string {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 func (cca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return cca.Base.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
+	return cca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
@@ -283,14 +283,14 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 		o(&opts)
 	}
 
-	silentParameters := client.AcquireTokenSilentParameters{
+	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
 		RequestType: accesstokens.RefreshTokenConfidential,
 		Credential:  cca.cred,
 	}
 
-	return cca.Base.AcquireTokenSilent(ctx, silentParameters)
+	return cca.Client.AcquireTokenSilent(ctx, silentParameters)
 }
 
 // AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
@@ -334,7 +334,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 		return AuthenticationResult{}, err
 	}
 
-	params := client.AcquireTokenAuthCodeParameters{
+	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:      scopes,
 		Code:        opts.Code,
 		Challenge:   opts.Challenge,
@@ -342,7 +342,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 	}
 
-	return cca.Base.AcquireTokenByAuthCode(ctx, params)
+	return cca.Client.AcquireTokenByAuthCode(ctx, params)
 }
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.

@@ -22,7 +22,7 @@ import (
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
@@ -31,7 +31,7 @@ import (
 
 // AuthenticationResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult = client.AuthenticationResult
+type AuthenticationResult = base.AuthenticationResult
 
 type Account = shared.Account
 
@@ -77,12 +77,12 @@ func WithCache(accessor cache.ExportReplace) Option {
 // Client is a representation of authentication client for public applications as defined in the
 // package doc. For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications.
 type Client struct {
-	client.Base
+	base.Client
 }
 
 // New is the constructor for Client.
 func New(clientID string, options ...Option) (Client, error) {
-	opts := Options{Authority: client.AuthorityPublicCloud}
+	opts := Options{Authority: base.AuthorityPublicCloud}
 
 	for _, o := range options {
 		o(&opts)
@@ -91,7 +91,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := client.New(clientID, opts.Authority, opts.Accessor, requests.NewToken())
+	base, err := base.New(clientID, opts.Authority, opts.Accessor, requests.NewToken())
 	if err != nil {
 		return Client{}, err
 	}
@@ -100,7 +100,7 @@ func New(clientID string, options ...Option) (Client, error) {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
 func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return pca.Base.AuthCodeURL(ctx, clientID, redirectURI, scopes, pca.AuthParams)
+	return pca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, pca.AuthParams)
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
@@ -127,13 +127,13 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 		o(&opts)
 	}
 
-	silentParameters := client.AcquireTokenSilentParameters{
+	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
 		RequestType: accesstokens.RefreshTokenPublic,
 	}
 
-	return pca.Base.AcquireTokenSilent(ctx, silentParameters)
+	return pca.Client.AcquireTokenSilent(ctx, silentParameters)
 }
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
@@ -145,11 +145,11 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 	authParams.Username = username
 	authParams.Password = password
 
-	token, err := pca.Base.Token.UsernamePassword(ctx, authParams)
+	token, err := pca.Client.Token.UsernamePassword(ctx, authParams)
 	if err != nil {
 		return AuthenticationResult{}, err
 	}
-	return pca.Base.AuthResultFromToken(ctx, authParams, token, true)
+	return pca.Client.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 type DeviceCodeResult = accesstokens.DeviceCodeResult
@@ -233,14 +233,14 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 		return AuthenticationResult{}, err
 	}
 
-	params := client.AcquireTokenAuthCodeParameters{
+	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:      scopes,
 		Code:        opts.Code,
 		Challenge:   opts.Challenge,
 		RequestType: accesstokens.AuthCodePublic,
 	}
 
-	return pca.Base.AcquireTokenByAuthCode(ctx, params)
+	return pca.Client.AcquireTokenByAuthCode(ctx, params)
 }
 
 // Accounts gets all the accounts in the token cache.

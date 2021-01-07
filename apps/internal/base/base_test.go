@@ -1,11 +1,11 @@
-package client
+package base
 
 import (
 	"strconv"
 	"testing"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/client/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 
