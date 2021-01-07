@@ -152,6 +152,8 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 	return pca.Base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
+type DeviceCodeResult = accesstokens.DeviceCodeResult
+
 // DeviceCode provides the results of the device code flows first stage (containing the code)
 // that must be entered on the second device and provides a method to retrieve the AuthenticationResult
 // once that code has been entered and verified.
@@ -159,23 +161,20 @@ type DeviceCode struct {
 	// Result holds the information about the device code (such as the code).
 	Result DeviceCodeResult
 
-	ctx        context.Context
 	authParams authority.AuthParams
 	client     Client
 	dc         requests.DeviceCode
 }
 
-type DeviceCodeResult = accesstokens.DeviceCodeResult
-
 // AuthenticationResult retreives the AuthenticationResult once the user enters the code
 // on the second device. Until then it blocks until the .AcquireTokenByDeviceCode() context
 // is cancelled or the token expires.
-func (d DeviceCode) AuthenticationResult() (AuthenticationResult, error) {
-	token, err := d.dc.Token()
+func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthenticationResult, error) {
+	token, err := d.dc.Token(ctx)
 	if err != nil {
 		return AuthenticationResult{}, err
 	}
-	return d.client.AuthResultFromToken(d.ctx, d.authParams, token, true)
+	return d.client.AuthResultFromToken(ctx, d.authParams, token, true)
 }
 
 // AcquireTokenByDeviceCode acquires a security token from the authority, by acquiring a device code and using that to acquire the token.
@@ -190,7 +189,7 @@ func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string)
 		return DeviceCode{}, err
 	}
 
-	return DeviceCode{Result: dc.Result, ctx: ctx, authParams: authParams, client: pca, dc: dc}, nil
+	return DeviceCode{Result: dc.Result, authParams: authParams, client: pca, dc: dc}, nil
 }
 
 // AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.

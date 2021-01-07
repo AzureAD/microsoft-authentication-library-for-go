@@ -84,7 +84,7 @@ func (f *fakeAccessTokens) GetAccessTokenFromDeviceCodeResult(ctx context.Contex
 		defer func() { f.next++ }()
 		v := f.deviceCodeResult[f.next]
 		if v == nil {
-			return accesstokens.TokenResponse{}, nil
+			return accesstokens.TokenResponse{ExpiresOn: time.Now().Add(5 * time.Minute)}, nil
 		}
 		return accesstokens.TokenResponse{}, v.(error)
 	}
@@ -407,6 +407,9 @@ func TestDeviceCode(t *testing.T) {
 		{
 			desc: "Success",
 			dc: DeviceCode{
+				Result: accesstokens.DeviceCodeResult{
+					ExpiresOn: time.Now().Add(5 * time.Minute),
+				},
 				accessTokens: &fakeAccessTokens{
 					deviceCodeResult: []interface{}{errors.New("authorization_pending"), errors.New("slow_down"), nil},
 				},
@@ -415,12 +418,7 @@ func TestDeviceCode(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		ctx, cancel := context.WithCancel(context.Background())
-
-		test.dc.cancel = cancel
-		test.dc.ctx = ctx
-
-		_, err := test.dc.Token()
+		_, err := test.dc.Token(context.Background())
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestDeviceCode(%s): got err == nil, want err != nil", test.desc)
@@ -473,8 +471,8 @@ func TestDeviceCodeToken(t *testing.T) {
 			continue
 		}
 
-		if dc.ctx == nil || dc.cancel == nil || dc.accessTokens == nil {
-			t.Errorf("TestDeviceCodeToken(%s): got DeviceCode{} back that did not have either ctx, cancel or accessTokens set", test.desc)
+		if dc.accessTokens == nil {
+			t.Errorf("TestDeviceCodeToken(%s): got DeviceCode{} back that did not have accessTokens set", test.desc)
 		}
 	}
 }

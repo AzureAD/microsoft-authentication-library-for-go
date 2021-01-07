@@ -145,10 +145,6 @@ type DeviceCode struct {
 	Result     accesstokens.DeviceCodeResult
 	authParams authority.AuthParams
 
-	// Note: Normally you don't embed a Context, but this is safe as it is only used for a single
-	// call and it is scoped to that calls lifetime.
-	ctx          context.Context
-	cancel       context.CancelFunc
 	accessTokens accessTokens
 }
 
@@ -156,11 +152,19 @@ type DeviceCode struct {
 // until either: (1) the code is input by the user and the service releases a token, (2) the token
 // expires, (3) the Context passed to .DeviceCode() is cancelled or expires, (4) some other service
 // error occurs.
-func (d DeviceCode) Token() (accesstokens.TokenResponse, error) {
+func (d DeviceCode) Token(ctx context.Context) (accesstokens.TokenResponse, error) {
 	if d.accessTokens == nil {
 		return accesstokens.TokenResponse{}, fmt.Errorf("DeviceCode was either created outside its package or the creating method had an error. DeviceCode is not valid")
 	}
-	defer d.cancel()
+
+	var cancel context.CancelFunc
+	d.Result.ExpiresOn.Sub(time.Now().UTC())
+	if deadline, ok := ctx.Deadline(); !ok || d.Result.ExpiresOn.Before(deadline) {
+		ctx, cancel = context.WithDeadline(ctx, d.Result.ExpiresOn)
+	} else {
+		ctx, cancel = context.WithCancel(ctx)
+	}
+	defer cancel()
 
 	var interval = 50 * time.Millisecond
 	timer := time.NewTimer(interval)
@@ -169,8 +173,8 @@ func (d DeviceCode) Token() (accesstokens.TokenResponse, error) {
 	for {
 		timer.Reset(interval)
 		select {
-		case <-d.ctx.Done():
-			return accesstokens.TokenResponse{}, d.ctx.Err()
+		case <-ctx.Done():
+			return accesstokens.TokenResponse{}, ctx.Err()
 		case <-timer.C:
 			interval += interval * 2
 			if interval > 5*time.Second {
@@ -178,7 +182,7 @@ func (d DeviceCode) Token() (accesstokens.TokenResponse, error) {
 			}
 		}
 
-		token, err := d.accessTokens.GetAccessTokenFromDeviceCodeResult(d.ctx, d.authParams, d.Result)
+		token, err := d.accessTokens.GetAccessTokenFromDeviceCodeResult(ctx, d.authParams, d.Result)
 		if err != nil && isWaitDeviceCodeErr(err) {
 			continue
 		}
@@ -208,15 +212,7 @@ func (t *Token) DeviceCode(ctx context.Context, authParams authority.AuthParams)
 		return DeviceCode{}, err
 	}
 
-	var cancel context.CancelFunc
-	dcr.ExpiresOn.Sub(time.Now().UTC())
-	if deadline, ok := ctx.Deadline(); !ok || dcr.ExpiresOn.Before(deadline) {
-		ctx, cancel = context.WithDeadline(ctx, dcr.ExpiresOn)
-	} else {
-		ctx, cancel = context.WithCancel(ctx)
-	}
-
-	return DeviceCode{Result: dcr, authParams: authParams, ctx: ctx, cancel: cancel, accessTokens: t.accessTokens}, nil
+	return DeviceCode{Result: dcr, authParams: authParams, accessTokens: t.accessTokens}, nil
 }
 
 func (t *Token) resolveEndpoint(ctx context.Context, authParams *authority.AuthParams, userPrincipalName string) error {

@@ -42,7 +42,7 @@ func acquireTokenDeviceCode() {
 			panic(err)
 		}
 		fmt.Printf("Device Code is: %s\n", devCode.Result.Message)
-		result, err := devCode.AuthenticationResult()
+		result, err := devCode.AuthenticationResult(ctx)
 		if err != nil {
 			panic(fmt.Sprintf("got error while waiting for user to input the device code: %s", err))
 		}
