@@ -38,11 +38,11 @@ type Account = shared.Account
 // Options configures the Client's behavior.
 type Options struct {
 	// Accessor controls cache persistence. By default there is no cache persistence.
-	// This can be set with the Cache() option.
+	// This can be set with the WithCache() option.
 	Accessor cache.ExportReplace
 
 	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
-	// This can be changed with the Authority() option.
+	// This can be changed with the WithAuthority() option.
 	Authority string
 }
 
@@ -60,15 +60,15 @@ func (p *Options) validate() error {
 // Option is an optional argument to the New constructor.
 type Option func(o *Options)
 
-// Authority allows for a custom authority to be set. This must be a valid https url.
-func Authority(authority string) Option {
+// WithAuthority allows for a custom authority to be set. This must be a valid https url.
+func WithAuthority(authority string) Option {
 	return func(o *Options) {
 		o.Authority = authority
 	}
 }
 
-// Cache allows you to set some type of cache for storing authentication tokens.
-func Cache(accessor cache.ExportReplace) Option {
+// WithCache allows you to set some type of cache for storing authentication tokens.
+func WithCache(accessor cache.ExportReplace) Option {
 	return func(o *Options) {
 		o.Accessor = accessor
 	}
@@ -106,15 +106,15 @@ func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
 // These are set by using various AcquireTokenSilentOption functions.
 type AcquireTokenSilentOptions struct {
-	// Account represents the account to use. To set, use the SilentAccount() option.
+	// Account represents the account to use. To set, use the WithSilentAccount() option.
 	Account Account
 }
 
 // AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
 type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
 
-// SilentAccount uses the passed account during an AcquireTokenSilent() call.
-func SilentAccount(account Account) AcquireTokenSilentOption {
+// WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
+func WithSilentAccount(account Account) AcquireTokenSilentOption {
 	return func(a *AcquireTokenSilentOptions) {
 		a.Account = account
 	}

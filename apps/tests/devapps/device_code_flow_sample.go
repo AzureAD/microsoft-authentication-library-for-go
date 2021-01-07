@@ -15,7 +15,7 @@ import (
 func acquireTokenDeviceCode() {
 	config := CreateConfig("config.json")
 
-	app, err := public.New(config.ClientID, public.Cache(cacheAccessor), public.Authority(config.Authority))
+	app, err := public.New(config.ClientID, public.WithCache(cacheAccessor), public.WithAuthority(config.Authority))
 	if err != nil {
 		panic(err)
 	}
@@ -31,7 +31,7 @@ func acquireTokenDeviceCode() {
 	// found a cached account, now see if an applicable token has been cached
 	// NOTE: this API conflates error states, i.e. err is non-nil if an applicable token isn't
 	//       cached or if something goes wrong (making the HTTP request, unmarshalling, etc).
-	authResult, err := app.AcquireTokenSilent(context.Background(), config.Scopes, public.SilentAccount(userAccount))
+	authResult, err := app.AcquireTokenSilent(context.Background(), config.Scopes, public.WithSilentAccount(userAccount))
 	if err != nil {
 		// either there was no cached account/token or the call to AcquireTokenSilent() failed
 		// make a new request to AAD

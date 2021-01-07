@@ -14,7 +14,7 @@ import (
 
 func acquireByUsernamePasswordPublic() {
 	config := CreateConfig("config.json")
-	app, err := public.New(config.ClientID, public.Cache(cacheAccessor), public.Authority(config.Authority))
+	app, err := public.New(config.ClientID, public.WithCache(cacheAccessor), public.WithAuthority(config.Authority))
 	if err != nil {
 		panic(err)
 	}
@@ -33,7 +33,7 @@ func acquireByUsernamePasswordPublic() {
 	result, err := app.AcquireTokenSilent(
 		context.Background(),
 		config.Scopes,
-		public.SilentAccount(userAccount),
+		public.WithSilentAccount(userAccount),
 	)
 	if err != nil {
 		// either there's no applicable token in the cache or something failed

@@ -89,7 +89,7 @@ func newLabClient() (*labClient, error) {
 		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
 	}
 
-	app, err := confidential.New("userID", clientID, cred, confidential.Authority(microsoftAuthority))
+	app, err := confidential.New("userID", clientID, cred, confidential.WithAuthority(microsoftAuthority))
 	if err != nil {
 		return nil, err
 	}
@@ -181,7 +181,7 @@ func TestUsernamePassword(t *testing.T) {
 	}
 	for _, test := range tests {
 		user := getTestUser(test.desc, labClientInstance, test.vals)
-		app, err := public.New(user.AppID, public.Authority(organizationsAuthority))
+		app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority))
 		if err != nil {
 			panic(errors.Verbose(err))
 		}
