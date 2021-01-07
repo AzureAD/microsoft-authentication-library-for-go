@@ -19,7 +19,7 @@ type verboser interface {
 func Verbose(err error) string {
 	build := strings.Builder{}
 	for {
-		if err != nil {
+		if err == nil {
 			break
 		}
 		if v, ok := err.(verboser); ok {
