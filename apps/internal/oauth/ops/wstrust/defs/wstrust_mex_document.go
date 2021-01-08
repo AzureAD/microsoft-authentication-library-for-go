@@ -71,10 +71,14 @@ func NewFromDef(definitions Definitions) (MexDocument, error) {
 
 	for _, policy := range definitions.Policy {
 		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			if policy.ExactlyOne.All.TransportBinding.Sp != "" {
+				policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			}
 		}
 		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			if policy.ExactlyOne.All.TransportBinding.Sp != "" {
+				policies["#"+policy.ID] = wsEndpointTypeUsernamePassword
+			}
 		}
 		if policy.ExactlyOne.All.NegotiateAuthentication.XMLName.Local != "" {
 			policies["#"+policy.ID] = wsEndpointTypeWindowsTransport

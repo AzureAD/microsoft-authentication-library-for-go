@@ -177,7 +177,7 @@ func TestUsernamePassword(t *testing.T) {
 		{"Managed", url.Values{"usertype": []string{"cloud"}}},
 		{"ADFSv2", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}}},
 		{"ADFSv3", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}}},
-		//{"ADFSv4", getTestUser(labClientInstance, url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}})},
+		{"ADFSv4", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}}},
 	}
 	for _, test := range tests {
 		user := getTestUser(test.desc, labClientInstance, test.vals)
