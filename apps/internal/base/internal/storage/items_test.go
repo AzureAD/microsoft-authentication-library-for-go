@@ -37,9 +37,9 @@ var (
 		Realm:             realm,
 		Scopes:            scopes,
 		Secret:            secret,
-		ExpiresOn:         internalTime.Unix{expiresOn},
-		ExtendedExpiresOn: internalTime.Unix{extExpiresOn},
-		CachedAt:          internalTime.Unix{cachedAt},
+		ExpiresOn:         internalTime.Unix{T: expiresOn},
+		ExtendedExpiresOn: internalTime.Unix{T: extExpiresOn},
+		CachedAt:          internalTime.Unix{T: cachedAt},
 	}
 )
 
@@ -85,7 +85,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 	want := &AccessToken{
 		HomeAccountID: testHID,
 		Environment:   env,
-		CachedAt:      internalTime.Unix{time.Unix(100, 0)},
+		CachedAt:      internalTime.Unix{T: time.Unix(100, 0)},
 		AdditionalFields: map[string]interface{}{
 			"extra": json.MarshalRaw("this_is_extra"),
 		},
@@ -104,7 +104,7 @@ func TestAccessTokenMarshal(t *testing.T) {
 	accessToken := &AccessToken{
 		HomeAccountID:  testHID,
 		Environment:    "",
-		CachedAt:       internalTime.Unix{time.Unix(100, 0)},
+		CachedAt:       internalTime.Unix{T: time.Unix(100, 0)},
 		CredentialType: credential,
 		AdditionalFields: map[string]interface{}{
 			"extra": json.MarshalRaw("this_is_extra"),
@@ -236,10 +236,10 @@ func TestContractUnmarshalJSON(t *testing.T) {
 				Realm:             defaultRealm,
 				Scopes:            defaultScopes,
 				ClientID:          defaultClientID,
-				CachedAt:          internalTime.Unix{atCached},
+				CachedAt:          internalTime.Unix{T: atCached},
 				HomeAccountID:     defaultHID,
-				ExpiresOn:         internalTime.Unix{atExpires},
-				ExtendedExpiresOn: internalTime.Unix{atExpires},
+				ExpiresOn:         internalTime.Unix{T: atExpires},
+				ExtendedExpiresOn: internalTime.Unix{T: atExpires},
 			},
 		},
 		Accounts: map[string]shared.Account{
@@ -309,10 +309,10 @@ func TestContractMarshalJSON(t *testing.T) {
 				Realm:             defaultRealm,
 				Scopes:            defaultScopes,
 				ClientID:          defaultClientID,
-				CachedAt:          internalTime.Unix{atCached},
+				CachedAt:          internalTime.Unix{T: atCached},
 				HomeAccountID:     defaultHID,
-				ExpiresOn:         internalTime.Unix{atExpires},
-				ExtendedExpiresOn: internalTime.Unix{atExpires},
+				ExpiresOn:         internalTime.Unix{T: atExpires},
+				ExtendedExpiresOn: internalTime.Unix{T: atExpires},
 			},
 		},
 		RefreshTokens: map[string]accesstokens.RefreshToken{

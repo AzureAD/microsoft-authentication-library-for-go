@@ -600,10 +600,10 @@ func TestStorageManagerSerialize(t *testing.T) {
 				Realm:             defaultRealm,
 				Scopes:            defaultScopes,
 				ClientID:          defaultClientID,
-				CachedAt:          internalTime.Unix{atCached},
+				CachedAt:          internalTime.Unix{T: atCached},
 				HomeAccountID:     defaultHID,
-				ExpiresOn:         internalTime.Unix{atExpires},
-				ExtendedExpiresOn: internalTime.Unix{atExpires},
+				ExpiresOn:         internalTime.Unix{T: atExpires},
+				ExtendedExpiresOn: internalTime.Unix{T: atExpires},
 			},
 		},
 		RefreshTokens: map[string]accesstokens.RefreshToken{
