@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package requests
+package oauth
 
 // NOTE: These tests cover that we handle errors from other lower level modules.
 // We don't actually care about a TokenResponse{}, that is gathered from a remote system
@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/defs"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust/defs"
 )
 
 type fakeResolveEndpoints struct {
@@ -43,43 +43,43 @@ type fakeAccessTokens struct {
 	next             int
 }
 
-func (f *fakeAccessTokens) GetAccessTokenFromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) GetAccessTokenFromAuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromAuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) GetAccessTokenFromRefreshToken(ctx context.Context, rtType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromRefreshToken(ctx context.Context, rtType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) GetAccessTokenWithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) GetAccessTokenWithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) GetDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error) {
+func (f *fakeAccessTokens) DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error) {
 	if f.err {
 		return accesstokens.DeviceCodeResult{}, fmt.Errorf("error")
 	}
 	return accesstokens.DeviceCodeResult{}, nil
 }
-func (f *fakeAccessTokens) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error) {
 	if f.next < len(f.deviceCodeResult) {
 		defer func() { f.next++ }()
 		v := f.deviceCodeResult[f.next]
@@ -90,7 +90,7 @@ func (f *fakeAccessTokens) GetAccessTokenFromDeviceCodeResult(ctx context.Contex
 	}
 	panic("fakeAccessTokens.GetAccessTokenFromDeviceCodeResult() asked for more return values than provided")
 }
-func (f *fakeAccessTokens) GetAccessTokenFromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
@@ -160,7 +160,7 @@ func TestAuthCode(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re
@@ -245,7 +245,7 @@ func TestCredential(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re
@@ -286,7 +286,7 @@ func TestRefresh(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re
@@ -367,7 +367,7 @@ func TestUsernamePassword(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.authority = test.au
@@ -454,7 +454,7 @@ func TestDeviceCodeToken(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re

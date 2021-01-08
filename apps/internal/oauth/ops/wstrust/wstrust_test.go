@@ -15,8 +15,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/defs"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust/defs"
 	"github.com/kylelemons/godebug/diff"
 	"github.com/kylelemons/godebug/pretty"
 )

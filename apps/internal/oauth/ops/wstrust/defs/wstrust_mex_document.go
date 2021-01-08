@@ -51,7 +51,7 @@ func updateEndpoint(cached *Endpoint, found Endpoint) bool {
 // TODO(jdoak): Refactor into smaller bits
 // TODO(msal): Someone needs to write tests for this.
 
-func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
+func NewFromHTTP(resp *http.Response) (MexDocument, error) {
 	body, err := ioutil.ReadAll(resp.Body)
 	resp.Body.Close()
 	if err != nil {
@@ -62,10 +62,11 @@ func CreateWsTrustMexDocument(resp *http.Response) (MexDocument, error) {
 	if err != nil {
 		return MexDocument{}, err
 	}
-	return CreateWsTrustMexDocumentFromDef(definitions)
+	return NewFromDef(definitions)
 }
 
-func CreateWsTrustMexDocumentFromDef(definitions Definitions) (MexDocument, error) {
+// NewFromDef creates a new MexDocument.
+func NewFromDef(definitions Definitions) (MexDocument, error) {
 	policies := make(map[string]wsEndpointType)
 
 	for _, policy := range definitions.Policy {

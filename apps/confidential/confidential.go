@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 /*
 Package confidential provides a client for authentication of "confidential" applications.
 A "confidential" application is defined as an app that run on servers. They are considered
@@ -17,9 +20,9 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -49,9 +52,9 @@ put a PEM decoder into here.
 // TODO(msal): This should have example code for each method on client using Go's example doc framework.
 // base usage details should be includee in the package documentation.
 
-// AuthenticationResult contains the results of one token acquisition operation.
+// AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult = base.AuthenticationResult
+type AuthResult = base.AuthResult
 
 type Account = shared.Account
 
@@ -210,10 +213,10 @@ func WithAccessor(accessor cache.ExportReplace) Option {
 	}
 }
 
-// tokener has a shared requests.Token object. I (jdoak) am not a fan. But at this point, that
+// tokener has a shared oauth.Token object. I (jdoak) am not a fan. But at this point, that
 // object is internal/ and I don't want to pull it out. A confidential.Client is mean to be made
-// per user, so we don't want to be creating a bunch of requests.Token objects.
-var tokener = requests.NewToken()
+// per user, so we don't want to be creating a bunch of oauth.Token objects.
+var tokener = oauth.New()
 
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
@@ -246,8 +249,8 @@ func (cca Client) UserID() string {
 	return cca.userID
 }
 
-// CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (cca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
+// AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
+func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
 	return cca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
 }
 
@@ -269,7 +272,7 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
-func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthenticationResult, error) {
+func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthResult, error) {
 	opts := AcquireTokenSilentOptions{}
 	for _, o := range options {
 		o(&opts)
@@ -317,13 +320,13 @@ func CodeChallenge(code, challenge string) AcquireTokenByAuthCodeOption {
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthenticationResult, error) {
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		o(&opts)
 	}
 	if err := opts.validate(); err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
@@ -338,14 +341,14 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 }
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
-func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthenticationResult, error) {
+func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthResult, error) {
 	authParams := cca.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.AuthorizationTypeClientCredentials
 
 	token, err := cca.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 	return cca.AuthResultFromToken(ctx, authParams, token, true)
 }

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 // Package json provide functions for marshalling an unmarshalling types to JSON. These functions are meant to
 // be utilized inside of structs that implement json.Unmarshaler and json.Marshaler interfaces.
 // This package provides the additional functionality of writing fields that are not in the struct when marshalling

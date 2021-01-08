@@ -82,18 +82,18 @@ See the design at: [Design](https://github.com/AzureAD/microsoft-authentication-
 
 ### Backend communication
 
-Communication to the backends is done via the requests/ package. requests.Token is the client
+Communication to the backends is done via the requests/ package. oauth.Token is the client
 for all communication.
 
-requests.Token communicates via REST calls that are encapsulated in the ops/ client.
+oauth.Token communicates via REST calls that are encapsulated in the ops/ client.
 
 ## Adding A Feature
 
 This is the general way to add a new feature to MSAL:
 
 - Add the REST calls to ops.REST
-- Add the higher level manipulations to requests.Token
-- Add your logic to the app/\<client\> and access the services via your requests.Token
+- Add the higher level manipulations to oauth.Token
+- Add your logic to the app/\<client\> and access the services via your oauth.Token
 
 ## Notable Differences To Other Clients
 

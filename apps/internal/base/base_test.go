@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 package base
 
 import (
@@ -6,7 +9,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 
 	"github.com/kylelemons/godebug/pretty"
@@ -18,7 +21,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	tests := []struct {
 		desc  string
 		input accesstokens.TokenResponse
-		want  AuthenticationResult
+		want  AuthResult
 		err   bool
 	}{
 		{
@@ -29,7 +32,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 				GrantedScopes:  []string{"user.read"},
 				DeclinedScopes: nil,
 			},
-			want: AuthenticationResult{
+			want: AuthResult{
 				AccessToken:    "accessToken",
 				ExpiresOn:      future,
 				GrantedScopes:  []string{"user.read"},
@@ -49,7 +52,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := CreateAuthenticationResult(test.input, shared.Account{})
+		got, err := NewAuthResult(test.input, shared.Account{})
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestCreateAuthenticationResult(%s): got err == nil, want err != nil", test.desc)
@@ -72,13 +75,13 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 
 	tests := []struct {
 		desc       string
-		storeToken storage.StorageTokenResponse
-		want       AuthenticationResult
+		storeToken storage.TokenResponse
+		want       AuthResult
 		err        bool
 	}{
 		{
 			desc: "Error: AccessToken.Validate error (AccessToken.CachedAt not set)",
-			storeToken: storage.StorageTokenResponse{
+			storeToken: storage.TokenResponse{
 				AccessToken: storage.AccessToken{
 					ExpiresOnUnixTimestamp: strconv.FormatInt(future.Unix(), 10),
 					Secret:                 "secret",
@@ -90,7 +93,7 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 		},
 		{
 			desc: "Success",
-			storeToken: storage.StorageTokenResponse{
+			storeToken: storage.TokenResponse{
 				AccessToken: storage.AccessToken{
 					CachedAt:               strconv.FormatInt(now.Unix(), 10),
 					ExpiresOnUnixTimestamp: strconv.FormatInt(future.Unix(), 10),
@@ -99,7 +102,7 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 				},
 				IDToken: storage.IDToken{Secret: "x.e30"},
 			},
-			want: AuthenticationResult{
+			want: AuthResult{
 				AccessToken: "secret",
 				IDToken: accesstokens.IDToken{
 					RawToken: "x.e30",
@@ -111,7 +114,7 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		got, err := CreateAuthenticationResultFromStorageTokenResponse(test.storeToken)
+		got, err := AuthResultFromStorage(test.storeToken)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestCreateAuthenticationResultFromStorageTokenResponse(%s): got err == nil, want == != nil", test.desc)

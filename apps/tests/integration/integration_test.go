@@ -197,6 +197,9 @@ func TestUsernamePassword(t *testing.T) {
 		if result.AccessToken == "" {
 			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)
 		}
+		if result.IDToken.IsZero() {
+			t.Fatalf("TestUsernamePassword(%s): got IDToken == empty, want IDToken == non-empty struct", test.desc)
+		}
 		if result.Account.PreferredUsername != user.Upn {
 			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.PreferredUsername, user.Upn)
 		}

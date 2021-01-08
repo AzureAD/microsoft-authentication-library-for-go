@@ -15,9 +15,9 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/internal/grant"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/defs"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust/defs"
 )
 
 type xmlCaller interface {
@@ -50,7 +50,7 @@ func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.
 		return defs.MexDocument{}, err
 	}
 
-	return defs.CreateWsTrustMexDocumentFromDef(resp)
+	return defs.NewFromDef(resp)
 }
 
 const (
