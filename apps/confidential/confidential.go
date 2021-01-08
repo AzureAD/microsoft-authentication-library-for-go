@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 /*
 Package confidential provides a client for authentication of "confidential" applications.
 A "confidential" application is defined as an app that run on servers. They are considered

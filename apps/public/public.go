@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 /*
 Package public provides a client for authentication of "public" applications. A "public"
 application is defined as an app that runs on client devices (android, ios, windows, linux, ...).
