@@ -30,7 +30,7 @@ const (
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams) (storage.StorageTokenResponse, error)
+	Read(ctx context.Context, authParameters authority.AuthParams) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	GetAllAccounts() ([]shared.Account, error)
 }
@@ -67,9 +67,9 @@ type AcquireTokenAuthCodeParameters struct {
 	Credential  *accesstokens.Credential
 }
 
-// AuthenticationResult contains the results of one token acquisition operation in PublicClientApplication
+// AuthResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult struct {
+type AuthResult struct {
 	Account        shared.Account
 	IDToken        accesstokens.IDToken
 	AccessToken    string
@@ -78,17 +78,17 @@ type AuthenticationResult struct {
 	DeclinedScopes []string
 }
 
-// CreateAuthenticationResultFromStorageTokenResponse creates an authenication result from a storage token response (which is generated from the cache).
-func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse storage.StorageTokenResponse) (AuthenticationResult, error) {
+// AuthResultFromStorage creates an AuthResult from a storage token response (which is generated from the cache).
+func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResult, error) {
 	if err := storageTokenResponse.AccessToken.Validate(); err != nil {
-		return AuthenticationResult{}, fmt.Errorf("problem with access token in StorageTokenResponse: %w", err)
+		return AuthResult{}, fmt.Errorf("problem with access token in StorageTokenResponse: %w", err)
 	}
 
 	account := storageTokenResponse.Account
 	accessToken := storageTokenResponse.AccessToken.Secret
 	expiresOn, err := convertStrUnixToUTCTime(storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
 	if err != nil {
-		return AuthenticationResult{}, fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
+		return AuthResult{}, fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
 	}
 	grantedScopes := strings.Split(storageTokenResponse.AccessToken.Scopes, scopeSeparator)
 
@@ -97,19 +97,18 @@ func CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse sto
 	if !storageTokenResponse.IDToken.IsZero() {
 		idToken, err = accesstokens.NewIDToken(storageTokenResponse.IDToken.Secret)
 		if err != nil {
-			return AuthenticationResult{}, err
+			return AuthResult{}, err
 		}
 	}
-	return AuthenticationResult{account, idToken, accessToken, expiresOn, grantedScopes, nil}, nil
+	return AuthResult{account, idToken, accessToken, expiresOn, grantedScopes, nil}, nil
 }
 
-// CreateAuthenticationResult creates an AuthenticationResult.
-// TODO(jdoak): (maybe, we did a refactor): Make this a method on TokenResponse() that takes only 1 arge, Account.
-func CreateAuthenticationResult(tokenResponse accesstokens.TokenResponse, account shared.Account) (AuthenticationResult, error) {
+// NewAuthResult creates an AuthResult.
+func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Account) (AuthResult, error) {
 	if len(tokenResponse.DeclinedScopes) > 0 {
-		return AuthenticationResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.DeclinedScopes, ","))
+		return AuthResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.DeclinedScopes, ","))
 	}
-	return AuthenticationResult{
+	return AuthResult{
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
@@ -191,7 +190,7 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	return baseURL.String(), nil
 }
 
-func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthenticationResult, error) {
+func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
 	toLower(silent.Scopes)
 	silent.augmentAuthenticationParameters(&authParams)
@@ -203,13 +202,13 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 
 	storageTokenResponse, err := b.manager.Read(ctx, authParams)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 
-	result, err := CreateAuthenticationResultFromStorageTokenResponse(storageTokenResponse)
+	result, err := AuthResultFromStorage(storageTokenResponse)
 	if err != nil {
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsNil() {
-			return AuthenticationResult{}, errors.New("no refresh token found")
+			return AuthResult{}, errors.New("no refresh token found")
 		}
 
 		var cc *accesstokens.Credential
@@ -219,7 +218,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 
 		token, err := b.Token.Refresh(ctx, silent.RequestType, b.AuthParams, cc, storageTokenResponse.RefreshToken)
 		if err != nil {
-			return AuthenticationResult{}, err
+			return AuthResult{}, err
 		}
 
 		return b.AuthResultFromToken(ctx, authParams, token, true)
@@ -227,7 +226,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	return result, nil
 }
 
-func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthenticationResult, error) {
+func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
@@ -240,20 +239,20 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 
 	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.RequestType, cc, authCodeParams.Code, authCodeParams.Challenge)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 
 	token, err := b.Token.AuthCode(ctx, req)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 
 	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthenticationResult, error) {
+func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthResult, error) {
 	if !cacheWrite {
-		return CreateAuthenticationResult(token, shared.Account{})
+		return NewAuthResult(token, shared.Account{})
 	}
 
 	if s, ok := b.manager.(cache.Serializer); ok {
@@ -263,9 +262,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 
 	account, err := b.manager.Write(authParams, token)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
-	return CreateAuthenticationResult(token, account)
+	return NewAuthResult(token, account)
 }
 
 func (b Client) GetAccounts() []shared.Account {

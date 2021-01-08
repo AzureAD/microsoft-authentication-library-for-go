@@ -61,7 +61,7 @@ type urlFormCaller interface {
 	URLFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}) error
 }
 
-type createTokenResp func(authParameters authority.AuthParams, payload TokenResponseJSONPayload) (TokenResponse, error)
+type newTokenResp func(authParameters authority.AuthParams, payload TokenResponseJSONPayload) (TokenResponse, error)
 
 // DeviceCodeResponse represents the HTTP response received from the device code endpoint
 type DeviceCodeResponse struct {
@@ -77,8 +77,8 @@ type DeviceCodeResponse struct {
 	AdditionalFields map[string]interface{}
 }
 
-// ToDeviceCodeResult converts the DeviceCodeResponse to a DeviceCodeResult
-func (dcr DeviceCodeResponse) ToDeviceCodeResult(clientID string, scopes []string) DeviceCodeResult {
+// Convert converts the DeviceCodeResponse to a DeviceCodeResult
+func (dcr DeviceCodeResponse) Convert(clientID string, scopes []string) DeviceCodeResult {
 	expiresOn := time.Now().UTC().Add(time.Duration(dcr.ExpiresIn) * time.Second)
 	return NewDeviceCodeResult(dcr.UserCode, dcr.DeviceCode, dcr.VerificationURL, expiresOn, dcr.Interval, dcr.Message, clientID, scopes)
 }
@@ -153,11 +153,11 @@ func thumbprint(cert *x509.Certificate) []byte {
 type Client struct {
 	// Comm provides the HTTP transport client.
 	Comm          urlFormCaller
-	TokenRespFunc createTokenResp
+	TokenRespFunc newTokenResp
 }
 
-// GetAccessTokenFromUsernamePassword uses a username and password to get an access token.
-func (c Client) GetAccessTokenFromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+// FromUsernamePassword uses a username and password to get an access token.
+func (c Client) FromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.Password)
 	qv.Set(username, authParameters.Username)
@@ -192,8 +192,8 @@ func NewCodeChallengeRequest(params authority.AuthParams, rt AuthCodeRequestType
 	}, nil
 }
 
-// GetAccessTokenFromAuthCode uses an authorization code to retrieve an access token.
-func (c Client) GetAccessTokenFromAuthCode(ctx context.Context, req AuthCodeRequest) (TokenResponse, error) {
+// FromAuthCode uses an authorization code to retrieve an access token.
+func (c Client) FromAuthCode(ctx context.Context, req AuthCodeRequest) (TokenResponse, error) {
 	var qv url.Values
 
 	switch req.RequestType {
@@ -239,8 +239,8 @@ const (
 	RefreshTokenConfidential
 )
 
-// GetAccessTokenFromRefreshToken uses a refresh token (for refreshing credentials) to get a new access token.
-func (c Client) GetAccessTokenFromRefreshToken(ctx context.Context, rtType RefreshTokenReqType, authParams authority.AuthParams, cc *Credential, refreshToken string) (TokenResponse, error) {
+// FromRefreshToken uses a refresh token (for refreshing credentials) to get a new access token.
+func (c Client) FromRefreshToken(ctx context.Context, rtType RefreshTokenReqType, authParams authority.AuthParams, cc *Credential, refreshToken string) (TokenResponse, error) {
 	qv := url.Values{}
 	if rtType == RefreshTokenConfidential {
 		var err error
@@ -258,8 +258,8 @@ func (c Client) GetAccessTokenFromRefreshToken(ctx context.Context, rtType Refre
 	return c.doTokenResp(ctx, authParams, qv)
 }
 
-// GetAccessTokenWithClientSecret uses a client's secret (aka password) to get a new token.
-func (c Client) GetAccessTokenWithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (TokenResponse, error) {
+// FromClientSecret uses a client's secret (aka password) to get a new token.
+func (c Client) FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.ClientCredential)
 	qv.Set("client_secret", clientSecret)
@@ -268,12 +268,12 @@ func (c Client) GetAccessTokenWithClientSecret(ctx context.Context, authParamete
 
 	token, err := c.doTokenResp(ctx, authParameters, qv)
 	if err != nil {
-		return token, fmt.Errorf("GetAccessTokenWithClientSecret(): %w", err)
+		return token, fmt.Errorf("FromClientSecret(): %w", err)
 	}
 	return token, nil
 }
 
-func (c Client) GetAccessTokenWithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (TokenResponse, error) {
+func (c Client) FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.ClientCredential)
 	qv.Set("client_assertion_type", grant.ClientAssertion)
@@ -283,12 +283,12 @@ func (c Client) GetAccessTokenWithAssertion(ctx context.Context, authParameters 
 
 	token, err := c.doTokenResp(ctx, authParameters, qv)
 	if err != nil {
-		return token, fmt.Errorf("GetAccessTokenWithAssertion(): %w", err)
+		return token, fmt.Errorf("FromAssertion(): %w", err)
 	}
 	return token, nil
 }
 
-func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (DeviceCodeResult, error) {
+func (c Client) DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (DeviceCodeResult, error) {
 	qv := url.Values{}
 	qv.Set(clientID, authParameters.ClientID)
 	addScopeQueryParam(qv, authParameters)
@@ -301,10 +301,10 @@ func (c Client) GetDeviceCodeResult(ctx context.Context, authParameters authorit
 		return DeviceCodeResult{}, err
 	}
 
-	return resp.ToDeviceCodeResult(authParameters.ClientID, authParameters.Scopes), nil
+	return resp.Convert(authParameters.ClientID, authParameters.Scopes), nil
 }
 
-func (c Client) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult DeviceCodeResult) (TokenResponse, error) {
+func (c Client) FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult DeviceCodeResult) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.DeviceCode)
 	qv.Set(deviceCode, deviceCodeResult.DeviceCode)
@@ -315,7 +315,7 @@ func (c Client) GetAccessTokenFromDeviceCodeResult(ctx context.Context, authPara
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
-func (c Client) GetAccessTokenFromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (TokenResponse, error) {
+func (c Client) FromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(username, authParameters.Username)
 	qv.Set(password, authParameters.Password)

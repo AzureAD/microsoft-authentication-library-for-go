@@ -50,7 +50,7 @@ func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.
 		return defs.MexDocument{}, err
 	}
 
-	return defs.CreateWsTrustMexDocumentFromDef(resp)
+	return defs.NewFromDef(resp)
 }
 
 const (

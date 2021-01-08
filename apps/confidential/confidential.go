@@ -49,9 +49,9 @@ put a PEM decoder into here.
 // TODO(msal): This should have example code for each method on client using Go's example doc framework.
 // base usage details should be includee in the package documentation.
 
-// AuthenticationResult contains the results of one token acquisition operation.
+// AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult = base.AuthenticationResult
+type AuthResult = base.AuthResult
 
 type Account = shared.Account
 
@@ -246,8 +246,8 @@ func (cca Client) UserID() string {
 	return cca.userID
 }
 
-// CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (cca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
+// AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
+func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
 	return cca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
 }
 
@@ -269,7 +269,7 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
-func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthenticationResult, error) {
+func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthResult, error) {
 	opts := AcquireTokenSilentOptions{}
 	for _, o := range options {
 		o(&opts)
@@ -317,13 +317,13 @@ func CodeChallenge(code, challenge string) AcquireTokenByAuthCodeOption {
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthenticationResult, error) {
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		o(&opts)
 	}
 	if err := opts.validate(); err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
@@ -338,14 +338,14 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 }
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
-func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthenticationResult, error) {
+func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthResult, error) {
 	authParams := cca.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.AuthorizationTypeClientCredentials
 
 	token, err := cca.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 	return cca.AuthResultFromToken(ctx, authParams, token, true)
 }

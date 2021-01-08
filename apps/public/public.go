@@ -29,9 +29,9 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
-// AuthenticationResult contains the results of one token acquisition operation.
+// AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult = base.AuthenticationResult
+type AuthResult = base.AuthResult
 
 type Account = shared.Account
 
@@ -121,7 +121,7 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
-func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthenticationResult, error) {
+func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthResult, error) {
 	opts := AcquireTokenSilentOptions{}
 	for _, o := range options {
 		o(&opts)
@@ -138,7 +138,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // NOTE: this flow is NOT recommended.
-func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthenticationResult, error) {
+func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
 	authParams := pca.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.AuthorizationTypeUsernamePassword
@@ -147,7 +147,7 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 
 	token, err := pca.Client.Token.UsernamePassword(ctx, authParams)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 	return pca.Client.AuthResultFromToken(ctx, authParams, token, true)
 }
@@ -169,10 +169,10 @@ type DeviceCode struct {
 // AuthenticationResult retreives the AuthenticationResult once the user enters the code
 // on the second device. Until then it blocks until the .AcquireTokenByDeviceCode() context
 // is cancelled or the token expires.
-func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthenticationResult, error) {
+func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error) {
 	token, err := d.dc.Token(ctx)
 	if err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 	return d.client.AuthResultFromToken(ctx, d.authParams, token, true)
 }
@@ -224,13 +224,13 @@ func CodeChallenge(code, challenge string) AcquireTokenByAuthCodeOption {
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthenticationResult, error) {
+func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		o(&opts)
 	}
 	if err := opts.validate(); err != nil {
-		return AuthenticationResult{}, err
+		return AuthResult{}, err
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
