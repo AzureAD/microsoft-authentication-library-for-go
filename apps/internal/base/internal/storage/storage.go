@@ -32,8 +32,8 @@ type getAadinstanceDiscoveryResponser interface {
 	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
-// StorageTokenResponse mimics a token response that was pulled from the cache.
-type StorageTokenResponse struct {
+// TokenResponse mimics a token response that was pulled from the cache.
+type TokenResponse struct {
 	RefreshToken accesstokens.RefreshToken
 	IDToken      IDToken // *Credential
 	AccessToken  AccessToken
@@ -86,7 +86,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams) (StorageTokenResponse, error) {
+func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -94,38 +94,38 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 
 	metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
 	if err != nil {
-		return StorageTokenResponse{}, err
+		return TokenResponse{}, err
 	}
 
 	accessToken, err := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 	if err != nil {
-		return StorageTokenResponse{}, err
+		return TokenResponse{}, err
 	}
 
 	if err := accessToken.Validate(); err != nil {
-		return StorageTokenResponse{}, err
+		return TokenResponse{}, err
 	}
 
 	idToken, err := m.readIDToken(homeAccountID, metadata.Aliases, realm, clientID)
 	if err != nil {
-		return StorageTokenResponse{}, err
+		return TokenResponse{}, err
 	}
 
 	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
 	if err != nil {
-		return StorageTokenResponse{}, err
+		return TokenResponse{}, err
 	}
 	familyID := AppMetaData.FamilyID
 
 	refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
 	if err != nil {
-		return StorageTokenResponse{}, err
+		return TokenResponse{}, err
 	}
 	account, err := m.readAccount(homeAccountID, metadata.Aliases, realm)
 	if err != nil {
-		return StorageTokenResponse{}, err
+		return TokenResponse{}, err
 	}
-	return StorageTokenResponse{
+	return TokenResponse{
 		AccessToken:  accessToken,
 		RefreshToken: refreshToken,
 		IDToken:      idToken,

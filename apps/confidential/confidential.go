@@ -51,7 +51,7 @@ put a PEM decoder into here.
 
 // AuthenticationResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult = base.AuthenticationResult
+type AuthenticationResult = base.AuthResult
 
 type Account = shared.Account
 
@@ -246,8 +246,8 @@ func (cca Client) UserID() string {
 	return cca.userID
 }
 
-// CreateAuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (cca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
+// AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
+func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
 	return cca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
 }
 

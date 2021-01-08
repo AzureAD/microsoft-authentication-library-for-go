@@ -111,7 +111,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromUsernamePassword(context.Background(), authParams)
+		_, err := client.FromUsernamePassword(context.Background(), authParams)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromUsernamePassword(%s): got err == nil , want err != nil", test.desc)
@@ -219,7 +219,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromAuthCode(context.Background(), test.authCodeRequest)
+		_, err := client.FromAuthCode(context.Background(), test.authCodeRequest)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromAuthCode(%s): got err == nil , want err != nil", test.desc)
@@ -301,7 +301,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromRefreshToken(context.Background(), RefreshTokenPublic, authParams, test.cred, test.refreshToken)
+		_, err := client.FromRefreshToken(context.Background(), RefreshTokenPublic, authParams, test.cred, test.refreshToken)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromRefreshToken(%s): got err == nil , want err != nil", test.desc)
@@ -368,7 +368,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenWithClientSecret(context.Background(), authParams, test.clientSecret)
+		_, err := client.WithClientSecret(context.Background(), authParams, test.clientSecret)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenWithClientSecret(%s): got err == nil , want err != nil", test.desc)
@@ -438,7 +438,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenWithAssertion(context.Background(), authParams, test.assertion)
+		_, err := client.WithAssertion(context.Background(), authParams, test.assertion)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenWithAssertion(%s): got err == nil , want err != nil", test.desc)
@@ -500,7 +500,7 @@ func TestGetDeviceCodeResult(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetDeviceCodeResult(context.Background(), authParams)
+		_, err := client.DeviceCodeResult(context.Background(), authParams)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetDeviceCodeResult(%s): got err == nil , want err != nil", test.desc)
@@ -588,7 +588,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromDeviceCodeResult(context.Background(), authParams, test.deviceCodeResult)
+		_, err := client.FromDeviceCodeResult(context.Background(), authParams, test.deviceCodeResult)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromDeviceCodeResult(%s): got err == nil , want err != nil", test.desc)
@@ -699,7 +699,7 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAccessTokenFromSamlGrant(context.Background(), authParams, test.samlGrant)
+		_, err := client.FromSamlGrant(context.Background(), authParams, test.samlGrant)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromSamlGrant(%s): got err == nil , want err != nil", test.desc)

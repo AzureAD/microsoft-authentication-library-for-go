@@ -775,7 +775,7 @@ func TestRead(t *testing.T) {
 		discRespErr bool
 		discResp    authority.InstanceDiscoveryResponse
 		err         bool
-		want        StorageTokenResponse
+		want        TokenResponse
 	}{
 		{
 			desc:        "Error: AAD Discovery Fails",
@@ -795,7 +795,7 @@ func TestRead(t *testing.T) {
 					},
 				},
 			},
-			want: StorageTokenResponse{
+			want: TokenResponse{
 				AccessToken:  accessTokenCacheItem,
 				RefreshToken: testRefreshToken,
 				IDToken:      testIDToken,

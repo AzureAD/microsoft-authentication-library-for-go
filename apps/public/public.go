@@ -31,7 +31,7 @@ import (
 
 // AuthenticationResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
-type AuthenticationResult = base.AuthenticationResult
+type AuthenticationResult = base.AuthResult
 
 type Account = shared.Account
 

@@ -22,14 +22,14 @@ type resolveEndpointer interface {
 }
 
 type accessTokens interface {
-	GetAccessTokenFromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error)
-	GetAccessTokenFromAuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error)
-	GetAccessTokenFromRefreshToken(ctx context.Context, rtType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error)
-	GetAccessTokenWithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
-	GetAccessTokenWithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
-	GetDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error)
-	GetAccessTokenFromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error)
-	GetAccessTokenFromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error)
+	FromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error)
+	FromAuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error)
+	FromRefreshToken(ctx context.Context, rtType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error)
+	WithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
+	WithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
+	DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error)
+	FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error)
+	FromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error)
 }
 
 // fetchAuthority will be implemented by authority.Authority.
@@ -77,7 +77,7 @@ func (t *Client) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest)
 		return accesstokens.TokenResponse{}, err
 	}
 
-	tResp, err := t.accessTokens.GetAccessTokenFromAuthCode(ctx, req)
+	tResp, err := t.accessTokens.FromAuthCode(ctx, req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
 	}
@@ -91,14 +91,14 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 	}
 
 	if cred.Secret != "" {
-		return t.accessTokens.GetAccessTokenWithClientSecret(ctx, authParams, cred.Secret)
+		return t.accessTokens.WithClientSecret(ctx, authParams, cred.Secret)
 	}
 
 	jwt, err := cred.JWT(authParams)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	return t.accessTokens.GetAccessTokenWithAssertion(ctx, authParams, jwt)
+	return t.accessTokens.WithAssertion(ctx, authParams, jwt)
 }
 
 func (t *Client) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
@@ -106,7 +106,7 @@ func (t *Client) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenR
 		return accesstokens.TokenResponse{}, err
 	}
 
-	return t.accessTokens.GetAccessTokenFromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
+	return t.accessTokens.FromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
 }
 
 // UsernamePassword retrieves a token where a username and password is used. However, if this is
@@ -132,9 +132,9 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting SAML token info: %w", err)
 		}
-		return t.accessTokens.GetAccessTokenFromSamlGrant(ctx, authParams, saml)
+		return t.accessTokens.FromSamlGrant(ctx, authParams, saml)
 	case authority.Managed:
-		return t.accessTokens.GetAccessTokenFromUsernamePassword(ctx, authParams)
+		return t.accessTokens.FromUsernamePassword(ctx, authParams)
 	}
 	return accesstokens.TokenResponse{}, errors.New("unknown account type")
 }
@@ -183,7 +183,7 @@ func (d DeviceCode) Token(ctx context.Context) (accesstokens.TokenResponse, erro
 			}
 		}
 
-		token, err := d.accessTokens.GetAccessTokenFromDeviceCodeResult(ctx, d.authParams, d.Result)
+		token, err := d.accessTokens.FromDeviceCodeResult(ctx, d.authParams, d.Result)
 		if err != nil && isWaitDeviceCodeErr(err) {
 			continue
 		}
@@ -208,7 +208,7 @@ func (t *Client) DeviceCode(ctx context.Context, authParams authority.AuthParams
 		return DeviceCode{}, err
 	}
 
-	dcr, err := t.accessTokens.GetDeviceCodeResult(ctx, authParams)
+	dcr, err := t.accessTokens.DeviceCodeResult(ctx, authParams)
 	if err != nil {
 		return DeviceCode{}, err
 	}
