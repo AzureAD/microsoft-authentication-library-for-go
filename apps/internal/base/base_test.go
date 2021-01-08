@@ -83,7 +83,7 @@ func TestAuthResultFromStorage(t *testing.T) {
 			desc: "Error: AccessToken.Validate error (AccessToken.CachedAt not set)",
 			storeToken: storage.TokenResponse{
 				AccessToken: storage.AccessToken{
-					ExpiresOn: internalTime.Unix{future},
+					ExpiresOn: internalTime.Unix{T: future},
 					Secret:    "secret",
 					Scopes:    "profile openid user.read",
 				},
@@ -95,8 +95,8 @@ func TestAuthResultFromStorage(t *testing.T) {
 			desc: "Success",
 			storeToken: storage.TokenResponse{
 				AccessToken: storage.AccessToken{
-					CachedAt:  internalTime.Unix{now},
-					ExpiresOn: internalTime.Unix{future},
+					CachedAt:  internalTime.Unix{T: now},
+					ExpiresOn: internalTime.Unix{T: future},
 					Secret:    "secret",
 					Scopes:    "profile openid user.read",
 				},
