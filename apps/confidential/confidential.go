@@ -17,9 +17,9 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -210,10 +210,10 @@ func WithAccessor(accessor cache.ExportReplace) Option {
 	}
 }
 
-// tokener has a shared requests.Token object. I (jdoak) am not a fan. But at this point, that
+// tokener has a shared oauth.Token object. I (jdoak) am not a fan. But at this point, that
 // object is internal/ and I don't want to pull it out. A confidential.Client is mean to be made
-// per user, so we don't want to be creating a bunch of requests.Token objects.
-var tokener = requests.NewToken()
+// per user, so we don't want to be creating a bunch of oauth.Token objects.
+var tokener = oauth.New()
 
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package requests
+package oauth
 
 // NOTE: These tests cover that we handle errors from other lower level modules.
 // We don't actually care about a TokenResponse{}, that is gathered from a remote system
@@ -17,10 +17,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/defs"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust/defs"
 )
 
 type fakeResolveEndpoints struct {
@@ -160,7 +160,7 @@ func TestAuthCode(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re
@@ -245,7 +245,7 @@ func TestCredential(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re
@@ -286,7 +286,7 @@ func TestRefresh(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re
@@ -367,7 +367,7 @@ func TestUsernamePassword(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.authority = test.au
@@ -454,7 +454,7 @@ func TestDeviceCodeToken(t *testing.T) {
 		},
 	}
 
-	token := &Token{}
+	token := &Client{}
 	for _, test := range tests {
 		token.accessTokens = test.at
 		token.resolver = test.re

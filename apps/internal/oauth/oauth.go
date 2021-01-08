@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package requests
+package oauth
 
 import (
 	"context"
@@ -10,11 +10,11 @@ import (
 	"regexp"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/wstrust/defs"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust/defs"
 )
 
 type resolveEndpointer interface {
@@ -43,18 +43,18 @@ type fetchWSTrust interface {
 	GetSAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (wstrust.SamlTokenInfo, error)
 }
 
-// Token provides tokens for various types of token requests.
-type Token struct {
+// Client provides tokens for various types of token requests.
+type Client struct {
 	resolver     resolveEndpointer
 	accessTokens accessTokens
 	authority    fetchAuthority
 	wsTrust      fetchWSTrust
 }
 
-// NewToken is the constructor for Token.
-func NewToken() *Token {
+// New is the constructor for Token.
+func New() *Client {
 	r := ops.New()
-	return &Token{
+	return &Client{
 		resolver:     newAuthorityEndpoint(r),
 		accessTokens: r.AccessTokens(),
 		authority:    r.Authority(),
@@ -63,16 +63,16 @@ func NewToken() *Token {
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance.
-func (t *Token) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error) {
+func (t *Client) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error) {
 	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
-func (t *Token) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
+func (t *Client) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	return t.authority.GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
 }
 
 // AuthCode returns a token based on an authorization code.
-func (t *Token) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
+func (t *Client) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &req.AuthParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
@@ -85,7 +85,7 @@ func (t *Token) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) 
 }
 
 // Credential acquires a token from the authority using a client credentials grant.
-func (t *Token) Credential(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
+func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
@@ -101,7 +101,7 @@ func (t *Token) Credential(ctx context.Context, authParams authority.AuthParams,
 	return t.accessTokens.GetAccessTokenWithAssertion(ctx, authParams, jwt)
 }
 
-func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
+func (t *Client) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
@@ -111,7 +111,7 @@ func (t *Token) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenRe
 
 // UsernamePassword retrieves a token where a username and password is used. However, if this is
 // a user realm of "Federated", this uses SAML tokens. If "Managed", uses normal username/password.
-func (t *Token) UsernamePassword(ctx context.Context, authParams authority.AuthParams) (accesstokens.TokenResponse, error) {
+func (t *Client) UsernamePassword(ctx context.Context, authParams authority.AuthParams) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
@@ -203,7 +203,7 @@ func isWaitDeviceCodeErr(err error) bool {
 
 // DeviceCode returns a DeviceCode object that can be used to get the code that must be entered on the second
 // device and optionally the token once the code has been entered on the second device.
-func (t *Token) DeviceCode(ctx context.Context, authParams authority.AuthParams) (DeviceCode, error) {
+func (t *Client) DeviceCode(ctx context.Context, authParams authority.AuthParams) (DeviceCode, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return DeviceCode{}, err
 	}
@@ -216,7 +216,7 @@ func (t *Token) DeviceCode(ctx context.Context, authParams authority.AuthParams)
 	return DeviceCode{Result: dcr, authParams: authParams, accessTokens: t.accessTokens}, nil
 }
 
-func (t *Token) resolveEndpoint(ctx context.Context, authParams *authority.AuthParams, userPrincipalName string) error {
+func (t *Client) resolveEndpoint(ctx context.Context, authParams *authority.AuthParams, userPrincipalName string) error {
 	endpoints, err := t.resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, userPrincipalName)
 	if err != nil {
 		return fmt.Errorf("unable to resolve an endpoint: %s", err)
