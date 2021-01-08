@@ -7,10 +7,10 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
@@ -74,28 +74,28 @@ type AccessToken struct {
 	Secret         string `json:"secret,omitempty"`
 	Scopes         string `json:"target,omitempty"`
 	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
-	ExpiresOnUnixTimestamp string `json:"expires_on,omitempty"`
+	ExpiresOn internalTime.Unix `json:"expires_on,omitempty"`
 	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
-	ExtendedExpiresOnUnixTimestamp string `json:"extended_expires_on,omitempty"`
+	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
 	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
-	CachedAt string `json:"cached_at,omitempty"`
+	CachedAt internalTime.Unix `json:"cached_at,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
 
 // NewAccessToken is the constructor for AccessToken.
-func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn int64, scopes, token string) AccessToken {
+func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token string) AccessToken {
 	return AccessToken{
-		HomeAccountID:                  homeID,
-		Environment:                    env,
-		Realm:                          realm,
-		CredentialType:                 "AccessToken",
-		ClientID:                       clientID,
-		Secret:                         token,
-		Scopes:                         scopes,
-		CachedAt:                       strconv.FormatInt(cachedAt, 10),
-		ExpiresOnUnixTimestamp:         strconv.FormatInt(expiresOn, 10),
-		ExtendedExpiresOnUnixTimestamp: strconv.FormatInt(extendedExpiresOn, 10),
+		HomeAccountID:     homeID,
+		Environment:       env,
+		Realm:             realm,
+		CredentialType:    "AccessToken",
+		ClientID:          clientID,
+		Secret:            token,
+		Scopes:            scopes,
+		CachedAt:          internalTime.Unix{T: cachedAt.UTC()},
+		ExpiresOn:         internalTime.Unix{T: expiresOn.UTC()},
+		ExtendedExpiresOn: internalTime.Unix{T: extendedExpiresOn.UTC()},
 	}
 }
 
@@ -109,23 +109,16 @@ func (a AccessToken) Key() string {
 
 // Validate validates that this AccessToken can be used.
 func (a AccessToken) Validate() error {
-	cachedAt, err := strconv.ParseInt(a.CachedAt, 10, 64)
-	if err != nil {
-		return fmt.Errorf("access token isn't valid, the cached at field is invalid: %w", err)
-	}
-
 	// TODO(jdoak): Fix all this Unix() stuff. We should be using time.Time() objects
 	// and we can make it easy to do this across JSON borders.
-	now := time.Now().Unix()
-	if cachedAt > now {
+	if a.CachedAt.T.After(time.Now()) {
 		return errors.New("access token isn't valid, it was cached at a future time")
 	}
-	expiresOn, err := strconv.ParseInt(a.ExpiresOnUnixTimestamp, 10, 64)
-	if err != nil {
-		return fmt.Errorf("access token isn't valid, the cached at field is invalid: %w", err)
-	}
-	if expiresOn <= now+300 {
+	if a.ExpiresOn.T.Before(time.Now().Add(5 * time.Minute)) {
 		return fmt.Errorf("access token is expired")
+	}
+	if a.CachedAt.T.IsZero() {
+		return fmt.Errorf("access token does not have CachedAt set")
 	}
 	return nil
 }

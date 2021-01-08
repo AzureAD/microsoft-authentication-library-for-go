@@ -147,7 +147,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes, scopeSeparator)
 
-	cachedAt := time.Now().Unix()
+	cachedAt := time.Now()
 
 	var account shared.Account
 
@@ -159,16 +159,14 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	}
 
 	if tokenResponse.HasAccessToken() {
-		expiresOn := tokenResponse.ExpiresOn.Unix()
-		extendedExpiresOn := tokenResponse.ExtExpiresOn.Unix()
 		accessToken := NewAccessToken(
 			homeAccountID,
 			environment,
 			realm,
 			clientID,
 			cachedAt,
-			expiresOn,
-			extendedExpiresOn,
+			tokenResponse.ExpiresOn,
+			tokenResponse.ExtExpiresOn,
 			target,
 			tokenResponse.AccessToken,
 		)

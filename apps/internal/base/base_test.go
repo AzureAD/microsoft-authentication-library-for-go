@@ -4,11 +4,11 @@
 package base
 
 import (
-	"strconv"
 	"testing"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 
@@ -69,7 +69,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 	}
 }
 
-func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
+func TestAuthResultFromStorage(t *testing.T) {
 	now := time.Now()
 	future := time.Now().Add(500 * time.Second)
 
@@ -83,9 +83,9 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 			desc: "Error: AccessToken.Validate error (AccessToken.CachedAt not set)",
 			storeToken: storage.TokenResponse{
 				AccessToken: storage.AccessToken{
-					ExpiresOnUnixTimestamp: strconv.FormatInt(future.Unix(), 10),
-					Secret:                 "secret",
-					Scopes:                 "profile openid user.read",
+					ExpiresOn: internalTime.Unix{future},
+					Secret:    "secret",
+					Scopes:    "profile openid user.read",
 				},
 				IDToken: storage.IDToken{Secret: "x.e30"},
 			},
@@ -95,10 +95,10 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 			desc: "Success",
 			storeToken: storage.TokenResponse{
 				AccessToken: storage.AccessToken{
-					CachedAt:               strconv.FormatInt(now.Unix(), 10),
-					ExpiresOnUnixTimestamp: strconv.FormatInt(future.Unix(), 10),
-					Secret:                 "secret",
-					Scopes:                 "profile openid user.read",
+					CachedAt:  internalTime.Unix{now},
+					ExpiresOn: internalTime.Unix{future},
+					Secret:    "secret",
+					Scopes:    "profile openid user.read",
 				},
 				IDToken: storage.IDToken{Secret: "x.e30"},
 			},
@@ -117,17 +117,17 @@ func TestCreateAuthenticationResultFromStorageTokenResponse(t *testing.T) {
 		got, err := AuthResultFromStorage(test.storeToken)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestCreateAuthenticationResultFromStorageTokenResponse(%s): got err == nil, want == != nil", test.desc)
+			t.Errorf("TestAuthResultFromStorage(%s): got err == nil, want == != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestCreateAuthenticationResultFromStorageTokenResponse(%s): got err == %s, want == nil", test.desc, err)
+			t.Errorf("TestAuthResultFromStorage(%s): got err == %s, want == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, got); diff != "" {
-			t.Errorf("TestCreateAuthenticationResultFromStorageTokenResponse: -want/+got:\n%s", diff)
+			t.Errorf("TestAuthResultFromStorage: -want/+got:\n%s", diff)
 		}
 	}
 }

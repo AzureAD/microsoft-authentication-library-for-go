@@ -135,12 +135,12 @@ type Credential struct {
 	key  crypto.PrivateKey
 }
 
-// toMSALBASE returns the accesstokens.Credential that is used internally. The current structure of the
+// toInternal returns the accesstokens.Credential that is used internally. The current structure of the
 // code requires that client.go, requests.go and confidential.go share a credential type without
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
 // TODO(jdoak): change method name.
-func (c Credential) toMSALBASE() *accesstokens.Credential {
+func (c Credential) toInternal() *accesstokens.Credential {
 	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
 }
 
@@ -240,7 +240,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 
 	return Client{
 		Client: base,
-		cred:   cred.toMSALBASE(),
+		cred:   cred.toInternal(),
 	}, nil
 }
 

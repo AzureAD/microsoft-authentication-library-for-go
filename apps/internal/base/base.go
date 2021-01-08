@@ -48,13 +48,6 @@ type AcquireTokenSilentParameters struct {
 	Credential  *accesstokens.Credential
 }
 
-// TODO(jdoak): augmentAuthenticationParameters == yuck.  Gotta go gotta go!!!!
-func (p AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *authority.AuthParams) {
-	authParams.Scopes = p.Scopes
-	authParams.AuthorizationType = authority.AuthorizationTypeRefreshTokenExchange
-	authParams.HomeaccountID = p.Account.HomeAccountID
-}
-
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
 // To use PKCE, set the CodeChallengeParameter.
 // Code challenges are used to secure authorization code grants; for more information, visit
@@ -86,21 +79,18 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 
 	account := storageTokenResponse.Account
 	accessToken := storageTokenResponse.AccessToken.Secret
-	expiresOn, err := convertStrUnixToUTCTime(storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
-	if err != nil {
-		return AuthResult{}, fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
-	}
 	grantedScopes := strings.Split(storageTokenResponse.AccessToken.Scopes, scopeSeparator)
 
 	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
 	var idToken accesstokens.IDToken
 	if !storageTokenResponse.IDToken.IsZero() {
+		var err error
 		idToken, err = accesstokens.NewIDToken(storageTokenResponse.IDToken.Secret)
 		if err != nil {
 			return AuthResult{}, err
 		}
 	}
-	return AuthResult{account, idToken, accessToken, expiresOn, grantedScopes, nil}, nil
+	return AuthResult{account, idToken, accessToken, storageTokenResponse.AccessToken.ExpiresOn.T, grantedScopes, nil}, nil
 }
 
 // NewAuthResult creates an AuthResult.
@@ -193,7 +183,9 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
 	toLower(silent.Scopes)
-	silent.augmentAuthenticationParameters(&authParams)
+	authParams.Scopes = silent.Scopes
+	authParams.AuthorizationType = authority.AuthorizationTypeRefreshTokenExchange
+	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
 		b.cacheAccessor.Replace(s)

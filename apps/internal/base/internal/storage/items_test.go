@@ -6,11 +6,13 @@ package storage
 import (
 	stdJSON "encoding/json"
 	"io/ioutil"
+	"log"
 	"os"
 	"testing"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/kylelemons/godebug/pretty"
@@ -24,20 +26,20 @@ var (
 	realm         = "realm"
 	scopes        = "user.read"
 	secret        = "access"
-	expiresOn     = "1592049600"
-	extExpiresOn  = "1592049600"
-	cachedAt      = "1592049600"
+	expiresOn     = time.Unix(1592049600, 0)
+	extExpiresOn  = time.Unix(1592049600, 0)
+	cachedAt      = time.Unix(1592049600, 0)
 	atCacheEntity = &AccessToken{
-		HomeAccountID:                  testHID,
-		Environment:                    env,
-		CredentialType:                 credential,
-		ClientID:                       clientID,
-		Realm:                          realm,
-		Scopes:                         scopes,
-		Secret:                         secret,
-		ExpiresOnUnixTimestamp:         expiresOn,
-		ExtendedExpiresOnUnixTimestamp: extExpiresOn,
-		CachedAt:                       cachedAt,
+		HomeAccountID:     testHID,
+		Environment:       env,
+		CredentialType:    credential,
+		ClientID:          clientID,
+		Realm:             realm,
+		Scopes:            scopes,
+		Secret:            secret,
+		ExpiresOn:         internalTime.Unix{expiresOn},
+		ExtendedExpiresOn: internalTime.Unix{extExpiresOn},
+		CachedAt:          internalTime.Unix{cachedAt},
 	}
 )
 
@@ -49,14 +51,14 @@ func TestCreateAccessToken(t *testing.T) {
 		"env",
 		"realm",
 		"clientID",
-		testCachedAt.Unix(),
-		testExpiresOn.Unix(),
-		testExtExpiresOn.Unix(),
+		testCachedAt,
+		testExpiresOn,
+		testExtExpiresOn,
 		"user.read",
 		"access",
 	)
-	if extExpiresOn != actualAt.ExtendedExpiresOnUnixTimestamp {
-		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", actualAt.ExtendedExpiresOnUnixTimestamp, extExpiresOn)
+	if !extExpiresOn.Equal(actualAt.ExtendedExpiresOn.T) {
+		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", actualAt.ExtendedExpiresOn, extExpiresOn)
 	}
 }
 
@@ -80,11 +82,10 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 		panic(err)
 	}
 
-	testCachedAt := "100"
 	want := &AccessToken{
 		HomeAccountID: testHID,
 		Environment:   env,
-		CachedAt:      testCachedAt,
+		CachedAt:      internalTime.Unix{time.Unix(100, 0)},
 		AdditionalFields: map[string]interface{}{
 			"extra": json.MarshalRaw("this_is_extra"),
 		},
@@ -100,11 +101,10 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 }
 
 func TestAccessTokenMarshal(t *testing.T) {
-	testCachedAt := "100"
 	accessToken := &AccessToken{
 		HomeAccountID:  testHID,
 		Environment:    "",
-		CachedAt:       testCachedAt,
+		CachedAt:       internalTime.Unix{time.Unix(100, 0)},
 		CredentialType: credential,
 		AdditionalFields: map[string]interface{}{
 			"extra": json.MarshalRaw("this_is_extra"),
@@ -230,16 +230,16 @@ func TestContractUnmarshalJSON(t *testing.T) {
 				},
 			},
 			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
-				Environment:                    defaultEnvironment,
-				CredentialType:                 "AccessToken",
-				Secret:                         accessTokenSecret,
-				Realm:                          defaultRealm,
-				Scopes:                         defaultScopes,
-				ClientID:                       defaultClientID,
-				CachedAt:                       atCached,
-				HomeAccountID:                  defaultHID,
-				ExpiresOnUnixTimestamp:         atExpires,
-				ExtendedExpiresOnUnixTimestamp: atExpires,
+				Environment:       defaultEnvironment,
+				CredentialType:    "AccessToken",
+				Secret:            accessTokenSecret,
+				Realm:             defaultRealm,
+				Scopes:            defaultScopes,
+				ClientID:          defaultClientID,
+				CachedAt:          internalTime.Unix{atCached},
+				HomeAccountID:     defaultHID,
+				ExpiresOn:         internalTime.Unix{atExpires},
+				ExtendedExpiresOn: internalTime.Unix{atExpires},
 			},
 		},
 		Accounts: map[string]shared.Account{
@@ -303,16 +303,16 @@ func TestContractMarshalJSON(t *testing.T) {
 				},
 			},
 			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
-				Environment:                    defaultEnvironment,
-				CredentialType:                 "AccessToken",
-				Secret:                         accessTokenSecret,
-				Realm:                          defaultRealm,
-				Scopes:                         defaultScopes,
-				ClientID:                       defaultClientID,
-				CachedAt:                       atCached,
-				HomeAccountID:                  defaultHID,
-				ExpiresOnUnixTimestamp:         atExpires,
-				ExtendedExpiresOnUnixTimestamp: atExpires,
+				Environment:       defaultEnvironment,
+				CredentialType:    "AccessToken",
+				Secret:            accessTokenSecret,
+				Realm:             defaultRealm,
+				Scopes:            defaultScopes,
+				ClientID:          defaultClientID,
+				CachedAt:          internalTime.Unix{atCached},
+				HomeAccountID:     defaultHID,
+				ExpiresOn:         internalTime.Unix{atExpires},
+				ExtendedExpiresOn: internalTime.Unix{atExpires},
 			},
 		},
 		RefreshTokens: map[string]accesstokens.RefreshToken{
@@ -365,6 +365,7 @@ func TestContractMarshalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestContractMarshalJSON(marshal): got err == %s, want err == nil", err)
 	}
+	log.Println(string(b))
 	got := Contract{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("TestContractMarshalJSON(unmarshal back): got err == %s, want err == nil", err)
