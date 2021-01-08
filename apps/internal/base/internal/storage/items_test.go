@@ -6,7 +6,6 @@ package storage
 import (
 	stdJSON "encoding/json"
 	"io/ioutil"
-	"log"
 	"os"
 	"testing"
 	"time"
@@ -365,7 +364,7 @@ func TestContractMarshalJSON(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestContractMarshalJSON(marshal): got err == %s, want err == nil", err)
 	}
-	log.Println(string(b))
+
 	got := Contract{}
 	if err := json.Unmarshal(b, &got); err != nil {
 		t.Fatalf("TestContractMarshalJSON(unmarshal back): got err == %s, want err == nil", err)
