@@ -139,7 +139,6 @@ type Credential struct {
 // code requires that client.go, requests.go and confidential.go share a credential type without
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
-// TODO(jdoak): change method name.
 func (c Credential) toInternal() *accesstokens.Credential {
 	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
 }

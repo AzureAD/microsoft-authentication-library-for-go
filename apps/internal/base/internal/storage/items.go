@@ -66,19 +66,16 @@ func (c *Contract) copy() *Contract {
 
 // AccessToken is the JSON representation of a MSAL access token for encoding to storage.
 type AccessToken struct {
-	HomeAccountID  string `json:"home_account_id,omitempty"`
-	Environment    string `json:"environment,omitempty"`
-	Realm          string `json:"realm,omitempty"`
-	CredentialType string `json:"credential_type,omitempty"`
-	ClientID       string `json:"client_id,omitempty"`
-	Secret         string `json:"secret,omitempty"`
-	Scopes         string `json:"target,omitempty"`
-	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
-	ExpiresOn internalTime.Unix `json:"expires_on,omitempty"`
-	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
+	HomeAccountID     string            `json:"home_account_id,omitempty"`
+	Environment       string            `json:"environment,omitempty"`
+	Realm             string            `json:"realm,omitempty"`
+	CredentialType    string            `json:"credential_type,omitempty"`
+	ClientID          string            `json:"client_id,omitempty"`
+	Secret            string            `json:"secret,omitempty"`
+	Scopes            string            `json:"target,omitempty"`
+	ExpiresOn         internalTime.Unix `json:"expires_on,omitempty"`
 	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
-	// TODO(jdoak): This should probably be a wrapper around time.Time that json marshals.
-	CachedAt internalTime.Unix `json:"cached_at,omitempty"`
+	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -109,8 +106,6 @@ func (a AccessToken) Key() string {
 
 // Validate validates that this AccessToken can be used.
 func (a AccessToken) Validate() error {
-	// TODO(jdoak): Fix all this Unix() stuff. We should be using time.Time() objects
-	// and we can make it easy to do this across JSON borders.
 	if a.CachedAt.T.After(time.Now()) {
 		return errors.New("access token isn't valid, it was cached at a future time")
 	}
