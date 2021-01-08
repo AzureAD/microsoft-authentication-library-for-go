@@ -4,6 +4,8 @@
 *.dll
 *.so
 *.dylib
+*.golangci.yml
+*.swp
 
 # OSX specific os files
 *.DS_Store
@@ -18,3 +20,4 @@ pkg/
 github.com/
 golang.org/
 .vscode/
+.idea/
