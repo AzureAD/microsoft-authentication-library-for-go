@@ -244,8 +244,6 @@ func NewEndpoints(authorizationEndpoint string, tokenEndpoint string, selfSigned
 	return Endpoints{authorizationEndpoint, tokenEndpoint, selfSignedJwtAudience, authorityHost}
 }
 
-//go:generate stringer -type=UserRealmAccountType
-
 // UserRealmAccountType refers to the type of user realm.
 type UserRealmAccountType string
 
