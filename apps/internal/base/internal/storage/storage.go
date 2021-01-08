@@ -20,9 +20,9 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -47,7 +47,7 @@ type StorageTokenResponse struct {
 // was given to it on each call.
 type Manager struct {
 	contract atomic.Value                     // Stores a *Contract
-	requests getAadinstanceDiscoveryResponser // *requests.Token
+	requests getAadinstanceDiscoveryResponser // *oauth.Token
 
 	mu sync.Mutex
 
@@ -56,7 +56,7 @@ type Manager struct {
 }
 
 // New is the constructor for Manager.
-func New(requests *requests.Token) *Manager {
+func New(requests *oauth.Client) *Manager {
 	m := &Manager{requests: requests, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract.Store(NewContract())
 	return m

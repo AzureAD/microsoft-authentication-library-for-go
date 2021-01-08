@@ -23,9 +23,9 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -91,7 +91,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, opts.Accessor, requests.NewToken())
+	base, err := base.New(clientID, opts.Authority, opts.Accessor, oauth.New())
 	if err != nil {
 		return Client{}, err
 	}
@@ -163,7 +163,7 @@ type DeviceCode struct {
 
 	authParams authority.AuthParams
 	client     Client
-	dc         requests.DeviceCode
+	dc         oauth.DeviceCode
 }
 
 // AuthenticationResult retreives the AuthenticationResult once the user enters the code

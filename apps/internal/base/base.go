@@ -15,9 +15,9 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -121,7 +121,7 @@ func CreateAuthenticationResult(tokenResponse accesstokens.TokenResponse, accoun
 // Client is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Client struct {
-	Token   *requests.Token
+	Token   *oauth.Client
 	manager manager // *storage.Manager or fakeManager in tests
 
 	AuthParams    authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
@@ -129,7 +129,7 @@ type Client struct {
 }
 
 // New is the constructor for Base.
-func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *requests.Token) (Client, error) {
+func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *oauth.Client) (Client, error) {
 	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return Client{}, err

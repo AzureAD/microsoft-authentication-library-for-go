@@ -5,7 +5,7 @@
 // tired at this point to do it. It, like many other *Manager code I found was broken because
 // they didn't have mutex protection.
 
-package requests
+package oauth
 
 import (
 	"context"
@@ -14,8 +14,8 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/requests/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 // ADFS is an active directory federation service authority type.
