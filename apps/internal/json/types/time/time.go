@@ -1,3 +1,8 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+// Package time provides for custom types to translate time from JSON and other formats
+// into time.Time objects.
 package time
 
 import (
