@@ -61,13 +61,13 @@ func (f *fakeAccessTokens) FromRefreshToken(ctx context.Context, rtType accessto
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) WithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) WithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}

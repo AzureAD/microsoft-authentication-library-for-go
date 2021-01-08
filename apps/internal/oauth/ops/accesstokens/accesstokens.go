@@ -258,8 +258,8 @@ func (c Client) FromRefreshToken(ctx context.Context, rtType RefreshTokenReqType
 	return c.doTokenResp(ctx, authParams, qv)
 }
 
-// WithClientSecret uses a client's secret (aka password) to get a new token.
-func (c Client) WithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (TokenResponse, error) {
+// FromClientSecret uses a client's secret (aka password) to get a new token.
+func (c Client) FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.ClientCredential)
 	qv.Set("client_secret", clientSecret)
@@ -268,12 +268,12 @@ func (c Client) WithClientSecret(ctx context.Context, authParameters authority.A
 
 	token, err := c.doTokenResp(ctx, authParameters, qv)
 	if err != nil {
-		return token, fmt.Errorf("GetAccessTokenWithClientSecret(): %w", err)
+		return token, fmt.Errorf("FromClientSecret(): %w", err)
 	}
 	return token, nil
 }
 
-func (c Client) WithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (TokenResponse, error) {
+func (c Client) FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (TokenResponse, error) {
 	qv := url.Values{}
 	qv.Set(grantType, grant.ClientCredential)
 	qv.Set("client_assertion_type", grant.ClientAssertion)
@@ -283,7 +283,7 @@ func (c Client) WithAssertion(ctx context.Context, authParameters authority.Auth
 
 	token, err := c.doTokenResp(ctx, authParameters, qv)
 	if err != nil {
-		return token, fmt.Errorf("GetAccessTokenWithAssertion(): %w", err)
+		return token, fmt.Errorf("FromAssertion(): %w", err)
 	}
 	return token, nil
 }

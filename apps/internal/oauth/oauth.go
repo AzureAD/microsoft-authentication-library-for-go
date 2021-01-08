@@ -22,12 +22,12 @@ type resolveEndpointer interface {
 }
 
 type accessTokens interface {
+	DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error)
 	FromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error)
 	FromAuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error)
 	FromRefreshToken(ctx context.Context, rtType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error)
-	WithClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
-	WithAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
-	DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error)
+	FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
+	FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
 	FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error)
 	FromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error)
 }
@@ -91,14 +91,14 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 	}
 
 	if cred.Secret != "" {
-		return t.accessTokens.WithClientSecret(ctx, authParams, cred.Secret)
+		return t.accessTokens.FromClientSecret(ctx, authParams, cred.Secret)
 	}
 
 	jwt, err := cred.JWT(authParams)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	return t.accessTokens.WithAssertion(ctx, authParams, jwt)
+	return t.accessTokens.FromAssertion(ctx, authParams, jwt)
 }
 
 func (t *Client) Refresh(ctx context.Context, reqType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {

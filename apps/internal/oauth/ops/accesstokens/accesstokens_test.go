@@ -368,7 +368,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.WithClientSecret(context.Background(), authParams, test.clientSecret)
+		_, err := client.FromClientSecret(context.Background(), authParams, test.clientSecret)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenWithClientSecret(%s): got err == nil , want err != nil", test.desc)
@@ -438,7 +438,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.WithAssertion(context.Background(), authParams, test.assertion)
+		_, err := client.FromAssertion(context.Background(), authParams, test.assertion)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenWithAssertion(%s): got err == nil , want err != nil", test.desc)
