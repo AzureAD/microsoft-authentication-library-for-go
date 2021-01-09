@@ -178,7 +178,7 @@ type AuthCodeRequest struct {
 	AppType       AppType
 }
 
-// NewCodeChallengeRequest returns a request
+// NewCodeChallengeRequest returns an AuthCodeRequest that uses a code challenge..
 func NewCodeChallengeRequest(params authority.AuthParams, appType AppType, cc *Credential, code, challenge string) (AuthCodeRequest, error) {
 	if appType == ATUnknown {
 		return AuthCodeRequest{}, fmt.Errorf("bug: NewCodeChallengeRequest() called with AppType == ATUnknown")
