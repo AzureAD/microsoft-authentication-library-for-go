@@ -44,7 +44,7 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 type AcquireTokenSilentParameters struct {
 	Scopes      []string
 	Account     shared.Account
-	RequestType accesstokens.RefreshTokenReqType
+	RequestType accesstokens.AppType
 	Credential  *accesstokens.Credential
 }
 
@@ -56,7 +56,7 @@ type AcquireTokenAuthCodeParameters struct {
 	Scopes      []string
 	Code        string
 	Challenge   string
-	RequestType accesstokens.AuthCodeRequestType
+	RequestType accesstokens.AppType
 	Credential  *accesstokens.Credential
 }
 
@@ -204,7 +204,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		}
 
 		var cc *accesstokens.Credential
-		if silent.RequestType == accesstokens.RefreshTokenConfidential {
+		if silent.RequestType == accesstokens.ATConfidential {
 			cc = silent.Credential
 		}
 
@@ -225,7 +225,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams.AuthorizationType = authority.AuthorizationTypeAuthCode
 
 	var cc *accesstokens.Credential
-	if authCodeParams.RequestType == accesstokens.AuthCodeConfidential {
+	if authCodeParams.RequestType == accesstokens.ATConfidential {
 		cc = authCodeParams.Credential
 	}
 

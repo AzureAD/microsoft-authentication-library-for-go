@@ -157,7 +157,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 				Code:          "authCode",
 				CodeChallenge: "codeVerifier",
 				Credential:    &Credential{Secret: "secret"},
-				RequestType:   AuthCodeConfidential,
+				AppType:       ATConfidential,
 			},
 			qv: url.Values{
 				"code":          []string{"authCode"},
@@ -174,7 +174,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 				AuthParams:    authParams,
 				Code:          "authCode",
 				CodeChallenge: "codeVerifier",
-				RequestType:   AuthCodeConfidential,
+				AppType:       ATConfidential,
 			},
 			qv: url.Values{
 				"code":          []string{"authCode"},
@@ -192,7 +192,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 				AuthParams:    authParams,
 				Code:          "authCode",
 				CodeChallenge: "codeVerifier",
-				RequestType:   AuthCodeConfidential,
+				AppType:       ATConfidential,
 				Credential:    &Credential{Secret: "secret"},
 			},
 			qv: url.Values{
@@ -301,7 +301,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.FromRefreshToken(context.Background(), RefreshTokenPublic, authParams, test.cred, test.refreshToken)
+		_, err := client.FromRefreshToken(context.Background(), ATPublic, authParams, test.cred, test.refreshToken)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestGetAccessTokenFromRefreshToken(%s): got err == nil , want err != nil", test.desc)
