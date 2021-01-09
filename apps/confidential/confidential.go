@@ -280,7 +280,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
-		RequestType: accesstokens.RefreshTokenConfidential,
+		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
 	}
 
@@ -329,11 +329,11 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:      scopes,
-		Code:        opts.Code,
-		Challenge:   opts.Challenge,
-		RequestType: accesstokens.AuthCodeConfidential,
-		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		Scopes:     scopes,
+		Code:       opts.Code,
+		Challenge:  opts.Challenge,
+		AppType:    accesstokens.ATConfidential,
+		Credential: cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 	}
 
 	return cca.Client.AcquireTokenByAuthCode(ctx, params)

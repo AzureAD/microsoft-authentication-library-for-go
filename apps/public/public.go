@@ -133,7 +133,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
-		RequestType: accesstokens.RefreshTokenPublic,
+		RequestType: accesstokens.ATPublic,
 	}
 
 	return pca.Client.AcquireTokenSilent(ctx, silentParameters)
@@ -237,10 +237,10 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:      scopes,
-		Code:        opts.Code,
-		Challenge:   opts.Challenge,
-		RequestType: accesstokens.AuthCodePublic,
+		Scopes:    scopes,
+		Code:      opts.Code,
+		Challenge: opts.Challenge,
+		AppType:   accesstokens.ATPublic,
 	}
 
 	return pca.Client.AcquireTokenByAuthCode(ctx, params)

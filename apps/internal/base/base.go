@@ -44,7 +44,7 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 type AcquireTokenSilentParameters struct {
 	Scopes      []string
 	Account     shared.Account
-	RequestType accesstokens.RefreshTokenReqType
+	RequestType accesstokens.AppType
 	Credential  *accesstokens.Credential
 }
 
@@ -53,11 +53,11 @@ type AcquireTokenSilentParameters struct {
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
-	Scopes      []string
-	Code        string
-	Challenge   string
-	RequestType accesstokens.AuthCodeRequestType
-	Credential  *accesstokens.Credential
+	Scopes     []string
+	Code       string
+	Challenge  string
+	AppType    accesstokens.AppType
+	Credential *accesstokens.Credential
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -204,7 +204,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		}
 
 		var cc *accesstokens.Credential
-		if silent.RequestType == accesstokens.RefreshTokenConfidential {
+		if silent.RequestType == accesstokens.ATConfidential {
 			cc = silent.Credential
 		}
 
@@ -225,11 +225,11 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams.AuthorizationType = authority.AuthorizationTypeAuthCode
 
 	var cc *accesstokens.Credential
-	if authCodeParams.RequestType == accesstokens.AuthCodeConfidential {
+	if authCodeParams.AppType == accesstokens.ATConfidential {
 		cc = authCodeParams.Credential
 	}
 
-	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.RequestType, cc, authCodeParams.Code, authCodeParams.Challenge)
+	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.AppType, cc, authCodeParams.Code, authCodeParams.Challenge)
 	if err != nil {
 		return AuthResult{}, err
 	}

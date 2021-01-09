@@ -43,18 +43,18 @@ const (
 	password      = "password"
 )
 
-//go:generate stringer -type=AuthCodeRequestType
+//go:generate stringer -type=AppType
 
-// AuthCodeRequestType is whether the authorization code flow is for a public or confidential client
-// RefreshTokenReqType
-// TODO(jdoak): Replace this and anything like this(RefreshTokenReqType...) that has "confidential" or "public" with
-// a single type that is called AppType.
-type AuthCodeRequestType int
+// AppType is whether the authorization code flow is for a public or confidential client.
+type AppType int8
 
 const (
-	UnknownAuthCodeType AuthCodeRequestType = iota
-	AuthCodePublic
-	AuthCodeConfidential
+	// ATUnknown is the zero value when the type hasn't been set.
+	ATUnknown AppType = iota
+	// ATPublic indicates this if for the Public.Client.
+	ATPublic
+	// ATConfidential indicates this if for the Confidential.Client.
+	ATConfidential
 )
 
 type urlFormCaller interface {
@@ -175,17 +175,17 @@ type AuthCodeRequest struct {
 	Code          string
 	CodeChallenge string
 	Credential    *Credential
-	RequestType   AuthCodeRequestType
+	AppType       AppType
 }
 
-// NewCodeChallengeRequest returns a request
-func NewCodeChallengeRequest(params authority.AuthParams, rt AuthCodeRequestType, cc *Credential, code, challenge string) (AuthCodeRequest, error) {
-	if rt == UnknownAuthCodeType {
-		return AuthCodeRequest{}, fmt.Errorf("bug: NewCodeChallengeRequest() called with AuthCodeRequestType == UnknownAuthCodeType")
+// NewCodeChallengeRequest returns an AuthCodeRequest that uses a code challenge..
+func NewCodeChallengeRequest(params authority.AuthParams, appType AppType, cc *Credential, code, challenge string) (AuthCodeRequest, error) {
+	if appType == ATUnknown {
+		return AuthCodeRequest{}, fmt.Errorf("bug: NewCodeChallengeRequest() called with AppType == ATUnknown")
 	}
 	return AuthCodeRequest{
 		AuthParams:    params,
-		RequestType:   rt,
+		AppType:       appType,
 		Code:          code,
 		CodeChallenge: challenge,
 		Credential:    cc,
@@ -196,10 +196,10 @@ func NewCodeChallengeRequest(params authority.AuthParams, rt AuthCodeRequestType
 func (c Client) FromAuthCode(ctx context.Context, req AuthCodeRequest) (TokenResponse, error) {
 	var qv url.Values
 
-	switch req.RequestType {
-	case UnknownAuthCodeType:
-		return TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with RequestType == UnknownAuthCodeType")
-	case AuthCodeConfidential:
+	switch req.AppType {
+	case ATUnknown:
+		return TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with AppType == ATUnknown")
+	case ATConfidential:
 		var err error
 		if req.Credential == nil {
 			return TokenResponse{}, fmt.Errorf("AuthCodeRequest had nil Credential for Confidential app")
@@ -208,10 +208,10 @@ func (c Client) FromAuthCode(ctx context.Context, req AuthCodeRequest) (TokenRes
 		if err != nil {
 			return TokenResponse{}, err
 		}
-	case AuthCodePublic:
+	case ATPublic:
 		// Nothing needs to be done, exept to not error.
 	default:
-		return TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with RequestType == %v, which we do not recongnize", req.RequestType)
+		return TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with AppType == %v, which we do not recongnize", req.AppType)
 	}
 
 	qv.Set(grantType, grant.AuthCode)
@@ -225,24 +225,10 @@ func (c Client) FromAuthCode(ctx context.Context, req AuthCodeRequest) (TokenRes
 	return c.doTokenResp(ctx, req.AuthParams, qv)
 }
 
-//go:generate stringer -type=RefreshTokenReqType
-
-// RefreshTokenReqType is whether the refresh token flow is for a public or confidential client
-// TODO(jdoak): Replace this and anything like this that has "confidential" or "public" with
-// a single type that is called AppType.
-type RefreshTokenReqType int
-
-//These are the different values for RefreshTokenReqType
-const (
-	RefreshTokenUnknown RefreshTokenReqType = iota
-	RefreshTokenPublic
-	RefreshTokenConfidential
-)
-
 // FromRefreshToken uses a refresh token (for refreshing credentials) to get a new access token.
-func (c Client) FromRefreshToken(ctx context.Context, rtType RefreshTokenReqType, authParams authority.AuthParams, cc *Credential, refreshToken string) (TokenResponse, error) {
+func (c Client) FromRefreshToken(ctx context.Context, appType AppType, authParams authority.AuthParams, cc *Credential, refreshToken string) (TokenResponse, error) {
 	qv := url.Values{}
-	if rtType == RefreshTokenConfidential {
+	if appType == ATConfidential {
 		var err error
 		qv, err = prepURLVals(cc, authParams)
 		if err != nil {
