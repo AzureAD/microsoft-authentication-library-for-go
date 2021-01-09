@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
@@ -26,14 +27,17 @@ const (
 	defaultScopes      = "s2 s1 s3"
 	defaultClientID    = "my_client_id"
 	accessTokenSecret  = "an access token"
-	atCached           = "1000"
-	atExpires          = "4600"
 	rtSecret           = "a refresh token"
 	idCred             = "IdToken"
 	idSecret           = "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature"
 	accUser            = "John Doe"
 	accLID             = "object1234"
 	accAuth            = "MSSTS"
+)
+
+var (
+	atCached  = time.Unix(1000, 0)
+	atExpires = time.Unix(4600, 0)
 )
 
 func newForTest(authorityClient getAadinstanceDiscoveryResponser) *Manager {
@@ -130,14 +134,15 @@ func TestDeleteAccounts(t *testing.T) {
 }
 
 func TestReadAccessToken(t *testing.T) {
+	now := time.Now()
 	testAccessToken := NewAccessToken(
 		"hid",
 		"env",
 		"realm",
 		"cid",
-		1,
-		1,
-		1,
+		now,
+		now,
+		now,
 		"openid user.read",
 		"secret",
 	)
@@ -175,15 +180,16 @@ func TestReadAccessToken(t *testing.T) {
 }
 
 func TestWriteAccessToken(t *testing.T) {
+	now := time.Now()
 	storageManager := newForTest(nil)
 	testAccessToken := NewAccessToken(
 		"hid",
 		"env",
 		"realm",
 		"cid",
-		1,
-		1,
-		1,
+		now,
+		now,
+		now,
 		"openid",
 		"secret",
 	)
@@ -588,16 +594,16 @@ func TestStorageManagerSerialize(t *testing.T) {
 				},
 			},
 			"uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
-				Environment:                    defaultEnvironment,
-				CredentialType:                 "AccessToken",
-				Secret:                         accessTokenSecret,
-				Realm:                          defaultRealm,
-				Scopes:                         defaultScopes,
-				ClientID:                       defaultClientID,
-				CachedAt:                       atCached,
-				HomeAccountID:                  defaultHID,
-				ExpiresOnUnixTimestamp:         atExpires,
-				ExtendedExpiresOnUnixTimestamp: atExpires,
+				Environment:       defaultEnvironment,
+				CredentialType:    "AccessToken",
+				Secret:            accessTokenSecret,
+				Realm:             defaultRealm,
+				Scopes:            defaultScopes,
+				ClientID:          defaultClientID,
+				CachedAt:          internalTime.Unix{T: atCached},
+				HomeAccountID:     defaultHID,
+				ExpiresOn:         internalTime.Unix{T: atExpires},
+				ExtendedExpiresOn: internalTime.Unix{T: atExpires},
 			},
 		},
 		RefreshTokens: map[string]accesstokens.RefreshToken{
@@ -684,11 +690,11 @@ func TestUnmarshal(t *testing.T) {
 }
 
 func TestIsAccessTokenValid(t *testing.T) {
-	cachedAt := time.Now().Unix()
-	badCachedAt := time.Now().Unix() + 500
-	expiresOn := time.Now().Unix() + 1000
-	badExpiresOn := time.Now().Unix() + 200
-	extended := time.Now().Unix()
+	cachedAt := time.Now()
+	badCachedAt := time.Now().Add(500 * time.Second)
+	expiresOn := time.Now().Add(1000 * time.Second)
+	badExpiresOn := time.Now().Add(200 * time.Second)
+	extended := time.Now()
 
 	tests := []struct {
 		desc  string
@@ -730,9 +736,9 @@ func TestRead(t *testing.T) {
 		"env",
 		"realm",
 		"cid",
-		time.Now().Unix(),
-		time.Now().Unix()+1000,
-		time.Now().Unix(),
+		time.Now(),
+		time.Now().Add(1000*time.Second),
+		time.Now(),
 		"openid profile",
 		"secret",
 	)
@@ -827,7 +833,14 @@ func TestRead(t *testing.T) {
 	}
 }
 
+func removeSubSeconds(t time.Time) time.Time {
+	t = t.Add(-time.Duration(t.Nanosecond()))
+	return t
+}
+
 func TestWrite(t *testing.T) {
+	now := removeSubSeconds(time.Now().UTC())
+
 	cacheManager := newForTest(nil)
 	clientInfo := accesstokens.ClientInfoJSONPayload{
 		UID:  "testUID",
@@ -838,7 +851,7 @@ func TestWrite(t *testing.T) {
 		Oid:               "lid",
 		PreferredUsername: "username",
 	}
-	expiresOn := time.Unix(time.Now().Unix()+1000, 0).UTC()
+	expiresOn := now.Add(1000 * time.Second)
 	tokenResponse := accesstokens.TokenResponse{
 		AccessToken:   "accessToken",
 		RefreshToken:  "refreshToken",
@@ -847,7 +860,7 @@ func TestWrite(t *testing.T) {
 		ClientInfo:    clientInfo,
 		GrantedScopes: []string{"openid", "profile"},
 		ExpiresOn:     expiresOn,
-		ExtExpiresOn:  time.Now(),
+		ExtExpiresOn:  now,
 	}
 	authInfo := authority.Info{Host: "env", Tenant: "realm", AuthorityType: accAuth}
 	authParams := authority.AuthParams{
@@ -867,9 +880,9 @@ func TestWrite(t *testing.T) {
 		"env",
 		"realm",
 		"cid",
-		time.Now().Unix(),
-		time.Now().Unix()+1000,
-		time.Now().Unix(),
+		now,
+		now.Add(1000*time.Second),
+		now,
 		"openid profile",
 		"accessToken",
 	)
@@ -905,6 +918,16 @@ func TestWrite(t *testing.T) {
 	if !ok {
 		t.Fatalf("TestWrite(access token): access token was not written as expected")
 	}
+
+	// CachedAt is generated for this exact moment, not from input.  We would need to
+	// fake time.Now() call with a var now = time.Now() in the package in order to
+	// control this or we can just ignore this value.  We are going to simply check its
+	// not zero and then zero it for our got/want comparison.
+	if gotAccess.CachedAt.T.IsZero() {
+		t.Fatalf("TestWrite(access token): AccessToken.CachedAt is the zero value, which is incorrect")
+	}
+	gotAccess.CachedAt = internalTime.Unix{}
+	AccessToken.CachedAt = internalTime.Unix{}
 	if diff := pretty.Compare(AccessToken, gotAccess); diff != "" {
 		t.Fatalf("TestWrite(access token): -want/+got\n%s", diff)
 	}

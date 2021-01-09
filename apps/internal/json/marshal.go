@@ -103,6 +103,9 @@ func marshalStructField(field reflect.Value, buff *bytes.Buffer, enc *json.Encod
 	switch field.Kind() {
 	// If it was a *struct or struct, we need to recursively all marshal().
 	case reflect.Struct:
+		if field.CanAddr() {
+			field = field.Addr()
+		}
 		return marshalStruct(field, buff, enc)
 	case reflect.Map:
 		return marshalMap(field, buff, enc)
@@ -193,6 +196,9 @@ func (m *mapEncode) encode() (stateFn, error) {
 		v := iter.Value()
 		switch m.valueBaseType.Kind() {
 		case reflect.Struct:
+			if v.CanAddr() {
+				v = v.Addr()
+			}
 			if err := marshalStruct(v, m.buff, m.enc); err != nil {
 				return nil, err
 			}
@@ -284,6 +290,9 @@ func (s *sliceEncode) encode() (stateFn, error) {
 		v := s.s.Index(i)
 		switch s.valueBaseType.Kind() {
 		case reflect.Struct:
+			if v.CanAddr() {
+				v = v.Addr()
+			}
 			if err := marshalStruct(v, s.buff, s.enc); err != nil {
 				return nil, err
 			}
