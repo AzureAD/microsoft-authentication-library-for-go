@@ -329,11 +329,11 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:      scopes,
-		Code:        opts.Code,
-		Challenge:   opts.Challenge,
-		RequestType: accesstokens.ATConfidential,
-		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		Scopes:     scopes,
+		Code:       opts.Code,
+		Challenge:  opts.Challenge,
+		AppType:    accesstokens.ATConfidential,
+		Credential: cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 	}
 
 	return cca.Client.AcquireTokenByAuthCode(ctx, params)

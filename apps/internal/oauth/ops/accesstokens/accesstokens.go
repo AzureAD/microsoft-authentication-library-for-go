@@ -179,13 +179,13 @@ type AuthCodeRequest struct {
 }
 
 // NewCodeChallengeRequest returns a request
-func NewCodeChallengeRequest(params authority.AuthParams, rt AppType, cc *Credential, code, challenge string) (AuthCodeRequest, error) {
-	if rt == ATUnknown {
+func NewCodeChallengeRequest(params authority.AuthParams, appType AppType, cc *Credential, code, challenge string) (AuthCodeRequest, error) {
+	if appType == ATUnknown {
 		return AuthCodeRequest{}, fmt.Errorf("bug: NewCodeChallengeRequest() called with AppType == ATUnknown")
 	}
 	return AuthCodeRequest{
 		AuthParams:    params,
-		AppType:       rt,
+		AppType:       appType,
 		Code:          code,
 		CodeChallenge: challenge,
 		Credential:    cc,

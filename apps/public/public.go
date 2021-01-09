@@ -237,10 +237,10 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:      scopes,
-		Code:        opts.Code,
-		Challenge:   opts.Challenge,
-		RequestType: accesstokens.ATPublic,
+		Scopes:    scopes,
+		Code:      opts.Code,
+		Challenge: opts.Challenge,
+		AppType:   accesstokens.ATPublic,
 	}
 
 	return pca.Client.AcquireTokenByAuthCode(ctx, params)
