@@ -226,9 +226,9 @@ func (c Client) FromAuthCode(ctx context.Context, req AuthCodeRequest) (TokenRes
 }
 
 // FromRefreshToken uses a refresh token (for refreshing credentials) to get a new access token.
-func (c Client) FromRefreshToken(ctx context.Context, rtType AppType, authParams authority.AuthParams, cc *Credential, refreshToken string) (TokenResponse, error) {
+func (c Client) FromRefreshToken(ctx context.Context, appType AppType, authParams authority.AuthParams, cc *Credential, refreshToken string) (TokenResponse, error) {
 	qv := url.Values{}
-	if rtType == ATConfidential {
+	if appType == ATConfidential {
 		var err error
 		qv, err = prepURLVals(cc, authParams)
 		if err != nil {

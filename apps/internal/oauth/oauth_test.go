@@ -55,7 +55,7 @@ func (f *fakeAccessTokens) FromAuthCode(ctx context.Context, req accesstokens.Au
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) FromRefreshToken(ctx context.Context, rtType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
