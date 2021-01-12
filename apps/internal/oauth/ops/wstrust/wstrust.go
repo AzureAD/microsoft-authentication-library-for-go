@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"log"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
@@ -97,6 +98,7 @@ func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.A
 	}
 
 	resp := defs.SAMLDefinitions{}
+	log.Println("wsTrustRequestMessage: \n", wsTrustRequestMessage)
 	err = c.Comm.SOAPCall(ctx, endpoint.URL, soapAction, http.Header{}, nil, wsTrustRequestMessage, &resp)
 	if err != nil {
 		return SamlTokenInfo{}, err
