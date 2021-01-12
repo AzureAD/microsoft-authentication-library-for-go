@@ -5,7 +5,7 @@ package defs
 
 import (
 	"encoding/xml"
-	"log"
+	"fmt"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -120,16 +120,19 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizeType, 
 	createdTime := time.Now().UTC()
 	expiresTime := createdTime.Add(10 * time.Minute)
 
-	if wte.Version == Trust2005 {
+	switch wte.Version {
+	case Trust2005:
 		soapAction = trust2005Spec
 		trustNamespace = "http://schemas.xmlsoap.org/ws/2005/02/trust"
 		keyType = "http://schemas.xmlsoap.org/ws/2005/05/identity/NoProofKey"
 		requestType = "http://schemas.xmlsoap.org/ws/2005/02/trust/Issue"
-	} else {
+	case Trust13:
 		soapAction = trust13Spec
 		trustNamespace = "http://docs.oasis-open.org/ws-sx/ws-trust/200512"
 		keyType = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer"
 		requestType = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue"
+	default:
+		return "", fmt.Errorf("buildTokenRequestMessage had Version == %q, which is not recognized", wte.Version)
 	}
 
 	var envelope wsTrustTokenRequestEnvelope
@@ -147,8 +150,10 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizeType, 
 	envelope.Header.To.MustUnderstand = "1"
 	envelope.Header.To.Text = wte.URL
 
-	log.Println("the authority type was: ", authType)
-	if authType == authority.ATUsernamePassword {
+	switch authType {
+	case authority.ATUnknown:
+		return "", fmt.Errorf("buildTokenRequestMessage had no authority type(%v)", authType)
+	case authority.ATUsernamePassword:
 		endpointUUID := uuid.New()
 
 		var trustID string
@@ -166,6 +171,9 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizeType, 
 		envelope.Header.Security.UsernameToken.ID = trustID
 		envelope.Header.Security.UsernameToken.Username.Text = username
 		envelope.Header.Security.UsernameToken.Password.Text = password
+	default:
+		// This is just to note that we don't do anything for other cases.
+		// We aren't missing anything I know of.
 	}
 
 	envelope.Body.RequestSecurityToken.Wst = trustNamespace
