@@ -138,6 +138,7 @@ func bindings(defs Definitions, policies map[string]endpointType) (map[string]ws
 }
 
 func endpoints(defs Definitions, bindings map[string]wsEndpointData) (userPass, windows Endpoint, err error) {
+	log.Println("RUN")
 	for _, port := range defs.Service.Port {
 		bindingName := port.Binding
 
