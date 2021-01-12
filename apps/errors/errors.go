@@ -6,13 +6,29 @@ package errors
 import (
 	"errors"
 	"fmt"
+	"io"
+	"io/ioutil"
 	"net/http"
+	"reflect"
 	"strings"
 
 	"github.com/kylelemons/godebug/pretty"
 )
 
-var prettyConf = &pretty.Config{IncludeUnexported: false, SkipZeroFields: true, TrackCycles: true}
+var prettyConf = &pretty.Config{
+	IncludeUnexported: false,
+	SkipZeroFields:    true,
+	TrackCycles:       true,
+	Formatter: map[reflect.Type]interface{}{
+		reflect.TypeOf((*io.ReadCloser)(nil)).Elem(): func(rc io.ReadCloser) string {
+			b, err := ioutil.ReadAll(rc)
+			if err != nil {
+				return "could not read io.ReadCloser content"
+			}
+			return string(b)
+		},
+	},
+}
 
 type verboser interface {
 	Verbose() string
@@ -55,5 +71,6 @@ func (e CallErr) Error() string {
 
 // Verbose prints a versbose error message with the request or response.
 func (e CallErr) Verbose() string {
+	e.Resp.Request = nil // This brings in a bunch of TLS crap we don't need
 	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
 }
