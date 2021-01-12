@@ -68,7 +68,7 @@ func NewFromDef(defs Definitions) (MexDocument, error) {
 func policies(defs Definitions) (map[string]endpointType, error) {
 	policies := make(map[string]endpointType, len(defs.Policy))
 
-	for i, policy := range defs.Policy {
+	for _, policy := range defs.Policy {
 		// TODO(msal): These if statements are a little weird to me. For any single policy
 		// we determine a type, which is fine. But after we determine the type, we don't move
 		// on to the next policy (via a continue). This means that we are going to check that
