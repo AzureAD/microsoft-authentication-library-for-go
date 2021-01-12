@@ -122,7 +122,6 @@ func (c *Client) XMLCall(ctx context.Context, endpoint string, headers http.Head
 
 // SOAPCall returns the SOAP message given an endpoint, action, body of the request and the response object to marshal into.
 func (c *Client) SOAPCall(ctx context.Context, endpoint, action string, headers http.Header, qv url.Values, body string, resp interface{}) error {
-	panic("hopefully in the integration test")
 	if body == "" {
 		return fmt.Errorf("cannot make a SOAP call with body set to empty string")
 	}

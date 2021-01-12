@@ -174,10 +174,10 @@ func TestUsernamePassword(t *testing.T) {
 		desc string
 		vals url.Values
 	}{
-		{"Managed", url.Values{"usertype": []string{"cloud"}}},
+		//{"Managed", url.Values{"usertype": []string{"cloud"}}},
 		{"ADFSv2", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}}},
-		{"ADFSv3", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}}},
-		{"ADFSv4", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}}},
+		//{"ADFSv3", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}}},
+		//{"ADFSv4", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}}},
 	}
 	for _, test := range tests {
 		user := getTestUser(test.desc, labClientInstance, test.vals)
@@ -194,6 +194,7 @@ func TestUsernamePassword(t *testing.T) {
 		if err != nil {
 			t.Fatalf("TestUsernamePassword(%s): on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", test.desc, errors.Verbose(err))
 		}
+		panic("here")
 		if result.AccessToken == "" {
 			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)
 		}
