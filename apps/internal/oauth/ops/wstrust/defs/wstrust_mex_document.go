@@ -37,12 +37,15 @@ type MexDocument struct {
 
 func updateEndpoint(cached *Endpoint, found Endpoint) {
 	if cached == nil || cached.Version == TrustUnknown {
+		log.Println("\twas set")
 		*cached = found
 		return
 	}
 	if (*cached).Version == Trust2005 && found.Version == Trust13 {
+		log.Println("\twas set")
 		*cached = found
 	}
+	log.Println("\twas not set")
 }
 
 // TODO(msal): Someone needs to write tests for everything below.
