@@ -160,8 +160,10 @@ func endpoints(defs Definitions, bindings map[string]wsEndpointData) (userPass, 
 
 			switch binding.EndpointType {
 			case etUsernamePassword:
+				log.Println("update userpass")
 				updateEndpoint(&userPass, endpoint)
 			case etWindowsTransport:
+				log.Println("update windows")
 				updateEndpoint(&windows, endpoint)
 			default:
 				return Endpoint{}, Endpoint{}, errors.New("found unknown port type in MEX document")
