@@ -99,7 +99,6 @@ func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.A
 
 	resp := defs.SAMLDefinitions{}
 	log.Println("wsTrustRequestMessage: \n", wsTrustRequestMessage)
-	panic("here")
 	err = c.Comm.SOAPCall(ctx, endpoint.URL, soapAction, http.Header{}, nil, wsTrustRequestMessage, &resp)
 	if err != nil {
 		return SamlTokenInfo{}, err
