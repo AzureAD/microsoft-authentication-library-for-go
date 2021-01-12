@@ -6,6 +6,7 @@ package defs
 import (
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 )
 
@@ -29,7 +30,7 @@ const trust2005Spec string = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Is
 
 type MexDocument struct {
 	UsernamePasswordEndpoint Endpoint
-	windowsTransportEndpoint Endpoint
+	WindowsTransportEndpoint Endpoint
 	policies                 map[string]endpointType
 	bindings                 map[string]wsEndpointData
 }
@@ -63,7 +64,13 @@ func NewFromDef(defs Definitions) (MexDocument, error) {
 		return MexDocument{}, err
 	}
 
-	return MexDocument{userPass, windows, policies, bindings}, nil
+	log.Println("userPass endpoint: ", userPass.URL)
+	return MexDocument{
+		UsernamePasswordEndpoint: userPass,
+		WindowsTransportEndpoint: windows,
+		policies:                 policies,
+		bindings:                 bindings,
+	}, nil
 }
 
 func policies(defs Definitions) (map[string]endpointType, error) {
