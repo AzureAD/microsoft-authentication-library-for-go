@@ -81,6 +81,8 @@ func policies(defs Definitions) (map[string]endpointType, error) {
 	policies := make(map[string]endpointType, len(defs.Policy))
 
 	for _, policy := range defs.Policy {
+		policies["#"+policy.ID] = etUsernamePassword // default
+
 		// TODO(msal): These if statements are a little weird to me. For any single policy
 		// we determine a type, which is fine. But after we determine the type, we don't move
 		// on to the next policy (via a continue). This means that we are going to check that
@@ -111,7 +113,7 @@ func policies(defs Definitions) (map[string]endpointType, error) {
 				return nil, fmt.Errorf("for MexDocument policy(%d), we could not discern a endpoint type", i)
 			}
 		*/
-		policies["#"+policy.ID] = etUsernamePassword
+
 	}
 	return policies, nil
 }
