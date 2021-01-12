@@ -94,9 +94,12 @@ func policies(defs Definitions) (map[string]endpointType, error) {
 		// is a bad practice to do via "fallthrough" instead of explicitly. If this is incorrect
 		// to fail, then this should be changed to explicitly set etUsernamePassword when
 		// not found.
-		if policies["#"+policy.ID] == etUnknown {
-			return nil, fmt.Errorf("for MexDocument policy(%d), we could not discern a endpoint type", i)
-		}
+		/*
+			if policies["#"+policy.ID] == etUnknown {
+				return nil, fmt.Errorf("for MexDocument policy(%d), we could not discern a endpoint type", i)
+			}
+		*/
+		policies["#"+policy.ID] = etUsernamePassword
 	}
 	return policies, nil
 }
