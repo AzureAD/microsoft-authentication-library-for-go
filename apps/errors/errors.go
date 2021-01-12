@@ -20,10 +20,10 @@ var prettyConf = &pretty.Config{
 	SkipZeroFields:    true,
 	TrackCycles:       true,
 	Formatter: map[reflect.Type]interface{}{
-		reflect.TypeOf((*io.ReadCloser)(nil)).Elem(): func(rc io.ReadCloser) string {
-			b, err := ioutil.ReadAll(rc)
+		reflect.TypeOf((*io.Reader)(nil)).Elem(): func(r io.Reader) string {
+			b, err := ioutil.ReadAll(r)
 			if err != nil {
-				return "could not read io.ReadCloser content"
+				return "could not read io.Reader content"
 			}
 			return string(b)
 		},
@@ -72,5 +72,6 @@ func (e CallErr) Error() string {
 // Verbose prints a versbose error message with the request or response.
 func (e CallErr) Verbose() string {
 	e.Resp.Request = nil // This brings in a bunch of TLS crap we don't need
+	e.Resp.TLS = nil     // Same
 	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
 }
