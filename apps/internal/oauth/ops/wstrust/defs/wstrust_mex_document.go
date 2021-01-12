@@ -44,6 +44,7 @@ func updateEndpoint(cached *Endpoint, found Endpoint) {
 	if (*cached).Version == Trust2005 && found.Version == Trust13 {
 		log.Println("\twas set")
 		*cached = found
+		return
 	}
 	log.Println("\twas not set")
 }
