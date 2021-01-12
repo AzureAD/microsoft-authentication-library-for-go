@@ -103,22 +103,21 @@ type InstanceDiscoveryResponse struct {
 	AdditionalFields map[string]interface{}
 }
 
-//go:generate stringer -type=AuthorizationType
+//go:generate stringer -type=AuthorizeType
 
-// AuthorizationType represents the type of token flow.
-type AuthorizationType int
+// AuthorizeType represents the type of token flow.
+type AuthorizeType int
 
 // These are all the types of token flows.
-// TODO(jdoak): Rename all of these and replace AuthorizationTypeNone with Unknown*.
 const (
-	AuthorizationTypeUnknown               AuthorizationType = iota
-	AuthorizationTypeUsernamePassword                        = iota
-	AuthorizationTypeWindowsIntegratedAuth                   = iota
-	AuthorizationTypeAuthCode                                = iota
-	AuthorizationTypeInteractive                             = iota
-	AuthorizationTypeClientCredentials                       = iota
-	AuthorizationTypeDeviceCode                              = iota
-	AuthorizationTypeRefreshTokenExchange                    = iota
+	ATUnknown AuthorizeType = iota
+	ATUsernamePassword
+	ATWindowsIntegrated
+	ATAuthCode
+	ATInteractive
+	ATClientCredentials
+	ATDeviceCode
+	ATRefreshToken
 )
 
 // AuthParams represents the parameters used for authorization for token acquisition.
@@ -132,7 +131,7 @@ type AuthParams struct {
 	Username          string
 	Password          string
 	Scopes            []string
-	AuthorizationType AuthorizationType
+	AuthorizationType AuthorizeType
 }
 
 // NewAuthParams creates an authorization parameters object.

@@ -144,7 +144,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
 	authParams := pca.AuthParams
 	authParams.Scopes = scopes
-	authParams.AuthorizationType = authority.AuthorizationTypeUsernamePassword
+	authParams.AuthorizationType = authority.ATUsernamePassword
 	authParams.Username = username
 	authParams.Password = password
 
@@ -185,7 +185,7 @@ func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error
 func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (DeviceCode, error) {
 	authParams := pca.AuthParams
 	authParams.Scopes = scopes
-	authParams.AuthorizationType = authority.AuthorizationTypeDeviceCode
+	authParams.AuthorizationType = authority.ATDeviceCode
 
 	dc, err := pca.Token.DeviceCode(ctx, authParams)
 	if err != nil {

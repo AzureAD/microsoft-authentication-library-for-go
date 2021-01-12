@@ -43,7 +43,7 @@ func (r *REST) Authority() authority.Client {
 // AccessTokens returns a client that can be used to get various access tokens for
 // authorization purposes.
 func (r *REST) AccessTokens() accesstokens.Client {
-	return accesstokens.Client{Comm: r.client, TokenRespFunc: accesstokens.NewTokenResponse}
+	return accesstokens.Client{Comm: r.client}
 }
 
 // WSTrust provides access to various metadata in a WSTrust service. This data can

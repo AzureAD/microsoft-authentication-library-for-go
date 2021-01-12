@@ -73,7 +73,7 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 	req := &http.Request{Method: http.MethodGet, URL: u, Header: headers}
 
 	if body != nil {
-		// TODO(jdoak): In case your wondering why I'm not gzip encoding....
+		// Note: In case your wondering why we are not gzip encoding....
 		// I'm not sure if these various services support gzip on send.
 		headers.Add("Content-Type", "application/json; charset=utf-8")
 		data, err := marshal(body)

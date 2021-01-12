@@ -61,8 +61,6 @@ type urlFormCaller interface {
 	URLFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}) error
 }
 
-type newTokenResp func(authParameters authority.AuthParams, payload TokenResponseJSONPayload) (TokenResponse, error)
-
 // DeviceCodeResponse represents the HTTP response received from the device code endpoint
 type DeviceCodeResponse struct {
 	authority.OAuthResponseBase
@@ -152,8 +150,9 @@ func thumbprint(cert *x509.Certificate) []byte {
 // Client represents the REST calls to get tokens from token generator backends.
 type Client struct {
 	// Comm provides the HTTP transport client.
-	Comm          urlFormCaller
-	TokenRespFunc newTokenResp
+	Comm urlFormCaller
+
+	testing bool
 }
 
 // FromUsernamePassword uses a username and password to get an access token.
@@ -322,15 +321,17 @@ func (c Client) FromSamlGrant(ctx context.Context, authParameters authority.Auth
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
-func (c Client) doTokenResp(ctx context.Context, authParameters authority.AuthParams, qv url.Values) (TokenResponse, error) {
-	// TODO(jdoak): This should really go straight to TokenResponse and not TokenResponseJSONPayload.
-	resp := TokenResponseJSONPayload{}
-	err := c.Comm.URLFormCall(ctx, authParameters.Endpoints.TokenEndpoint, qv, &resp)
+func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams, qv url.Values) (TokenResponse, error) {
+	resp := TokenResponse{}
+	err := c.Comm.URLFormCall(ctx, authParams.Endpoints.TokenEndpoint, qv, &resp)
 	if err != nil {
-		return TokenResponse{}, err
+		return resp, err
 	}
-	// TODO(jdoak): As above, this shouldn't be needed.
-	return c.TokenRespFunc(authParameters, resp)
+	resp.ComputeScopes(authParams)
+	if c.testing {
+		return resp, nil
+	}
+	return resp, resp.Validate()
 }
 
 // prepURLVals returns an url.Values that sets various key/values if we are doing secrets

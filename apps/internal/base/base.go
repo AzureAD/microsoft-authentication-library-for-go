@@ -1,4 +1,4 @@
-// Package client contains a "Base" client that is used by the external public.Client and confidential.Client.
+// Package base contains a "Base" client that is used by the external public.Client and confidential.Client.
 // Base holds shared attributes that must be available to both clients and methods that act as
 // shared calls.
 package base
@@ -84,10 +84,9 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
 	var idToken accesstokens.IDToken
 	if !storageTokenResponse.IDToken.IsZero() {
-		var err error
-		idToken, err = accesstokens.NewIDToken(storageTokenResponse.IDToken.Secret)
+		err := idToken.UnmarshalJSON([]byte(storageTokenResponse.IDToken.Secret))
 		if err != nil {
-			return AuthResult{}, err
+			return AuthResult{}, fmt.Errorf("problem decoding JWT token: %w", err)
 		}
 	}
 	return AuthResult{account, idToken, accessToken, storageTokenResponse.AccessToken.ExpiresOn.T, grantedScopes, nil}, nil
@@ -102,8 +101,8 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
-		ExpiresOn:     tokenResponse.ExpiresOn,
-		GrantedScopes: tokenResponse.GrantedScopes,
+		ExpiresOn:     tokenResponse.ExpiresOn.T,
+		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 	}, nil
 }
 
@@ -184,7 +183,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
 	toLower(silent.Scopes)
 	authParams.Scopes = silent.Scopes
-	authParams.AuthorizationType = authority.AuthorizationTypeRefreshTokenExchange
+	authParams.AuthorizationType = authority.ATRefreshToken
 	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
@@ -222,7 +221,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
-	authParams.AuthorizationType = authority.AuthorizationTypeAuthCode
+	authParams.AuthorizationType = authority.ATAuthCode
 
 	var cc *accesstokens.Credential
 	if authCodeParams.AppType == accesstokens.ATConfidential {

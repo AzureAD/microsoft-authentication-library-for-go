@@ -4,6 +4,7 @@
 package accesstokens
 
 import (
+	"bytes"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -12,36 +13,10 @@ import (
 	"strings"
 	"time"
 
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
-
-type TokenResponseJSONPayload struct {
-	authority.OAuthResponseBase
-
-	AccessToken  string `json:"access_token"`
-	RefreshToken string `json:"refresh_token"`
-	ExpiresIn    int64  `json:"expires_in"`
-	ExtExpiresIn int64  `json:"ext_expires_in"`
-	Foci         string `json:"foci"`
-	Scope        string `json:"scope"`
-	IDToken      string `json:"id_token"`
-	// TODO(msal): If this is always going to be a JWT base64 encoded, we should consider
-	// making this a json.RawMessage. Then we can do our decodes in []byte and pass it
-	// to our json decoder directly instead of all the extra copies from using string.
-	// This means changing decodeJWT().
-	ClientInfo string `json:"client_info"`
-
-	AdditionalFields map[string]interface{}
-}
-
-// ClientInfoJSONPayload is used to create a Home Account ID for an account.
-type ClientInfoJSONPayload struct {
-	UID  string `json:"uid"`
-	Utid string `json:"utid"`
-
-	AdditionalFields map[string]interface{}
-}
 
 // IDToken consists of all the information used to validate a user.
 // https://docs.microsoft.com/azure/active-directory/develop/id-tokens .
@@ -67,24 +42,36 @@ type IDToken struct {
 	AdditionalFields map[string]interface{}
 }
 
-// NewIDToken creates an ID token instance from a JWT.
-func NewIDToken(jwt string) (IDToken, error) {
+var null = []byte("null")
+
+// UnmarshalJSON implements json.Unmarshaler.
+func (i *IDToken) UnmarshalJSON(b []byte) error {
+	if bytes.Compare(null, b) == 0 {
+		return nil
+	}
+	type idToken2 IDToken
+
+	jwt := strings.Trim(string(b), `"`)
 	jwtArr := strings.Split(jwt, ".")
 	if len(jwtArr) < 2 {
-		return IDToken{}, errors.New("id token returned from server is invalid")
+		return errors.New("IDToken returned from server is invalid")
 	}
+
 	jwtPart := jwtArr[1]
 	jwtDecoded, err := decodeJWT(jwtPart)
 	if err != nil {
-		return IDToken{}, err
+		return fmt.Errorf("unable to unmarshal IDToken, problem decoding JWT: %w", err)
 	}
-	idToken := IDToken{}
-	err = json.Unmarshal(jwtDecoded, &idToken)
+
+	token := idToken2{}
+	err = json.Unmarshal(jwtDecoded, &token)
 	if err != nil {
-		return IDToken{}, err
+		return fmt.Errorf("unable to unmarshal IDToken: %w", err)
 	}
-	idToken.RawToken = jwt
-	return idToken, nil
+	token.RawToken = jwt
+
+	*i = IDToken(token)
+	return nil
 }
 
 // IsZero indicates if the IDToken is the zero value.
@@ -106,107 +93,133 @@ func (i IDToken) GetLocalAccountID() string {
 	return i.Subject
 }
 
+// jwtDecoder is provided to allow tests to provide their own.
+var jwtDecoder = decodeJWT
+
+// ClientInfo is used to create a Home Account ID for an account.
+type ClientInfo struct {
+	UID  string `json:"uid"`
+	UTID string `json:"utid"`
+
+	AdditionalFields map[string]interface{}
+}
+
+// UnmarshalJSON implements json.Unmarshaler.s
+func (c *ClientInfo) UnmarshalJSON(b []byte) error {
+	s := strings.Trim(string(b), `"`)
+	// Client info may be empty in some flows, e.g. certificate exchange.
+	if len(s) == 0 {
+		return nil
+	}
+
+	// Because we have a custom unmarshaler, you
+	// cannot direclty call json.Unmarshal here. If you do, it will call this function
+	// recursively until reach our recursion limit. We have to create a new type
+	// that doesn't have this method in order to use json.Unmarshal.
+	type clientInfo2 ClientInfo
+
+	raw, err := jwtDecoder(s)
+	if err != nil {
+		return fmt.Errorf("TokenResponse client_info field had JWT decode error: %w", err)
+	}
+
+	var c2 clientInfo2
+
+	err = json.Unmarshal(raw, &c2)
+	if err != nil {
+		return fmt.Errorf("was unable to unmarshal decoded JWT in TokenRespone to ClientInfo: %w", err)
+	}
+
+	*c = ClientInfo(c2)
+	return nil
+}
+
+// HomeAccountID creates the home account ID.
+func (c ClientInfo) HomeAccountID() string {
+	if c.UID == "" || c.UTID == "" {
+		return ""
+	}
+	return fmt.Sprintf("%s.%s", c.UID, c.UTID)
+}
+
+// Scopes represents scopes in a TokenResponse.
+type Scopes struct {
+	Slice []string
+}
+
+// UnmarshalJSON implements json.Unmarshal.
+func (s *Scopes) UnmarshalJSON(b []byte) error {
+	str := strings.Trim(string(b), `"`)
+	if len(str) == 0 {
+		return nil
+	}
+	sl := strings.Split(strings.ToLower(str), " ")
+	s.Slice = sl
+	return nil
+}
+
 // TokenResponse is the information that is returned from a token endpoint during a token acquisition flow.
 // TODO(jdoak): There is this tokenResponsePayload and TokenResponse.  This just needs a custom unmarshaller
 // and we can get rid of having two.
 type TokenResponse struct {
 	authority.OAuthResponseBase
 
-	AccessToken    string
-	RefreshToken   string
-	IDToken        IDToken
-	FamilyID       string
-	GrantedScopes  []string
-	DeclinedScopes []string
-	ExpiresOn      time.Time
-	ExtExpiresOn   time.Time
-	RawClientInfo  string
-	ClientInfo     ClientInfoJSONPayload
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+
+	FamilyID       string                    `json:"foci"`
+	IDToken        IDToken                   `json:"id_token"`
+	ClientInfo     ClientInfo                `json:"client_info"`
+	ExpiresOn      internalTime.DurationTime `json:"expires_in"`
+	ExtExpiresOn   internalTime.DurationTime `json:"ext_expires_in"`
+	GrantedScopes  Scopes                    `json:"scope"`
+	DeclinedScopes []string                  // This is derived
 
 	AdditionalFields map[string]interface{}
+
+	scopesComputed bool
+}
+
+// ComputeScopes computes the final scopes based on what was granted by the server and
+// what our AuthParams were from the authority server. Per OAuth spec, if no scopes are returned, the response should be treated as if all scopes were granted
+// This behavior can be observed in client assertion flows, but can happen at any time, this check ensures we treat
+// those special responses properly Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
+func (tr *TokenResponse) ComputeScopes(authParams authority.AuthParams) {
+	if len(tr.GrantedScopes.Slice) == 0 {
+		tr.GrantedScopes = Scopes{Slice: authParams.Scopes}
+	} else {
+		tr.DeclinedScopes = findDeclinedScopes(authParams.Scopes, tr.GrantedScopes.Slice)
+	}
+	tr.scopesComputed = true
+}
+
+// Validate validates the TokenResponse has basic valid values. It must be called
+// after ComputeScopes() is called.
+func (tr *TokenResponse) Validate() error {
+	if tr.Error != "" {
+		return fmt.Errorf("%s: %s", tr.Error, tr.ErrorDescription)
+	}
+
+	if tr.AccessToken == "" {
+		return errors.New("response is missing access_token")
+	}
+
+	if !tr.scopesComputed {
+		return fmt.Errorf("TokenResponse hasn't had ScopesComputed() called")
+	}
+	return nil
 }
 
 // HasAccessToken checks if the TokenResponse has an access token.
-func (tr TokenResponse) HasAccessToken() bool {
+// TODO(jdoak): Remove
+func (tr *TokenResponse) HasAccessToken() bool {
 	return len(tr.AccessToken) > 0
 }
 
 // HasRefreshToken checks if the TokenResponse has an refresh token.
-func (tr TokenResponse) HasRefreshToken() bool {
+// TODO(jdoak): Remove
+func (tr *TokenResponse) HasRefreshToken() bool {
 	return len(tr.RefreshToken) > 0
-}
-
-// GetHomeAccountIDFromClientInfo creates the home account ID for an account from the client info parameter.
-func (tr TokenResponse) GetHomeAccountIDFromClientInfo() string {
-	if tr.ClientInfo.UID == "" || tr.ClientInfo.Utid == "" {
-		return ""
-	}
-	return fmt.Sprintf("%s.%s", tr.ClientInfo.UID, tr.ClientInfo.Utid)
-}
-
-// NewTokenResponse creates a TokenResponse instance from the response from the token endpoint.
-func NewTokenResponse(authParameters authority.AuthParams, payload TokenResponseJSONPayload) (TokenResponse, error) {
-	if payload.Error != "" {
-		return TokenResponse{}, fmt.Errorf("%s: %s", payload.Error, payload.ErrorDescription)
-	}
-
-	if payload.AccessToken == "" {
-		// Access token is required in a token response
-		return TokenResponse{}, errors.New("response is missing access_token")
-	}
-
-	rawClientInfo := payload.ClientInfo
-	clientInfo := ClientInfoJSONPayload{}
-	// Client info may be empty in some flows, e.g. certificate exchange.
-	if len(rawClientInfo) > 0 {
-		rawClientInfoDecoded, err := decodeJWT(rawClientInfo)
-		if err != nil {
-			return TokenResponse{}, err
-		}
-
-		err = json.Unmarshal(rawClientInfoDecoded, &clientInfo)
-		if err != nil {
-			return TokenResponse{}, err
-		}
-	}
-
-	expiresOn := time.Now().Add(time.Second * time.Duration(payload.ExpiresIn))
-	extExpiresOn := time.Now().Add(time.Second * time.Duration(payload.ExtExpiresIn))
-
-	var (
-		grantedScopes  []string
-		declinedScopes []string
-	)
-
-	if len(payload.Scope) == 0 {
-		// Per OAuth spec, if no scopes are returned, the response should be treated as if all scopes were granted
-		// This behavior can be observed in client assertion flows, but can happen at any time, this check ensures we treat
-		// those special responses properly
-		// Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
-		grantedScopes = authParameters.Scopes
-	} else {
-		grantedScopes = strings.Split(strings.ToLower(payload.Scope), " ")
-		declinedScopes = findDeclinedScopes(authParameters.Scopes, grantedScopes)
-	}
-
-	// ID tokens aren't always returned, which is not a reportable error condition.
-	// So we ignore it.
-	idToken, _ := NewIDToken(payload.IDToken)
-
-	tokenResponse := TokenResponse{
-		OAuthResponseBase: payload.OAuthResponseBase,
-		AccessToken:       payload.AccessToken,
-		RefreshToken:      payload.RefreshToken,
-		IDToken:           idToken,
-		FamilyID:          payload.Foci,
-		ExpiresOn:         expiresOn,
-		ExtExpiresOn:      extExpiresOn,
-		GrantedScopes:     grantedScopes,
-		DeclinedScopes:    declinedScopes,
-		RawClientInfo:     rawClientInfo,
-		ClientInfo:        clientInfo,
-	}
-	return tokenResponse, nil
 }
 
 func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []string {
@@ -226,6 +239,9 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 
 // decodeJWT decodes a JWT and converts it to a byte array representing a JSON object
 // Adapted from MSAL Python and https://stackoverflow.com/a/31971780 .
+// TODO(msal): This looks suspect. I know that JST has headers and payloads base64 encoded.
+// This looks to be doing a decode of base64 JSON with padding?? Is all these uses really
+// JWT??
 func decodeJWT(data string) ([]byte, error) {
 	if i := len(data) % 4; i != 0 {
 		data += strings.Repeat("=", 4-i)
