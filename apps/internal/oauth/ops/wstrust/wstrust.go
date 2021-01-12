@@ -40,7 +40,6 @@ type Client struct {
 // GetMex provides metadata about a wstrust service.
 func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
 	resp := defs.Definitions{}
-	log.Println("here")
 	err := c.Comm.XMLCall(
 		ctx,
 		federationMetadataURL,
@@ -49,7 +48,6 @@ func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.
 		&resp,
 	)
 	if err != nil {
-		log.Println("yep, error here")
 		return defs.MexDocument{}, err
 	}
 
@@ -102,6 +100,7 @@ func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.A
 	resp := defs.SAMLDefinitions{}
 	err = c.Comm.SOAPCall(ctx, endpoint.URL, soapAction, http.Header{}, nil, wsTrustRequestMessage, &resp)
 	if err != nil {
+		log.Println("here was the message:\n", wsTrustRequestMessage)
 		return SamlTokenInfo{}, err
 	}
 
