@@ -5,6 +5,7 @@ package defs
 
 import (
 	"encoding/xml"
+	"log"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -146,6 +147,7 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizeType, 
 	envelope.Header.To.MustUnderstand = "1"
 	envelope.Header.To.Text = wte.URL
 
+	log.Println("the authority type was: ", authType)
 	if authType == authority.ATUsernamePassword {
 		endpointUUID := uuid.New()
 
