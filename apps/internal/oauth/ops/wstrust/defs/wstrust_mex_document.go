@@ -80,40 +80,35 @@ func NewFromDef(defs Definitions) (MexDocument, error) {
 func policies(defs Definitions) (map[string]endpointType, error) {
 	policies := make(map[string]endpointType, len(defs.Policy))
 
+	// TODO(msal): These if statements are a little weird to me. For any single policy
+	// we determine a type, which is fine. But after we determine the type, we don't move
+	// on to the next policy (via a continue). This means that we are going to check that
+	// next value and possibly override what we already found. If that is what we are doing
+	// we should document that logic here. If not, we should add continue to the inner
+	// if statements after the EndpointType assignment.
 	for _, policy := range defs.Policy {
 		policies["#"+policy.ID] = etUsernamePassword // default
 
-		// TODO(msal): These if statements are a little weird to me. For any single policy
-		// we determine a type, which is fine. But after we determine the type, we don't move
-		// on to the next policy (via a continue). This means that we are going to check that
-		// next value and possibly override what we already found. If that is what we are doing
-		// we should document that logic here. If not, we should add continue to the inner
-		// if statements after the EndpointType assignment.
-		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			if policy.ExactlyOne.All.TransportBinding.Sp != "" {
-				policies["#"+policy.ID] = etUsernamePassword
+		// This code was worthless.  Everything in the old code defaults to
+		// etUsernamePassword. I just now explicitly do that above.  So out of
+		// 3 checks, only one of them could change the value, the last one.
+		// Either as noted above, hitting each double "if" should have continue
+		// or these should be removed.
+		/*
+			if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
+				if policy.ExactlyOne.All.TransportBinding.Sp != "" {
+					policies["#"+policy.ID] = etUsernamePassword
+				}
 			}
-		}
-		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			if policy.ExactlyOne.All.TransportBinding.Sp != "" {
-				policies["#"+policy.ID] = etUsernamePassword
+			if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
+				if policy.ExactlyOne.All.TransportBinding.Sp != "" {
+					policies["#"+policy.ID] = etUsernamePassword
+				}
 			}
-		}
+		*/
 		if policy.ExactlyOne.All.NegotiateAuthentication.XMLName.Local != "" {
 			policies["#"+policy.ID] = etWindowsTransport
 		}
-
-		// TODO(msal): I (jdoak) added this etUnknown value and this sanity check. The old way
-		// was this would default to etUsernamePassword because it was the zero value. This
-		// is a bad practice to do via "fallthrough" instead of explicitly. If this is incorrect
-		// to fail, then this should be changed to explicitly set etUsernamePassword when
-		// not found.
-		/*
-			if policies["#"+policy.ID] == etUnknown {
-				return nil, fmt.Errorf("for MexDocument policy(%d), we could not discern a endpoint type", i)
-			}
-		*/
-
 	}
 	return policies, nil
 }
