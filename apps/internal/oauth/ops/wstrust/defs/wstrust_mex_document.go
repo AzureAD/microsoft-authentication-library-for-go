@@ -37,6 +37,7 @@ type MexDocument struct {
 func updateEndpoint(cached *Endpoint, found Endpoint) {
 	if cached == nil || cached.Version == TrustUnknown {
 		*cached = found
+		return
 	}
 	if (*cached).Version == Trust2005 && found.Version == Trust13 {
 		*cached = found

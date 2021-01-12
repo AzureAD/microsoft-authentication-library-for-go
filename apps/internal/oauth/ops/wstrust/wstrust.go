@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
 	"net/url"
 
@@ -39,6 +40,7 @@ type Client struct {
 // GetMex provides metadata about a wstrust service.
 func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
 	resp := defs.Definitions{}
+	log.Println("here")
 	err := c.Comm.XMLCall(
 		ctx,
 		federationMetadataURL,
@@ -47,6 +49,7 @@ func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.
 		&resp,
 	)
 	if err != nil {
+		log.Println("yep, error here")
 		return defs.MexDocument{}, err
 	}
 

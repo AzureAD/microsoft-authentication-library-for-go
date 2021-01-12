@@ -54,7 +54,8 @@ func (d DurationTime) MarshalJSON() ([]byte, error) {
 	if d.T.IsZero() {
 		return []byte(""), nil
 	}
-	dt := d.T.Sub(time.Now())
+
+	dt := time.Until(d.T)
 	return []byte(fmt.Sprintf("%d", int64(dt*time.Second))), nil
 }
 
