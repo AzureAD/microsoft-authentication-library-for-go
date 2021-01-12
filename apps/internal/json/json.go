@@ -13,7 +13,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"log"
 	"reflect"
 	"strings"
 )
@@ -167,7 +166,7 @@ func hasUnmarshalJSON(v reflect.Value) bool {
 		_, ok := v.Interface().(json.Unmarshaler)
 		return ok
 	}
-	log.Println("can't find method")
+
 	return false
 }
 
