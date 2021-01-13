@@ -37,6 +37,12 @@ type Client struct {
 	Comm xmlCaller
 }
 
+// TODO(msal): This allows me to call GetMex without having a real Def file on line 45.
+// This would fail because policies() would not find a policy. This is easy enough to
+// fix in test data, but.... Definitions is defined with built in structs.  That needs
+// to be pulled apart and until then I have this hack in.
+var newFromDef = defs.NewFromDef
+
 // GetMex provides metadata about a wstrust service.
 func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
 	resp := defs.Definitions{}
@@ -51,7 +57,7 @@ func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.
 		return defs.MexDocument{}, err
 	}
 
-	return defs.NewFromDef(resp)
+	return newFromDef(resp)
 }
 
 const (

@@ -140,21 +140,35 @@ func TestGetMex(t *testing.T) {
 		desc                  string
 		err                   bool
 		createErr             bool
+		newFromDef            func(d defs.Definitions) (defs.MexDocument, error)
 		federationMetadataURL string
 	}{
 		{
 			desc: "Error: comm returns error",
 			err:  true,
 		},
-		/*
-			{
-				desc:                  "Success",
-				federationMetadataURL: "",
+		{
+			desc:                  "Definition was bas",
+			federationMetadataURL: "",
+			newFromDef: func(d defs.Definitions) (defs.MexDocument, error) {
+				return defs.MexDocument{}, errors.New("error")
 			},
-		*/
+			err: true,
+		},
+		{
+			desc:                  "Success",
+			federationMetadataURL: "",
+			newFromDef: func(d defs.Definitions) (defs.MexDocument, error) {
+				return defs.MexDocument{}, nil
+			},
+		},
 	}
 
+	defer func() { newFromDef = defs.NewFromDef }()
+
 	for _, test := range tests {
+		newFromDef = test.newFromDef
+
 		fake := &fakeXMLCaller{err: test.err}
 		client := Client{Comm: fake}
 
