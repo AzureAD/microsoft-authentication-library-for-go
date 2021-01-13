@@ -43,7 +43,7 @@ func (u *Unix) UnmarshalJSON(b []byte) error {
 // turn that into a time we call .ExpiresOn. But maybe we should be recording
 // when the token was received at .TokenRecieved and .ExpiresIn should remain as a duration.
 // Then we could have a method called ExpiresOn().  Honestly, the whole thing is
-// bad because the server doesn't return a concrete time. I think this not is
+// bad because the server doesn't return a concrete time. I think this is
 // cleaner, but its not great either.
 type DurationTime struct {
 	T time.Time
