@@ -148,7 +148,7 @@ func TestGetMex(t *testing.T) {
 			err:  true,
 		},
 		{
-			desc:                  "Definition was bas",
+			desc:                  "Definition was bad",
 			federationMetadataURL: "",
 			newFromDef: func(d defs.Definitions) (defs.MexDocument, error) {
 				return defs.MexDocument{}, errors.New("error")
