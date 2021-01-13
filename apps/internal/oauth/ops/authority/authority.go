@@ -141,7 +141,7 @@ type Info struct {
 	Tenant                string
 }
 
-func getFirstPathSegment(u *url.URL) (string, error) {
+func firstPathSegment(u *url.URL) (string, error) {
 	pathParts := strings.Split(u.EscapedPath(), "/")
 	if len(pathParts) >= 2 {
 		return pathParts[1], nil
@@ -203,7 +203,7 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 		return Info{}, fmt.Errorf("authorityURI(%s) must have scheme https", authorityURI)
 	}
 
-	tenant, err := getFirstPathSegment(u)
+	tenant, err := firstPathSegment(u)
 	if err != nil {
 		return Info{}, err
 	}
@@ -284,7 +284,7 @@ type Client struct {
 	Comm jsonCaller // *comm.Client
 }
 
-func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRealm, error) {
+func (c Client) UserRealm(ctx context.Context, authParams AuthParams) (UserRealm, error) {
 	endpoint := fmt.Sprintf("https://%s/common/UserRealm/%s", authParams.Endpoints.authorityHost, url.PathEscape(authParams.Username))
 	qv := url.Values{
 		"api-version": []string{"1.0"},
@@ -322,7 +322,7 @@ func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurat
 	return resp, err
 }
 
-func (c Client) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
+func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
 	qv := url.Values{}
 	qv.Set("api-version", "1.1")
 	qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))

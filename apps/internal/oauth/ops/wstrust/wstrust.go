@@ -36,14 +36,14 @@ type Client struct {
 	Comm xmlCaller
 }
 
-// TODO(msal): This allows me to call GetMex without having a real Def file on line 45.
+// TODO(msal): This allows me to call Mex without having a real Def file on line 45.
 // This would fail because policies() would not find a policy. This is easy enough to
 // fix in test data, but.... Definitions is defined with built in structs.  That needs
 // to be pulled apart and until then I have this hack in.
 var newFromDef = defs.NewFromDef
 
-// GetMex provides metadata about a wstrust service.
-func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
+// Mex provides metadata about a wstrust service.
+func (c Client) Mex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
 	resp := defs.Definitions{}
 	err := c.Comm.XMLCall(
 		ctx,
@@ -71,8 +71,8 @@ const (
 	// SoapActionWSTrust2005 = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
 )
 
-// GetSAMLTokenInfo provides SAML information that is used to generate a SAML token.
-func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (SamlTokenInfo, error) {
+// SAMLTokenInfo provides SAML information that is used to generate a SAML token.
+func (c Client) SAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (SamlTokenInfo, error) {
 	var wsTrustRequestMessage string
 	var err error
 

@@ -114,7 +114,7 @@ func (c *Client) XMLCall(ctx context.Context, endpoint string, headers http.Head
 	}
 	u.RawQuery = qv.Encode()
 
-	headers.Set("Content-Type", "application/xml; charset=utf-8") // This was not set in he original GetMex(), but...
+	headers.Set("Content-Type", "application/xml; charset=utf-8") // This was not set in he original Mex(), but...
 	addStdHeaders(headers)
 
 	return c.xmlCall(ctx, u, headers, "", resp)

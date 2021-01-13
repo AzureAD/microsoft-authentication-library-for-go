@@ -40,7 +40,7 @@ var (
 	atExpires = time.Unix(4600, 0)
 )
 
-func newForTest(authorityClient getAadinstanceDiscoveryResponser) *Manager {
+func newForTest(authorityClient aadInstanceDiscoveryer) *Manager {
 	m := &Manager{requests: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract.Store(NewContract())
 	return m
@@ -51,7 +51,7 @@ type fakeDiscoveryResponser struct {
 	ret authority.InstanceDiscoveryResponse
 }
 
-func (f *fakeDiscoveryResponser) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
+func (f *fakeDiscoveryResponser) AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	if f.err {
 		return authority.InstanceDiscoveryResponse{}, errors.New("error")
 	}
@@ -82,7 +82,7 @@ func TestIsMatchingScopes(t *testing.T) {
 	}
 }
 
-func TestGetAllAccounts(t *testing.T) {
+func TestAllAccounts(t *testing.T) {
 	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
@@ -95,11 +95,11 @@ func TestGetAllAccounts(t *testing.T) {
 	storageManager := Manager{}
 	storageManager.update(cache)
 
-	actualAccounts, err := storageManager.GetAllAccounts()
+	actualAccounts, err := storageManager.AllAccounts()
 	if err != nil {
 		panic(err)
 	}
-	// GetAllAccounts() is unstable in that the order can be reversed between calls.
+	// AllAccounts() is unstable in that the order can be reversed between calls.
 	// This fixes that.
 	sort.Slice(
 		actualAccounts,

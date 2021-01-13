@@ -66,7 +66,7 @@ func (f *fakeURLCaller) compare(endpoint string, qv url.Values) error {
 	return nil
 }
 
-func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
+func TestAccessTokenFromUsernamePassword(t *testing.T) {
 	authParams := authority.AuthParams{
 		Username:  "username",
 		Password:  "password",
@@ -112,22 +112,22 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 		_, err := client.FromUsernamePassword(context.Background(), authParams)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetAccessTokenFromUsernamePassword(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestAccessTokenFromUsernamePassword(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetAccessTokenFromUsernamePassword(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestAccessTokenFromUsernamePassword(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetAccessTokenFromUsernamePassword(%s): %s", test.desc, err)
+			t.Errorf("TestAccessTokenFromUsernamePassword(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetAccessTokenFromAuthCode(t *testing.T) {
+func TestAccessTokenFromAuthCode(t *testing.T) {
 	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
@@ -219,22 +219,22 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		_, err := client.FromAuthCode(context.Background(), test.authCodeRequest)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetAccessTokenFromAuthCode(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestAccessTokenFromAuthCode(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetAccessTokenFromAuthCode(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestAccessTokenFromAuthCode(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetAccessTokenFromAuthCode(%s): %s", test.desc, err)
+			t.Errorf("TestAccessTokenFromAuthCode(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetAccessTokenFromRefreshToken(t *testing.T) {
+func TestAccessTokenFromRefreshToken(t *testing.T) {
 	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
@@ -298,22 +298,22 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		_, err := client.FromRefreshToken(context.Background(), ATPublic, authParams, test.cred, test.refreshToken)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetAccessTokenFromRefreshToken(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestAccessTokenFromRefreshToken(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetAccessTokenFromRefreshToken(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestAccessTokenFromRefreshToken(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetAccessTokenFromRefreshToken(%s): %s", test.desc, err)
+			t.Errorf("TestAccessTokenFromRefreshToken(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetAccessTokenWithClientSecret(t *testing.T) {
+func TestAccessTokenWithClientSecret(t *testing.T) {
 	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
@@ -364,22 +364,22 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 		_, err := client.FromClientSecret(context.Background(), authParams, test.clientSecret)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetAccessTokenWithClientSecret(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestAccessTokenWithClientSecret(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetAccessTokenWithClientSecret(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestAccessTokenWithClientSecret(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetAccessTokenWithClientSecret(%s): %s", test.desc, err)
+			t.Errorf("TestAccessTokenWithClientSecret(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetAccessTokenWithAssertion(t *testing.T) {
+func TestAccessTokenWithAssertion(t *testing.T) {
 	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
@@ -433,22 +433,22 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 		_, err := client.FromAssertion(context.Background(), authParams, test.assertion)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetAccessTokenWithAssertion(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestAccessTokenWithAssertion(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetAccessTokenWithAssertion(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestAccessTokenWithAssertion(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetAccessTokenWithAssertion(%s): %s", test.desc, err)
+			t.Errorf("TestAccessTokenWithAssertion(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetDeviceCodeResult(t *testing.T) {
+func TestDeviceCodeResult(t *testing.T) {
 	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
@@ -494,10 +494,10 @@ func TestGetDeviceCodeResult(t *testing.T) {
 		_, err := client.DeviceCodeResult(context.Background(), authParams)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetDeviceCodeResult(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestDeviceCodeResult(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetDeviceCodeResult(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestDeviceCodeResult(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
@@ -505,12 +505,12 @@ func TestGetDeviceCodeResult(t *testing.T) {
 
 		wantEndpoint := strings.Replace(authParams.Endpoints.TokenEndpoint, "token", "devicecode", -1)
 		if err := fake.compare(wantEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetDeviceCodeResult(%s): %s", test.desc, err)
+			t.Errorf("TestDeviceCodeResult(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
+func TestFromDeviceCodeResult(t *testing.T) {
 	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
 		ClientID:    "clientID",
@@ -581,22 +581,22 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 		_, err := client.FromDeviceCodeResult(context.Background(), authParams, test.deviceCodeResult)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetAccessTokenFromDeviceCodeResult(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestFromDeviceCodeResult(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetAccessTokenFromDeviceCodeResult(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestFromDeviceCodeResult(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetAccessTokenFromDeviceCodeResult(%s): %s", test.desc, err)
+			t.Errorf("TestFromDeviceCodeResult(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetAccessTokenFromSamlGrant(t *testing.T) {
+func TestAccessTokenFromSamlGrant(t *testing.T) {
 	authParams := authority.AuthParams{
 		Username:  "username",
 		Password:  "password",
@@ -691,17 +691,17 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 		_, err := client.FromSamlGrant(context.Background(), authParams, test.samlGrant)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetAccessTokenFromSamlGrant(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestAccessTokenFromSamlGrant(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetAccessTokenFromSamlGrant(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestAccessTokenFromSamlGrant(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
-			t.Errorf("TestGetAccessTokenFromSamlGrant(%s): %s", test.desc, err)
+			t.Errorf("TestAccessTokenFromSamlGrant(%s): %s", test.desc, err)
 		}
 	}
 }
@@ -718,16 +718,16 @@ func TestDecodeJWT(t *testing.T) {
 	}
 }
 
-func TestGetLocalAccountID(t *testing.T) {
+func TestLocalAccountID(t *testing.T) {
 	id := &IDToken{
 		Subject: "sub",
 	}
-	actualLID := id.GetLocalAccountID()
+	actualLID := id.LocalAccountID()
 	if !reflect.DeepEqual("sub", actualLID) {
 		t.Errorf("Expected local account ID sub differs from actual local account ID %s", actualLID)
 	}
 	id.Oid = "oid"
-	actualLID = id.GetLocalAccountID()
+	actualLID = id.LocalAccountID()
 	if !reflect.DeepEqual("oid", actualLID) {
 		t.Errorf("Expected local account ID oid differs from actual local account ID %s", actualLID)
 	}

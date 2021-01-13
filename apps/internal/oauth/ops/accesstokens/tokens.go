@@ -90,8 +90,8 @@ func (i IDToken) IsZero() bool {
 	return true
 }
 
-// GetLocalAccountID extracts an account's local account ID from an ID token.
-func (i IDToken) GetLocalAccountID() string {
+// LocalAccountID extracts an account's local account ID from an ID token.
+func (i IDToken) LocalAccountID() string {
 	if i.Oid != "" {
 		return i.Oid
 	}

@@ -34,13 +34,13 @@ type accessTokens interface {
 
 // fetchAuthority will be implemented by authority.Authority.
 type fetchAuthority interface {
-	GetUserRealm(context.Context, authority.AuthParams) (authority.UserRealm, error)
-	GetAadinstanceDiscoveryResponse(context.Context, authority.Info) (authority.InstanceDiscoveryResponse, error)
+	UserRealm(context.Context, authority.AuthParams) (authority.UserRealm, error)
+	AADInstanceDiscovery(context.Context, authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
 type fetchWSTrust interface {
-	GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error)
-	GetSAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (wstrust.SamlTokenInfo, error)
+	Mex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error)
+	SAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (wstrust.SamlTokenInfo, error)
 }
 
 // Client provides tokens for various types of token requests.
@@ -67,8 +67,8 @@ func (t *Client) ResolveEndpoints(ctx context.Context, authorityInfo authority.I
 	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
-func (t *Client) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
-	return t.authority.GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
+func (t *Client) AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
+	return t.authority.AADInstanceDiscovery(ctx, authorityInfo)
 }
 
 // AuthCode returns a token based on an authorization code.
@@ -116,19 +116,19 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 		return accesstokens.TokenResponse{}, err
 	}
 
-	userRealm, err := t.authority.GetUserRealm(ctx, authParams)
+	userRealm, err := t.authority.UserRealm(ctx, authParams)
 	if err != nil {
 		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting user realm(user: %s) from authority: %w", authParams.Username, err)
 	}
 
 	switch userRealm.AccountType {
 	case authority.Federated:
-		mexDoc, err := t.wsTrust.GetMex(ctx, userRealm.FederationMetadataURL)
+		mexDoc, err := t.wsTrust.Mex(ctx, userRealm.FederationMetadataURL)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
 		}
 
-		saml, err := t.wsTrust.GetSAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
+		saml, err := t.wsTrust.SAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting SAML token info: %w", err)
 		}
