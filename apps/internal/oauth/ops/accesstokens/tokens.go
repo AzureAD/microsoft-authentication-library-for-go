@@ -49,6 +49,11 @@ func (i *IDToken) UnmarshalJSON(b []byte) error {
 	if bytes.Equal(null, b) {
 		return nil
 	}
+
+	// Because we have a custom unmarshaler, you
+	// cannot direclty call json.Unmarshal here. If you do, it will call this function
+	// recursively until reach our recursion limit. We have to create a new type
+	// that doesn't have this method in order to use json.Unmarshal.
 	type idToken2 IDToken
 
 	jwt := strings.Trim(string(b), `"`)
