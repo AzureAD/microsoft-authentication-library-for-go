@@ -32,6 +32,11 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
+type noopCacheAccessor struct{}
+
+func (n noopCacheAccessor) Replace(cache cache.Unmarshaler) {}
+func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
+
 // AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult = base.AuthResult
@@ -85,7 +90,7 @@ type Client struct {
 
 // New is the constructor for Client.
 func New(clientID string, options ...Option) (Client, error) {
-	opts := Options{Authority: base.AuthorityPublicCloud}
+	opts := Options{Authority: base.AuthorityPublicCloud, Accessor: noopCacheAccessor{}}
 
 	for _, o := range options {
 		o(&opts)
