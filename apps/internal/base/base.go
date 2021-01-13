@@ -35,11 +35,6 @@ type manager interface {
 	GetAllAccounts() ([]shared.Account, error)
 }
 
-type noopCacheAccessor struct{}
-
-func (n noopCacheAccessor) Replace(cache cache.Unmarshaler) {}
-func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
-
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
 	Scopes      []string
