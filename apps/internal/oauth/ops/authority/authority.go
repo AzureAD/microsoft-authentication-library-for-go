@@ -322,7 +322,7 @@ func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurat
 	return resp, err
 }
 
-func (c Client) AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
+func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
 	qv := url.Values{}
 	qv.Set("api-version", "1.1")
 	qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))

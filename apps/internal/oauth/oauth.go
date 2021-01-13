@@ -35,7 +35,7 @@ type accessTokens interface {
 // fetchAuthority will be implemented by authority.Authority.
 type fetchAuthority interface {
 	UserRealm(context.Context, authority.AuthParams) (authority.UserRealm, error)
-	AADInstanceDiscoveryResponse(context.Context, authority.Info) (authority.InstanceDiscoveryResponse, error)
+	AADInstanceDiscovery(context.Context, authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
 type fetchWSTrust interface {
@@ -67,8 +67,8 @@ func (t *Client) ResolveEndpoints(ctx context.Context, authorityInfo authority.I
 	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
-func (t *Client) AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
-	return t.authority.AADInstanceDiscoveryResponse(ctx, authorityInfo)
+func (t *Client) AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
+	return t.authority.AADInstanceDiscovery(ctx, authorityInfo)
 }
 
 // AuthCode returns a token based on an authorization code.

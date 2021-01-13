@@ -124,7 +124,7 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, use
 
 func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (string, error) {
 	if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
-		resp, err := m.rest.Authority().AADInstanceDiscoveryResponse(ctx, authorityInfo)
+		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
 		if err != nil {
 			return "", err
 		}

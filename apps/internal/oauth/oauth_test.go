@@ -110,7 +110,7 @@ func (f fakeAuthority) UserRealm(ctx context.Context, params authority.AuthParam
 	return f.userRealm, nil
 }
 
-func (f fakeAuthority) AADInstanceDiscoveryResponse(ctx context.Context, info authority.Info) (authority.InstanceDiscoveryResponse, error) {
+func (f fakeAuthority) AADInstanceDiscovery(ctx context.Context, info authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	if f.err {
 		return authority.InstanceDiscoveryResponse{}, errors.New("error")
 	}

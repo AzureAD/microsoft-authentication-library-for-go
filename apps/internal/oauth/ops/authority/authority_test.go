@@ -196,7 +196,7 @@ func TestTenantDiscoveryResponse(t *testing.T) {
 	}
 }
 
-func TestAADInstanceDiscoveryResponse(t *testing.T) {
+func TestAADInstanceDiscovery(t *testing.T) {
 	tests := []struct {
 		desc     string
 		err      bool
@@ -244,20 +244,20 @@ func TestAADInstanceDiscoveryResponse(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.AADInstanceDiscoveryResponse(context.Background(), test.authInfo)
+		_, err := client.AADInstanceDiscovery(context.Background(), test.authInfo)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("AADInstanceDiscoveryResponse(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("AADInstanceDiscovery(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("AADInstanceDiscoveryResponse(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("AADInstanceDiscovery(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(test.endpoint, http.Header{}, test.qv, nil, test.resp); err != nil {
-			t.Errorf("AADInstanceDiscoveryResponse(%s): %s", test.desc, err)
+			t.Errorf("AADInstanceDiscovery(%s): %s", test.desc, err)
 		}
 	}
 }

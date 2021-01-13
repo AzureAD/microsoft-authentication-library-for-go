@@ -40,7 +40,7 @@ var (
 	atExpires = time.Unix(4600, 0)
 )
 
-func newForTest(authorityClient aadInstanceDiscoveryResponser) *Manager {
+func newForTest(authorityClient aadInstanceDiscoveryer) *Manager {
 	m := &Manager{requests: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract.Store(NewContract())
 	return m
@@ -51,7 +51,7 @@ type fakeDiscoveryResponser struct {
 	ret authority.InstanceDiscoveryResponse
 }
 
-func (f *fakeDiscoveryResponser) AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
+func (f *fakeDiscoveryResponser) AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	if f.err {
 		return authority.InstanceDiscoveryResponse{}, errors.New("error")
 	}

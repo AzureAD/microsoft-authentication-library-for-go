@@ -26,10 +26,10 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
-// aadInstanceDiscoveryResponser allows faking in tests.
+// aadInstanceDiscoveryer allows faking in tests.
 // It is implemented in production by ops/authority.Client
-type aadInstanceDiscoveryResponser interface {
-	AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
+type aadInstanceDiscoveryer interface {
+	AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
 // TokenResponse mimics a token response that was pulled from the cache.
@@ -46,8 +46,8 @@ type TokenResponse struct {
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
 type Manager struct {
-	contract atomic.Value                  // Stores a *Contract
-	requests aadInstanceDiscoveryResponser // *oauth.Token
+	contract atomic.Value           // Stores a *Contract
+	requests aadInstanceDiscoveryer // *oauth.Token
 
 	mu sync.Mutex
 
@@ -230,7 +230,7 @@ func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.
 }
 
 func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
-	discoveryResponse, err := m.requests.AADInstanceDiscoveryResponse(ctx, authorityInfo)
+	discoveryResponse, err := m.requests.AADInstanceDiscovery(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err
 	}
