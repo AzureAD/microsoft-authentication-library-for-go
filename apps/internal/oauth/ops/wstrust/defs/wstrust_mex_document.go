@@ -80,36 +80,29 @@ func NewFromDef(defs Definitions) (MexDocument, error) {
 func policies(defs Definitions) (map[string]endpointType, error) {
 	policies := make(map[string]endpointType, len(defs.Policy))
 
-	// TODO(msal): These if statements are a little weird to me. For any single policy
-	// we determine a type, which is fine. But after we determine the type, we don't move
-	// on to the next policy (via a continue). This means that we are going to check that
-	// next value and possibly override what we already found. If that is what we are doing
-	// we should document that logic here. If not, we should add continue to the inner
-	// if statements after the EndpointType assignment.
 	for _, policy := range defs.Policy {
-		policies["#"+policy.ID] = etUsernamePassword // default
-
-		// This code was worthless.  Everything in the old code defaults to
-		// etUsernamePassword. I just now explicitly do that above.  So out of
-		// 3 checks, only one of them could change the value, the last one.
-		// Either as noted above, hitting each double "if" should have continue
-		// or these should be removed.
-		/*
-			if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-				if policy.ExactlyOne.All.TransportBinding.Sp != "" {
-					policies["#"+policy.ID] = etUsernamePassword
-				}
-			}
-			if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-				if policy.ExactlyOne.All.TransportBinding.Sp != "" {
-					policies["#"+policy.ID] = etUsernamePassword
-				}
-			}
-		*/
 		if policy.ExactlyOne.All.NegotiateAuthentication.XMLName.Local != "" {
-			policies["#"+policy.ID] = etWindowsTransport
+			if policy.ExactlyOne.All.TransportBinding.Sp != "" && policy.ID != "" {
+				policies["#"+policy.ID] = etWindowsTransport
+			}
+		}
+
+		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
+			if policy.ExactlyOne.All.TransportBinding.Sp != "" && policy.ID != "" {
+				policies["#"+policy.ID] = etUsernamePassword
+			}
+		}
+		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
+			if policy.ExactlyOne.All.TransportBinding.Sp != "" && policy.ID != "" {
+				policies["#"+policy.ID] = etUsernamePassword
+			}
 		}
 	}
+
+	if len(policies) == 0 {
+		return policies, errors.New("no policies for mex document")
+	}
+
 	return policies, nil
 }
 
