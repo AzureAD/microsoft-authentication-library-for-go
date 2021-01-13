@@ -26,8 +26,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
-// aadInstanceDiscoveryResponser is provider to allow for faking in tests.
-// It is always implemented in production by ops/authority.Client
+// aadInstanceDiscoveryResponser allows faking in tests.
+// It is implemented in production by ops/authority.Client
 type aadInstanceDiscoveryResponser interface {
 	AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
