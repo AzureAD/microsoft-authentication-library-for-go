@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"testing"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -31,23 +32,30 @@ const (
 	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the furture
 )
 
-func httpRequest(url string, query url.Values, accessToken string) ([]byte, error) {
-	request, err := http.NewRequest("GET", url, nil)
+var httpClient = http.Client{}
+
+func httpRequest(ctx context.Context, url string, query url.Values, accessToken string) ([]byte, error) {
+	if _, ok := ctx.Deadline(); !ok {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
+		defer cancel()
+	}
+
+	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build new http request: %w", err)
 	}
-	request.Header.Set("Authorization", "Bearer "+accessToken)
-	request.URL.RawQuery = query.Encode()
-	// TODO(msal): You should never use the DefaultClient. Also, we should use a
-	// context.Context that limits how long we will wait.
-	response, err := http.DefaultClient.Do(request)
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	req.URL.RawQuery = query.Encode()
+
+	resp, err := httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("http.Get(%s) failed: %w", request.URL.String(), err)
+		return nil, fmt.Errorf("http.Get(%s) failed: %w", req.URL.String(), err)
 	}
-	defer response.Body.Close()
-	body, err := ioutil.ReadAll(response.Body)
+	defer resp.Body.Close()
+	body, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("http.Get(%s): could not read body: %w", request.URL.String(), err)
+		return nil, fmt.Errorf("http.Get(%s): could not read body: %w", req.URL.String(), err)
 	}
 	return body, nil
 }
@@ -96,7 +104,7 @@ func newLabClient() (*labClient, error) {
 
 	return &labClient{app: app}, nil
 }
-func (l *labClient) getLabAccessToken() (string, error) {
+func (l *labClient) labAccessToken() (string, error) {
 	scopes := []string{msIDlabDefaultScope}
 	result, err := l.app.AcquireTokenSilent(context.Background(), scopes)
 	if err != nil {
@@ -108,13 +116,13 @@ func (l *labClient) getLabAccessToken() (string, error) {
 	return result.AccessToken, nil
 }
 
-func (l *labClient) getUser(query url.Values) (user, error) {
-	accessToken, err := l.getLabAccessToken()
+func (l *labClient) user(ctx context.Context, query url.Values) (user, error) {
+	accessToken, err := l.labAccessToken()
 	if err != nil {
 		return user{}, fmt.Errorf("problem getting lab access token: %w", err)
 	}
 
-	responseBody, err := httpRequest("https://msidlab.com/api/user", query, accessToken)
+	responseBody, err := httpRequest(ctx, "https://msidlab.com/api/user", query, accessToken)
 	if err != nil {
 		return user{}, err
 	}
@@ -127,19 +135,19 @@ func (l *labClient) getUser(query url.Values) (user, error) {
 		return user{}, errors.New("No user found")
 	}
 	user := users[0]
-	user.Password, err = l.getSecret(url.Values{"Secret": []string{user.LabName}})
+	user.Password, err = l.secret(ctx, url.Values{"Secret": []string{user.LabName}})
 	if err != nil {
 		return user, err
 	}
 	return user, nil
 }
 
-func (l *labClient) getSecret(query url.Values) (string, error) {
-	accessToken, err := l.getLabAccessToken()
+func (l *labClient) secret(ctx context.Context, query url.Values) (string, error) {
+	accessToken, err := l.labAccessToken()
 	if err != nil {
 		return "", err
 	}
-	responseBody, err := httpRequest("https://msidlab.com/api/LabUserSecret", query, accessToken)
+	responseBody, err := httpRequest(ctx, "https://msidlab.com/api/LabUserSecret", query, accessToken)
 	if err != nil {
 		return "", err
 	}
@@ -153,10 +161,10 @@ func (l *labClient) getSecret(query url.Values) (string, error) {
 
 // TODO: Add getApp() when needed
 
-func getTestUser(desc string, lc *labClient, query url.Values) user {
-	testUser, err := lc.getUser(query)
+func testUser(ctx context.Context, desc string, lc *labClient, query url.Values) user {
+	testUser, err := lc.user(ctx, query)
 	if err != nil {
-		panic(fmt.Sprintf("TestUsernamePassword(%s) setup: getTestUser(): Failed to get input user: %s", desc, err))
+		panic(fmt.Sprintf("TestUsernamePassword(%s) setup: testUser(): Failed to get input user: %s", desc, err))
 	}
 	return testUser
 }
@@ -180,7 +188,9 @@ func TestUsernamePassword(t *testing.T) {
 		{"ADFSv4", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}}},
 	}
 	for _, test := range tests {
-		user := getTestUser(test.desc, labClientInstance, test.vals)
+		ctx := context.Background()
+
+		user := testUser(ctx, test.desc, labClientInstance, test.vals)
 		app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority))
 		if err != nil {
 			panic(errors.Verbose(err))

@@ -728,8 +728,6 @@ func TestIsAccessTokenValid(t *testing.T) {
 	}
 }
 
-// TODO(msal): I(jdoak) refactored this some to allow for a table driven approach. But I'm sure
-// this could use more functional testa dn
 func TestRead(t *testing.T) {
 	accessTokenCacheItem := NewAccessToken(
 		"hid",
