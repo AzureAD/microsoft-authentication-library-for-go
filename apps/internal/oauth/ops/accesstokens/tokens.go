@@ -46,7 +46,7 @@ var null = []byte("null")
 
 // UnmarshalJSON implements json.Unmarshaler.
 func (i *IDToken) UnmarshalJSON(b []byte) error {
-	if bytes.Compare(null, b) == 0 {
+	if bytes.Equal(null, b) {
 		return nil
 	}
 	type idToken2 IDToken
