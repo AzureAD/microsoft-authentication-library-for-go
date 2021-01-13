@@ -241,7 +241,7 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 			m.aadCache[aliasedAuthority] = metadataEntry
 		}
 	}
-	// TODO(msal): Don't understand this logic.  We query fir this data, we enter all the data that
+	// TODO(msal): Don't understand this logic.  We query first this data, we enter all the data that
 	// the server has.  If our host was not detailed by the server, we just insert it???
 	// This is either broken or needs to be explained with a comment.
 	if _, ok := m.aadCache[authorityInfo.Host]; !ok {
