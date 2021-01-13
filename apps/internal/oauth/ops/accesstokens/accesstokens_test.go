@@ -904,7 +904,7 @@ func TestComputeScopes(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		test.input.ComputeScopes(test.authParams)
+		test.input.ComputeScope(test.authParams)
 		if diff := pretty.Compare(test.want, test.input); diff != "" {
 			t.Errorf("TestComputeScopes(%s): -want/+got:\n%s", test.desc, diff)
 		}

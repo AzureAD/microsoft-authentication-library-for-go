@@ -183,11 +183,11 @@ type TokenResponse struct {
 	scopesComputed bool
 }
 
-// ComputeScopes computes the final scopes based on what was granted by the server and
+// ComputeScope computes the final scopes based on what was granted by the server and
 // what our AuthParams were from the authority server. Per OAuth spec, if no scopes are returned, the response should be treated as if all scopes were granted
 // This behavior can be observed in client assertion flows, but can happen at any time, this check ensures we treat
 // those special responses properly Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
-func (tr *TokenResponse) ComputeScopes(authParams authority.AuthParams) {
+func (tr *TokenResponse) ComputeScope(authParams authority.AuthParams) {
 	if len(tr.GrantedScopes.Slice) == 0 {
 		tr.GrantedScopes = Scopes{Slice: authParams.Scopes}
 	} else {
@@ -242,7 +242,7 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 
 // decodeJWT decodes a JWT and converts it to a byte array representing a JSON object
 // Adapted from MSAL Python and https://stackoverflow.com/a/31971780 .
-// TODO(msal): This looks suspect. I know that JST has headers and payloads base64 encoded.
+// TODO(msal): This looks suspect. I know that JWT has headers and payloads base64 encoded.
 // This looks to be doing a decode of base64 JSON with padding?? Is all these uses really
 // JWT??
 func decodeJWT(data string) ([]byte, error) {
