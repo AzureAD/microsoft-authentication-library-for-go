@@ -14,9 +14,12 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
+
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -26,6 +29,13 @@ var testAuthorityEndpoints = authority.NewEndpoints(
 	"https://login.microsoftonline.com/v2.0",
 	"login.microsoftonline.com",
 )
+
+var jwtDecoderFake = func(s string) ([]byte, error) {
+	if s == "error" {
+		return nil, errors.New("error")
+	}
+	return []byte(s), nil
+}
 
 type fakeURLCaller struct {
 	err bool
@@ -54,17 +64,6 @@ func (f *fakeURLCaller) compare(endpoint string, qv url.Values) error {
 		return fmt.Errorf("qv -want/+got:\n%s", diff)
 	}
 	return nil
-}
-
-type fakeCreateTokenResp struct {
-	err bool
-}
-
-func (f fakeCreateTokenResp) CreateTokenResp(authParameters authority.AuthParams, payload TokenResponseJSONPayload) (TokenResponse, error) {
-	if f.err {
-		return TokenResponse{}, errors.New("error")
-	}
-	return TokenResponse{}, nil
 }
 
 func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
@@ -105,8 +104,7 @@ func TestGetAccessTokenFromUsernamePassword(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.commErr}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -213,8 +211,7 @@ func TestGetAccessTokenFromAuthCode(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.err}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -275,18 +272,16 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 				clientInfo:      []string{clientInfoVal},
 			},
 		},
-		/*
-			{
-				desc: "Success(confidential app)",
-				refreshToken: "refreshToken",
-				qv: url.Values{
-					"refresh_token": []string{"refreshToken"},
-					grantType:       []string{grant.RefreshToken},
-					clientID:        []string{authParams.ClientID},
-					clientInfo:      []string{clientInfoVal},
-				},
+		{
+			desc:         "Success(confidential app)",
+			refreshToken: "refreshToken",
+			qv: url.Values{
+				"refresh_token": []string{"refreshToken"},
+				grantType:       []string{grant.RefreshToken},
+				clientID:        []string{authParams.ClientID},
+				clientInfo:      []string{clientInfoVal},
 			},
-		*/
+		},
 	}
 
 	for _, test := range tests {
@@ -295,8 +290,7 @@ func TestGetAccessTokenFromRefreshToken(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.commErr}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -362,8 +356,7 @@ func TestGetAccessTokenWithClientSecret(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.err}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -432,8 +425,7 @@ func TestGetAccessTokenWithAssertion(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.commErr}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -494,8 +486,7 @@ func TestGetDeviceCodeResult(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.commErr}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -582,8 +573,7 @@ func TestGetAccessTokenFromDeviceCodeResult(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.commErr}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -693,8 +683,7 @@ func TestGetAccessTokenFromSamlGrant(t *testing.T) {
 		}
 
 		fake := &fakeURLCaller{err: test.commErr}
-		fakeCreate := fakeCreateTokenResp{test.createErr}
-		client := Client{Comm: fake, TokenRespFunc: fakeCreate.CreateTokenResp}
+		client := Client{Comm: fake, testing: true}
 
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
@@ -744,49 +733,63 @@ func TestGetLocalAccountID(t *testing.T) {
 	}
 }
 
-func TestCreateTokenResponse(t *testing.T) {
-	authParams := authority.AuthParams{
-		Scopes: []string{"openid", "profile"},
-	}
-
+func TestTokenResponseUnmarshal(t *testing.T) {
 	tests := []struct {
-		desc    string
-		payload TokenResponseJSONPayload
-		want    TokenResponse
-		err     bool
+		desc       string
+		payload    string
+		want       TokenResponse
+		jwtDecoder func(data string) ([]byte, error)
+		err        bool
 	}{
 		{
-			desc: "Error: JSON response had error(no AccessToken set)",
-			payload: TokenResponseJSONPayload{
-				ExpiresIn:    86399,
-				ExtExpiresIn: 86399,
-			},
-			err: true,
+			desc: "Error: decodeJWT is going to error",
+			payload: `
+				{
+					"access_token": "secret", 
+					"expires_in": 86399, 
+					"ext_expires_in": 86399,
+					"client_info": error,
+					"scope": "openid profile"
+				}`,
+			err:        true,
+			jwtDecoder: jwtDecoderFake,
 		},
 		{
 			desc: "Success",
-			payload: TokenResponseJSONPayload{
-				AccessToken:  "secret",
-				ExpiresIn:    86399,
-				ExtExpiresIn: 86399,
-			},
+			payload: `
+				{
+					"access_token": "secret", 
+					"expires_in": 86399, 
+					"ext_expires_in": 86399,
+					"client_info": {"uid":  "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     time.Unix(86399, 0),
-				ExtExpiresOn:  time.Unix(86399, 0),
-				GrantedScopes: []string{"openid", "profile"},
-				ClientInfo:    ClientInfoJSONPayload{},
+				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86399, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
 			},
+			jwtDecoder: jwtDecoderFake,
 		},
 	}
 
 	for _, test := range tests {
-		got, err := NewTokenResponse(authParams, test.payload)
+		jwtDecoder = test.jwtDecoder
+
+		got := TokenResponse{}
+		err := json.Unmarshal([]byte(test.payload), &got)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestCreateTokenResponse(%s): got err == nil, want err != nil", test.desc)
+			continue
 		case err != nil && !test.err:
 			t.Errorf("TestCreateTokenResponse(%s): got err == %v, want err == nil", test.desc, err)
+			continue
 		case err != nil:
 			continue
 		}
@@ -798,16 +801,145 @@ func TestCreateTokenResponse(t *testing.T) {
 	}
 }
 
-func TestGetHomeAccountIDFromClientInfo(t *testing.T) {
-	clientInfo := ClientInfoJSONPayload{
-		UID:  "uid",
-		Utid: "utid",
+func TestTokenResponseValidate(t *testing.T) {
+	tests := []struct {
+		desc  string
+		input TokenResponse
+		err   bool
+	}{
+		{
+			desc: "Error: TokenResponse had .Error set",
+			input: TokenResponse{
+				OAuthResponseBase: authority.OAuthResponseBase{
+					Error: "error",
+				},
+				AccessToken:    "token",
+				scopesComputed: true,
+			},
+			err: true,
+		},
+		{
+			desc: "Error: .AccessToken was empty",
+			input: TokenResponse{
+				scopesComputed: true,
+			},
+			err: true,
+		},
+		{
+			desc: "Error: .scopesComputed was false",
+			input: TokenResponse{
+				AccessToken:    "token",
+				scopesComputed: false,
+			},
+			err: true,
+		},
+		{
+			desc: "Success",
+			input: TokenResponse{
+				AccessToken:    "token",
+				scopesComputed: true,
+			},
+		},
 	}
-	tokenResponse := TokenResponse{ClientInfo: clientInfo}
-	expectedHid := "uid.utid"
-	actualHid := tokenResponse.GetHomeAccountIDFromClientInfo()
-	if !reflect.DeepEqual(actualHid, expectedHid) {
-		t.Errorf("Actual home account ID %s differs from expected home account ID %s", actualHid, expectedHid)
+
+	for _, test := range tests {
+		err := test.input.Validate()
+		switch {
+		case err == nil && test.err:
+			t.Errorf("TestTokenResponseValidate(%s): got err == nil, want err != nil", test.desc)
+		case err != nil && !test.err:
+			t.Errorf("TestTokenResponseValidate(%s): got err == %s, want err == nil", test.desc, err)
+		}
+	}
+}
+
+func TestComputeScopes(t *testing.T) {
+	tests := []struct {
+		desc       string
+		authParams authority.AuthParams
+		input      TokenResponse
+		want       TokenResponse
+	}{
+		{
+			desc: "authParam scopes copied in, no declined scopes",
+			authParams: authority.AuthParams{
+				Scopes: []string{
+					"scope0",
+					"scope1",
+				},
+			},
+			input: TokenResponse{},
+			want: TokenResponse{
+				GrantedScopes: Scopes{
+					Slice: []string{"scope0", "scope1"},
+				},
+				scopesComputed: true,
+			},
+		},
+		{
+			desc: "a few declined scopes",
+			authParams: authority.AuthParams{
+				Scopes: []string{
+					"scope0",
+					"scope1",
+					"scope2",
+				},
+			},
+			input: TokenResponse{
+				GrantedScopes: Scopes{
+					Slice: []string{
+						"scope0",
+						"scope1",
+					},
+				},
+			},
+			want: TokenResponse{
+				GrantedScopes: Scopes{
+					Slice: []string{"scope0", "scope1"},
+				},
+				DeclinedScopes: []string{"scope2"},
+				scopesComputed: true,
+			},
+		},
+	}
+
+	for _, test := range tests {
+		test.input.ComputeScope(test.authParams)
+		if diff := pretty.Compare(test.want, test.input); diff != "" {
+			t.Errorf("TestComputeScopes(%s): -want/+got:\n%s", test.desc, diff)
+		}
+	}
+}
+
+func TestHomeAccountID(t *testing.T) {
+	tests := []struct {
+		desc string
+		ci   ClientInfo
+		want string
+	}{
+		{
+			desc: "UID and UTID is not set",
+		},
+		{
+			desc: "UID is not set",
+			ci:   ClientInfo{UTID: "utid"},
+		},
+		{
+			desc: "UTID is not set",
+			ci:   ClientInfo{UID: "uid"},
+		},
+		{
+			desc: "UID and UTID are set",
+			ci:   ClientInfo{UID: "uid", UTID: "utid"},
+			want: "uid.utid",
+		},
+	}
+
+	for _, test := range tests {
+		got := test.ci.HomeAccountID()
+		if got != test.want {
+			t.Errorf("TestHomeAccountID(%s): got %q, want %q", test.desc, got, test.want)
+		}
 	}
 }
 

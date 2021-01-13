@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
@@ -84,7 +85,7 @@ func (f *fakeAccessTokens) FromDeviceCodeResult(ctx context.Context, authParamet
 		defer func() { f.next++ }()
 		v := f.deviceCodeResult[f.next]
 		if v == nil {
-			return accesstokens.TokenResponse{ExpiresOn: time.Now().Add(5 * time.Minute)}, nil
+			return accesstokens.TokenResponse{ExpiresOn: internalTime.DurationTime{T: time.Now().Add(5 * time.Minute)}}, nil
 		}
 		return accesstokens.TokenResponse{}, v.(error)
 	}

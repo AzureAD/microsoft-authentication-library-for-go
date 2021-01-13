@@ -842,25 +842,25 @@ func TestWrite(t *testing.T) {
 	now := removeSubSeconds(time.Now().UTC())
 
 	cacheManager := newForTest(nil)
-	clientInfo := accesstokens.ClientInfoJSONPayload{
+	clientInfo := accesstokens.ClientInfo{
 		UID:  "testUID",
-		Utid: "testUtid",
+		UTID: "testUtid",
 	}
 	idToken := accesstokens.IDToken{
 		RawToken:          "idToken",
 		Oid:               "lid",
 		PreferredUsername: "username",
 	}
-	expiresOn := now.Add(1000 * time.Second)
+	expiresOn := internalTime.DurationTime{T: now.Add(1000 * time.Second)}
 	tokenResponse := accesstokens.TokenResponse{
 		AccessToken:   "accessToken",
 		RefreshToken:  "refreshToken",
 		IDToken:       idToken,
 		FamilyID:      "fid",
 		ClientInfo:    clientInfo,
-		GrantedScopes: []string{"openid", "profile"},
+		GrantedScopes: accesstokens.Scopes{Slice: []string{"openid", "profile"}},
 		ExpiresOn:     expiresOn,
-		ExtExpiresOn:  now,
+		ExtExpiresOn:  internalTime.DurationTime{T: now},
 	}
 	authInfo := authority.Info{Host: "env", Tenant: "realm", AuthorityType: accAuth}
 	authParams := authority.AuthParams{

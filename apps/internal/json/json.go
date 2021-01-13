@@ -166,6 +166,7 @@ func hasUnmarshalJSON(v reflect.Value) bool {
 		_, ok := v.Interface().(json.Unmarshaler)
 		return ok
 	}
+
 	return false
 }
 

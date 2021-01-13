@@ -140,12 +140,12 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
+	authParameters.HomeaccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
-	target := strings.Join(tokenResponse.GrantedScopes, scopeSeparator)
+	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 
 	cachedAt := time.Now()
 
@@ -165,8 +165,8 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			realm,
 			clientID,
 			cachedAt,
-			tokenResponse.ExpiresOn,
-			tokenResponse.ExtExpiresOn,
+			tokenResponse.ExpiresOn.T,
+			tokenResponse.ExtExpiresOn.T,
 			target,
 			tokenResponse.AccessToken,
 		)
@@ -296,7 +296,7 @@ func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID,
 		}
 	}
 
-	// TODO(jdoak): All the tests here pass, but Bogdan says this is
+	// TODO(keegan): All the tests here pass, but Bogdan says this is
 	// more complicated.  I'm opening an issue for this to have him
 	// review the tests and suggest tests that would break this so
 	// we can re-write against good tests. His comments as follow:
