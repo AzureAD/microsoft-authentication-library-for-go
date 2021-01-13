@@ -87,7 +87,7 @@ func (m *authorityEndpoint) cachedEndpoints(authorityInfo authority.Info, userPr
 
 	if cacheEntry, ok := m.cache[authorityInfo.CanonicalAuthorityURI]; ok {
 		if authorityInfo.AuthorityType == ADFS {
-			domain, err := getAdfsDomainFromUpn(userPrincipalName)
+			domain, err := adfsDomainFromUpn(userPrincipalName)
 			if err == nil {
 				if _, ok := cacheEntry.ValidForDomainsInList[domain]; ok {
 					return cacheEntry.Endpoints, true
@@ -113,7 +113,7 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, use
 				updatedCacheEntry.ValidForDomainsInList[k] = true
 			}
 		}
-		domain, err := getAdfsDomainFromUpn(userPrincipalName)
+		domain, err := adfsDomainFromUpn(userPrincipalName)
 		if err == nil {
 			updatedCacheEntry.ValidForDomainsInList[domain] = true
 		}
@@ -135,7 +135,7 @@ func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, aut
 	return authorityInfo.CanonicalAuthorityURI + "v2.0/.well-known/openid-configuration", nil
 }
 
-func getAdfsDomainFromUpn(userPrincipalName string) (string, error) {
+func adfsDomainFromUpn(userPrincipalName string) (string, error) {
 	parts := strings.Split(userPrincipalName, "@")
 	if len(parts) < 2 {
 		return "", errors.New("no @ present in user principal name")

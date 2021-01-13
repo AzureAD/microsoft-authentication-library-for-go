@@ -40,7 +40,7 @@ var (
 	atExpires = time.Unix(4600, 0)
 )
 
-func newForTest(authorityClient getAADInstanceDiscoveryResponser) *Manager {
+func newForTest(authorityClient aadInstanceDiscoveryResponser) *Manager {
 	m := &Manager{requests: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract.Store(NewContract())
 	return m

@@ -26,9 +26,9 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
-// getAADInstanceDiscoveryResponser is provider to allow for faking in tests.
+// aadInstanceDiscoveryResponser is provider to allow for faking in tests.
 // It is always implemented in production by ops/authority.Client
-type getAADInstanceDiscoveryResponser interface {
+type aadInstanceDiscoveryResponser interface {
 	AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
@@ -46,8 +46,8 @@ type TokenResponse struct {
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
 type Manager struct {
-	contract atomic.Value                     // Stores a *Contract
-	requests getAADInstanceDiscoveryResponser // *oauth.Token
+	contract atomic.Value                  // Stores a *Contract
+	requests aadInstanceDiscoveryResponser // *oauth.Token
 
 	mu sync.Mutex
 

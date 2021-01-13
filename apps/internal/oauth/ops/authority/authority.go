@@ -141,7 +141,7 @@ type Info struct {
 	Tenant                string
 }
 
-func getFirstPathSegment(u *url.URL) (string, error) {
+func firstPathSegment(u *url.URL) (string, error) {
 	pathParts := strings.Split(u.EscapedPath(), "/")
 	if len(pathParts) >= 2 {
 		return pathParts[1], nil
@@ -203,7 +203,7 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 		return Info{}, fmt.Errorf("authorityURI(%s) must have scheme https", authorityURI)
 	}
 
-	tenant, err := getFirstPathSegment(u)
+	tenant, err := firstPathSegment(u)
 	if err != nil {
 		return Info{}, err
 	}
