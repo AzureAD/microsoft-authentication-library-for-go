@@ -354,5 +354,5 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 
 // Accounts gets all the accounts in the token cache.
 func (cca Client) Accounts() []Account {
-	return cca.Accounts()
+	return cca.base.Accounts()
 }

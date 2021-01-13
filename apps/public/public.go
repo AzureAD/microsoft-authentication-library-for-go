@@ -249,5 +249,5 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 // Accounts gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
 func (pca Client) Accounts() []Account {
-	return pca.Accounts()
+	return pca.base.Accounts()
 }
