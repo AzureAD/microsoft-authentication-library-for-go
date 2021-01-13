@@ -164,8 +164,6 @@ func (s *Scopes) UnmarshalJSON(b []byte) error {
 }
 
 // TokenResponse is the information that is returned from a token endpoint during a token acquisition flow.
-// TODO(jdoak): There is this tokenResponsePayload and TokenResponse.  This just needs a custom unmarshaller
-// and we can get rid of having two.
 type TokenResponse struct {
 	authority.OAuthResponseBase
 
