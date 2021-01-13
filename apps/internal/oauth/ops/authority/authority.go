@@ -75,18 +75,6 @@ func (r *TenantDiscoveryResponse) Validate() error {
 	return nil
 }
 
-func (r *TenantDiscoveryResponse) HasauthorizationEndpoint() bool {
-	return len(r.AuthorizationEndpoint) > 0
-}
-
-func (r *TenantDiscoveryResponse) HasTokenEndpoint() bool {
-	return len(r.TokenEndpoint) > 0
-}
-
-func (r *TenantDiscoveryResponse) HasIssuer() bool {
-	return len(r.Issuer) > 0
-}
-
 type InstanceDiscoveryMetadata struct {
 	PreferredNetwork        string   `json:"preferred_network"`
 	PreferredCache          string   `json:"preferred_cache"`

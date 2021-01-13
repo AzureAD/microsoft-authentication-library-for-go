@@ -80,7 +80,7 @@ func WithCache(accessor cache.ExportReplace) Option {
 // Client is a representation of authentication client for public applications as defined in the
 // package doc. For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications.
 type Client struct {
-	base.Client
+	base base.Client
 }
 
 // New is the constructor for Client.
@@ -103,7 +103,7 @@ func New(clientID string, options ...Option) (Client, error) {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
 func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return pca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, pca.AuthParams)
+	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, pca.base.AuthParams)
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
@@ -136,23 +136,23 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 		RequestType: accesstokens.ATPublic,
 	}
 
-	return pca.Client.AcquireTokenSilent(ctx, silentParameters)
+	return pca.base.AcquireTokenSilent(ctx, silentParameters)
 }
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // NOTE: this flow is NOT recommended.
 func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
-	authParams := pca.AuthParams
+	authParams := pca.base.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATUsernamePassword
 	authParams.Username = username
 	authParams.Password = password
 
-	token, err := pca.Client.Token.UsernamePassword(ctx, authParams)
+	token, err := pca.base.Token.UsernamePassword(ctx, authParams)
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return pca.Client.AuthResultFromToken(ctx, authParams, token, true)
+	return pca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 type DeviceCodeResult = accesstokens.DeviceCodeResult
@@ -177,17 +177,17 @@ func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return d.client.AuthResultFromToken(ctx, d.authParams, token, true)
+	return d.client.base.AuthResultFromToken(ctx, d.authParams, token, true)
 }
 
 // AcquireTokenByDeviceCode acquires a security token from the authority, by acquiring a device code and using that to acquire the token.
 // Users need to create an AcquireTokenDeviceCodeParameters instance and pass it in.
 func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (DeviceCode, error) {
-	authParams := pca.AuthParams
+	authParams := pca.base.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATDeviceCode
 
-	dc, err := pca.Token.DeviceCode(ctx, authParams)
+	dc, err := pca.base.Token.DeviceCode(ctx, authParams)
 	if err != nil {
 		return DeviceCode{}, err
 	}
@@ -243,11 +243,11 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 		AppType:   accesstokens.ATPublic,
 	}
 
-	return pca.Client.AcquireTokenByAuthCode(ctx, params)
+	return pca.base.AcquireTokenByAuthCode(ctx, params)
 }
 
 // Accounts gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
 func (pca Client) Accounts() []Account {
-	return pca.GetAccounts()
+	return pca.base.Accounts()
 }
