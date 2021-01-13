@@ -151,14 +151,14 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 
 	var account shared.Account
 
-	if tokenResponse.HasRefreshToken() {
+	if len(tokenResponse.RefreshToken) > 0 {
 		refreshToken := accesstokens.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
 		if err := m.writeRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
 	}
 
-	if tokenResponse.HasAccessToken() {
+	if len(tokenResponse.AccessToken) > 0 {
 		accessToken := NewAccessToken(
 			homeAccountID,
 			environment,

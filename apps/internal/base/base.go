@@ -258,7 +258,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return NewAuthResult(token, account)
 }
 
-func (b Client) GetAccounts() []shared.Account {
+func (b Client) Accounts() []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		b.cacheAccessor.Replace(s)
 		defer b.cacheAccessor.Export(s)

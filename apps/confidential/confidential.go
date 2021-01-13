@@ -161,7 +161,7 @@ func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
 // package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
-	base.Client
+	base base.Client
 
 	cred *accesstokens.Credential
 
@@ -238,8 +238,8 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	}
 
 	return Client{
-		Client: base,
-		cred:   cred.toInternal(),
+		base: base,
+		cred: cred.toInternal(),
 	}, nil
 }
 
@@ -250,7 +250,7 @@ func (cca Client) UserID() string {
 
 // AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return cca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
+	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.base.AuthParams)
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
@@ -284,7 +284,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 		Credential:  cca.cred,
 	}
 
-	return cca.Client.AcquireTokenSilent(ctx, silentParameters)
+	return cca.base.AcquireTokenSilent(ctx, silentParameters)
 }
 
 // AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
@@ -336,23 +336,23 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 		Credential: cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 	}
 
-	return cca.Client.AcquireTokenByAuthCode(ctx, params)
+	return cca.base.AcquireTokenByAuthCode(ctx, params)
 }
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthResult, error) {
-	authParams := cca.AuthParams
+	authParams := cca.base.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATClientCredentials
 
-	token, err := cca.Token.Credential(ctx, authParams, cca.cred)
+	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return cca.AuthResultFromToken(ctx, authParams, token, true)
+	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 // Accounts gets all the accounts in the token cache.
 func (cca Client) Accounts() []Account {
-	return cca.GetAccounts()
+	return cca.Accounts()
 }

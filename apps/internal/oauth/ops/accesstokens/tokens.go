@@ -213,18 +213,6 @@ func (tr *TokenResponse) Validate() error {
 	return nil
 }
 
-// HasAccessToken checks if the TokenResponse has an access token.
-// TODO(jdoak): Remove
-func (tr *TokenResponse) HasAccessToken() bool {
-	return len(tr.AccessToken) > 0
-}
-
-// HasRefreshToken checks if the TokenResponse has an refresh token.
-// TODO(jdoak): Remove
-func (tr *TokenResponse) HasRefreshToken() bool {
-	return len(tr.RefreshToken) > 0
-}
-
 func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []string {
 	declined := []string{}
 	grantedMap := map[string]bool{}
