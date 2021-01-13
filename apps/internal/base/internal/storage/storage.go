@@ -26,10 +26,10 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
-// getAadinstanceDiscoveryResponser is provider to allow for faking in tests.
+// getAADInstanceDiscoveryResponser is provider to allow for faking in tests.
 // It is always implemented in production by ops/authority.Client
-type getAadinstanceDiscoveryResponser interface {
-	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
+type getAADInstanceDiscoveryResponser interface {
+	AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
 // TokenResponse mimics a token response that was pulled from the cache.
@@ -47,7 +47,7 @@ type TokenResponse struct {
 // was given to it on each call.
 type Manager struct {
 	contract atomic.Value                     // Stores a *Contract
-	requests getAadinstanceDiscoveryResponser // *oauth.Token
+	requests getAADInstanceDiscoveryResponser // *oauth.Token
 
 	mu sync.Mutex
 
@@ -186,7 +186,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			return shared.Account{}, err
 		}
 
-		localAccountID := idTokenJwt.GetLocalAccountID()
+		localAccountID := idTokenJwt.LocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
 		account = shared.NewAccount(
@@ -230,7 +230,7 @@ func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.
 }
 
 func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
-	discoveryResponse, err := m.requests.GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
+	discoveryResponse, err := m.requests.AADInstanceDiscoveryResponse(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err
 	}
@@ -355,7 +355,7 @@ func (m *Manager) writeIDToken(idToken IDToken) error {
 	return nil
 }
 
-func (m *Manager) GetAllAccounts() ([]shared.Account, error) {
+func (m *Manager) AllAccounts() ([]shared.Account, error) {
 	cache := m.Contract()
 
 	var accounts []shared.Account

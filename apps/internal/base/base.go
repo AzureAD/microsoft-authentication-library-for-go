@@ -32,7 +32,7 @@ const (
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
-	GetAllAccounts() ([]shared.Account, error)
+	AllAccounts() ([]shared.Account, error)
 }
 
 type noopCacheAccessor struct{}
@@ -264,7 +264,7 @@ func (b Client) Accounts() []shared.Account {
 		defer b.cacheAccessor.Export(s)
 	}
 
-	accounts, err := b.manager.GetAllAccounts()
+	accounts, err := b.manager.AllAccounts()
 	if err != nil {
 		return nil
 	}

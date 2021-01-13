@@ -284,7 +284,7 @@ type Client struct {
 	Comm jsonCaller // *comm.Client
 }
 
-func (c Client) GetUserRealm(ctx context.Context, authParams AuthParams) (UserRealm, error) {
+func (c Client) UserRealm(ctx context.Context, authParams AuthParams) (UserRealm, error) {
 	endpoint := fmt.Sprintf("https://%s/common/UserRealm/%s", authParams.Endpoints.authorityHost, url.PathEscape(authParams.Username))
 	qv := url.Values{
 		"api-version": []string{"1.0"},
@@ -322,7 +322,7 @@ func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurat
 	return resp, err
 }
 
-func (c Client) GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
+func (c Client) AADInstanceDiscoveryResponse(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
 	qv := url.Values{}
 	qv.Set("api-version", "1.1")
 	qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))

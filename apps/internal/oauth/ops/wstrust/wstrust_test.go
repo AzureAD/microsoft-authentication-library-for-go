@@ -135,7 +135,7 @@ func (f *fakeXMLCaller) compareSOAP(action, endpoint string, body, resp interfac
 	return nil
 }
 
-func TestGetMex(t *testing.T) {
+func TestMex(t *testing.T) {
 	tests := []struct {
 		desc                  string
 		err                   bool
@@ -175,25 +175,25 @@ func TestGetMex(t *testing.T) {
 		// We don't care about the result, that is just a translation from the XML handled
 		// in the comm package via wstrust.CreateWsTrustMexDocumentFromDef().
 		// We care only that the comm package got what the right inputs.
-		_, err := client.GetMex(context.Background(), "http://something")
+		_, err := client.Mex(context.Background(), "http://something")
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetMex(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestMex(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetMex(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestMex(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compareXML("http://something", &defs.Definitions{}); err != nil {
-			t.Errorf("TestGetMex(%s): %s", test.desc, err)
+			t.Errorf("TestMex(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetSAMLTokenInfo(t *testing.T) {
+func TestSAMLTokenInfo(t *testing.T) {
 	authParams := authority.AuthParams{
 		Username:  "username",
 		Password:  "password",
@@ -331,20 +331,20 @@ func TestGetSAMLTokenInfo(t *testing.T) {
 		// We don't care about the result, that is just a translation from the XML handled
 		// in the comm package via wstrust.CreateWsTrustMexDocumentFromDef().
 		// We care only that the comm package got the right inputs.
-		_, err := client.GetSAMLTokenInfo(context.Background(), authParams, "urn", test.endpoint)
+		_, err := client.SAMLTokenInfo(context.Background(), authParams, "urn", test.endpoint)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetSAMLTokenInfo(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestSAMLTokenInfo(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetSAMLTokenInfo(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestSAMLTokenInfo(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compareSOAP(test.action, test.endpoint.URL, test.body, &defs.SAMLDefinitions{}); err != nil {
-			t.Errorf("TestGetSAMLTokenInfo(%s): %s", test.desc, err)
+			t.Errorf("TestSAMLTokenInfo(%s): %s", test.desc, err)
 		}
 	}
 }
