@@ -12,7 +12,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"net/http"
 	"net/url"
 
@@ -106,7 +105,6 @@ func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.A
 	resp := defs.SAMLDefinitions{}
 	err = c.Comm.SOAPCall(ctx, endpoint.URL, soapAction, http.Header{}, nil, wsTrustRequestMessage, &resp)
 	if err != nil {
-		log.Println("here was the message:\n", wsTrustRequestMessage)
 		return SamlTokenInfo{}, err
 	}
 

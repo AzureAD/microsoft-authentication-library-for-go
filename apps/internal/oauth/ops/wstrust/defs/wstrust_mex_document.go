@@ -37,16 +37,13 @@ type MexDocument struct {
 
 func updateEndpoint(cached *Endpoint, found Endpoint) {
 	if cached == nil || cached.Version == TrustUnknown {
-		log.Println("\twas set")
 		*cached = found
 		return
 	}
 	if (*cached).Version == Trust2005 && found.Version == Trust13 {
-		log.Println("\twas set")
 		*cached = found
 		return
 	}
-	log.Println("\twas not set")
 }
 
 // TODO(msal): Someone needs to write tests for everything below.
@@ -68,7 +65,6 @@ func NewFromDef(defs Definitions) (MexDocument, error) {
 		return MexDocument{}, err
 	}
 
-	log.Println("userPass endpoint: ", userPass.URL)
 	return MexDocument{
 		UsernamePasswordEndpoint: userPass,
 		WindowsTransportEndpoint: windows,
@@ -132,7 +128,6 @@ func bindings(defs Definitions, policies map[string]endpointType) (map[string]ws
 }
 
 func endpoints(defs Definitions, bindings map[string]wsEndpointData) (userPass, windows Endpoint, err error) {
-	log.Println("RUN")
 	for _, port := range defs.Service.Port {
 		bindingName := port.Binding
 
@@ -155,10 +150,8 @@ func endpoints(defs Definitions, bindings map[string]wsEndpointData) (userPass, 
 
 			switch binding.EndpointType {
 			case etUsernamePassword:
-				log.Println("update userpass")
 				updateEndpoint(&userPass, endpoint)
 			case etWindowsTransport:
-				log.Println("update windows")
 				updateEndpoint(&windows, endpoint)
 			default:
 				return Endpoint{}, Endpoint{}, errors.New("found unknown port type in MEX document")
