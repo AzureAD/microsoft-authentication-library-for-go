@@ -1,4 +1,4 @@
-// Package client contains a "Base" client that is used by the external public.Client and confidential.Client.
+// Package base contains a "Base" client that is used by the external public.Client and confidential.Client.
 // Base holds shared attributes that must be available to both clients and methods that act as
 // shared calls.
 package base
@@ -32,7 +32,7 @@ const (
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
-	GetAllAccounts() ([]shared.Account, error)
+	AllAccounts() ([]shared.Account, error)
 }
 
 type noopCacheAccessor struct{}
@@ -44,15 +44,8 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
 type AcquireTokenSilentParameters struct {
 	Scopes      []string
 	Account     shared.Account
-	RequestType accesstokens.RefreshTokenReqType
+	RequestType accesstokens.AppType
 	Credential  *accesstokens.Credential
-}
-
-// TODO(jdoak): augmentAuthenticationParameters == yuck.  Gotta go gotta go!!!!
-func (p AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams *authority.AuthParams) {
-	authParams.Scopes = p.Scopes
-	authParams.AuthorizationType = authority.AuthorizationTypeRefreshTokenExchange
-	authParams.HomeaccountID = p.Account.HomeAccountID
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -60,11 +53,11 @@ func (p AcquireTokenSilentParameters) augmentAuthenticationParameters(authParams
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
-	Scopes      []string
-	Code        string
-	Challenge   string
-	RequestType accesstokens.AuthCodeRequestType
-	Credential  *accesstokens.Credential
+	Scopes     []string
+	Code       string
+	Challenge  string
+	AppType    accesstokens.AppType
+	Credential *accesstokens.Credential
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -86,21 +79,17 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 
 	account := storageTokenResponse.Account
 	accessToken := storageTokenResponse.AccessToken.Secret
-	expiresOn, err := convertStrUnixToUTCTime(storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
-	if err != nil {
-		return AuthResult{}, fmt.Errorf("token response from server is invalid because expires_in is set to %q", storageTokenResponse.AccessToken.ExpiresOnUnixTimestamp)
-	}
 	grantedScopes := strings.Split(storageTokenResponse.AccessToken.Scopes, scopeSeparator)
 
 	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
 	var idToken accesstokens.IDToken
 	if !storageTokenResponse.IDToken.IsZero() {
-		idToken, err = accesstokens.NewIDToken(storageTokenResponse.IDToken.Secret)
+		err := idToken.UnmarshalJSON([]byte(storageTokenResponse.IDToken.Secret))
 		if err != nil {
-			return AuthResult{}, err
+			return AuthResult{}, fmt.Errorf("problem decoding JWT token: %w", err)
 		}
 	}
-	return AuthResult{account, idToken, accessToken, expiresOn, grantedScopes, nil}, nil
+	return AuthResult{account, idToken, accessToken, storageTokenResponse.AccessToken.ExpiresOn.T, grantedScopes, nil}, nil
 }
 
 // NewAuthResult creates an AuthResult.
@@ -112,8 +101,8 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
-		ExpiresOn:     tokenResponse.ExpiresOn,
-		GrantedScopes: tokenResponse.GrantedScopes,
+		ExpiresOn:     tokenResponse.ExpiresOn.T,
+		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 	}, nil
 }
 
@@ -193,7 +182,9 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
 	toLower(silent.Scopes)
-	silent.augmentAuthenticationParameters(&authParams)
+	authParams.Scopes = silent.Scopes
+	authParams.AuthorizationType = authority.ATRefreshToken
+	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
 		b.cacheAccessor.Replace(s)
@@ -212,7 +203,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		}
 
 		var cc *accesstokens.Credential
-		if silent.RequestType == accesstokens.RefreshTokenConfidential {
+		if silent.RequestType == accesstokens.ATConfidential {
 			cc = silent.Credential
 		}
 
@@ -230,14 +221,14 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
-	authParams.AuthorizationType = authority.AuthorizationTypeAuthCode
+	authParams.AuthorizationType = authority.ATAuthCode
 
 	var cc *accesstokens.Credential
-	if authCodeParams.RequestType == accesstokens.AuthCodeConfidential {
+	if authCodeParams.AppType == accesstokens.ATConfidential {
 		cc = authCodeParams.Credential
 	}
 
-	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.RequestType, cc, authCodeParams.Code, authCodeParams.Challenge)
+	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.AppType, cc, authCodeParams.Code, authCodeParams.Challenge)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -267,13 +258,13 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return NewAuthResult(token, account)
 }
 
-func (b Client) GetAccounts() []shared.Account {
+func (b Client) Accounts() []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		b.cacheAccessor.Replace(s)
 		defer b.cacheAccessor.Export(s)
 	}
 
-	accounts, err := b.manager.GetAllAccounts()
+	accounts, err := b.manager.AllAccounts()
 	if err != nil {
 		return nil
 	}

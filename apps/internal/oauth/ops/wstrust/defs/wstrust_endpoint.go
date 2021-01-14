@@ -12,32 +12,22 @@ import (
 	uuid "github.com/google/uuid"
 )
 
-//go:generate stringer -type=EndpointVersion
-type EndpointVersion int
+//go:generate stringer -type=Version
+
+type Version int
 
 const (
-	UnknownTrust EndpointVersion = iota
+	TrustUnknown Version = iota
 	Trust2005
 	Trust13
 )
 
 // Endpoint represents a WSTrust endpoint.
-// TODO(jdoak): Remove this, add method to EndpointVersion.URL(), rename that to Endpoint.
 type Endpoint struct {
-	// EndpointVersion is the version of the endpoint.
-	EndpointVersion EndpointVersion
+	// Version is the version of the endpoint.
+	Version Version
 	// URL is the URL of the endpoint.
 	URL string
-}
-
-func createWsTrustEndpoint(endpointVersion EndpointVersion, url string) (Endpoint, error) {
-	if endpointVersion == UnknownTrust {
-		return Endpoint{}, fmt.Errorf("wstrust endpoint cannot have an unknown version")
-	}
-	if url == "" {
-		return Endpoint{}, fmt.Errorf("wstrust endpoint cannot have an empty url")
-	}
-	return Endpoint{EndpointVersion: endpointVersion, URL: url}, nil
 }
 
 type wsTrustTokenRequestEnvelope struct {
@@ -121,7 +111,7 @@ func buildTimeString(t time.Time) string {
 	return t.Format("2006-01-02T15:04:05.000Z")
 }
 
-func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizationType, cloudAudienceURN string, username string, password string) (string, error) {
+func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizeType, cloudAudienceURN string, username string, password string) (string, error) {
 	var soapAction string
 	var trustNamespace string
 	var keyType string
@@ -130,16 +120,19 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizationTy
 	createdTime := time.Now().UTC()
 	expiresTime := createdTime.Add(10 * time.Minute)
 
-	if wte.EndpointVersion == Trust2005 {
+	switch wte.Version {
+	case Trust2005:
 		soapAction = trust2005Spec
 		trustNamespace = "http://schemas.xmlsoap.org/ws/2005/02/trust"
 		keyType = "http://schemas.xmlsoap.org/ws/2005/05/identity/NoProofKey"
 		requestType = "http://schemas.xmlsoap.org/ws/2005/02/trust/Issue"
-	} else {
+	case Trust13:
 		soapAction = trust13Spec
 		trustNamespace = "http://docs.oasis-open.org/ws-sx/ws-trust/200512"
 		keyType = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Bearer"
 		requestType = "http://docs.oasis-open.org/ws-sx/ws-trust/200512/Issue"
+	default:
+		return "", fmt.Errorf("buildTokenRequestMessage had Version == %q, which is not recognized", wte.Version)
 	}
 
 	var envelope wsTrustTokenRequestEnvelope
@@ -157,11 +150,14 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizationTy
 	envelope.Header.To.MustUnderstand = "1"
 	envelope.Header.To.Text = wte.URL
 
-	if authType == authority.AuthorizationTypeUsernamePassword {
+	switch authType {
+	case authority.ATUnknown:
+		return "", fmt.Errorf("buildTokenRequestMessage had no authority type(%v)", authType)
+	case authority.ATUsernamePassword:
 		endpointUUID := uuid.New()
 
 		var trustID string
-		if wte.EndpointVersion == Trust2005 {
+		if wte.Version == Trust2005 {
 			trustID = "UnPwSecTok2005-" + endpointUUID.String()
 		} else {
 			trustID = "UnPwSecTok13-" + endpointUUID.String()
@@ -175,6 +171,9 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizationTy
 		envelope.Header.Security.UsernameToken.ID = trustID
 		envelope.Header.Security.UsernameToken.Username.Text = username
 		envelope.Header.Security.UsernameToken.Password.Text = password
+	default:
+		// This is just to note that we don't do anything for other cases.
+		// We aren't missing anything I know of.
 	}
 
 	envelope.Body.RequestSecurityToken.Wst = trustNamespace
@@ -192,9 +191,9 @@ func (wte *Endpoint) buildTokenRequestMessage(authType authority.AuthorizationTy
 }
 
 func (wte *Endpoint) BuildTokenRequestMessageWIA(cloudAudienceURN string) (string, error) {
-	return wte.buildTokenRequestMessage(authority.AuthorizationTypeWindowsIntegratedAuth, cloudAudienceURN, "", "")
+	return wte.buildTokenRequestMessage(authority.ATWindowsIntegrated, cloudAudienceURN, "", "")
 }
 
 func (wte *Endpoint) BuildTokenRequestMessageUsernamePassword(cloudAudienceURN string, username string, password string) (string, error) {
-	return wte.buildTokenRequestMessage(authority.AuthorizationTypeUsernamePassword, cloudAudienceURN, username, password)
+	return wte.buildTokenRequestMessage(authority.ATUsernamePassword, cloudAudienceURN, username, password)
 }

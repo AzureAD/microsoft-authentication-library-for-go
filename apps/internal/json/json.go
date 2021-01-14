@@ -48,6 +48,10 @@ func Marshal(i interface{}) ([]byte, error) {
 	enc.SetEscapeHTML(false)
 	enc.SetIndent("", "")
 
+	v := reflect.ValueOf(i)
+	if v.Kind() != reflect.Ptr && v.CanAddr() {
+		v = v.Addr()
+	}
 	err := marshalStruct(reflect.ValueOf(i), &buff, enc)
 	if err != nil {
 		return nil, err
@@ -137,7 +141,6 @@ func callMarshalJSON(v reflect.Value) ([]byte, error) {
 		if v.CanAddr() {
 			v = v.Addr()
 		}
-		panic(fmt.Sprintf("callMarshalJSON called on type %T that does not have MarshalJSON defined", v.Interface()))
 	}
 
 	if method := v.MethodByName(unmarshalJSON); method.Kind() != reflect.Invalid {
@@ -163,6 +166,7 @@ func hasUnmarshalJSON(v reflect.Value) bool {
 		_, ok := v.Interface().(json.Unmarshaler)
 		return ok
 	}
+
 	return false
 }
 

@@ -135,12 +135,11 @@ type Credential struct {
 	key  crypto.PrivateKey
 }
 
-// toMSALBASE returns the accesstokens.Credential that is used internally. The current structure of the
+// toInternal returns the accesstokens.Credential that is used internally. The current structure of the
 // code requires that client.go, requests.go and confidential.go share a credential type without
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
-// TODO(jdoak): change method name.
-func (c Credential) toMSALBASE() *accesstokens.Credential {
+func (c Credential) toInternal() *accesstokens.Credential {
 	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
 }
 
@@ -162,7 +161,7 @@ func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
 // package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
-	base.Client
+	base base.Client
 
 	cred *accesstokens.Credential
 
@@ -239,8 +238,8 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	}
 
 	return Client{
-		Client: base,
-		cred:   cred.toMSALBASE(),
+		base: base,
+		cred: cred.toInternal(),
 	}, nil
 }
 
@@ -251,7 +250,7 @@ func (cca Client) UserID() string {
 
 // AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return cca.Client.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.AuthParams)
+	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.base.AuthParams)
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
@@ -281,11 +280,11 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
-		RequestType: accesstokens.RefreshTokenConfidential,
+		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
 	}
 
-	return cca.Client.AcquireTokenSilent(ctx, silentParameters)
+	return cca.base.AcquireTokenSilent(ctx, silentParameters)
 }
 
 // AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
@@ -330,30 +329,30 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:      scopes,
-		Code:        opts.Code,
-		Challenge:   opts.Challenge,
-		RequestType: accesstokens.AuthCodeConfidential,
-		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		Scopes:     scopes,
+		Code:       opts.Code,
+		Challenge:  opts.Challenge,
+		AppType:    accesstokens.ATConfidential,
+		Credential: cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 	}
 
-	return cca.Client.AcquireTokenByAuthCode(ctx, params)
+	return cca.base.AcquireTokenByAuthCode(ctx, params)
 }
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthResult, error) {
-	authParams := cca.AuthParams
+	authParams := cca.base.AuthParams
 	authParams.Scopes = scopes
-	authParams.AuthorizationType = authority.AuthorizationTypeClientCredentials
+	authParams.AuthorizationType = authority.ATClientCredentials
 
-	token, err := cca.Token.Credential(ctx, authParams, cca.cred)
+	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return cca.AuthResultFromToken(ctx, authParams, token, true)
+	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 // Accounts gets all the accounts in the token cache.
 func (cca Client) Accounts() []Account {
-	return cca.GetAccounts()
+	return cca.base.Accounts()
 }

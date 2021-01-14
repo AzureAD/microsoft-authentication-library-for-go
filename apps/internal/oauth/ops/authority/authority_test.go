@@ -82,7 +82,7 @@ var testAuthorityEndpoints = NewEndpoints(
 	"login.microsoftonline.com",
 )
 
-func TestGetUserRealm(t *testing.T) {
+func TestUserRealm(t *testing.T) {
 	authParams := AuthParams{
 		Username:      "username",
 		Endpoints:     testAuthorityEndpoints,
@@ -135,25 +135,25 @@ func TestGetUserRealm(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetUserRealm(context.Background(), authParams)
+		_, err := client.UserRealm(context.Background(), authParams)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetUserRealm(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestUserRealm(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetUserRealm(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestUserRealm(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(test.endpoint, test.headers, test.qv, nil, test.resp); err != nil {
-			t.Errorf("TestGetUserRealm(%s): %s", test.desc, err)
+			t.Errorf("TestUserRealm(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetTenantDiscoveryResponse(t *testing.T) {
+func TestTenantDiscoveryResponse(t *testing.T) {
 	tests := []struct {
 		desc     string
 		err      bool
@@ -181,22 +181,22 @@ func TestGetTenantDiscoveryResponse(t *testing.T) {
 		_, err := client.GetTenantDiscoveryResponse(context.Background(), "endpoint")
 		switch {
 		case err == nil && test.err:
-			t.Errorf("TestGetTenantDiscoveryResponse(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("TestTenantDiscoveryResponse(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("TestGetTenantDiscoveryResponse(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("TestTenantDiscoveryResponse(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(test.endpoint, http.Header{}, nil, nil, test.resp); err != nil {
-			t.Errorf("TestGetTenantDiscoveryResponse(%s): %s", test.desc, err)
+			t.Errorf("TestTenantDiscoveryResponse(%s): %s", test.desc, err)
 		}
 	}
 }
 
-func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
+func TestAADInstanceDiscovery(t *testing.T) {
 	tests := []struct {
 		desc     string
 		err      bool
@@ -244,20 +244,20 @@ func TestGetAadinstanceDiscoveryResponse(t *testing.T) {
 		// We don't care about the result, that is just a translation from the JSON handled
 		// automatically in the comm package.  We care only that the comm package got what
 		// it needed.
-		_, err := client.GetAadinstanceDiscoveryResponse(context.Background(), test.authInfo)
+		_, err := client.AADInstanceDiscovery(context.Background(), test.authInfo)
 		switch {
 		case err == nil && test.err:
-			t.Errorf("GetAadinstanceDiscoveryResponse(%s): got err == nil , want err != nil", test.desc)
+			t.Errorf("AADInstanceDiscovery(%s): got err == nil , want err != nil", test.desc)
 			continue
 		case err != nil && !test.err:
-			t.Errorf("GetAadinstanceDiscoveryResponse(%s): got err == %s , want err == nil", test.desc, err)
+			t.Errorf("AADInstanceDiscovery(%s): got err == %s , want err == nil", test.desc, err)
 			continue
 		case err != nil:
 			continue
 		}
 
 		if err := fake.compare(test.endpoint, http.Header{}, test.qv, nil, test.resp); err != nil {
-			t.Errorf("GetAadinstanceDiscoveryResponse(%s): %s", test.desc, err)
+			t.Errorf("AADInstanceDiscovery(%s): %s", test.desc, err)
 		}
 	}
 }

@@ -8,8 +8,8 @@ The REST type provides several clients that can be used to communicate to backen
 Usage is simple:
 	rest := ops.New()
 
-	// Creates an authority client and calls the GetUserRealm() method.
-	userRealm, err := rest.Authority().GetUserRealm(ctx, authParameters)
+	// Creates an authority client and calls the UserRealm() method.
+	userRealm, err := rest.Authority().UserRealm(ctx, authParameters)
 	if err != nil {
 		// Do something
 	}
@@ -43,7 +43,7 @@ func (r *REST) Authority() authority.Client {
 // AccessTokens returns a client that can be used to get various access tokens for
 // authorization purposes.
 func (r *REST) AccessTokens() accesstokens.Client {
-	return accesstokens.Client{Comm: r.client, TokenRespFunc: accesstokens.NewTokenResponse}
+	return accesstokens.Client{Comm: r.client}
 }
 
 // WSTrust provides access to various metadata in a WSTrust service. This data can

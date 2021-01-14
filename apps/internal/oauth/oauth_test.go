@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
@@ -37,7 +38,7 @@ func (f fakeResolveEndpoints) ResolveEndpoints(ctx context.Context, authorityInf
 type fakeAccessTokens struct {
 	err bool
 
-	// deviceCodeResult is for use with GetAccessTokenFromDeviceCodeResult. On each call it returns
+	// deviceCodeResult is for use with FromDeviceCodeResult. On each call it returns
 	// the next item in this slice. They must be either an error or nil.
 	deviceCodeResult []interface{}
 	next             int
@@ -55,7 +56,7 @@ func (f *fakeAccessTokens) FromAuthCode(ctx context.Context, req accesstokens.Au
 	}
 	return accesstokens.TokenResponse{}, nil
 }
-func (f *fakeAccessTokens) FromRefreshToken(ctx context.Context, rtType accesstokens.RefreshTokenReqType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
+func (f *fakeAccessTokens) FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
 	if f.err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
@@ -84,11 +85,11 @@ func (f *fakeAccessTokens) FromDeviceCodeResult(ctx context.Context, authParamet
 		defer func() { f.next++ }()
 		v := f.deviceCodeResult[f.next]
 		if v == nil {
-			return accesstokens.TokenResponse{ExpiresOn: time.Now().Add(5 * time.Minute)}, nil
+			return accesstokens.TokenResponse{ExpiresOn: internalTime.DurationTime{T: time.Now().Add(5 * time.Minute)}}, nil
 		}
 		return accesstokens.TokenResponse{}, v.(error)
 	}
-	panic("fakeAccessTokens.GetAccessTokenFromDeviceCodeResult() asked for more return values than provided")
+	panic("fakeAccessTokens.FromDeviceCodeResult() asked for more return values than provided")
 }
 func (f *fakeAccessTokens) FromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error) {
 	if f.err {
@@ -102,14 +103,14 @@ type fakeAuthority struct {
 	userRealm authority.UserRealm
 }
 
-func (f fakeAuthority) GetUserRealm(ctx context.Context, params authority.AuthParams) (authority.UserRealm, error) {
+func (f fakeAuthority) UserRealm(ctx context.Context, params authority.AuthParams) (authority.UserRealm, error) {
 	if f.err {
 		return authority.UserRealm{}, errors.New("error")
 	}
 	return f.userRealm, nil
 }
 
-func (f fakeAuthority) GetAadinstanceDiscoveryResponse(ctx context.Context, info authority.Info) (authority.InstanceDiscoveryResponse, error) {
+func (f fakeAuthority) AADInstanceDiscovery(ctx context.Context, info authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	if f.err {
 		return authority.InstanceDiscoveryResponse{}, errors.New("error")
 	}
@@ -120,14 +121,14 @@ type fakeWSTrust struct {
 	getMexErr, getSAMLTokenInfoErr bool
 }
 
-func (f fakeWSTrust) GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
+func (f fakeWSTrust) Mex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
 	if f.getMexErr {
 		return defs.MexDocument{}, errors.New("error")
 	}
 	return defs.MexDocument{}, nil
 }
 
-func (f fakeWSTrust) GetSAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (wstrust.SamlTokenInfo, error) {
+func (f fakeWSTrust) SAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (wstrust.SamlTokenInfo, error) {
 	if f.getSAMLTokenInfoErr {
 		return wstrust.SamlTokenInfo{}, errors.New("error")
 	}
@@ -293,7 +294,7 @@ func TestRefresh(t *testing.T) {
 
 		_, err := token.Refresh(
 			context.Background(),
-			accesstokens.RefreshTokenPublic,
+			accesstokens.ATPublic,
 			authority.AuthParams{},
 			&accesstokens.Credential{},
 			accesstokens.RefreshToken{},
@@ -324,7 +325,7 @@ func TestUsernamePassword(t *testing.T) {
 			err:  true,
 		},
 		{
-			desc: "Error: authority.Federated and GetMex() error",
+			desc: "Error: authority.Federated and Mex() error",
 			re:   fakeResolveEndpoints{err: false},
 			at:   &fakeAccessTokens{},
 			au:   fakeAuthority{userRealm: authority.UserRealm{AccountType: authority.Federated}},
@@ -332,7 +333,7 @@ func TestUsernamePassword(t *testing.T) {
 			err:  true,
 		},
 		{
-			desc: "Error: authority.Federated and GetSAMLTokenInfo() error",
+			desc: "Error: authority.Federated and SAMLTokenInfo() error",
 			re:   fakeResolveEndpoints{err: false},
 			at:   &fakeAccessTokens{},
 			au:   fakeAuthority{userRealm: authority.UserRealm{AccountType: authority.Federated}},
@@ -396,7 +397,7 @@ func TestDeviceCode(t *testing.T) {
 			err:  true,
 		},
 		{
-			desc: "Error: GetAccessTokenFromDeviceCodeResult() returned a !isWaitDeviceCodeErr",
+			desc: "Error: FromDeviceCodeResult() returned a !isWaitDeviceCodeErr",
 			dc: DeviceCode{
 				accessTokens: &fakeAccessTokens{
 					deviceCodeResult: []interface{}{errors.New("authorization_pending"), errors.New("slow_down"), errors.New("bad error"), nil},

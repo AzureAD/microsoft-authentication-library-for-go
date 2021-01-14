@@ -36,8 +36,14 @@ type Client struct {
 	Comm xmlCaller
 }
 
-// GetMex provides metadata about a wstrust service.
-func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
+// TODO(msal): This allows me to call Mex without having a real Def file on line 45.
+// This would fail because policies() would not find a policy. This is easy enough to
+// fix in test data, but.... Definitions is defined with built in structs.  That needs
+// to be pulled apart and until then I have this hack in.
+var newFromDef = defs.NewFromDef
+
+// Mex provides metadata about a wstrust service.
+func (c Client) Mex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
 	resp := defs.Definitions{}
 	err := c.Comm.XMLCall(
 		ctx,
@@ -50,7 +56,7 @@ func (c Client) GetMex(ctx context.Context, federationMetadataURL string) (defs.
 		return defs.MexDocument{}, err
 	}
 
-	return defs.NewFromDef(resp)
+	return newFromDef(resp)
 }
 
 const (
@@ -65,18 +71,18 @@ const (
 	// SoapActionWSTrust2005 = "http://schemas.xmlsoap.org/ws/2005/02/trust/RST/Issue"
 )
 
-// GetSAMLTokenInfo provides SAML information that is used to generate a SAML token.
-func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (SamlTokenInfo, error) {
+// SAMLTokenInfo provides SAML information that is used to generate a SAML token.
+func (c Client) SAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (SamlTokenInfo, error) {
 	var wsTrustRequestMessage string
 	var err error
 
 	switch authParameters.AuthorizationType {
-	case authority.AuthorizationTypeWindowsIntegratedAuth:
+	case authority.ATWindowsIntegrated:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageWIA(cloudAudienceURN)
 		if err != nil {
 			return SamlTokenInfo{}, err
 		}
-	case authority.AuthorizationTypeUsernamePassword:
+	case authority.ATUsernamePassword:
 		wsTrustRequestMessage, err = endpoint.BuildTokenRequestMessageUsernamePassword(
 			cloudAudienceURN, authParameters.Username, authParameters.Password)
 		if err != nil {
@@ -87,13 +93,13 @@ func (c Client) GetSAMLTokenInfo(ctx context.Context, authParameters authority.A
 	}
 
 	var soapAction string
-	switch endpoint.EndpointVersion {
+	switch endpoint.Version {
 	case defs.Trust13:
 		soapAction = SoapActionDefault
 	case defs.Trust2005:
 		return SamlTokenInfo{}, errors.New("WS Trust 2005 support is not implemented")
 	default:
-		return SamlTokenInfo{}, fmt.Errorf("the SOAP endpoint for a wstrust call had an invalid version: %v", endpoint.EndpointVersion)
+		return SamlTokenInfo{}, fmt.Errorf("the SOAP endpoint for a wstrust call had an invalid version: %v", endpoint.Version)
 	}
 
 	resp := defs.SAMLDefinitions{}

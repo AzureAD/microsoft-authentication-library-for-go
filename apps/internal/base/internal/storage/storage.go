@@ -26,10 +26,10 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
-// getAadinstanceDiscoveryResponser is provider to allow for faking in tests.
-// It is always implemented in production by ops/authority.Client
-type getAadinstanceDiscoveryResponser interface {
-	GetAadinstanceDiscoveryResponse(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
+// aadInstanceDiscoveryer allows faking in tests.
+// It is implemented in production by ops/authority.Client
+type aadInstanceDiscoveryer interface {
+	AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
 // TokenResponse mimics a token response that was pulled from the cache.
@@ -46,8 +46,8 @@ type TokenResponse struct {
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
 type Manager struct {
-	contract atomic.Value                     // Stores a *Contract
-	requests getAadinstanceDiscoveryResponser // *oauth.Token
+	contract atomic.Value           // Stores a *Contract
+	requests aadInstanceDiscoveryer // *oauth.Token
 
 	mu sync.Mutex
 
@@ -140,35 +140,33 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	authParameters.HomeaccountID = tokenResponse.GetHomeAccountIDFromClientInfo()
+	authParameters.HomeaccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
-	target := strings.Join(tokenResponse.GrantedScopes, scopeSeparator)
+	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 
-	cachedAt := time.Now().Unix()
+	cachedAt := time.Now()
 
 	var account shared.Account
 
-	if tokenResponse.HasRefreshToken() {
+	if len(tokenResponse.RefreshToken) > 0 {
 		refreshToken := accesstokens.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
 		if err := m.writeRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
 	}
 
-	if tokenResponse.HasAccessToken() {
-		expiresOn := tokenResponse.ExpiresOn.Unix()
-		extendedExpiresOn := tokenResponse.ExtExpiresOn.Unix()
+	if len(tokenResponse.AccessToken) > 0 {
 		accessToken := NewAccessToken(
 			homeAccountID,
 			environment,
 			realm,
 			clientID,
 			cachedAt,
-			expiresOn,
-			extendedExpiresOn,
+			tokenResponse.ExpiresOn.T,
+			tokenResponse.ExtExpiresOn.T,
 			target,
 			tokenResponse.AccessToken,
 		)
@@ -188,7 +186,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			return shared.Account{}, err
 		}
 
-		localAccountID := idTokenJwt.GetLocalAccountID()
+		localAccountID := idTokenJwt.LocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
 		account = shared.NewAccount(
@@ -232,7 +230,7 @@ func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.
 }
 
 func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
-	discoveryResponse, err := m.requests.GetAadinstanceDiscoveryResponse(ctx, authorityInfo)
+	discoveryResponse, err := m.requests.AADInstanceDiscovery(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err
 	}
@@ -243,7 +241,7 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 			m.aadCache[aliasedAuthority] = metadataEntry
 		}
 	}
-	// TODO(msal): Don't understand this logic.  We query fir this data, we enter all the data that
+	// TODO(msal): Don't understand this logic.  We query first this data, we enter all the data that
 	// the server has.  If our host was not detailed by the server, we just insert it???
 	// This is either broken or needs to be explained with a comment.
 	if _, ok := m.aadCache[authorityInfo.Host]; !ok {
@@ -298,7 +296,7 @@ func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID,
 		}
 	}
 
-	// TODO(jdoak): All the tests here pass, but Bogdan says this is
+	// TODO(keegan): All the tests here pass, but Bogdan says this is
 	// more complicated.  I'm opening an issue for this to have him
 	// review the tests and suggest tests that would break this so
 	// we can re-write against good tests. His comments as follow:
@@ -357,7 +355,7 @@ func (m *Manager) writeIDToken(idToken IDToken) error {
 	return nil
 }
 
-func (m *Manager) GetAllAccounts() ([]shared.Account, error) {
+func (m *Manager) AllAccounts() ([]shared.Account, error) {
 	cache := m.Contract()
 
 	var accounts []shared.Account
