@@ -123,11 +123,13 @@ func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace
 		return Client{}, err
 	}
 	authParams := authority.NewAuthParams(clientID, authInfo)
-
+	if cacheAccessor == nil {
+		cacheAccessor = noopCacheAccessor{}
+	}
 	return Client{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
 		Token:         token,
 		AuthParams:    authParams,
-		cacheAccessor: noopCacheAccessor{},
+		cacheAccessor: cacheAccessor,
 		manager:       storage.New(token),
 	}, nil
 }
