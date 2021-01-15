@@ -3,6 +3,7 @@
 Contributors:
 
 - Joel Hendrix(jhendrix@microsoft.com)
+- Keegan Caruso(Keegan.Caruso@microsoft.com)
 
 Errors in MSAL are intended for app developers to troubleshoot and not for displaying to end-users.
 
