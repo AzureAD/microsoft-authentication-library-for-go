@@ -36,8 +36,8 @@ func acquireTokenDeviceCode() {
 		// either there was no cached account/token or the call to AcquireTokenSilent() failed
 		// make a new request to AAD
 		ctx, cancel := context.WithTimeout(context.Background(), 100*time.Second)
+		defer cancel()
 		devCode, err := app.AcquireTokenByDeviceCode(ctx, config.Scopes)
-		cancel()
 		if err != nil {
 			panic(err)
 		}
