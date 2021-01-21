@@ -2,14 +2,14 @@
 
 **MSAL Go is a new addition to the MSAL family of libraries, not yet in public preview, that has been made available to gauge customer interest and to gather early feedback from the community. We welcome all contributors (see [CONTRIBUTING.md](https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/dev/CONTRIBUTING.md)) to help us grow our list of supported MSAL SDKs.**
 
-The Microsoft Authentication Library (MSAL) for Go enables applications to integrate with the Microsoft identity platform. It allows you to sign in users or apps with Microsoft identities ([Azure AD](https://azure.microsoft.com/services/active-directory/), [Microsoft Accounts](https://account.microsoft.com) and [Azure AD B2C](https://azure.microsoft.com/services/active-directory-b2c/) accounts) and obtain tokens to call Microsoft APIs such as [Microsoft Graph](https://graph.microsoft.io/) or your own APIs registered with the Microsoft identity platform. It is built using industry standard OAuth2 and OpenID Connect protocols. 
+The Microsoft Authentication Library (MSAL) for Go enables applications to integrate with the Microsoft identity platform. It allows you to sign in users or apps with Microsoft identities ([Azure AD](https://azure.microsoft.com/services/active-directory/) and [Microsoft Accounts](https://account.microsoft.com)) and obtain tokens to call Microsoft APIs such as [Microsoft Graph](https://graph.microsoft.io/) or your own APIs registered with the Microsoft identity platform. It is built using industry standard OAuth2 and OpenID Connect protocols.
 
-We have not yet released the first public preview of this library so the latest code resides in the `dev` branch.
+The first public preview of this library is yet to be released, until then, the latest code resides in the `dev` branch.
 
 Quick links:
 
-| [Getting Started](https://docs.microsoft.com/azure/active-directory/develop/#quickstarts) | [GoDoc](https://godoc.org/github.com/AzureAD/microsoft-authentication-library-for-go/msal) | [Wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki) | [Samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/examples) | [Support](README.md#community-help-and-support) |
-| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | 
+| [Getting Started](https://docs.microsoft.com/azure/active-directory/develop/#quickstarts) | [GoDoc](https://pkg.go.dev/github.com/AzureAD/microsoft-authentication-library-for-go/apps) | [Wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki) | [Samples](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/apps/tests/devapps) | [Support](README.md#community-help-and-support) |
+| ------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
 
 ## Build Status
 
@@ -59,11 +59,14 @@ app, err := confidential.New("client_id", cred, confidential.WithAuthority("http
 2. MSAL comes packaged with an in-memory cache. Utilizing the cache is optional, but we would highly recommend it.
    
 ```go
+var userAccount public.Account
 accounts := app.Accounts()
-// Assuming the user wanted the first account
-userAccount := accounts[0]
-// found a cached account, now see if an applicable token has been cached
-authResult, err := app.AcquireTokenSilent(context.Background(), []string{"your_scope"}, public.WithSilentAccount(userAccount))
+if len(accounts) > 0 {
+    // Assuming the user wanted the first account
+    userAccount = accounts[0]
+    // found a cached account, now see if an applicable token has been cached
+    authResult, err := app.AcquireTokenSilent(context.Background(), []string{"your_scope"}, public.WithSilentAccount(userAccount))
+}
 ```
 
 1. If there is no suitable token in the cache, or you choose to skip this step, now we can send a request to AAD to obtain a token. 
@@ -72,13 +75,12 @@ result, err := app.AcquireTokenByOneofTheActualMethods([]string{"your_scope"}, .
 if err != nil {
     log.Fatal(err)
 }
-}
 accessToken := result.AccessToken
 ```
 
 You can view the [dev apps](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/apps/tests/devapps) on how to use MSAL Go with various application types in various scenarios. For more detailed information, please refer to the [wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki).
 
-## Roadmap
+## Road map
 
 This is a preview library. Details of the roadmap will come soon in the [wiki pages](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki), along with release notes.
 
