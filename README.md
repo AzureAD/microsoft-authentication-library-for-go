@@ -43,7 +43,7 @@ Acquiring tokens with MSAL Go follows this general three step pattern. There mig
    * Initializing a public client:
 
     ```go
-    app, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
+    publicClientapp, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
     ```
 
    * Initializing a confidential client:
@@ -54,26 +54,27 @@ Acquiring tokens with MSAL Go follows this general three step pattern. There mig
     if err != nil {
         return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
     }
-    app, err := confidential.New("client_id", cred, confidential.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
+    confidentialClientApp, err := confidential.New("client_id", cred, confidential.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
     ```
 
 1. MSAL comes packaged with an in-memory cache. Utilizing the cache is optional, but we would highly recommend it.
 
     ```go
     var userAccount public.Account
-    accounts := app.Accounts()
+    accounts := publicClientApp.Accounts()
     if len(accounts) > 0 {
         // Assuming the user wanted the first account
         userAccount = accounts[0]
         // found a cached account, now see if an applicable token has been cached
-        authResult, err := app.AcquireTokenSilent(context.Background(), []string{"your_scope"}, public.WithSilentAccount(userAccount))
+        result, err := publicClientApp.AcquireTokenSilent(context.Background(), []string{"your_scope"}, public.WithSilentAccount(userAccount))
+        accessToken := result.AccessToken
     }
     ```
 
 1. If there is no suitable token in the cache, or you choose to skip this step, now we can send a request to AAD to obtain a token.
 
     ```go
-    result, err := app.AcquireTokenByOneofTheActualMethods([]string{"your_scope"}, ...(other parameters depending on the function) )
+    result, err := publicClientApp.AcquireToken"ByOneofTheActualMethods"([]string{"your_scope"}, ...(other parameters depending on the function))
     if err != nil {
         log.Fatal(err)
     }
