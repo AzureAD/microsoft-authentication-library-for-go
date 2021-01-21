@@ -30,7 +30,7 @@ Before using MSAL Go, you will need to [register your application with the Micro
 
 The Public API of the library can be found in the following directories under `apps`.
 
-``` md
+```
 apps/ - Contains all our code
   confidential/ - The confidential application API
   public/ - The public application API
@@ -38,45 +38,47 @@ apps/ - Contains all our code
 ```
 
 Acquiring tokens with MSAL Go follows this general three step pattern. There might be some slight differences for other token acquisition flows. Here is a basic example:
+
 1. MSAL separates [public and confidential client applications](https://tools.ietf.org/html/rfc6749#section-2.1). So, you would create an instance of a `PublicClientApplication` and `ConfidentialClientApplication` and use this throughout the lifetime of your application.
-   1. Initializing a public client:
+   * Initializing a public client:
 
-```go
-app, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
-```
+    ```go
+    app, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
+    ```
 
-Initializing a confidential client:
+   * Initializing a confidential client:
 
-```go
-// Initializing the client credential
-cred, err := confidential.NewCredFromSecret("client_secret")
-if err != nil {
-    return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
-}
-app, err := confidential.New("client_id", cred, confidential.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
-```
+    ```go
+    // Initializing the client credential
+    cred, err := confidential.NewCredFromSecret("client_secret")
+    if err != nil {
+        return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
+    }
+    app, err := confidential.New("client_id", cred, confidential.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
+    ```
 
-2. MSAL comes packaged with an in-memory cache. Utilizing the cache is optional, but we would highly recommend it.
-   
-```go
-var userAccount public.Account
-accounts := app.Accounts()
-if len(accounts) > 0 {
-    // Assuming the user wanted the first account
-    userAccount = accounts[0]
-    // found a cached account, now see if an applicable token has been cached
-    authResult, err := app.AcquireTokenSilent(context.Background(), []string{"your_scope"}, public.WithSilentAccount(userAccount))
-}
-```
+1. MSAL comes packaged with an in-memory cache. Utilizing the cache is optional, but we would highly recommend it.
 
-1. If there is no suitable token in the cache, or you choose to skip this step, now we can send a request to AAD to obtain a token. 
-```go
-result, err := app.AcquireTokenByOneofTheActualMethods([]string{"your_scope"}, ...(other parameters depending on the function) )
-if err != nil {
-    log.Fatal(err)
-}
-accessToken := result.AccessToken
-```
+    ```go
+    var userAccount public.Account
+    accounts := app.Accounts()
+    if len(accounts) > 0 {
+        // Assuming the user wanted the first account
+        userAccount = accounts[0]
+        // found a cached account, now see if an applicable token has been cached
+        authResult, err := app.AcquireTokenSilent(context.Background(), []string{"your_scope"}, public.WithSilentAccount(userAccount))
+    }
+    ```
+
+1. If there is no suitable token in the cache, or you choose to skip this step, now we can send a request to AAD to obtain a token.
+
+    ```go
+    result, err := app.AcquireTokenByOneofTheActualMethods([]string{"your_scope"}, ...(other parameters depending on the function) )
+    if err != nil {
+        log.Fatal(err)
+    }
+    accessToken := result.AccessToken
+    ```
 
 You can view the [dev apps](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/apps/tests/devapps) on how to use MSAL Go with various application types in various scenarios. For more detailed information, please refer to the [wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki).
 
