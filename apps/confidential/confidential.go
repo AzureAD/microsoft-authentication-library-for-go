@@ -232,7 +232,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, opts.Accessor, tokener)
+	base, err := base.New(clientID, opts.Authority, tokener, base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}

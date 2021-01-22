@@ -116,20 +116,36 @@ type Client struct {
 	cacheAccessor cache.ExportReplace
 }
 
+// Option is an optional argument to the New constructor.
+type Option func(c *Client)
+
+// WithCacheAccessor allows you to set some type of cache for storing authentication tokens.
+func WithCacheAccessor(ca cache.ExportReplace) Option {
+	return func(c *Client) {
+		if ca != nil {
+			c.cacheAccessor = ca
+		}
+	}
+}
+
 // New is the constructor for Base.
-func New(clientID string, authorityURI string, cacheAccessor cache.ExportReplace, token *oauth.Client) (Client, error) {
+func New(clientID string, authorityURI string, token *oauth.Client, options ...Option) (Client, error) {
 	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)
 	if err != nil {
 		return Client{}, err
 	}
 	authParams := authority.NewAuthParams(clientID, authInfo)
-
-	return Client{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
+	client := Client{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
 		Token:         token,
 		AuthParams:    authParams,
 		cacheAccessor: noopCacheAccessor{},
 		manager:       storage.New(token),
-	}, nil
+	}
+	for _, o := range options {
+		o(&client)
+	}
+	return client, nil
+
 }
 
 // AuthCodeURL creates a URL used to acquire an authorization code.
