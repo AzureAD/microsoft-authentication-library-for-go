@@ -94,7 +94,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, opts.Accessor, oauth.New())
+	base, err := base.New(clientID, opts.Authority, oauth.New(), base.withCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}
