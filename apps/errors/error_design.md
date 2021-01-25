@@ -75,20 +75,11 @@ func (e CallErr) Verbose() string {
 }
 ```
 
-A user will always receive the most concise error we provide.  They can tell if it is a server side error using the Go error package:  
+A user will always receive the most concise error we provide.  They can tell if it is a server side error by checking the type of the error like this:
 
 ```go
-if errors.Is(err, CallErr{}) {
-...
-}
-```
-
-or retrieval with:
-
-```go
-var callErr CallErr
-if errors.As(err, &callErr) {
-...
+if ce, ok := err.(CallError); ok { // CallError is always the outer error
+  // Do something
 }
 ```
 
