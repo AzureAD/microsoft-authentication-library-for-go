@@ -5,6 +5,9 @@ package base
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/url"
@@ -14,11 +17,14 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/local"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/google/uuid"
+	"github.com/pkg/browser"
 )
 
 const (
@@ -58,6 +64,12 @@ type AcquireTokenAuthCodeParameters struct {
 	Challenge  string
 	AppType    accesstokens.AppType
 	Credential *accesstokens.Credential
+}
+
+// AcquireTokenInteractiveParameters contains the parameters required to acquire an access token using
+// the interactive auth code flow.
+type AcquireTokenInteractiveParameters struct {
+	Scopes []string
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -164,31 +176,30 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	v.Add("client_id", clientID)
 	v.Add("response_type", "code")
 	v.Add("redirect_uri", redirectURI)
-	v.Add("scope", strings.Join(scopes, " "))
-
+	v.Add("scope", strings.Join(scopes, scopeSeparator))
+	if authParams.State != "" {
+		v.Add("state", authParams.State)
+	}
+	if authParams.CodeChallenge != "" {
+		v.Add("code_challenge", authParams.CodeChallenge)
+	}
+	if authParams.CodeChallengeMethod != "" {
+		v.Add("code_challenge_method", authParams.CodeChallengeMethod)
+	}
+	if authParams.Prompt != "" {
+		v.Add("prompt", authParams.Prompt)
+	}
 	// There were left over from an implementation that didn't use any of these.  We may
 	// need to add them later, but as of now aren't needed.
 	/*
-		if p.CodeChallenge != "" {
-			urlParams.Add("code_challenge", p.CodeChallenge)
-		}
-		if p.State != "" {
-			urlParams.Add("state", p.State)
-		}
 		if p.ResponseMode != "" {
 			urlParams.Add("response_mode", p.ResponseMode)
-		}
-		if p.Prompt != "" {
-			urlParams.Add("prompt", p.Prompt)
 		}
 		if p.LoginHint != "" {
 			urlParams.Add("login_hint", p.LoginHint)
 		}
 		if p.DomainHint != "" {
 			urlParams.Add("domain_hint", p.DomainHint)
-		}
-		if p.CodeChallengeMethod != "" {
-			urlParams.Add("code_challenge_method", p.CodeChallengeMethod)
 		}
 	*/
 	baseURL.RawQuery = v.Encode()
@@ -257,6 +268,75 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
+// AcquireTokenByInteractive initiates the interactive auth flow.
+func (b Client) AcquireTokenByInteractive(ctx context.Context, params AcquireTokenInteractiveParameters) (AuthResult, error) {
+	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
+	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
+	cv, hash, err := createCodeVerifier()
+	if err != nil {
+		return AuthResult{}, err
+	}
+	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams.Scopes = params.Scopes
+	authParams.AuthorizationType = authority.ATInteractive
+	authParams.CodeChallenge = hash
+	authParams.CodeChallengeMethod = "S256"
+	authParams.State = uuid.New().String()
+	authParams.Prompt = "select_account"
+	res, err := b.interactiveBrowserLogin(ctx, authParams)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	authParams.Redirecturi = res.redirectURI
+
+	var cc *accesstokens.Credential
+	req, err := accesstokens.NewCodeChallengeRequest(authParams, accesstokens.ATPublic, cc, res.authCode, cv)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	token, err := b.Token.AuthCode(ctx, req)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	return b.AuthResultFromToken(ctx, authParams, token, true)
+}
+
+type interactiveAutResult struct {
+	authCode    string
+	redirectURI string
+}
+
+// interactiveBrowserLogin launches the system browser for interactive login
+func (b Client) interactiveBrowserLogin(ctx context.Context, params authority.AuthParams) (interactiveAutResult, error) {
+	// start local redirect server so login can call us back
+	rs := local.NewServer()
+	redirectURL := rs.Start(params.State)
+	defer rs.Stop()
+	authURL, err := b.AuthCodeURL(ctx, params.ClientID, redirectURL, params.Scopes, params)
+	if err != nil {
+		return interactiveAutResult{}, err
+	}
+	// open browser window so user can select credentials
+	if err := browser.OpenURL(authURL); err != nil {
+		return interactiveAutResult{}, err
+	}
+	// now wait until the logic calls us back
+	if err := rs.WaitForCallback(ctx); err != nil {
+		return interactiveAutResult{}, err
+	}
+	// get the auth code from the result
+	authCode, err := rs.AuthorizationCode()
+	if err != nil {
+		return interactiveAutResult{}, err
+	}
+	return interactiveAutResult{
+		authCode:    authCode,
+		redirectURI: redirectURL,
+	}, nil
+}
+
 func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthResult, error) {
 	if !cacheWrite {
 		return NewAuthResult(token, shared.Account{})
@@ -302,4 +382,16 @@ func convertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.Unix(timeInt, 0).UTC(), nil
+}
+
+// creates a code verifier string along with its SHA256 hash
+func createCodeVerifier() (string, string, error) {
+	cvBytes := make([]byte, 32, 32)
+	if _, err := rand.Read(cvBytes); err != nil {
+		return "", "", err
+	}
+	cv := base64.RawURLEncoding.EncodeToString(cvBytes)
+	// for PKCE, create a hash of the code verifier
+	cvh := sha256.Sum256([]byte(cv))
+	return cv, base64.RawURLEncoding.EncodeToString(cvh[:]), nil
 }

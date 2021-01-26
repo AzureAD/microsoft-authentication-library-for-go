@@ -208,7 +208,7 @@ func (c Client) FromAuthCode(ctx context.Context, req AuthCodeRequest) (TokenRes
 			return TokenResponse{}, err
 		}
 	case ATPublic:
-		// Nothing needs to be done, exept to not error.
+		qv = url.Values{}
 	default:
 		return TokenResponse{}, fmt.Errorf("bug: Token.AuthCode() received request with AppType == %v, which we do not recongnize", req.AppType)
 	}

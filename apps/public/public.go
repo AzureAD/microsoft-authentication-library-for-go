@@ -266,3 +266,11 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 func (pca Client) Accounts() []Account {
 	return pca.base.Accounts()
 }
+
+// AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
+func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string) (AuthResult, error) {
+	params := base.AcquireTokenInteractiveParameters{
+		Scopes: scopes,
+	}
+	return pca.base.AcquireTokenByInteractive(ctx, params)
+}
