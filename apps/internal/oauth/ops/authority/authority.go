@@ -110,16 +110,20 @@ const (
 
 // AuthParams represents the parameters used for authorization for token acquisition.
 type AuthParams struct {
-	AuthorityInfo     Info
-	CorrelationID     string
-	Endpoints         Endpoints
-	ClientID          string
-	Redirecturi       string
-	HomeaccountID     string
-	Username          string
-	Password          string
-	Scopes            []string
-	AuthorizationType AuthorizeType
+	AuthorityInfo       Info
+	CorrelationID       string
+	Endpoints           Endpoints
+	ClientID            string
+	Redirecturi         string
+	HomeaccountID       string
+	Username            string
+	Password            string
+	Scopes              []string
+	AuthorizationType   AuthorizeType
+	State               string
+	CodeChallenge       string
+	CodeChallengeMethod string
+	Prompt              string
 }
 
 // NewAuthParams creates an authorization parameters object.
