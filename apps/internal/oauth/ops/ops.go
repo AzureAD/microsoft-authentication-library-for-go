@@ -17,13 +17,13 @@ Usage is simple:
 package ops
 
 import (
-	"net/http"
-
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/comm"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
 )
+
+type HTTPClient = comm.HTTPClient
 
 // REST provides REST clients for communicating with various backends used by MSAL.
 type REST struct {
@@ -31,8 +31,8 @@ type REST struct {
 }
 
 // New is the constructor for REST.
-func New() *REST {
-	return &REST{client: comm.New(&http.Client{})}
+func New(httpClient HTTPClient) *REST {
+	return &REST{client: comm.New(httpClient)}
 }
 
 // Authority returns a client for querying information about various authorities.

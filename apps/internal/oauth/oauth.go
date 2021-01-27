@@ -52,8 +52,8 @@ type Client struct {
 }
 
 // New is the constructor for Token.
-func New() *Client {
-	r := ops.New()
+func New(httpClient ops.HTTPClient) *Client {
+	r := ops.New(httpClient)
 	return &Client{
 		resolver:     newAuthorityEndpoint(r),
 		accessTokens: r.AccessTokens(),

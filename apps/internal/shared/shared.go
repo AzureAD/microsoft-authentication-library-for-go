@@ -4,6 +4,7 @@
 package shared
 
 import (
+	"net/http"
 	"strings"
 )
 
@@ -45,3 +46,6 @@ func NewAccount(homeAccountID, env, realm, localAccountID, authorityType, userna
 func (acc Account) Key() string {
 	return strings.Join([]string{acc.HomeAccountID, acc.Environment, acc.Realm}, CacheKeySeparator)
 }
+
+// DefaultClient is our default shared HTTP client.
+var DefaultClient = &http.Client{}
