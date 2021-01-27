@@ -310,10 +310,12 @@ type interactiveAutResult struct {
 // browserLogin launches the system browser for interactive login
 func (b Client) browserLogin(ctx context.Context, params authority.AuthParams) (interactiveAutResult, error) {
 	// start local redirect server so login can call us back
-	rs := local.NewServer()
-	redirectURL := rs.Start(params.State)
-	defer rs.Stop()
-	authURL, err := b.AuthCodeURL(ctx, params.ClientID, redirectURL, params.Scopes, params)
+	srv, err := local.New(params.State)
+	if err != nil {
+		return interactiveAutResult{}, err
+	}
+	defer srv.Shutdown()
+	authURL, err := b.AuthCodeURL(ctx, params.ClientID, srv.Addr, params.Scopes, params)
 	if err != nil {
 		return interactiveAutResult{}, err
 	}
@@ -322,17 +324,13 @@ func (b Client) browserLogin(ctx context.Context, params authority.AuthParams) (
 		return interactiveAutResult{}, err
 	}
 	// now wait until the logic calls us back
-	if err := rs.WaitForCallback(ctx); err != nil {
-		return interactiveAutResult{}, err
-	}
-	// get the auth code from the result
-	authCode, err := rs.AuthorizationCode()
-	if err != nil {
-		return interactiveAutResult{}, err
+	res := srv.Result(ctx)
+	if res.Err != nil {
+		return interactiveAutResult{}, res.Err
 	}
 	return interactiveAutResult{
-		authCode:    authCode,
-		redirectURI: redirectURL,
+		authCode:    res.Code,
+		redirectURI: srv.Addr,
 	}, nil
 }
 

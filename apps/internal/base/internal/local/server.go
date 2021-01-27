@@ -3,13 +3,12 @@ package local
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"math/rand"
+	"net"
 	"net/http"
 )
 
-const okPage = `
+var okPage = []byte(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -20,7 +19,7 @@ const okPage = `
     <p>Authentication complete. You can return to the application. Feel free to close this browser tab.</p>
 </body>
 </html>
-`
+`)
 
 const failPage = `
 <!DOCTYPE html>
@@ -36,74 +35,130 @@ const failPage = `
 </html>
 `
 
+// Result is the result from the redirect.
+type Result struct {
+	// Code is the code sent by the authority server.
+	Code string
+	// Err is set if there was an error.
+	Err error
+}
+
 // Server is an HTTP server.
 type Server struct {
-	done chan struct{}
-	s    *http.Server
-	code string
-	err  error
+	// Addr is the address the server is listening on.
+	Addr     string
+	ctx      context.Context
+	resultCh chan Result
+	s        *http.Server
+	reqState string
+	code     string
+	err      error
 }
 
-// NewServer creates a local HTTP server.
-func NewServer() *Server {
-	rs := &Server{
-		done: make(chan struct{}),
-		s:    &http.Server{},
+// New creates a local HTTP server and starts it.
+func New(reqState string) (*Server, error) {
+	var l net.Listener
+	var err error
+	for i := 0; i < 10; i++ {
+		l, err = net.Listen("tcp", "localhost:0")
+		if err != nil {
+			continue
+		}
+		break
 	}
-	return rs
+	if err != nil {
+		return nil, err
+	}
+
+	serv := &Server{
+		Addr:     "http://" + l.Addr().String(),
+		s:        &http.Server{Addr: "localhost:0"},
+		reqState: reqState,
+		resultCh: make(chan Result, 1),
+	}
+	serv.s.Handler = http.HandlerFunc(serv.handler)
+
+	if err := serv.start(l); err != nil {
+		return nil, err
+	}
+
+	return serv, nil
 }
 
-// Start starts the local HTTP server on a separate go routine.
-// The return value is the full URL plus port number.
-func (s *Server) Start(reqState string) string {
-	port := rand.Intn(600) + 8400
-	s.s.Addr = fmt.Sprintf(":%d", port)
-	s.s.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		defer func() {
-			s.done <- struct{}{}
-		}()
-		qp := r.URL.Query()
-		if respState, ok := qp["state"]; !ok {
-			s.err = errors.New("missing OAuth state")
-			return
-		} else if respState[0] != reqState {
-			s.err = errors.New("mismatched OAuth state")
-			return
+func (s *Server) start(l net.Listener) error {
+	go func() {
+		err := s.s.Serve(l)
+		if err != nil {
+			select {
+			case s.resultCh <- Result{Err: err}:
+			default:
+			}
 		}
-		if err, ok := qp["error"]; ok {
-			desc := qp.Get("error_description")
-			w.Write([]byte(fmt.Sprintf(failPage, err[0], desc)))
-			s.err = fmt.Errorf("authentication error: %s; description: %s", err[0], desc)
-			return
-		}
-		if code, ok := qp["code"]; ok {
-			w.Write([]byte(okPage))
-			s.code = code[0]
-		} else {
-			s.err = errors.New("authorization code missing in query string")
-		}
-	})
-	go s.s.ListenAndServe()
-	return fmt.Sprintf("http://localhost:%d", port)
+	}()
+
+	return nil
 }
 
-// Stop will shut down the local HTTP server.
-func (s *Server) Stop() {
-	close(s.done)
+// Result gets the result of the redirect operation. Once a single result is returned, the server
+// is shutdown. ctx deadline will be honored.
+func (s *Server) Result(ctx context.Context) Result {
+	select {
+	case <-ctx.Done():
+		return Result{Err: ctx.Err()}
+	case r := <-s.resultCh:
+		return r
+	}
+}
+
+// Shutdown shuts down the server.
+func (s *Server) Shutdown() {
+	// Note: You might get clever and thing you can do this in handler() as a defer, you can't.
 	s.s.Shutdown(context.Background())
 }
 
-// WaitForCallback will wait until Azure interactive login has called us back with an authorization code or error.
-func (s *Server) WaitForCallback(ctx context.Context) error {
+func (s *Server) putResult(r Result) {
 	select {
-	case <-s.done:
-		return nil
-	case <-ctx.Done():
-		return ctx.Err()
+	case s.resultCh <- r:
+	default:
 	}
 }
 
-// AuthorizationCode returns the authorization code or error result from the interactive login.
-func (s *Server) AuthorizationCode() (string, error) {
-	return s.code, s.err
+func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+
+	headerErr := q.Get("error")
+	if headerErr != "" {
+		desc := q.Get("error_description")
+		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
+		// change this to s.error() and make s.error() write the failPage instead of an error code.
+		w.Write([]byte(fmt.Sprintf(failPage, headerErr, desc)))
+		s.putResult(Result{Err: fmt.Errorf(desc)})
+		return
+	}
+
+	respState := q.Get("state")
+	switch respState {
+	case s.reqState:
+	case "":
+		s.error(w, http.StatusInternalServerError, "server didn't send OAuth state")
+		return
+	default:
+		s.error(w, http.StatusInternalServerError, "mismatched OAuth state, req(%s), resp(%s)", s.reqState, respState)
+		return
+	}
+
+	code := q.Get("code")
+	if code == "" {
+		s.error(w, http.StatusInternalServerError, "authorization code missing in query string")
+		return
+	}
+
+	w.Write(okPage)
+	s.putResult(Result{Code: code})
+}
+
+func (s *Server) error(w http.ResponseWriter, code int, str string, i ...interface{}) {
+	err := fmt.Errorf(str, i...)
+	http.Error(w, err.Error(), code)
+	s.putResult(Result{Err: err})
 }
