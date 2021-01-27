@@ -272,7 +272,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 func (b Client) AcquireTokenByInteractive(ctx context.Context, params AcquireTokenInteractiveParameters) (AuthResult, error) {
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
-	cv, hash, err := createCodeVerifier()
+	cv, hash, err := codeVerifier()
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -283,14 +283,13 @@ func (b Client) AcquireTokenByInteractive(ctx context.Context, params AcquireTok
 	authParams.CodeChallengeMethod = "S256"
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
-	res, err := b.interactiveBrowserLogin(ctx, authParams)
+	res, err := b.browserLogin(ctx, authParams)
 	if err != nil {
 		return AuthResult{}, err
 	}
 	authParams.Redirecturi = res.redirectURI
 
-	var cc *accesstokens.Credential
-	req, err := accesstokens.NewCodeChallengeRequest(authParams, accesstokens.ATPublic, cc, res.authCode, cv)
+	req, err := accesstokens.NewCodeChallengeRequest(authParams, accesstokens.ATPublic, nil, res.authCode, cv)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -308,8 +307,8 @@ type interactiveAutResult struct {
 	redirectURI string
 }
 
-// interactiveBrowserLogin launches the system browser for interactive login
-func (b Client) interactiveBrowserLogin(ctx context.Context, params authority.AuthParams) (interactiveAutResult, error) {
+// browserLogin launches the system browser for interactive login
+func (b Client) browserLogin(ctx context.Context, params authority.AuthParams) (interactiveAutResult, error) {
 	// start local redirect server so login can call us back
 	rs := local.NewServer()
 	redirectURL := rs.Start(params.State)
@@ -385,8 +384,8 @@ func convertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 }
 
 // creates a code verifier string along with its SHA256 hash
-func createCodeVerifier() (string, string, error) {
-	cvBytes := make([]byte, 32, 32)
+func codeVerifier() (string, string, error) {
+	cvBytes := make([]byte, 32)
 	if _, err := rand.Read(cvBytes); err != nil {
 		return "", "", err
 	}
