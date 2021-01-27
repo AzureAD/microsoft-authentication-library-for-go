@@ -47,12 +47,9 @@ type Result struct {
 type Server struct {
 	// Addr is the address the server is listening on.
 	Addr     string
-	ctx      context.Context
 	resultCh chan Result
 	s        *http.Server
 	reqState string
-	code     string
-	err      error
 }
 
 // New creates a local HTTP server and starts it.
@@ -113,7 +110,7 @@ func (s *Server) Result(ctx context.Context) Result {
 // Shutdown shuts down the server.
 func (s *Server) Shutdown() {
 	// Note: You might get clever and thing you can do this in handler() as a defer, you can't.
-	s.s.Shutdown(context.Background())
+	_ = s.s.Shutdown(context.Background())
 }
 
 func (s *Server) putResult(r Result) {
@@ -131,7 +128,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		desc := q.Get("error_description")
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		w.Write([]byte(fmt.Sprintf(failPage, headerErr, desc)))
+		_, _ = w.Write([]byte(fmt.Sprintf(failPage, headerErr, desc)))
 		s.putResult(Result{Err: fmt.Errorf(desc)})
 		return
 	}
@@ -153,7 +150,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Write(okPage)
+	_, _ = w.Write(okPage)
 	s.putResult(Result{Code: code})
 }
 
