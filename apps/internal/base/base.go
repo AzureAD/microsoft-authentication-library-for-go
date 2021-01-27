@@ -302,33 +302,33 @@ func (b Client) AcquireTokenByInteractive(ctx context.Context, params AcquireTok
 	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-type interactiveAutResult struct {
+type interactiveAuthResult struct {
 	authCode    string
 	redirectURI string
 }
 
 // browserLogin launches the system browser for interactive login
-func (b Client) browserLogin(ctx context.Context, params authority.AuthParams) (interactiveAutResult, error) {
+func (b Client) browserLogin(ctx context.Context, params authority.AuthParams) (interactiveAuthResult, error) {
 	// start local redirect server so login can call us back
 	srv, err := local.New(params.State)
 	if err != nil {
-		return interactiveAutResult{}, err
+		return interactiveAuthResult{}, err
 	}
 	defer srv.Shutdown()
 	authURL, err := b.AuthCodeURL(ctx, params.ClientID, srv.Addr, params.Scopes, params)
 	if err != nil {
-		return interactiveAutResult{}, err
+		return interactiveAuthResult{}, err
 	}
 	// open browser window so user can select credentials
 	if err := browser.OpenURL(authURL); err != nil {
-		return interactiveAutResult{}, err
+		return interactiveAuthResult{}, err
 	}
 	// now wait until the logic calls us back
 	res := srv.Result(ctx)
 	if res.Err != nil {
-		return interactiveAutResult{}, res.Err
+		return interactiveAuthResult{}, res.Err
 	}
-	return interactiveAutResult{
+	return interactiveAuthResult{
 		authCode:    res.Code,
 		redirectURI: srv.Addr,
 	}, nil
