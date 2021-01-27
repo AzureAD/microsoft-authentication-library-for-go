@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 // Package local contains a local HTTP server used with interactive authentication.
 package local
 
@@ -109,7 +112,7 @@ func (s *Server) Result(ctx context.Context) Result {
 
 // Shutdown shuts down the server.
 func (s *Server) Shutdown() {
-	// Note: You might get clever and thing you can do this in handler() as a defer, you can't.
+	// Note: You might get clever and think you can do this in handler() as a defer, you can't.
 	_ = s.s.Shutdown(context.Background())
 }
 
