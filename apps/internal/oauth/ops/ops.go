@@ -23,6 +23,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
 )
 
+// HTTPClient represents an HTTP client.
+// It's usually an *http.Client from the standard library.
 type HTTPClient = comm.HTTPClient
 
 // REST provides REST clients for communicating with various backends used by MSAL.
