@@ -10,23 +10,23 @@ type Definitions struct {
 	Text            string     `xml:",chardata"`
 	Name            string     `xml:"name,attr"`
 	TargetNamespace string     `xml:"targetNamespace,attr"`
-	Wsdl            string     `xml:"wsdl,attr"`
-	Xsd             string     `xml:"xsd,attr"`
+	WSDL            string     `xml:"wsdl,attr"`
+	XSD             string     `xml:"xsd,attr"`
 	T               string     `xml:"t,attr"`
-	Soapenc         string     `xml:"soapenc,attr"`
-	Soap            string     `xml:"soap,attr"`
-	Tns             string     `xml:"tns,attr"`
-	Msc             string     `xml:"msc,attr"`
-	Wsam            string     `xml:"wsam,attr"`
-	Soap12          string     `xml:"soap12,attr"`
-	Wsa10           string     `xml:"wsa10,attr"`
-	Wsa             string     `xml:"wsa,attr"`
-	Wsaw            string     `xml:"wsaw,attr"`
-	Wsx             string     `xml:"wsx,attr"`
-	Wsap            string     `xml:"wsap,attr"`
-	Wsu             string     `xml:"wsu,attr"`
+	SOAPENC         string     `xml:"soapenc,attr"`
+	SOAP            string     `xml:"soap,attr"`
+	TNS             string     `xml:"tns,attr"`
+	MSC             string     `xml:"msc,attr"`
+	WSAM            string     `xml:"wsam,attr"`
+	SOAP12          string     `xml:"soap12,attr"`
+	WSA10           string     `xml:"wsa10,attr"`
+	WSA             string     `xml:"wsa,attr"`
+	WSAW            string     `xml:"wsaw,attr"`
+	WSX             string     `xml:"wsx,attr"`
+	WSAP            string     `xml:"wsap,attr"`
+	WSU             string     `xml:"wsu,attr"`
 	Trust           string     `xml:"trust,attr"`
-	Wsp             string     `xml:"wsp,attr"`
+	WSP             string     `xml:"wsp,attr"`
 	Policy          []Policy   `xml:"Policy"`
 	Types           Types      `xml:"types"`
 	Message         []Message  `xml:"message"`
@@ -52,7 +52,7 @@ type All struct {
 	TransportBinding                TransportBinding                `xml:"TransportBinding"`
 	UsingAddressing                 Text                            `xml:"UsingAddressing"`
 	EndorsingSupportingTokens       EndorsingSupportingTokens       `xml:"EndorsingSupportingTokens"`
-	Wss11                           Wss11                           `xml:"Wss11"`
+	WSS11                           WSS11                           `xml:"Wss11"`
 	Trust10                         Trust10                         `xml:"Trust10"`
 	SignedSupportingTokens          SignedSupportingTokens          `xml:"SignedSupportingTokens"`
 	Trust13                         WSTrust13                       `xml:"Trust13"`
@@ -67,7 +67,7 @@ type NegotiateAuthentication struct {
 
 type TransportBinding struct {
 	Text   string                 `xml:",chardata"`
-	Sp     string                 `xml:"sp,attr"`
+	SP     string                 `xml:"sp,attr"`
 	Policy TransportBindingPolicy `xml:"Policy"`
 }
 
@@ -117,14 +117,14 @@ type LayoutPolicy struct {
 
 type EndorsingSupportingTokens struct {
 	Text   string                          `xml:",chardata"`
-	Sp     string                          `xml:"sp,attr"`
+	SP     string                          `xml:"sp,attr"`
 	Policy EndorsingSupportingTokensPolicy `xml:"Policy"`
 }
 
 type EndorsingSupportingTokensPolicy struct {
 	Text          string        `xml:",chardata"`
 	X509Token     X509Token     `xml:"X509Token"`
-	RsaToken      RsaToken      `xml:"RsaToken"`
+	RSAToken      RSAToken      `xml:"RsaToken"`
 	SignedParts   SignedParts   `xml:"SignedParts"`
 	KerberosToken KerberosToken `xml:"KerberosToken"`
 	IssuedToken   IssuedToken   `xml:"IssuedToken"`
@@ -140,14 +140,14 @@ type X509Token struct {
 type X509TokenPolicy struct {
 	Text                       string `xml:",chardata"`
 	RequireThumbprintReference Text   `xml:"RequireThumbprintReference"`
-	WssX509V3Token10           Text   `xml:"WssX509V3Token10"`
+	WSSX509V3Token10           Text   `xml:"WssX509V3Token10"`
 }
 
-type RsaToken struct {
+type RSAToken struct {
 	Text         string `xml:",chardata"`
 	IncludeToken string `xml:"IncludeToken,attr"`
 	Optional     string `xml:"Optional,attr"`
-	Mssp         string `xml:"mssp,attr"`
+	MSSP         string `xml:"mssp,attr"`
 }
 
 type SignedParts struct {
@@ -169,7 +169,7 @@ type KerberosToken struct {
 
 type KerberosTokenPolicy struct {
 	Text                         string `xml:",chardata"`
-	WssGssKerberosV5ApReqToken11 Text   `xml:"WssGssKerberosV5ApReqToken11"`
+	WSSGSSKerberosV5ApReqToken11 Text   `xml:"WssGssKerberosV5ApReqToken11"`
 }
 
 type IssuedToken struct {
@@ -201,9 +201,9 @@ type KeyValueToken struct {
 	Optional     string `xml:"Optional,attr"`
 }
 
-type Wss11 struct {
+type WSS11 struct {
 	Text   string      `xml:",chardata"`
-	Sp     string      `xml:"sp,attr"`
+	SP     string      `xml:"sp,attr"`
 	Policy Wss11Policy `xml:"Policy"`
 }
 
@@ -214,7 +214,7 @@ type Wss11Policy struct {
 
 type Trust10 struct {
 	Text   string        `xml:",chardata"`
-	Sp     string        `xml:"sp,attr"`
+	SP     string        `xml:"sp,attr"`
 	Policy Trust10Policy `xml:"Policy"`
 }
 
@@ -227,7 +227,7 @@ type Trust10Policy struct {
 
 type SignedSupportingTokens struct {
 	Text   string                 `xml:",chardata"`
-	Sp     string                 `xml:"sp,attr"`
+	SP     string                 `xml:"sp,attr"`
 	Policy SupportingTokensPolicy `xml:"Policy"`
 }
 
@@ -242,18 +242,18 @@ type UsernameToken struct {
 }
 
 type UsernameTokenPolicy struct {
-	Text               string            `xml:",chardata"`
-	WssUsernameToken10 WsUsernameToken10 `xml:"WssUsernameToken10"`
+	Text               string             `xml:",chardata"`
+	WSSUsernameToken10 WSSUsernameToken10 `xml:"WssUsernameToken10"`
 }
 
-type WsUsernameToken10 struct {
+type WSSUsernameToken10 struct {
 	Text    string `xml:",chardata"`
 	XMLName xml.Name
 }
 
 type WSTrust13 struct {
 	Text   string          `xml:",chardata"`
-	Sp     string          `xml:"sp,attr"`
+	SP     string          `xml:"sp,attr"`
 	Policy WSTrust13Policy `xml:"Policy"`
 }
 
@@ -266,7 +266,7 @@ type WSTrust13Policy struct {
 
 type SignedEncryptedSupportingTokens struct {
 	Text   string                 `xml:",chardata"`
-	Sp     string                 `xml:"sp,attr"`
+	SP     string                 `xml:"sp,attr"`
 	Policy SupportingTokensPolicy `xml:"Policy"`
 }
 
@@ -389,6 +389,6 @@ type PortEndpointReference struct {
 
 type Identity struct {
 	Text  string `xml:",chardata"`
-	Xmlns string `xml:"xmlns,attr"`
-	Spn   Text   `xml:"Spn"`
+	XMLNS string `xml:"xmlns,attr"`
+	SPN   Text   `xml:"Spn"`
 }
