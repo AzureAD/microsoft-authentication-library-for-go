@@ -21,16 +21,22 @@ Base.AuthParams is a copy that is free to be manipulated here.
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/local"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/google/uuid"
+	"github.com/pkg/browser"
 )
 
 // AuthResult contains the results of one token acquisition operation.
@@ -268,9 +274,80 @@ func (pca Client) Accounts() []Account {
 }
 
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
+// https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string) (AuthResult, error) {
-	params := base.AcquireTokenInteractiveParameters{
-		Scopes: scopes,
+	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
+	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
+	cv, hash, err := codeVerifier()
+	if err != nil {
+		return AuthResult{}, err
 	}
-	return pca.base.AcquireTokenByInteractive(ctx, params)
+	authParams := pca.base.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams.Scopes = scopes
+	authParams.AuthorizationType = authority.ATInteractive
+	authParams.CodeChallenge = hash
+	authParams.CodeChallengeMethod = "S256"
+	authParams.State = uuid.New().String()
+	authParams.Prompt = "select_account"
+	res, err := pca.browserLogin(ctx, authParams)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	authParams.Redirecturi = res.redirectURI
+
+	req, err := accesstokens.NewCodeChallengeRequest(authParams, accesstokens.ATPublic, nil, res.authCode, cv)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	token, err := pca.base.Token.AuthCode(ctx, req)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	return pca.base.AuthResultFromToken(ctx, authParams, token, true)
+}
+
+type interactiveAuthResult struct {
+	authCode    string
+	redirectURI string
+}
+
+// browserLogin launches the system browser for interactive login
+func (pca Client) browserLogin(ctx context.Context, params authority.AuthParams) (interactiveAuthResult, error) {
+	// start local redirect server so login can call us back
+	srv, err := local.New(params.State)
+	if err != nil {
+		return interactiveAuthResult{}, err
+	}
+	defer srv.Shutdown()
+	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, srv.Addr, params.Scopes, params)
+	if err != nil {
+		return interactiveAuthResult{}, err
+	}
+	// open browser window so user can select credentials
+	if err := browser.OpenURL(authURL); err != nil {
+		return interactiveAuthResult{}, err
+	}
+	// now wait until the logic calls us back
+	res := srv.Result(ctx)
+	if res.Err != nil {
+		return interactiveAuthResult{}, res.Err
+	}
+	return interactiveAuthResult{
+		authCode:    res.Code,
+		redirectURI: srv.Addr,
+	}, nil
+}
+
+// creates a code verifier string along with its SHA256 hash
+func codeVerifier() (string, string, error) {
+	cvBytes := make([]byte, 32)
+	if _, err := rand.Read(cvBytes); err != nil {
+		return "", "", err
+	}
+	cv := base64.RawURLEncoding.EncodeToString(cvBytes)
+	// for PKCE, create a hash of the code verifier
+	cvh := sha256.Sum256([]byte(cv))
+	return cv, base64.RawURLEncoding.EncodeToString(cvh[:]), nil
 }
