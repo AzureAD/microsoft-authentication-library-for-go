@@ -3,15 +3,7 @@
 
 package public
 
-import (
-	"errors"
-	"fmt"
-	"net/http"
-	"net/url"
-	"testing"
-)
-
-func fakeBrowserOpenURL(authURL string) error {
+/*func fakeBrowserOpenURL(authURL string) error {
 	// we will get called with the URL for requesting an auth code
 	u, err := url.Parse(authURL)
 	if err != nil {
@@ -48,19 +40,16 @@ func fakeBrowserOpenURL(authURL string) error {
 }
 
 func TestAcquireTokenInteractive(t *testing.T) {
-	/*
-		TODO: needs fake oauth.Client
-		browserOpenURL = fakeBrowserOpenURL
-		client, err := New("some_client_id")
-		if err != nil {
-			t.Fatal(err)
-		}
-		res, err := client.AcquireTokenInteractive(context.Background(), []string{"the_scope"})
-		if err != nil {
-			t.Fatal(err)
-		}
-		if res.AccessToken != "test_token" {
-			t.Errorf("incorrect token: %s", res.AccessToken)
-		}
-	*/
-}
+	browserOpenURL = fakeBrowserOpenURL
+	client, err := New("some_client_id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	res, err := client.AcquireTokenInteractive(context.Background(), []string{"the_scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.AccessToken != "test_token" {
+		t.Errorf("incorrect token: %s", res.AccessToken)
+	}
+}*/
