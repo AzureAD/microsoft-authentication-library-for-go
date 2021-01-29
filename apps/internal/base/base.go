@@ -269,6 +269,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 }
 
 // AcquireTokenByInteractive initiates the interactive auth flow.
+// https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 func (b Client) AcquireTokenByInteractive(ctx context.Context, params AcquireTokenInteractiveParameters) (AuthResult, error) {
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
