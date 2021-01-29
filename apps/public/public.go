@@ -313,6 +313,11 @@ type interactiveAuthResult struct {
 	redirectURI string
 }
 
+// provides a test hook to simulate opening a browser
+var browserOpenURL = func(authURL string) error {
+	return browser.OpenURL(authURL)
+}
+
 // browserLogin launches the system browser for interactive login
 func (pca Client) browserLogin(ctx context.Context, params authority.AuthParams) (interactiveAuthResult, error) {
 	// start local redirect server so login can call us back
@@ -326,7 +331,7 @@ func (pca Client) browserLogin(ctx context.Context, params authority.AuthParams)
 		return interactiveAuthResult{}, err
 	}
 	// open browser window so user can select credentials
-	if err := browser.OpenURL(authURL); err != nil {
+	if err := browserOpenURL(authURL); err != nil {
 		return interactiveAuthResult{}, err
 	}
 	// now wait until the logic calls us back
