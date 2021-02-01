@@ -278,14 +278,14 @@ func (pca Client) Accounts() []Account {
 func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string) (AuthResult, error) {
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
-	cv, hash, err := codeVerifier()
+	cv, challenge, err := codeVerifier()
 	if err != nil {
 		return AuthResult{}, err
 	}
 	authParams := pca.base.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATInteractive
-	authParams.CodeChallenge = hash
+	authParams.CodeChallenge = challenge
 	authParams.CodeChallengeMethod = "S256"
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
@@ -345,14 +345,17 @@ func (pca Client) browserLogin(ctx context.Context, params authority.AuthParams)
 	}, nil
 }
 
-// creates a code verifier string along with its SHA256 hash
-func codeVerifier() (string, string, error) {
+// creates a code verifier string along with its SHA256 hash which
+// is used as the challenge when requesting an auth code.
+// used in interactive auth flow for PKCE.
+func codeVerifier() (codeVerifier string, challenge string, err error) {
 	cvBytes := make([]byte, 32)
-	if _, err := rand.Read(cvBytes); err != nil {
-		return "", "", err
+	if _, err = rand.Read(cvBytes); err != nil {
+		return
 	}
-	cv := base64.RawURLEncoding.EncodeToString(cvBytes)
+	codeVerifier = base64.RawURLEncoding.EncodeToString(cvBytes)
 	// for PKCE, create a hash of the code verifier
-	cvh := sha256.Sum256([]byte(cv))
-	return cv, base64.RawURLEncoding.EncodeToString(cvh[:]), nil
+	cvh := sha256.Sum256([]byte(codeVerifier))
+	challenge = base64.RawURLEncoding.EncodeToString(cvh[:])
+	return
 }
