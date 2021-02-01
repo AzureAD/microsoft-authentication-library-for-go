@@ -29,7 +29,10 @@ const version = "0.1.0"
 // HTTPClient represents an HTTP client.
 // It's usually an *http.Client from the standard library.
 type HTTPClient interface {
+	// Do sends an HTTP request and returns an HTTP response.
 	Do(req *http.Request) (*http.Response, error)
+
+	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
 	CloseIdleConnections()
 }
 
