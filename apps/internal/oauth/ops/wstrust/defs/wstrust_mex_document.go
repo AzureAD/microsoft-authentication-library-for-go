@@ -78,18 +78,18 @@ func policies(defs Definitions) (map[string]endpointType, error) {
 
 	for _, policy := range defs.Policy {
 		if policy.ExactlyOne.All.NegotiateAuthentication.XMLName.Local != "" {
-			if policy.ExactlyOne.All.TransportBinding.Sp != "" && policy.ID != "" {
+			if policy.ExactlyOne.All.TransportBinding.SP != "" && policy.ID != "" {
 				policies["#"+policy.ID] = etWindowsTransport
 			}
 		}
 
-		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			if policy.ExactlyOne.All.TransportBinding.Sp != "" && policy.ID != "" {
+		if policy.ExactlyOne.All.SignedEncryptedSupportingTokens.Policy.UsernameToken.Policy.WSSUsernameToken10.XMLName.Local != "" {
+			if policy.ExactlyOne.All.TransportBinding.SP != "" && policy.ID != "" {
 				policies["#"+policy.ID] = etUsernamePassword
 			}
 		}
-		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WssUsernameToken10.XMLName.Local != "" {
-			if policy.ExactlyOne.All.TransportBinding.Sp != "" && policy.ID != "" {
+		if policy.ExactlyOne.All.SignedSupportingTokens.Policy.UsernameToken.Policy.WSSUsernameToken10.XMLName.Local != "" {
+			if policy.ExactlyOne.All.TransportBinding.SP != "" && policy.ID != "" {
 				policies["#"+policy.ID] = etUsernamePassword
 			}
 		}
