@@ -26,6 +26,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"net/url"
+	"strconv"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
@@ -273,14 +274,42 @@ func (pca Client) Accounts() []Account {
 	return pca.base.Accounts()
 }
 
+// InteractiveAuthOptions contains the optional parameters used to acquire an access token for interactive auth code flow.
+type InteractiveAuthOptions struct {
+	// Used to specify a custom port for the local server.  http://localhost:portnumber
+	// All other URI components are ignored.
+	RedirectURI string
+}
+
+// InteractiveAuthOption changes options inside InteractiveAuthOptions used in .AcquireTokenInteractive().
+type InteractiveAuthOption func(*InteractiveAuthOptions)
+
+// WithRedirectURI uses the specified redirect URI for interactive auth.
+func WithRedirectURI(redirectURI string) InteractiveAuthOption {
+	return func(o *InteractiveAuthOptions) {
+		o.RedirectURI = redirectURI
+	}
+}
+
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
-func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string) (AuthResult, error) {
+func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, options ...InteractiveAuthOption) (AuthResult, error) {
+	opts := InteractiveAuthOptions{}
+	for _, opt := range options {
+		opt(&opts)
+	}
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
 	cv, challenge, err := codeVerifier()
 	if err != nil {
 		return AuthResult{}, err
+	}
+	var redirectURL *url.URL
+	if opts.RedirectURI != "" {
+		redirectURL, err = url.Parse(opts.RedirectURI)
+		if err != nil {
+			return AuthResult{}, err
+		}
 	}
 	authParams := pca.base.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = scopes
@@ -289,7 +318,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string) 
 	authParams.CodeChallengeMethod = "S256"
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
-	res, err := pca.browserLogin(ctx, authParams)
+	res, err := pca.browserLogin(ctx, redirectURL, authParams)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -318,10 +347,27 @@ var browserOpenURL = func(authURL string) error {
 	return browser.OpenURL(authURL)
 }
 
+// parses the port number from the provided URL.
+// returns 0 if nil or no port is specified.
+func parsePort(u *url.URL) (int, error) {
+	if u == nil {
+		return 0, nil
+	}
+	p := u.Port()
+	if p == "" {
+		return 0, nil
+	}
+	return strconv.Atoi(p)
+}
+
 // browserLogin launches the system browser for interactive login
-func (pca Client) browserLogin(ctx context.Context, params authority.AuthParams) (interactiveAuthResult, error) {
+func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams) (interactiveAuthResult, error) {
 	// start local redirect server so login can call us back
-	srv, err := local.New(params.State)
+	port, err := parsePort(redirectURI)
+	if err != nil {
+		return interactiveAuthResult{}, err
+	}
+	srv, err := local.New(params.State, port)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}

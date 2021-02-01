@@ -56,15 +56,21 @@ type Server struct {
 }
 
 // New creates a local HTTP server and starts it.
-func New(reqState string) (*Server, error) {
+func New(reqState string, port int) (*Server, error) {
 	var l net.Listener
 	var err error
-	for i := 0; i < 10; i++ {
-		l, err = net.Listen("tcp", "localhost:0")
-		if err != nil {
-			continue
+	if port > 0 {
+		// use port provided by caller
+		l, err = net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+	} else {
+		// find a free port
+		for i := 0; i < 10; i++ {
+			l, err = net.Listen("tcp", "localhost:0")
+			if err != nil {
+				continue
+			}
+			break
 		}
-		break
 	}
 	if err != nil {
 		return nil, err

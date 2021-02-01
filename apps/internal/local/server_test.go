@@ -22,6 +22,7 @@ func TestServer(t *testing.T) {
 	tests := []struct {
 		desc       string
 		reqState   string
+		port       int
 		q          url.Values
 		failPage   bool
 		statusCode int
@@ -29,6 +30,7 @@ func TestServer(t *testing.T) {
 		{
 			desc:       "Error: Query Values has 'error' key",
 			reqState:   "state",
+			port:       0,
 			q:          url.Values{"state": []string{"state"}, "error": []string{"error"}},
 			statusCode: 200,
 			failPage:   true,
@@ -36,31 +38,35 @@ func TestServer(t *testing.T) {
 		{
 			desc:       "Error: Query Values missing 'state' key",
 			reqState:   "state",
+			port:       0,
 			q:          url.Values{"code": []string{"code"}},
 			statusCode: http.StatusInternalServerError,
 		},
 		{
 			desc:       "Error: Query Values missing had 'state' key value that was different that requested",
 			reqState:   "state",
+			port:       0,
 			q:          url.Values{"state": []string{"etats"}, "code": []string{"code"}},
 			statusCode: http.StatusInternalServerError,
 		},
 		{
 			desc:       "Error: Query Values missing 'code' key",
 			reqState:   "state",
+			port:       0,
 			q:          url.Values{"state": []string{"state"}},
 			statusCode: http.StatusInternalServerError,
 		},
 		{
 			desc:       "Success",
 			reqState:   "state",
+			port:       0,
 			q:          url.Values{"state": []string{"state"}, "code": []string{"code"}},
 			statusCode: 200,
 		},
 	}
 
 	for _, test := range tests {
-		serv, err := New(test.reqState)
+		serv, err := New(test.reqState, test.port)
 		if err != nil {
 			panic(err)
 		}
