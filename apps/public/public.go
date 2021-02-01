@@ -27,6 +27,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
@@ -47,6 +48,10 @@ type Options struct {
 	// The host of the Azure Active Directory authority. The default is https://login.microsoftonline.com/common.
 	// This can be changed with the WithAuthority() option.
 	Authority string
+
+	// The HTTP client used for making requests.
+	// It defaults to a shared http.Client.
+	HTTPClient ops.HTTPClient
 }
 
 func (p *Options) validate() error {
@@ -77,6 +82,13 @@ func WithCache(accessor cache.ExportReplace) Option {
 	}
 }
 
+// WithHTTPClient allows for a custom HTTP client to be set.
+func WithHTTPClient(httpClient ops.HTTPClient) Option {
+	return func(o *Options) {
+		o.HTTPClient = httpClient
+	}
+}
+
 // Client is a representation of authentication client for public applications as defined in the
 // package doc. For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications.
 type Client struct {
@@ -85,7 +97,10 @@ type Client struct {
 
 // New is the constructor for Client.
 func New(clientID string, options ...Option) (Client, error) {
-	opts := Options{Authority: base.AuthorityPublicCloud}
+	opts := Options{
+		Authority:  base.AuthorityPublicCloud,
+		HTTPClient: shared.DefaultClient,
+	}
 
 	for _, o := range options {
 		o(&opts)
@@ -94,7 +109,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}

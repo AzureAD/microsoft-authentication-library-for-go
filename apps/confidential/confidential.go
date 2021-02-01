@@ -21,6 +21,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
@@ -181,6 +182,10 @@ type Options struct {
 	// The default is https://login.microsoftonline.com/common. This can be changed using the
 	// WithAuthority() option.
 	Authority string
+
+	// The HTTP client used for making requests.
+	// It defaults to a shared http.Client.
+	HTTPClient ops.HTTPClient
 }
 
 func (o Options) validate() error {
@@ -212,17 +217,20 @@ func WithAccessor(accessor cache.ExportReplace) Option {
 	}
 }
 
-// tokener has a shared oauth.Token object. I (jdoak) am not a fan. But at this point, that
-// object is internal/ and I don't want to pull it out. A confidential.Client is mean to be made
-// per user, so we don't want to be creating a bunch of oauth.Token objects.
-var tokener = oauth.New()
+// WithHTTPClient allows for a custom HTTP client to be set.
+func WithHTTPClient(httpClient ops.HTTPClient) Option {
+	return func(o *Options) {
+		o.HTTPClient = httpClient
+	}
+}
 
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
 func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	opts := Options{
-		Authority: base.AuthorityPublicCloud,
+		Authority:  base.AuthorityPublicCloud,
+		HTTPClient: shared.DefaultClient,
 	}
 
 	for _, o := range options {
@@ -232,7 +240,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, tokener, base.WithCacheAccessor(opts.Accessor))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}
