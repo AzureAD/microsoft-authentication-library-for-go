@@ -47,7 +47,6 @@ func (acc Account) Key() string {
 	return strings.Join([]string{acc.HomeAccountID, acc.Environment, acc.Realm}, CacheKeySeparator)
 }
 
-<<<<<<< HEAD
 //IsZero checks the zero value of account
 func (acc Account) IsZero() bool {
 	switch {
@@ -80,7 +79,6 @@ func (acc Account) IsZero() bool {
 	}
 	return true
 }
-=======
+
 // DefaultClient is our default shared HTTP client.
 var DefaultClient = &http.Client{}
->>>>>>> 40939a8f618dff697fd15fe09444b29dea9a4033
