@@ -215,3 +215,36 @@ func TestUsernamePassword(t *testing.T) {
 		}
 	}
 }
+
+func TestConfidentialClientwithSecret(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	clientID := os.Getenv("clientId")
+	secret := os.Getenv("clientSecret")
+	cred, err := confidential.NewCredFromSecret(secret)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+
+	app, err := confidential.New(clientID, cred, confidential.WithAuthority(microsoftAuthority))
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	scopes := []string{msIDlabDefaultScope}
+	result, err := app.AcquireTokenByCredential(context.Background(), scopes)
+	if err != nil {
+		t.Fatalf("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got AccessToken == '', want AccessToken == non-empty string")
+	}
+	silentResult, err := app.AcquireTokenSilent(context.Background(), scopes)
+	if err != nil {
+		t.Fatalf("TestConfidentialClientwithSecret: on AcquireTokenSilent(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if silentResult.AccessToken == "" {
+		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenSilent(): got AccessToken == '', want AccessToken == non-empty string")
+	}
+
+}

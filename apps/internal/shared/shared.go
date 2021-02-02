@@ -45,3 +45,36 @@ func NewAccount(homeAccountID, env, realm, localAccountID, authorityType, userna
 func (acc Account) Key() string {
 	return strings.Join([]string{acc.HomeAccountID, acc.Environment, acc.Realm}, CacheKeySeparator)
 }
+
+//IsZero checks the zero value of account
+func (acc Account) IsZero() bool {
+	switch {
+	case acc.HomeAccountID != "":
+		return false
+	case acc.Environment != "":
+		return false
+	case acc.Realm != "":
+		return false
+	case acc.LocalAccountID != "":
+		return false
+	case acc.AuthorityType != "":
+		return false
+	case acc.PreferredUsername != "":
+		return false
+	case acc.GivenName != "":
+		return false
+	case acc.FamilyName != "":
+		return false
+	case acc.MiddleName != "":
+		return false
+	case acc.Name != "":
+		return false
+	case acc.AlternativeID != "":
+		return false
+	case acc.RawClientInfo != "":
+		return false
+	case acc.AdditionalFields != nil:
+		return false
+	}
+	return true
+}

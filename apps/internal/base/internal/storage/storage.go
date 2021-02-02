@@ -86,7 +86,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams, inputAccount shared.Account) (TokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -106,30 +106,39 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 		return TokenResponse{}, err
 	}
 
-	idToken, err := m.readIDToken(homeAccountID, metadata.Aliases, realm, clientID)
-	if err != nil {
-		return TokenResponse{}, err
-	}
+	if !inputAccount.IsZero() {
 
-	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
-	if err != nil {
-		return TokenResponse{}, err
-	}
-	familyID := AppMetaData.FamilyID
+		idToken, err := m.readIDToken(homeAccountID, metadata.Aliases, realm, clientID)
+		if err != nil {
+			return TokenResponse{}, err
+		}
 
-	refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
-	if err != nil {
-		return TokenResponse{}, err
-	}
-	account, err := m.readAccount(homeAccountID, metadata.Aliases, realm)
-	if err != nil {
-		return TokenResponse{}, err
+		AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+		familyID := AppMetaData.FamilyID
+
+		refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+		account, err := m.readAccount(homeAccountID, metadata.Aliases, realm)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+		return TokenResponse{
+			AccessToken:  accessToken,
+			RefreshToken: refreshToken,
+			IDToken:      idToken,
+			Account:      account,
+		}, nil
 	}
 	return TokenResponse{
 		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		IDToken:      idToken,
-		Account:      account,
+		RefreshToken: accesstokens.RefreshToken{},
+		IDToken:      IDToken{},
+		Account:      shared.Account{},
 	}, nil
 }
 
