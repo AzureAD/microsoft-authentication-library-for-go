@@ -30,7 +30,7 @@ const (
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
+	Read(ctx context.Context, authParameters authority.AuthParams, inputAccount shared.Account) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() ([]shared.Account, error)
 }
