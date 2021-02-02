@@ -26,13 +26,23 @@ import (
 
 const version = "0.1.0"
 
+// HTTPClient represents an HTTP client.
+// It's usually an *http.Client from the standard library.
+type HTTPClient interface {
+	// Do sends an HTTP request and returns an HTTP response.
+	Do(req *http.Request) (*http.Response, error)
+
+	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
+	CloseIdleConnections()
+}
+
 // Client provides a wrapper to our *http.Client that handles compression and serialization needs.
 type Client struct {
-	client *http.Client
+	client HTTPClient
 }
 
 // New returns a new Client object.
-func New(httpClient *http.Client) *Client {
+func New(httpClient HTTPClient) *Client {
 	if httpClient == nil {
 		panic("http.Client cannot == nil")
 	}
