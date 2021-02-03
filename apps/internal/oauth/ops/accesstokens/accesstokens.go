@@ -110,10 +110,11 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 	if c.Expires.Before(time.Now()) && c.Assertion != "" {
 		return c.Assertion, nil
 	}
-	// TODO(msal): The reasoning for this needs to be documented somewhere.
-	// I don't have any logical reason that the JWT should expire at any certain time.
-	// Why ask for only 5 minutes, why not 10, 20, 30, 1hour...
-	expires := time.Now().Add(5 * time.Minute)
+	// There is no hard requirement on what the expiry time should be.
+	// https://tools.ietf.org/html/rfc7519#section-4.1.4
+	// This just sets a default of 10 mins which means a cached JWT assertion
+	// can be used if it is less that 10 mins old after which we regenerate the assertion.
+	expires := time.Now().Add(10 * time.Minute)
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
