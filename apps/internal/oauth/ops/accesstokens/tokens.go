@@ -229,8 +229,7 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 }
 
 // decodeJWT decodes a JWT and converts it to a byte array representing a JSON object
-// Adapted from MSAL Python and https://stackoverflow.com/a/31971780 .
-// JWT has headers and payload base64url encoded without padding.
+// JWT has headers and payload base64url encoded without padding
 // https://tools.ietf.org/html/rfc7519#section-3 and
 // https://tools.ietf.org/html/rfc7515#section-2
 func decodeJWT(data string) ([]byte, error) {
