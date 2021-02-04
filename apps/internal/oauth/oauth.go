@@ -17,11 +17,13 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust/defs"
 )
 
-type resolveEndpointer interface {
+// ResolveEndpointer contains the methods for resolving authority endpoints.
+type ResolveEndpointer interface {
 	ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error)
 }
 
-type accessTokens interface {
+// AccessTokens contains the methods for fetching tokens from different sources.
+type AccessTokens interface {
 	DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error)
 	FromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error)
 	FromAuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error)
@@ -32,43 +34,44 @@ type accessTokens interface {
 	FromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error)
 }
 
-// fetchAuthority will be implemented by authority.Authority.
-type fetchAuthority interface {
+// FetchAuthority will be implemented by authority.Authority.
+type FetchAuthority interface {
 	UserRealm(context.Context, authority.AuthParams) (authority.UserRealm, error)
 	AADInstanceDiscovery(context.Context, authority.Info) (authority.InstanceDiscoveryResponse, error)
 }
 
-type fetchWSTrust interface {
+// FetchWSTrust contains the methods for interacting with WSTrust endpoints.
+type FetchWSTrust interface {
 	Mex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error)
 	SAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (wstrust.SamlTokenInfo, error)
 }
 
 // Client provides tokens for various types of token requests.
 type Client struct {
-	resolver     resolveEndpointer
-	accessTokens accessTokens
-	authority    fetchAuthority
-	wsTrust      fetchWSTrust
+	Resolver     ResolveEndpointer
+	AccessTokens AccessTokens
+	Authority    FetchAuthority
+	WSTrust      FetchWSTrust
 }
 
 // New is the constructor for Token.
 func New(httpClient ops.HTTPClient) *Client {
 	r := ops.New(httpClient)
 	return &Client{
-		resolver:     newAuthorityEndpoint(r),
-		accessTokens: r.AccessTokens(),
-		authority:    r.Authority(),
-		wsTrust:      r.WSTrust(),
+		Resolver:     newAuthorityEndpoint(r),
+		AccessTokens: r.AccessTokens(),
+		Authority:    r.Authority(),
+		WSTrust:      r.WSTrust(),
 	}
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance.
 func (t *Client) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error) {
-	return t.resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
+	return t.Resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
 func (t *Client) AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
-	return t.authority.AADInstanceDiscovery(ctx, authorityInfo)
+	return t.Authority.AADInstanceDiscovery(ctx, authorityInfo)
 }
 
 // AuthCode returns a token based on an authorization code.
@@ -77,7 +80,7 @@ func (t *Client) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest)
 		return accesstokens.TokenResponse{}, err
 	}
 
-	tResp, err := t.accessTokens.FromAuthCode(ctx, req)
+	tResp, err := t.AccessTokens.FromAuthCode(ctx, req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, fmt.Errorf("could not retrieve token from auth code: %w", err)
 	}
@@ -91,14 +94,14 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 	}
 
 	if cred.Secret != "" {
-		return t.accessTokens.FromClientSecret(ctx, authParams, cred.Secret)
+		return t.AccessTokens.FromClientSecret(ctx, authParams, cred.Secret)
 	}
 
 	jwt, err := cred.JWT(authParams)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	return t.accessTokens.FromAssertion(ctx, authParams, jwt)
+	return t.AccessTokens.FromAssertion(ctx, authParams, jwt)
 }
 
 func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
@@ -106,7 +109,7 @@ func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, auth
 		return accesstokens.TokenResponse{}, err
 	}
 
-	return t.accessTokens.FromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
+	return t.AccessTokens.FromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
 }
 
 // UsernamePassword retrieves a token where a username and password is used. However, if this is
@@ -116,25 +119,25 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 		return accesstokens.TokenResponse{}, err
 	}
 
-	userRealm, err := t.authority.UserRealm(ctx, authParams)
+	userRealm, err := t.Authority.UserRealm(ctx, authParams)
 	if err != nil {
 		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting user realm(user: %s) from authority: %w", authParams.Username, err)
 	}
 
 	switch userRealm.AccountType {
 	case authority.Federated:
-		mexDoc, err := t.wsTrust.Mex(ctx, userRealm.FederationMetadataURL)
+		mexDoc, err := t.WSTrust.Mex(ctx, userRealm.FederationMetadataURL)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
 		}
 
-		saml, err := t.wsTrust.SAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
+		saml, err := t.WSTrust.SAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting SAML token info: %w", err)
 		}
-		return t.accessTokens.FromSamlGrant(ctx, authParams, saml)
+		return t.AccessTokens.FromSamlGrant(ctx, authParams, saml)
 	case authority.Managed:
-		return t.accessTokens.FromUsernamePassword(ctx, authParams)
+		return t.AccessTokens.FromUsernamePassword(ctx, authParams)
 	}
 	return accesstokens.TokenResponse{}, errors.New("unknown account type")
 }
@@ -146,7 +149,7 @@ type DeviceCode struct {
 	Result     accesstokens.DeviceCodeResult
 	authParams authority.AuthParams
 
-	accessTokens accessTokens
+	accessTokens AccessTokens
 }
 
 // Token returns a token AFTER the user uses the device code on the second device. This will block
@@ -208,16 +211,16 @@ func (t *Client) DeviceCode(ctx context.Context, authParams authority.AuthParams
 		return DeviceCode{}, err
 	}
 
-	dcr, err := t.accessTokens.DeviceCodeResult(ctx, authParams)
+	dcr, err := t.AccessTokens.DeviceCodeResult(ctx, authParams)
 	if err != nil {
 		return DeviceCode{}, err
 	}
 
-	return DeviceCode{Result: dcr, authParams: authParams, accessTokens: t.accessTokens}, nil
+	return DeviceCode{Result: dcr, authParams: authParams, accessTokens: t.AccessTokens}, nil
 }
 
 func (t *Client) resolveEndpoint(ctx context.Context, authParams *authority.AuthParams, userPrincipalName string) error {
-	endpoints, err := t.resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, userPrincipalName)
+	endpoints, err := t.Resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, userPrincipalName)
 	if err != nil {
 		return fmt.Errorf("unable to resolve an endpoint: %s", err)
 	}

@@ -49,8 +49,8 @@ func TestAuthCode(t *testing.T) {
 
 	token := &Client{}
 	for _, test := range tests {
-		token.accessTokens = test.at
-		token.resolver = test.re
+		token.AccessTokens = test.at
+		token.Resolver = test.re
 
 		_, err := token.AuthCode(context.Background(), accesstokens.AuthCodeRequest{})
 		switch {
@@ -134,8 +134,8 @@ func TestCredential(t *testing.T) {
 
 	token := &Client{}
 	for _, test := range tests {
-		token.accessTokens = test.at
-		token.resolver = test.re
+		token.AccessTokens = test.at
+		token.Resolver = test.re
 
 		_, err := token.Credential(context.Background(), test.authParams, test.cred)
 		switch {
@@ -175,8 +175,8 @@ func TestRefresh(t *testing.T) {
 
 	token := &Client{}
 	for _, test := range tests {
-		token.accessTokens = test.at
-		token.resolver = test.re
+		token.AccessTokens = test.at
+		token.Resolver = test.re
 
 		_, err := token.Refresh(
 			context.Background(),
@@ -256,10 +256,10 @@ func TestUsernamePassword(t *testing.T) {
 
 	token := &Client{}
 	for _, test := range tests {
-		token.accessTokens = test.at
-		token.authority = test.au
-		token.resolver = test.re
-		token.wsTrust = test.ws
+		token.AccessTokens = test.at
+		token.Authority = test.au
+		token.Resolver = test.re
+		token.WSTrust = test.ws
 
 		_, err := token.UsernamePassword(context.Background(), authority.AuthParams{})
 		switch {
@@ -343,8 +343,8 @@ func TestDeviceCodeToken(t *testing.T) {
 
 	token := &Client{}
 	for _, test := range tests {
-		token.accessTokens = test.at
-		token.resolver = test.re
+		token.AccessTokens = test.at
+		token.Resolver = test.re
 
 		dc, err := token.DeviceCode(context.Background(), authority.AuthParams{})
 		switch {
