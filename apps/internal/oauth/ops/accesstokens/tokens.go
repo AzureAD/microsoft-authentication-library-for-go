@@ -230,14 +230,19 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 
 // decodeJWT decodes a JWT and converts it to a byte array representing a JSON object
 // Adapted from MSAL Python and https://stackoverflow.com/a/31971780 .
-// TODO(msal): This looks suspect. I know that JWT has headers and payloads base64 encoded.
-// This looks to be doing a decode of base64 JSON with padding?? Is all these uses really
-// JWT??
+// JWT has headers and payload base64url encoded without padding.
+// https://tools.ietf.org/html/rfc7519#section-3 and
+// https://tools.ietf.org/html/rfc7515#section-2
 func decodeJWT(data string) ([]byte, error) {
+	// The following code adds padding based on
+	// https://tools.ietf.org/html/rfc7515#appendix-C
 	if i := len(data) % 4; i != 0 {
+		if i == 1 {
+			return nil, errors.New("Illegal base64url string")
+		}
 		data += strings.Repeat("=", 4-i)
 	}
-	return base64.StdEncoding.DecodeString(data)
+	return base64.URLEncoding.DecodeString(data)
 }
 
 // RefreshToken is the JSON representation of a MSAL refresh token for encoding to storage.
