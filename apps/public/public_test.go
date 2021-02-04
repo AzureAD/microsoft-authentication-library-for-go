@@ -3,7 +3,18 @@
 
 package public
 
-/*func fakeBrowserOpenURL(authURL string) error {
+import (
+	"context"
+	"errors"
+	"fmt"
+	"net/http"
+	"net/url"
+	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
+)
+
+func fakeBrowserOpenURL(authURL string) error {
 	// we will get called with the URL for requesting an auth code
 	u, err := url.Parse(authURL)
 	if err != nil {
@@ -45,11 +56,12 @@ func TestAcquireTokenInteractive(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	res, err := client.AcquireTokenInteractive(context.Background(), []string{"the_scope"})
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	client.base.Token.WSTrust = &fake.WSTrust{}
+	_, err = client.AcquireTokenInteractive(context.Background(), []string{"the_scope"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if res.AccessToken != "test_token" {
-		t.Errorf("incorrect token: %s", res.AccessToken)
-	}
-}*/
+}
