@@ -233,15 +233,8 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 // https://tools.ietf.org/html/rfc7519#section-3 and
 // https://tools.ietf.org/html/rfc7515#section-2
 func decodeJWT(data string) ([]byte, error) {
-	// The following code adds padding based on
 	// https://tools.ietf.org/html/rfc7515#appendix-C
-	if i := len(data) % 4; i != 0 {
-		if i == 1 {
-			return nil, errors.New("Illegal base64url string")
-		}
-		data += strings.Repeat("=", 4-i)
-	}
-	return base64.URLEncoding.DecodeString(data)
+	return base64.RawURLEncoding.DecodeString(data)
 }
 
 // RefreshToken is the JSON representation of a MSAL refresh token for encoding to storage.
