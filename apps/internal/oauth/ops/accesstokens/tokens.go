@@ -83,7 +83,14 @@ func (i *IDToken) UnmarshalJSON(b []byte) error {
 func (i IDToken) IsZero() bool {
 	v := reflect.ValueOf(i)
 	for i := 0; i < v.NumField(); i++ {
-		if !v.Field(i).IsZero() {
+		field := v.Field(i)
+		if !field.IsZero() {
+			switch field.Kind() {
+			case reflect.Map, reflect.Slice:
+				if field.Len() == 0 {
+					continue
+				}
+			}
 			return false
 		}
 	}

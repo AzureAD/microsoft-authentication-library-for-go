@@ -129,44 +129,20 @@ type IDToken struct {
 	AdditionalFields map[string]interface{}
 }
 
-// runtime check that makes sure IDToken hasn't added any fields not covered in IsZero().
-// TODO(someone): This should get auto-generated probably.
-func _() {
-	valid := map[string]bool{
-		"HomeAccountID":    true,
-		"Environment":      true,
-		"Realm":            true,
-		"CredentialType":   true,
-		"ClientID":         true,
-		"Secret":           true,
-		"AdditionalFields": true,
-	}
-	t := reflect.TypeOf(IDToken{})
-	for i := 0; i < t.NumField(); i++ {
-		f := t.Field(i)
-		if !valid[f.Name] {
-			panic(fmt.Sprintf("storage.IDToken has new field %q, which must be added to .IsZero()", f.Name))
-		}
-	}
-}
-
 // IsZero determines if IDToken is the zero value.
 func (i IDToken) IsZero() bool {
-	switch {
-	case i.HomeAccountID != "":
-		return false
-	case i.Environment != "":
-		return false
-	case i.Realm != "":
-		return false
-	case i.CredentialType != "":
-		return false
-	case i.ClientID != "":
-		return false
-	case i.Secret != "":
-		return false
-	case i.AdditionalFields != nil:
-		return false
+	v := reflect.ValueOf(i)
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		if !field.IsZero() {
+			switch field.Kind() {
+			case reflect.Map, reflect.Slice:
+				if field.Len() == 0 {
+					continue
+				}
+			}
+			return false
+		}
 	}
 	return true
 }
