@@ -5,11 +5,12 @@ package oauth
 
 import (
 	"context"
-	"errors"
+	"encoding/json"
 	"fmt"
-	"regexp"
+	"io/ioutil"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -152,7 +153,7 @@ type DeviceCode struct {
 	accessTokens AccessTokens
 }
 
-// Token returns a token AFTER the user uses the device code on the second device. This will block
+// Token returns a token AFTER the user uses the user code on the second device. This will block
 // until either: (1) the code is input by the user and the service releases a token, (2) the token
 // expires, (3) the Context passed to .DeviceCode() is cancelled or expires, (4) some other service
 // error occurs.
@@ -194,14 +195,26 @@ func (d DeviceCode) Token(ctx context.Context) (accesstokens.TokenResponse, erro
 	}
 }
 
-var waitRE = regexp.MustCompile("(authorization_pending|slow_down)")
+type DeviceCodeError struct {
+	Error string `json:"error"`
+}
 
-// TODO(msal): This is freaking terrible. The original just looked for the exact word in the error output.
-// I doubt this worked. I don't know if the service really does this, but it should send back a structured
-// error response. Anyways, I updated this to search the entire return error message, which will be the body
-// of the return.
 func isWaitDeviceCodeErr(err error) bool {
-	return waitRE.MatchString(err.Error())
+	var c errors.CallErr
+	if errors.As(err, &c) {
+		if c.Resp.StatusCode == 400 {
+			var dCErr DeviceCodeError
+			defer c.Resp.Body.Close()
+			body, err := ioutil.ReadAll(c.Resp.Body)
+			if err == nil {
+				json.Unmarshal(body, &dCErr)
+				if dCErr.Error == "authorization_pending" || dCErr.Error == "slow_down" {
+					return true
+				}
+			}
+		}
+	}
+	return false
 }
 
 // DeviceCode returns a DeviceCode object that can be used to get the code that must be entered on the second

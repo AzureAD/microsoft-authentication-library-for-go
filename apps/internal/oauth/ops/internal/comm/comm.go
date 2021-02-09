@@ -255,6 +255,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	switch reply.StatusCode {
 	case 200, 201:
 	default:
+		reply.Body = ioutil.NopCloser(bytes.NewBuffer(data))
 		sd := strings.TrimSpace(string(data))
 		if sd != "" {
 			// We probably have the error in the body.

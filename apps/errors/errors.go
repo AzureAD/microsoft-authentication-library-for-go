@@ -59,7 +59,8 @@ func New(text string) error {
 // CallErr represents an HTTP call error. Has a Verbose() method that allows getting the
 // http.Request and Response objects. Implements error.
 type CallErr struct {
-	Req  *http.Request
+	Req *http.Request
+	// Resp contains response body
 	Resp *http.Response
 	Err  error
 }
@@ -74,4 +75,20 @@ func (e CallErr) Verbose() string {
 	e.Resp.Request = nil // This brings in a bunch of TLS crap we don't need
 	e.Resp.TLS = nil     // Same
 	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
+}
+
+// Unwrap returns the wrapped error
+func (e CallErr) Unwrap() error {
+	return e.Err
+}
+
+// Is reports whether any error in errors chain matches target.
+func Is(err, target error) bool {
+	return errors.Is(err, target)
+}
+// As finds the first error in errors chain that matches target,
+// and if so, sets target to that error value and returns true.
+// Otherwise, it returns false.
+func As(err, target error) bool {
+	return errors.As(err, target)
 }
