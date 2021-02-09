@@ -207,9 +207,11 @@ func isWaitDeviceCodeErr(err error) bool {
 			defer c.Resp.Body.Close()
 			body, err := ioutil.ReadAll(c.Resp.Body)
 			if err == nil {
-				json.Unmarshal(body, &dCErr)
-				if dCErr.Error == "authorization_pending" || dCErr.Error == "slow_down" {
-					return true
+				err = json.Unmarshal(body, &dCErr)
+				if err == nil {
+					if dCErr.Error == "authorization_pending" || dCErr.Error == "slow_down" {
+						return true
+					}
 				}
 			}
 		}
