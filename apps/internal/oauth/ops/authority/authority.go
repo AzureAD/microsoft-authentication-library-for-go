@@ -110,16 +110,29 @@ const (
 
 // AuthParams represents the parameters used for authorization for token acquisition.
 type AuthParams struct {
-	AuthorityInfo     Info
-	CorrelationID     string
-	Endpoints         Endpoints
-	ClientID          string
-	Redirecturi       string
-	HomeaccountID     string
-	Username          string
-	Password          string
-	Scopes            []string
+	AuthorityInfo Info
+	CorrelationID string
+	Endpoints     Endpoints
+	ClientID      string
+	// Redirecturi is used for auth flows that specify a redirect URI (e.g. local server for interactive auth flow).
+	Redirecturi   string
+	HomeaccountID string
+	// Username is the user-name portion for username/password auth flow.
+	Username string
+	// Password is the password portion for username/password auth flow.
+	Password string
+	// Scopes is the list of scopes the user consents to.
+	Scopes []string
+	// AuthorizationType specifies the auth flow being used.
 	AuthorizationType AuthorizeType
+	// State is a random value used to prevent cross-site request forgery attacks.
+	State string
+	// CodeChallenge is derived from a code verifier and is sent in the auth request.
+	CodeChallenge string
+	// CodeChallengeMethod describes the method used to create the CodeChallenge.
+	CodeChallengeMethod string
+	// Prompt specifies the user prompt type during interactive auth.
+	Prompt string
 }
 
 // NewAuthParams creates an authorization parameters object.

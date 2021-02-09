@@ -164,31 +164,30 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	v.Add("client_id", clientID)
 	v.Add("response_type", "code")
 	v.Add("redirect_uri", redirectURI)
-	v.Add("scope", strings.Join(scopes, " "))
-
+	v.Add("scope", strings.Join(scopes, scopeSeparator))
+	if authParams.State != "" {
+		v.Add("state", authParams.State)
+	}
+	if authParams.CodeChallenge != "" {
+		v.Add("code_challenge", authParams.CodeChallenge)
+	}
+	if authParams.CodeChallengeMethod != "" {
+		v.Add("code_challenge_method", authParams.CodeChallengeMethod)
+	}
+	if authParams.Prompt != "" {
+		v.Add("prompt", authParams.Prompt)
+	}
 	// There were left over from an implementation that didn't use any of these.  We may
 	// need to add them later, but as of now aren't needed.
 	/*
-		if p.CodeChallenge != "" {
-			urlParams.Add("code_challenge", p.CodeChallenge)
-		}
-		if p.State != "" {
-			urlParams.Add("state", p.State)
-		}
 		if p.ResponseMode != "" {
 			urlParams.Add("response_mode", p.ResponseMode)
-		}
-		if p.Prompt != "" {
-			urlParams.Add("prompt", p.Prompt)
 		}
 		if p.LoginHint != "" {
 			urlParams.Add("login_hint", p.LoginHint)
 		}
 		if p.DomainHint != "" {
 			urlParams.Add("domain_hint", p.DomainHint)
-		}
-		if p.CodeChallengeMethod != "" {
-			urlParams.Add("code_challenge_method", p.CodeChallengeMethod)
 		}
 	*/
 	baseURL.RawQuery = v.Encode()
