@@ -30,7 +30,7 @@ const (
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams) (storage.TokenResponse, error)
+	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() ([]shared.Account, error)
 }
@@ -206,7 +206,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		defer b.cacheAccessor.Export(s)
 	}
 
-	storageTokenResponse, err := b.manager.Read(ctx, authParams)
+	storageTokenResponse, err := b.manager.Read(ctx, authParams, silent.Account)
 	if err != nil {
 		return AuthResult{}, err
 	}

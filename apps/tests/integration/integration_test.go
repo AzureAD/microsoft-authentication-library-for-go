@@ -205,7 +205,7 @@ func TestUsernamePassword(t *testing.T) {
 			t.Fatalf("TestUsernamePassword(%s): on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", test.desc, errors.Verbose(err))
 		}
 		if result.AccessToken == "" {
-			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken == non-empty string", test.desc)
+			t.Fatalf("TestUsernamePassword(%s): got AccessToken == '', want AccessToken != ''", test.desc)
 		}
 		if result.IDToken.IsZero() {
 			t.Fatalf("TestUsernamePassword(%s): got IDToken == empty, want IDToken == non-empty struct", test.desc)
@@ -214,4 +214,37 @@ func TestUsernamePassword(t *testing.T) {
 			t.Fatalf("TestUsernamePassword(%s): got Username == %s, want Username == %s", test.desc, result.Account.PreferredUsername, user.Upn)
 		}
 	}
+}
+
+func TestConfidentialClientwithSecret(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	clientID := os.Getenv("clientId")
+	secret := os.Getenv("clientSecret")
+	cred, err := confidential.NewCredFromSecret(secret)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+
+	app, err := confidential.New(clientID, cred, confidential.WithAuthority(microsoftAuthority))
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	scopes := []string{msIDlabDefaultScope}
+	result, err := app.AcquireTokenByCredential(context.Background(), scopes)
+	if err != nil {
+		t.Fatalf("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got AccessToken == '', want AccessToken != ''")
+	}
+	silentResult, err := app.AcquireTokenSilent(context.Background(), scopes)
+	if err != nil {
+		t.Fatalf("TestConfidentialClientwithSecret: on AcquireTokenSilent(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if silentResult.AccessToken == "" {
+		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
+	}
+
 }
