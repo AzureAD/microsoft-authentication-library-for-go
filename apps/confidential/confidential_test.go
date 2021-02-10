@@ -3,7 +3,16 @@
 
 package confidential
 
-import "testing"
+import (
+	"context"
+	"testing"
+	"time"
+
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+)
 
 func TestCertFromPEM(t *testing.T) {
 	// pem is generated from: openssl req -newkey rsa:2048 -new -nodes -x509 -keyout key.pem -out cert.pem
@@ -64,5 +73,95 @@ lQFhpxvPgPNBuxVRnsxoH/sLOA==
 	}
 	if key == nil {
 		t.Fatalf("TestCertFromPEM: got nil key, want key != nil")
+	}
+}
+
+func fakeClient() (Client, error) {
+	cred, err := NewCredFromSecret("fake_secret")
+	if err != nil {
+		return Client{}, err
+	}
+	client, err := New("fake_client_id", cred, WithAuthority("https://fake_authority/fake"))
+	if err != nil {
+		return Client{}, err
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{
+		AccessToken: accesstokens.TokenResponse{
+			AccessToken:   "fake_token",
+			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+			GrantedScopes: accesstokens.Scopes{Slice: []string{"the_scope"}},
+		},
+	}
+	client.base.Token.Authority = &fake.Authority{
+		InstanceResp: authority.InstanceDiscoveryResponse{
+			Metadata: []authority.InstanceDiscoveryMetadata{
+				{
+					PreferredNetwork: "fake_authority",
+					Aliases:          []string{"fake_authority"},
+				},
+			},
+		},
+	}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{
+		Endpoints: authority.Endpoints{
+			AuthorizationEndpoint: "auth_endpoint",
+			TokenEndpoint:         "token_endpoint",
+		},
+	}
+	client.base.Token.WSTrust = &fake.WSTrust{}
+	return client, nil
+}
+
+func TestAcquireTokenByCredential(t *testing.T) {
+	client, err := fakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	// first attempt should fail
+	if err == nil {
+		t.Fatal("unexpected nil error from AcquireTokenSilent")
+	}
+	tk, err := client.AcquireTokenByCredential(context.Background(), []string{"the_scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != "fake_token" {
+		t.Fatalf("unexpected access token %s", tk.AccessToken)
+	}
+	// second attempt should return the cached token
+	tk, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != "fake_token" {
+		t.Fatalf("unexpected access token %s", tk.AccessToken)
+	}
+}
+
+func TestAcquireTokenByAuthCode(t *testing.T) {
+	client, err := fakeClient()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	// first attempt should fail
+	if err == nil {
+		t.Fatal("unexpected nil error from AcquireTokenSilent")
+	}
+	tk, err := client.AcquireTokenByAuthCode(context.Background(), []string{"the_scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != "fake_token" {
+		t.Fatalf("unexpected access token %s", tk.AccessToken)
+	}
+	// second attempt should return the cached token
+	tk, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != "fake_token" {
+		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
 }
