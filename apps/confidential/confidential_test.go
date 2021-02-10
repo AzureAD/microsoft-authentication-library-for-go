@@ -76,6 +76,10 @@ lQFhpxvPgPNBuxVRnsxoH/sLOA==
 	}
 }
 
+const token = "fake_token"
+
+var tokenScope = []string{"the_scope"}
+
 func fakeClient() (Client, error) {
 	cred, err := NewCredFromSecret("fake_secret")
 	if err != nil {
@@ -87,9 +91,9 @@ func fakeClient() (Client, error) {
 	}
 	client.base.Token.AccessTokens = &fake.AccessTokens{
 		AccessToken: accesstokens.TokenResponse{
-			AccessToken:   "fake_token",
+			AccessToken:   token,
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			GrantedScopes: accesstokens.Scopes{Slice: []string{"the_scope"}},
+			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 		},
 	}
 	client.base.Token.Authority = &fake.Authority{
@@ -117,24 +121,24 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	_, err = client.AcquireTokenSilent(context.Background(), tokenScope)
 	// first attempt should fail
 	if err == nil {
 		t.Fatal("unexpected nil error from AcquireTokenSilent")
 	}
-	tk, err := client.AcquireTokenByCredential(context.Background(), []string{"the_scope"})
+	tk, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tk.AccessToken != "fake_token" {
+	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
 	// second attempt should return the cached token
-	tk, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	tk, err = client.AcquireTokenSilent(context.Background(), tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tk.AccessToken != "fake_token" {
+	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
 }
@@ -144,24 +148,24 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	_, err = client.AcquireTokenSilent(context.Background(), tokenScope)
 	// first attempt should fail
 	if err == nil {
 		t.Fatal("unexpected nil error from AcquireTokenSilent")
 	}
-	tk, err := client.AcquireTokenByAuthCode(context.Background(), []string{"the_scope"})
+	tk, err := client.AcquireTokenByAuthCode(context.Background(), tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tk.AccessToken != "fake_token" {
+	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
 	// second attempt should return the cached token
-	tk, err = client.AcquireTokenSilent(context.Background(), []string{"the_scope"})
+	tk, err = client.AcquireTokenSilent(context.Background(), tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if tk.AccessToken != "fake_token" {
+	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
 }
