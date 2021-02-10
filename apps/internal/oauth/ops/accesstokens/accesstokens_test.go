@@ -707,8 +707,8 @@ func TestAccessTokenFromSamlGrant(t *testing.T) {
 }
 
 func TestDecodeJWT(t *testing.T) {
-	encodedStr := "aGVsbG8"
-	expectedStr := []byte("hello")
+	encodedStr := "A-z_4ME"
+	expectedStr := []byte{3, 236, 255, 224, 193}
 	actualString, err := decodeJWT(encodedStr)
 	if err != nil {
 		t.Errorf("Error should be nil but it is %v", err)
