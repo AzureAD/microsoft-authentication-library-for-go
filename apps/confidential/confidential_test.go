@@ -93,24 +93,32 @@ func fakeClient() (Client, error) {
 		AccessToken: accesstokens.TokenResponse{
 			AccessToken:   token,
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 		},
 	}
 	client.base.Token.Authority = &fake.Authority{
 		InstanceResp: authority.InstanceDiscoveryResponse{
+			TenantDiscoveryEndpoint: "https://fake_authority/fake/discovery/endpoint",
 			Metadata: []authority.InstanceDiscoveryMetadata{
 				{
 					PreferredNetwork: "fake_authority",
-					Aliases:          []string{"fake_authority"},
+					PreferredCache:   "fake_cache",
+					Aliases: []string{
+						"fake_authority",
+						"fake_auth",
+						"fk_au",
+					},
 				},
+			},
+			AdditionalFields: map[string]interface{}{
+				"api-version": "2020-02-02",
 			},
 		},
 	}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{
-		Endpoints: authority.Endpoints{
-			AuthorizationEndpoint: "auth_endpoint",
-			TokenEndpoint:         "token_endpoint",
-		},
+		Endpoints: authority.NewEndpoints("https://fake_authority/fake/auth",
+			"https://fake_authority/fake/token", "https://fake_authority/fake/jwt", "fake_authority"),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
 	return client, nil
