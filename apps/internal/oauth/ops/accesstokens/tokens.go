@@ -177,30 +177,14 @@ type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 
-	FamilyID       string                    `json:"foci"`
-	IDToken        IDToken                   `json:"id_token"`
-	ClientInfo     ClientInfo                `json:"client_info"`
-	ExpiresOn      internalTime.DurationTime `json:"expires_in"`
-	ExtExpiresOn   internalTime.DurationTime `json:"ext_expires_in"`
-	GrantedScopes  Scopes                    `json:"scope"`
-	DeclinedScopes []string                  // This is derived
+	FamilyID      string                    `json:"foci"`
+	IDToken       IDToken                   `json:"id_token"`
+	ClientInfo    ClientInfo                `json:"client_info"`
+	ExpiresOn     internalTime.DurationTime `json:"expires_in"`
+	ExtExpiresOn  internalTime.DurationTime `json:"ext_expires_in"`
+	GrantedScopes Scopes                    `json:"scope"`
 
 	AdditionalFields map[string]interface{}
-
-	scopesComputed bool
-}
-
-// ComputeScope computes the final scopes based on what was granted by the server and
-// what our AuthParams were from the authority server. Per OAuth spec, if no scopes are returned, the response should be treated as if all scopes were granted
-// This behavior can be observed in client assertion flows, but can happen at any time, this check ensures we treat
-// those special responses properly Link to spec: https://tools.ietf.org/html/rfc6749#section-3.3
-func (tr *TokenResponse) ComputeScope(authParams authority.AuthParams) {
-	if len(tr.GrantedScopes.Slice) == 0 {
-		tr.GrantedScopes = Scopes{Slice: authParams.Scopes}
-	} else {
-		tr.DeclinedScopes = findDeclinedScopes(authParams.Scopes, tr.GrantedScopes.Slice)
-	}
-	tr.scopesComputed = true
 }
 
 // Validate validates the TokenResponse has basic valid values. It must be called
@@ -214,25 +198,7 @@ func (tr *TokenResponse) Validate() error {
 		return errors.New("response is missing access_token")
 	}
 
-	if !tr.scopesComputed {
-		return fmt.Errorf("TokenResponse hasn't had ScopesComputed() called")
-	}
 	return nil
-}
-
-func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []string {
-	declined := []string{}
-	grantedMap := map[string]bool{}
-	for _, s := range grantedScopes {
-		grantedMap[s] = true
-	}
-	// Comparing the requested scopes with the granted scopes to see if there are any scopes that have been declined.
-	for _, r := range requestedScopes {
-		if !grantedMap[r] {
-			declined = append(declined, r)
-		}
-	}
-	return declined
 }
 
 // decodeJWT decodes a JWT and converts it to a byte array representing a JSON object

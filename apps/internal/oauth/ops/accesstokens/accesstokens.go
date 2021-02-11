@@ -328,7 +328,6 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 	if err != nil {
 		return resp, err
 	}
-	resp.ComputeScope(authParams)
 	if c.testing {
 		return resp, nil
 	}

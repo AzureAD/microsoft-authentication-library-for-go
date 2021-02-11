@@ -118,6 +118,9 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
+	if authParams.AuthorityInfo.AuthorityType == "ADFS" {
+		return t.AccessTokens.FromUsernamePassword(ctx, authParams)
+	}
 
 	userRealm, err := t.Authority.UserRealm(ctx, authParams)
 	if err != nil {

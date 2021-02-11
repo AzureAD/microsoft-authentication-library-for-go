@@ -94,9 +94,6 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 
 // NewAuthResult creates an AuthResult.
 func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Account) (AuthResult, error) {
-	if len(tokenResponse.DeclinedScopes) > 0 {
-		return AuthResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.DeclinedScopes, ","))
-	}
 	return AuthResult{
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
