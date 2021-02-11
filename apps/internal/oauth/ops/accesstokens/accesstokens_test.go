@@ -813,31 +813,19 @@ func TestTokenResponseValidate(t *testing.T) {
 				OAuthResponseBase: authority.OAuthResponseBase{
 					Error: "error",
 				},
-				AccessToken:    "token",
-				scopesComputed: true,
+				AccessToken: "token",
 			},
 			err: true,
 		},
 		{
-			desc: "Error: .AccessToken was empty",
-			input: TokenResponse{
-				scopesComputed: true,
-			},
-			err: true,
-		},
-		{
-			desc: "Error: .scopesComputed was false",
-			input: TokenResponse{
-				AccessToken:    "token",
-				scopesComputed: false,
-			},
-			err: true,
+			desc:  "Error: .AccessToken was empty",
+			input: TokenResponse{},
+			err:   true,
 		},
 		{
 			desc: "Success",
 			input: TokenResponse{
-				AccessToken:    "token",
-				scopesComputed: true,
+				AccessToken: "token",
 			},
 		},
 	}
@@ -849,64 +837,6 @@ func TestTokenResponseValidate(t *testing.T) {
 			t.Errorf("TestTokenResponseValidate(%s): got err == nil, want err != nil", test.desc)
 		case err != nil && !test.err:
 			t.Errorf("TestTokenResponseValidate(%s): got err == %s, want err == nil", test.desc, err)
-		}
-	}
-}
-
-func TestComputeScopes(t *testing.T) {
-	tests := []struct {
-		desc       string
-		authParams authority.AuthParams
-		input      TokenResponse
-		want       TokenResponse
-	}{
-		{
-			desc: "authParam scopes copied in, no declined scopes",
-			authParams: authority.AuthParams{
-				Scopes: []string{
-					"scope0",
-					"scope1",
-				},
-			},
-			input: TokenResponse{},
-			want: TokenResponse{
-				GrantedScopes: Scopes{
-					Slice: []string{"scope0", "scope1"},
-				},
-				scopesComputed: true,
-			},
-		},
-		{
-			desc: "a few declined scopes",
-			authParams: authority.AuthParams{
-				Scopes: []string{
-					"scope0",
-					"scope1",
-					"scope2",
-				},
-			},
-			input: TokenResponse{
-				GrantedScopes: Scopes{
-					Slice: []string{
-						"scope0",
-						"scope1",
-					},
-				},
-			},
-			want: TokenResponse{
-				GrantedScopes: Scopes{
-					Slice: []string{"scope0", "scope1"},
-				},
-				DeclinedScopes: []string{"scope2"},
-				scopesComputed: true,
-			},
-		},
-	}
-
-	for _, test := range tests {
-		test.input.ComputeScope(test.authParams)
-		if diff := pretty.Compare(test.want, test.input); diff != "" {
-			t.Errorf("TestComputeScopes(%s): -want/+got:\n%s", test.desc, diff)
 		}
 	}
 }
@@ -940,15 +870,5 @@ func TestHomeAccountID(t *testing.T) {
 		if got != test.want {
 			t.Errorf("TestHomeAccountID(%s): got %q, want %q", test.desc, got, test.want)
 		}
-	}
-}
-
-func TestFindDeclinedScopes(t *testing.T) {
-	requestedScopes := []string{"user.read", "openid"}
-	grantedScopes := []string{"user.read"}
-	expectedDeclinedScopes := []string{"openid"}
-	actualDeclinedScopes := findDeclinedScopes(requestedScopes, grantedScopes)
-	if !reflect.DeepEqual(expectedDeclinedScopes, actualDeclinedScopes) {
-		t.Errorf("Actual declined scopes %v differ from expected declined scopes %v", actualDeclinedScopes, expectedDeclinedScopes)
 	}
 }
