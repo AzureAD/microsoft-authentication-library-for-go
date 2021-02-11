@@ -46,18 +46,19 @@ func newAuthorityEndpoint(rest *ops.REST) *authorityEndpoint {
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance
 func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error) {
+	if authorityInfo.AuthorityType == ADFS && len(userPrincipalName) == 0 {
+		return authority.Endpoints{}, errors.New("UPN required for authority validation for ADFS")
+	}
+
 	if endpoints, found := m.cachedEndpoints(authorityInfo, userPrincipalName); found {
 		return endpoints, nil
 	}
-	var err error
-	tenantDiscoveryEndpoint := fmt.Sprintf("https://%s/%s/.well-known/openid-configuration", authorityInfo.Host, authorityInfo.Tenant)
-	if authorityInfo.AuthorityType != ADFS {
-		tenantDiscoveryEndpoint, err = m.openIDConfigurationEndpoint(ctx, authorityInfo, userPrincipalName)
-		if err != nil {
-			return authority.Endpoints{}, err
-		}
+	endpoint, err := m.openIDConfigurationEndpoint(ctx, authorityInfo, userPrincipalName)
+	if err != nil {
+		return authority.Endpoints{}, err
 	}
-	resp, err := m.rest.Authority().GetTenantDiscoveryResponse(ctx, tenantDiscoveryEndpoint)
+
+	resp, err := m.rest.Authority().GetTenantDiscoveryResponse(ctx, endpoint)
 	if err != nil {
 		return authority.Endpoints{}, err
 	}
@@ -121,13 +122,15 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, use
 }
 
 func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (string, error) {
-	if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
+	if authorityInfo.Tenant != "adfs" && authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
 		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
 		if err != nil {
 			return "", err
 		}
 
 		return resp.TenantDiscoveryEndpoint, nil
+	} else if authorityInfo.Tenant == "adfs" {
+		return fmt.Sprintf("https://%s/adfs/.well-known/openid-configuration", authorityInfo.Host), nil
 	}
 
 	return authorityInfo.CanonicalAuthorityURI + "v2.0/.well-known/openid-configuration", nil
