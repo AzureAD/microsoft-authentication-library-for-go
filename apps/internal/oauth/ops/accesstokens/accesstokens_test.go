@@ -897,6 +897,7 @@ func TestComputeScopes(t *testing.T) {
 				GrantedScopes: Scopes{
 					Slice: []string{"scope0", "scope1"},
 				},
+				DeclinedScopes: []string{"scope2"},
 				scopesComputed: true,
 			},
 		},
@@ -939,5 +940,15 @@ func TestHomeAccountID(t *testing.T) {
 		if got != test.want {
 			t.Errorf("TestHomeAccountID(%s): got %q, want %q", test.desc, got, test.want)
 		}
+	}
+}
+
+func TestFindDeclinedScopes(t *testing.T) {
+	requestedScopes := []string{"user.read", "openid"}
+	grantedScopes := []string{"user.read"}
+	expectedDeclinedScopes := []string{"openid"}
+	actualDeclinedScopes := findDeclinedScopes(requestedScopes, grantedScopes)
+	if !reflect.DeepEqual(expectedDeclinedScopes, actualDeclinedScopes) {
+		t.Errorf("Actual declined scopes %v differ from expected declined scopes %v", actualDeclinedScopes, expectedDeclinedScopes)
 	}
 }

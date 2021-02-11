@@ -27,15 +27,27 @@ func TestCreateAuthenticationResult(t *testing.T) {
 		{
 			desc: "no declined scopes",
 			input: accesstokens.TokenResponse{
-				AccessToken:   "accessToken",
-				ExpiresOn:     internalTime.DurationTime{T: future},
-				GrantedScopes: accesstokens.Scopes{Slice: []string{"user.read"}},
+				AccessToken:    "accessToken",
+				ExpiresOn:      internalTime.DurationTime{T: future},
+				GrantedScopes:  accesstokens.Scopes{Slice: []string{"user.read"}},
+				DeclinedScopes: nil,
 			},
 			want: AuthResult{
-				AccessToken:   "accessToken",
-				ExpiresOn:     future,
-				GrantedScopes: []string{"user.read"},
+				AccessToken:    "accessToken",
+				ExpiresOn:      future,
+				GrantedScopes:  []string{"user.read"},
+				DeclinedScopes: nil,
 			},
+		},
+		{
+			desc: "declined scopes",
+			input: accesstokens.TokenResponse{
+				AccessToken:    "accessToken",
+				ExpiresOn:      internalTime.DurationTime{T: future},
+				GrantedScopes:  accesstokens.Scopes{Slice: []string{"user.read"}},
+				DeclinedScopes: []string{"openid"},
+			},
+			err: true,
 		},
 	}
 

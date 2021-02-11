@@ -177,12 +177,13 @@ type TokenResponse struct {
 	AccessToken  string `json:"access_token"`
 	RefreshToken string `json:"refresh_token"`
 
-	FamilyID      string                    `json:"foci"`
-	IDToken       IDToken                   `json:"id_token"`
-	ClientInfo    ClientInfo                `json:"client_info"`
-	ExpiresOn     internalTime.DurationTime `json:"expires_in"`
-	ExtExpiresOn  internalTime.DurationTime `json:"ext_expires_in"`
-	GrantedScopes Scopes                    `json:"scope"`
+	FamilyID       string                    `json:"foci"`
+	IDToken        IDToken                   `json:"id_token"`
+	ClientInfo     ClientInfo                `json:"client_info"`
+	ExpiresOn      internalTime.DurationTime `json:"expires_in"`
+	ExtExpiresOn   internalTime.DurationTime `json:"ext_expires_in"`
+	GrantedScopes  Scopes                    `json:"scope"`
+	DeclinedScopes []string                  // This is derived
 
 	AdditionalFields map[string]interface{}
 
@@ -196,6 +197,8 @@ type TokenResponse struct {
 func (tr *TokenResponse) ComputeScope(authParams authority.AuthParams) {
 	if len(tr.GrantedScopes.Slice) == 0 {
 		tr.GrantedScopes = Scopes{Slice: authParams.Scopes}
+	} else {
+		tr.DeclinedScopes = findDeclinedScopes(authParams.Scopes, tr.GrantedScopes.Slice)
 	}
 	tr.scopesComputed = true
 }
@@ -215,6 +218,21 @@ func (tr *TokenResponse) Validate() error {
 		return fmt.Errorf("TokenResponse hasn't had ScopesComputed() called")
 	}
 	return nil
+}
+
+func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []string {
+	declined := []string{}
+	grantedMap := map[string]bool{}
+	for _, s := range grantedScopes {
+		grantedMap[s] = true
+	}
+	// Comparing the requested scopes with the granted scopes to see if there are any scopes that have been declined.
+	for _, r := range requestedScopes {
+		if !grantedMap[r] {
+			declined = append(declined, r)
+		}
+	}
+	return declined
 }
 
 // decodeJWT decodes a JWT and converts it to a byte array representing a JSON object
