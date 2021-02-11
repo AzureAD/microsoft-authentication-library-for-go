@@ -852,6 +852,7 @@ func TestTokenResponseValidate(t *testing.T) {
 		}
 	}
 }
+
 func TestComputeScopes(t *testing.T) {
 	tests := []struct {
 		desc       string
