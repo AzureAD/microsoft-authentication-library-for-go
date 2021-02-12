@@ -86,7 +86,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -106,6 +106,14 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 		return TokenResponse{}, err
 	}
 
+	if account.IsZero() {
+		return TokenResponse{
+			AccessToken:  accessToken,
+			RefreshToken: accesstokens.RefreshToken{},
+			IDToken:      IDToken{},
+			Account:      shared.Account{},
+		}, nil
+	}
 	idToken, err := m.readIDToken(homeAccountID, metadata.Aliases, realm, clientID)
 	if err != nil {
 		return TokenResponse{}, err
@@ -121,7 +129,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 	if err != nil {
 		return TokenResponse{}, err
 	}
-	account, err := m.readAccount(homeAccountID, metadata.Aliases, realm)
+	account, err = m.readAccount(homeAccountID, metadata.Aliases, realm)
 	if err != nil {
 		return TokenResponse{}, err
 	}

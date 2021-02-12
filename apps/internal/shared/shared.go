@@ -5,6 +5,7 @@ package shared
 
 import (
 	"net/http"
+	"reflect"
 	"strings"
 )
 
@@ -45,6 +46,24 @@ func NewAccount(homeAccountID, env, realm, localAccountID, authorityType, userna
 // Key creates the key for storing accounts in the cache.
 func (acc Account) Key() string {
 	return strings.Join([]string{acc.HomeAccountID, acc.Environment, acc.Realm}, CacheKeySeparator)
+}
+
+// IsZero checks the zero value of account.
+func (acc Account) IsZero() bool {
+	v := reflect.ValueOf(acc)
+	for i := 0; i < v.NumField(); i++ {
+		field := v.Field(i)
+		if !field.IsZero() {
+			switch field.Kind() {
+			case reflect.Map, reflect.Slice:
+				if field.Len() == 0 {
+					continue
+				}
+			}
+			return false
+		}
+	}
+	return true
 }
 
 // DefaultClient is our default shared HTTP client.

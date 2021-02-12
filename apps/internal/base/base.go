@@ -30,7 +30,7 @@ const (
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type manager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams) (storage.TokenResponse, error)
+	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() ([]shared.Account, error)
 }
@@ -164,31 +164,30 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	v.Add("client_id", clientID)
 	v.Add("response_type", "code")
 	v.Add("redirect_uri", redirectURI)
-	v.Add("scope", strings.Join(scopes, " "))
-
+	v.Add("scope", strings.Join(scopes, scopeSeparator))
+	if authParams.State != "" {
+		v.Add("state", authParams.State)
+	}
+	if authParams.CodeChallenge != "" {
+		v.Add("code_challenge", authParams.CodeChallenge)
+	}
+	if authParams.CodeChallengeMethod != "" {
+		v.Add("code_challenge_method", authParams.CodeChallengeMethod)
+	}
+	if authParams.Prompt != "" {
+		v.Add("prompt", authParams.Prompt)
+	}
 	// There were left over from an implementation that didn't use any of these.  We may
 	// need to add them later, but as of now aren't needed.
 	/*
-		if p.CodeChallenge != "" {
-			urlParams.Add("code_challenge", p.CodeChallenge)
-		}
-		if p.State != "" {
-			urlParams.Add("state", p.State)
-		}
 		if p.ResponseMode != "" {
 			urlParams.Add("response_mode", p.ResponseMode)
-		}
-		if p.Prompt != "" {
-			urlParams.Add("prompt", p.Prompt)
 		}
 		if p.LoginHint != "" {
 			urlParams.Add("login_hint", p.LoginHint)
 		}
 		if p.DomainHint != "" {
 			urlParams.Add("domain_hint", p.DomainHint)
-		}
-		if p.CodeChallengeMethod != "" {
-			urlParams.Add("code_challenge_method", p.CodeChallengeMethod)
 		}
 	*/
 	baseURL.RawQuery = v.Encode()
@@ -207,7 +206,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		defer b.cacheAccessor.Export(s)
 	}
 
-	storageTokenResponse, err := b.manager.Read(ctx, authParams)
+	storageTokenResponse, err := b.manager.Read(ctx, authParams, silent.Account)
 	if err != nil {
 		return AuthResult{}, err
 	}
