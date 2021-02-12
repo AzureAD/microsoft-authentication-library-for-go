@@ -53,6 +53,7 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 	if endpoints, found := m.cachedEndpoints(authorityInfo, userPrincipalName); found {
 		return endpoints, nil
 	}
+
 	endpoint, err := m.openIDConfigurationEndpoint(ctx, authorityInfo, userPrincipalName)
 	if err != nil {
 		return authority.Endpoints{}, err
