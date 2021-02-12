@@ -195,25 +195,28 @@ func (d DeviceCode) Token(ctx context.Context) (accesstokens.TokenResponse, erro
 	}
 }
 
-type DeviceCodeError struct {
+type deviceCodeError struct {
 	Error string `json:"error"`
 }
 
 func isWaitDeviceCodeErr(err error) bool {
 	var c errors.CallErr
 	if errors.As(err, &c) {
-		if c.Resp.StatusCode == 400 {
-			var dCErr DeviceCodeError
-			defer c.Resp.Body.Close()
-			body, err := ioutil.ReadAll(c.Resp.Body)
-			if err == nil {
-				err = json.Unmarshal(body, &dCErr)
-				if err == nil {
-					if dCErr.Error == "authorization_pending" || dCErr.Error == "slow_down" {
-						return true
-					}
-				}
-			}
+		if c.Resp.StatusCode != 400 {
+			return false
+		}
+		var dCErr deviceCodeError
+		defer c.Resp.Body.Close()
+		body, err := ioutil.ReadAll(c.Resp.Body)
+		if err != nil {
+			return false
+		}
+		err = json.Unmarshal(body, &dCErr)
+		if err != nil {
+			return false
+		}
+		if dCErr.Error == "authorization_pending" || dCErr.Error == "slow_down" {
+			return true
 		}
 	}
 	return false

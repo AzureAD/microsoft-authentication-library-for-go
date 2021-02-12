@@ -77,18 +77,14 @@ func (e CallErr) Verbose() string {
 	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
 }
 
-// Unwrap returns the wrapped error
-func (e CallErr) Unwrap() error {
-	return e.Err
-}
-
 // Is reports whether any error in errors chain matches target.
 func Is(err, target error) bool {
 	return errors.Is(err, target)
 }
+
 // As finds the first error in errors chain that matches target,
 // and if so, sets target to that error value and returns true.
 // Otherwise, it returns false.
-func As(err, target error) bool {
+func As(err error, target interface{}) bool {
 	return errors.As(err, target)
 }
