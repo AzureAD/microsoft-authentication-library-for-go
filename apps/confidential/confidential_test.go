@@ -76,11 +76,14 @@ lQFhpxvPgPNBuxVRnsxoH/sLOA==
 	}
 }
 
-const token = "fake_token"
+const (
+	token   = "fake_token"
+	refresh = "fake_refresh"
+)
 
 var tokenScope = []string{"the_scope"}
 
-func fakeClient() (Client, error) {
+func fakeClient(tk accesstokens.TokenResponse) (Client, error) {
 	cred, err := NewCredFromSecret("fake_secret")
 	if err != nil {
 		return Client{}, err
@@ -90,12 +93,7 @@ func fakeClient() (Client, error) {
 		return Client{}, err
 	}
 	client.base.Token.AccessTokens = &fake.AccessTokens{
-		AccessToken: accesstokens.TokenResponse{
-			AccessToken:   token,
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-		},
+		AccessToken: tk,
 	}
 	client.base.Token.Authority = &fake.Authority{
 		InstanceResp: authority.InstanceDiscoveryResponse{
@@ -125,7 +123,12 @@ func fakeClient() (Client, error) {
 }
 
 func TestAcquireTokenByCredential(t *testing.T) {
-	client, err := fakeClient()
+	client, err := fakeClient(accesstokens.TokenResponse{
+		AccessToken:   token,
+		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -152,7 +155,32 @@ func TestAcquireTokenByCredential(t *testing.T) {
 }
 
 func TestAcquireTokenByAuthCode(t *testing.T) {
-	client, err := fakeClient()
+	client, err := fakeClient(accesstokens.TokenResponse{
+		AccessToken:   token,
+		RefreshToken:  refresh,
+		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+		IDToken: accesstokens.IDToken{
+			PreferredUsername: "fakeuser@fakeplace.fake",
+			Name:              "fake person",
+			Oid:               "123-456",
+			TenantID:          "fake",
+			Subject:           "nothing",
+			Issuer:            "https://fake_authority/fake",
+			Audience:          "abc-123",
+			ExpirationTime:    time.Now().Add(time.Hour).Unix(),
+			IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
+			NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
+			// NOTE: this is an invalid JWT however this doesn't cause a failure.
+			// it simply falls back to calling Token.Refresh() which will obviously succeed.
+			RawToken: "fake.raw.token",
+		},
+		ClientInfo: accesstokens.ClientInfo{
+			UID:  "123-456",
+			UTID: "fake",
+		},
+	})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -168,8 +196,9 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
+	accounts := client.Accounts()
 	// second attempt should return the cached token
-	tk, err = client.AcquireTokenSilent(context.Background(), tokenScope)
+	tk, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(accounts[0]))
 	if err != nil {
 		t.Fatal(err)
 	}
