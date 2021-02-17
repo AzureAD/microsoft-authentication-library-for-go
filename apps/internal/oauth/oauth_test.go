@@ -10,12 +10,15 @@ package oauth
 // we require .X is set and input doesn't have it, ...)
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
-	"errors"
+	"io/ioutil"
+	"net/http"
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -286,7 +289,27 @@ func TestDeviceCode(t *testing.T) {
 			desc: "Error: FromDeviceCodeResult() returned a !isWaitDeviceCodeErr",
 			dc: DeviceCode{
 				accessTokens: &fake.AccessTokens{
-					Result: []error{errors.New("authorization_pending"), errors.New("slow_down"), errors.New("bad error"), nil},
+					Result: []error{
+						errors.CallErr{
+							Resp: &http.Response{
+								StatusCode: 400,
+								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "authorization_pending"}`))),
+							},
+						},
+						errors.CallErr{
+							Resp: &http.Response{
+								StatusCode: 400,
+								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "slow_down"}`))),
+							},
+						},
+						errors.CallErr{
+							Resp: &http.Response{
+								StatusCode: 400,
+								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "bad_error"}`))),
+							},
+						},
+						nil,
+					},
 				},
 			},
 			err: true,
@@ -298,7 +321,21 @@ func TestDeviceCode(t *testing.T) {
 					ExpiresOn: time.Now().Add(5 * time.Minute),
 				},
 				accessTokens: &fake.AccessTokens{
-					Result: []error{errors.New("authorization_pending"), errors.New("slow_down"), nil},
+					Result: []error{
+						errors.CallErr{
+							Resp: &http.Response{
+								StatusCode: 400,
+								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "authorization_pending"}`))),
+							},
+						},
+						errors.CallErr{
+							Resp: &http.Response{
+								StatusCode: 400,
+								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "slow_down"}`))),
+							},
+						},
+						nil,
+					},
 				},
 			},
 		},
