@@ -201,23 +201,24 @@ type deviceCodeError struct {
 
 func isWaitDeviceCodeErr(err error) bool {
 	var c errors.CallErr
-	if errors.As(err, &c) {
-		if c.Resp.StatusCode != 400 {
-			return false
-		}
-		var dCErr deviceCodeError
-		defer c.Resp.Body.Close()
-		body, err := ioutil.ReadAll(c.Resp.Body)
-		if err != nil {
-			return false
-		}
-		err = json.Unmarshal(body, &dCErr)
-		if err != nil {
-			return false
-		}
-		if dCErr.Error == "authorization_pending" || dCErr.Error == "slow_down" {
-			return true
-		}
+	if !errors.As(err, &c) {
+		return false
+	}
+	if c.Resp.StatusCode != 400 {
+		return false
+	}
+	var dCErr deviceCodeError
+	defer c.Resp.Body.Close()
+	body, err := ioutil.ReadAll(c.Resp.Body)
+	if err != nil {
+		return false
+	}
+	err = json.Unmarshal(body, &dCErr)
+	if err != nil {
+		return false
+	}
+	if dCErr.Error == "authorization_pending" || dCErr.Error == "slow_down" {
+		return true
 	}
 	return false
 }

@@ -249,13 +249,13 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("could not read the body of an HTTP Response: %w", err)
 	}
+	reply.Body = ioutil.NopCloser(bytes.NewBuffer(data))
 
 	// NOTE: This doesn't happen immediately after the call so that we can get an error message
 	// from the server and include it in our error.
 	switch reply.StatusCode {
 	case 200, 201:
 	default:
-		reply.Body = ioutil.NopCloser(bytes.NewBuffer(data))
 		sd := strings.TrimSpace(string(data))
 		if sd != "" {
 			// We probably have the error in the body.
