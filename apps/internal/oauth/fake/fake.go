@@ -20,13 +20,16 @@ import (
 type ResolveEndpoints struct {
 	// Set this to true to have all APIs return an error.
 	Err bool
+
+	// fake result to return
+	Endpoints authority.Endpoints
 }
 
 func (f ResolveEndpoints) ResolveEndpoints(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (authority.Endpoints, error) {
 	if f.Err {
 		return authority.Endpoints{}, errors.New("error")
 	}
-	return authority.Endpoints{}, nil
+	return f.Endpoints, nil
 }
 
 // AccessTokens is a fake implementation of the oauth.accessTokens interface.
@@ -38,43 +41,49 @@ type AccessTokens struct {
 	// the next item in this slice. They must be either an error or nil.
 	Result []error
 	Next   int
+
+	// fake result to return
+	AccessToken accesstokens.TokenResponse
+
+	// fake result to return
+	DeviceCode accesstokens.DeviceCodeResult
 }
 
 func (f *AccessTokens) FromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error) {
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
-	return accesstokens.TokenResponse{}, nil
+	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromAuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
-	return accesstokens.TokenResponse{}, nil
+	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
-	return accesstokens.TokenResponse{}, nil
+	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error) {
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
-	return accesstokens.TokenResponse{}, nil
+	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error) {
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
-	return accesstokens.TokenResponse{}, nil
+	return f.AccessToken, nil
 }
 func (f *AccessTokens) DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error) {
 	if f.Err {
 		return accesstokens.DeviceCodeResult{}, fmt.Errorf("error")
 	}
-	return accesstokens.DeviceCodeResult{}, nil
+	return f.DeviceCode, nil
 }
 func (f *AccessTokens) FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error) {
 	if f.Next < len(f.Result) {
@@ -91,7 +100,7 @@ func (f *AccessTokens) FromSamlGrant(ctx context.Context, authParameters authori
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
-	return accesstokens.TokenResponse{}, nil
+	return f.AccessToken, nil
 }
 
 // Authority is a fake implementation of the oauth.fetchAuthority interface.
@@ -101,6 +110,9 @@ type Authority struct {
 
 	// The fake UserRealm to return from the UserRealm() API.
 	Realm authority.UserRealm
+
+	// fake result to return
+	InstanceResp authority.InstanceDiscoveryResponse
 }
 
 func (f Authority) UserRealm(ctx context.Context, params authority.AuthParams) (authority.UserRealm, error) {
@@ -114,25 +126,31 @@ func (f Authority) AADInstanceDiscovery(ctx context.Context, info authority.Info
 	if f.Err {
 		return authority.InstanceDiscoveryResponse{}, errors.New("error")
 	}
-	return authority.InstanceDiscoveryResponse{}, nil
+	return f.InstanceResp, nil
 }
 
 // WSTrust is a fake implementation of the oauth.fetchWSTrust interface.
 type WSTrust struct {
 	// Set these to true to have their respective APIs return an error.
 	GetMexErr, GetSAMLTokenInfoErr bool
+
+	// fake result to return
+	MexDocument defs.MexDocument
+
+	// fake result to return
+	SamlTokenInfo wstrust.SamlTokenInfo
 }
 
 func (f WSTrust) Mex(ctx context.Context, federationMetadataURL string) (defs.MexDocument, error) {
 	if f.GetMexErr {
 		return defs.MexDocument{}, errors.New("error")
 	}
-	return defs.MexDocument{}, nil
+	return f.MexDocument, nil
 }
 
 func (f WSTrust) SAMLTokenInfo(ctx context.Context, authParameters authority.AuthParams, cloudAudienceURN string, endpoint defs.Endpoint) (wstrust.SamlTokenInfo, error) {
 	if f.GetSAMLTokenInfoErr {
 		return wstrust.SamlTokenInfo{}, errors.New("error")
 	}
-	return wstrust.SamlTokenInfo{}, nil
+	return f.SamlTokenInfo, nil
 }
