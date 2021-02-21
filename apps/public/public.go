@@ -372,7 +372,11 @@ func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params
 		return interactiveAuthResult{}, err
 	}
 	defer srv.Shutdown()
-	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, srv.Addr, params.Scopes, params)
+	replyUrl := srv.Addr
+	if redirectURI != nil {
+		replyUrl = redirectURI.String()
+	}
+	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, replyUrl, params.Scopes, params)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}
@@ -387,7 +391,7 @@ func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params
 	}
 	return interactiveAuthResult{
 		authCode:    res.Code,
-		redirectURI: srv.Addr,
+		redirectURI: replyUrl,
 	}, nil
 }
 
