@@ -33,6 +33,7 @@ type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() ([]shared.Account, error)
+	RemoveAccount(account shared.Account, envAliases []string)
 }
 
 type noopCacheAccessor struct{}
@@ -284,6 +285,10 @@ func (b Client) Accounts() []shared.Account {
 		return nil
 	}
 	return accounts
+}
+
+func (b Client) RemoveAccount(account shared.Account) {
+	b.manager.RemoveAccount(account, []string{})
 }
 
 // toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.

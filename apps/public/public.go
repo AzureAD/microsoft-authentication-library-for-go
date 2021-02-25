@@ -274,6 +274,11 @@ func (pca Client) Accounts() []Account {
 	return pca.base.Accounts()
 }
 
+// RemoveAccount signs the account out and forgets account from token cache
+func (pca Client) RemoveAccount(account Account) {
+	pca.base.RemoveAccount(account)
+}
+
 // InteractiveAuthOptions contains the optional parameters used to acquire an access token for interactive auth code flow.
 type InteractiveAuthOptions struct {
 	// Used to specify a custom port for the local server.  http://localhost:portnumber

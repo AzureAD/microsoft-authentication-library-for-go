@@ -76,10 +76,9 @@ func (r *TenantDiscoveryResponse) Validate() error {
 }
 
 type InstanceDiscoveryMetadata struct {
-	PreferredNetwork        string   `json:"preferred_network"`
-	PreferredCache          string   `json:"preferred_cache"`
-	TenantDiscoveryEndpoint string   `json:"tenant_discovery_endpoint"`
-	Aliases                 []string `json:"aliases"`
+	PreferredNetwork string   `json:"preferred_network"`
+	PreferredCache   string   `json:"preferred_cache"`
+	Aliases          []string `json:"aliases"`
 
 	AdditionalFields map[string]interface{}
 }

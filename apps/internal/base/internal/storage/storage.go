@@ -244,14 +244,10 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	}
 
 	for _, metadataEntry := range discoveryResponse.Metadata {
-		metadataEntry.TenantDiscoveryEndpoint = discoveryResponse.TenantDiscoveryEndpoint
 		for _, aliasedAuthority := range metadataEntry.Aliases {
 			m.aadCache[aliasedAuthority] = metadataEntry
 		}
 	}
-	// TODO(msal): Don't understand this logic.  We query first this data, we enter all the data that
-	// the server has.  If our host was not detailed by the server, we just insert it???
-	// This is either broken or needs to be explained with a comment.
 	if _, ok := m.aadCache[authorityInfo.Host]; !ok {
 		m.aadCache[authorityInfo.Host] = authority.InstanceDiscoveryMetadata{
 			PreferredNetwork: authorityInfo.Host,
@@ -415,6 +411,22 @@ func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
 
 	m.contract.Store(cache)
 	return nil
+}
+
+func (m *Manager) RemoveAccount(account shared.Account, envAliases []string) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	cache := m.Contract().copy()
+
+	for key, acc := range cache.Accounts {
+		if acc.HomeAccountID == account.HomeAccountID && checkAlias(acc.Environment, envAliases) {
+			delete(cache.Accounts, key)
+			//delete(cache.AccessTokens, key)
+		}
+	}
+
+	m.contract.Store(cache)
 }
 
 func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {
