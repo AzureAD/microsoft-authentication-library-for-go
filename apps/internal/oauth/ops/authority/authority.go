@@ -133,6 +133,8 @@ type AuthParams struct {
 	CodeChallengeMethod string
 	// Prompt specifies the user prompt type during interactive auth.
 	Prompt string
+	// IsConfidentialClient specifies if it is a confidential client
+	IsConfidentialClient bool
 }
 
 // NewAuthParams creates an authorization parameters object.

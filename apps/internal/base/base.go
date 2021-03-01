@@ -37,8 +37,8 @@ type manager interface {
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) Replace(cache cache.Unmarshaler) {}
-func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
+func (n noopCacheAccessor) Replace(cache cache.Unmarshaler, key string) {}
+func (n noopCacheAccessor) Export(cache cache.Marshaler, key string)    {}
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
@@ -202,8 +202,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		b.cacheAccessor.Replace(s)
-		defer b.cacheAccessor.Export(s)
+		suggestedCacheKey := getKeyFromRequest(authParams)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 
 	storageTokenResponse, err := b.manager.Read(ctx, authParams, silent.Account)
@@ -241,6 +242,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	var cc *accesstokens.Credential
 	if authCodeParams.AppType == accesstokens.ATConfidential {
 		cc = authCodeParams.Credential
+		authParams.IsConfidentialClient = true
 	}
 
 	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.AppType, cc, authCodeParams.Code, authCodeParams.Challenge)
@@ -262,8 +264,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	}
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		b.cacheAccessor.Replace(s)
-		defer b.cacheAccessor.Export(s)
+		suggestedCacheKey := getKeyFromResponse(authParams, token.ClientInfo.HomeAccountID())
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 
 	account, err := b.manager.Write(authParams, token)
@@ -275,8 +278,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 
 func (b Client) Accounts() []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
-		b.cacheAccessor.Replace(s)
-		defer b.cacheAccessor.Export(s)
+		suggestedCacheKey := getKeyFromRequest(b.AuthParams)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 
 	accounts, err := b.manager.AllAccounts()
@@ -301,4 +305,31 @@ func convertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.Unix(timeInt, 0).UTC(), nil
+}
+
+func getKeyFromRequest(authParams authority.AuthParams) string {
+	if authParams.AuthorizationType == authority.ATClientCredentials {
+		return getAppKey(authParams)
+	}
+	if authParams.AuthorizationType == authority.ATRefreshToken {
+		return authParams.HomeaccountID
+	}
+	return ""
+}
+
+func getKeyFromResponse(authParams authority.AuthParams, homeaccountIDfromResponse string) string {
+	if authParams.AuthorizationType == authority.ATClientCredentials {
+		return getAppKey(authParams)
+	}
+	if authParams.IsConfidentialClient || authParams.AuthorizationType == authority.ATRefreshToken {
+		return homeaccountIDfromResponse
+	}
+	return ""
+}
+
+func getAppKey(authParams authority.AuthParams) string {
+	if authParams.AuthorityInfo.Tenant != "" {
+		return fmt.Sprintf("%s_%s_AppTokenCache", authParams.ClientID, authParams.AuthorityInfo.Tenant)
+	}
+	return fmt.Sprintf("%s_%s_AppTokenCache", authParams.ClientID, "")
 }
