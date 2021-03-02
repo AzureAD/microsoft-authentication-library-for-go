@@ -108,6 +108,12 @@ const (
 	ATRefreshToken
 )
 
+// These are all authority types
+const (
+	AAD  = "MSSTS"
+	ADFS = "ADFS"
+)
+
 // AuthParams represents the parameters used for authorization for token acquisition.
 type AuthParams struct {
 	AuthorityInfo Info
@@ -177,9 +183,9 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 
 	tenant, err := firstPathSegment(u)
 	if tenant == "adfs" {
-		authorityType = "ADFS"
+		authorityType = ADFS
 	} else {
-		authorityType = "MSSTS"
+		authorityType = AAD
 	}
 
 	if err != nil {
