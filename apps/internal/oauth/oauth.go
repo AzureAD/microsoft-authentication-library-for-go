@@ -116,7 +116,7 @@ func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, auth
 // UsernamePassword retrieves a token where a username and password is used. However, if this is
 // a user realm of "Federated", this uses SAML tokens. If "Managed", uses normal username/password.
 func (t *Client) UsernamePassword(ctx context.Context, authParams authority.AuthParams) (accesstokens.TokenResponse, error) {
-	if authParams.AuthorityInfo.AuthorityType == "ADFS" {
+	if authParams.AuthorityInfo.AuthorityType == authority.ADFS {
 		if err := t.resolveEndpoint(ctx, &authParams, authParams.Username); err != nil {
 			return accesstokens.TokenResponse{}, err
 		}
