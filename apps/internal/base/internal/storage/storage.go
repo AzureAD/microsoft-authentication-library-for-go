@@ -374,17 +374,16 @@ func (m *Manager) AllAccounts() []shared.Account {
 	return accounts
 }
 
-func (m *Manager) Accounts(homeAccountID string) []shared.Account {
+func (m *Manager) Account(homeAccountID string) shared.Account {
 	cache := m.Contract()
 
-	var accounts []shared.Account
 	for _, v := range cache.Accounts {
 		if v.HomeAccountID == homeAccountID {
-			accounts = append(accounts, v)
+			return v
 		}
 	}
 
-	return accounts
+	return shared.Account{}
 }
 
 func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (shared.Account, error) {

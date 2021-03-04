@@ -33,7 +33,7 @@ type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() []shared.Account
-	Accounts(homeAccountID string) []shared.Account
+	Account(homeAccountID string) shared.Account
 }
 
 type noopCacheAccessor struct{}
@@ -292,7 +292,7 @@ func (b Client) AllAccounts() []shared.Account {
 	return accounts
 }
 
-func (b Client) Accounts(homeAccountID string) []shared.Account {
+func (b Client) Account(homeAccountID string) shared.Account {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.AuthorizationType = authority.AccountByID
 	authParams.HomeaccountID = homeAccountID
@@ -301,8 +301,8 @@ func (b Client) Accounts(homeAccountID string) []shared.Account {
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
-	accounts := b.manager.Accounts(homeAccountID)
-	return accounts
+	account := b.manager.Account(homeAccountID)
+	return account
 }
 
 // toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.

@@ -341,12 +341,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-// Accounts gets all the accounts in the token cache.
-func (cca Client) Accounts() []Account {
-	return cca.base.AllAccounts()
-}
-
-// AccountsByHomeAccountID gets all the accounts in the token cache with the specified homeAccountID
-func (cca Client) AccountsByHomeAccountID(homeAccountID string) []Account {
-	return cca.base.Accounts(homeAccountID)
+// Account gets the account in the token cache with the specified homeAccountID
+func (cca Client) Account(homeAccountID string) Account {
+	return cca.base.Account(homeAccountID)
 }
