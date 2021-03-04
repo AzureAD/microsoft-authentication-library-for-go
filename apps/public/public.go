@@ -219,50 +219,32 @@ func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string)
 
 // AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
 type AcquireTokenByAuthCodeOptions struct {
-	Code      string
 	Challenge string
-}
-
-func (a AcquireTokenByAuthCodeOptions) validate() error {
-	if a.Code == "" && a.Challenge == "" {
-		return nil
-	}
-
-	switch "" {
-	case a.Code:
-		return fmt.Errorf("AcquireTokenByAuthCode: if you set the Challenge, you must set the Code")
-	case a.Challenge:
-		return fmt.Errorf("AcquireTokenByAuthCode: if you set the Code, you must set the Challenge")
-	}
-	return nil
 }
 
 // AcquireTokenByAuthCodeOption changes options inside AcquireTokenByAuthCodeOptions used in .AcquireTokenByAuthCode().
 type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
 
-// CodeChallenge allows you to provide a code for the .AcquireTokenByAuthCode() call.
-func CodeChallenge(code, challenge string) AcquireTokenByAuthCodeOption {
+// WithChallenge allows you to provide a code for the .AcquireTokenByAuthCode() call.
+func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 	return func(a *AcquireTokenByAuthCodeOptions) {
-		a.Code = code
 		a.Challenge = challenge
 	}
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
+func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		o(&opts)
 	}
-	if err := opts.validate(); err != nil {
-		return AuthResult{}, err
-	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:    scopes,
-		Code:      opts.Code,
-		Challenge: opts.Challenge,
-		AppType:   accesstokens.ATPublic,
+		Scopes:      scopes,
+		Code:        code,
+		Challenge:   opts.Challenge,
+		AppType:     accesstokens.ATPublic,
+		RedirectURI: redirectURI,
 	}
 
 	return pca.base.AcquireTokenByAuthCode(ctx, params)
