@@ -203,11 +203,11 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		var isApp bool
+		var isAppCache bool
 		if silent.Account.IsZero() {
-			isApp = true
+			isAppCache = true
 		}
-		suggestedCacheKey := authParams.CacheKey(isApp)
+		suggestedCacheKey := authParams.CacheKey(isAppCache)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}

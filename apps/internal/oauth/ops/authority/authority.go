@@ -355,8 +355,8 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	return resp, err
 }
 
-func (a *AuthParams) CacheKey(isApp bool) string {
-	if a.AuthorizationType == ATClientCredentials || isApp {
+func (a *AuthParams) CacheKey(isAppCache bool) string {
+	if a.AuthorizationType == ATClientCredentials || isAppCache {
 		return a.AppKey()
 	}
 	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
