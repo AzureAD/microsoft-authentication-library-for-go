@@ -189,7 +189,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	if err == nil {
 		t.Fatal("unexpected nil error from AcquireTokenSilent")
 	}
-	tk, err := client.AcquireTokenByAuthCode(context.Background(), "fake_auth_code", tokenScope)
+	tk, err := client.AcquireTokenByAuthCode(context.Background(), "fake_auth_code", "fake_redirect_uri", tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -311,18 +311,20 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
+// The specified redirect URI must be the same URI that was used when the authorization code was requested.
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		o(&opts)
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:     scopes,
-		Code:       code,
-		Challenge:  opts.Challenge,
-		AppType:    accesstokens.ATConfidential,
-		Credential: cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		Scopes:      scopes,
+		Code:        code,
+		Challenge:   opts.Challenge,
+		AppType:     accesstokens.ATConfidential,
+		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		RedirectURI: redirectURI,
 	}
 
 	return cca.base.AcquireTokenByAuthCode(ctx, params)

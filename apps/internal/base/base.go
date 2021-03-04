@@ -53,11 +53,12 @@ type AcquireTokenSilentParameters struct {
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
-	Scopes     []string
-	Code       string
-	Challenge  string
-	AppType    accesstokens.AppType
-	Credential *accesstokens.Credential
+	Scopes      []string
+	Code        string
+	Challenge   string
+	RedirectURI string
+	AppType     accesstokens.AppType
+	Credential  *accesstokens.Credential
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -235,7 +236,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
-	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
+	authParams.Redirecturi = authCodeParams.RedirectURI
 	authParams.AuthorizationType = authority.ATAuthCode
 
 	var cc *accesstokens.Credential
