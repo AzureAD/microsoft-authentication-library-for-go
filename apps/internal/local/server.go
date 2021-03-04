@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"net"
 	"net/http"
+	"strconv"
+	"strings"
 )
 
 var okPage = []byte(`
@@ -59,9 +61,11 @@ type Server struct {
 func New(reqState string, port int) (*Server, error) {
 	var l net.Listener
 	var err error
+	var portStr string
 	if port > 0 {
 		// use port provided by caller
 		l, err = net.Listen("tcp", fmt.Sprintf("localhost:%d", port))
+		portStr = strconv.FormatInt(int64(port), 10)
 	} else {
 		// find a free port
 		for i := 0; i < 10; i++ {
@@ -69,6 +73,8 @@ func New(reqState string, port int) (*Server, error) {
 			if err != nil {
 				continue
 			}
+			addr := l.Addr().String()
+			portStr = addr[strings.LastIndex(addr, ":")+1:]
 			break
 		}
 	}
@@ -77,7 +83,7 @@ func New(reqState string, port int) (*Server, error) {
 	}
 
 	serv := &Server{
-		Addr:     "http://" + l.Addr().String(),
+		Addr:     fmt.Sprintf("http://localhost:%s", portStr),
 		s:        &http.Server{Addr: "localhost:0"},
 		reqState: reqState,
 		resultCh: make(chan Result, 1),
