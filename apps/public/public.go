@@ -233,6 +233,7 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
+// The specified redirect URI must be the same URI that was used when the authorization code was requested.
 func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
