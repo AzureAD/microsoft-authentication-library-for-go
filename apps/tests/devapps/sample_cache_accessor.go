@@ -22,7 +22,6 @@ func (t *TokenCache) Replace(cache cache.Unmarshaler, key string) {
 	}
 	defer jsonFile.Close()
 	data, err := ioutil.ReadAll(jsonFile)
-
 	if err != nil {
 		log.Println(err)
 	}
