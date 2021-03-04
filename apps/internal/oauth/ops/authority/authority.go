@@ -106,6 +106,7 @@ const (
 	ATClientCredentials
 	ATDeviceCode
 	ATRefreshToken
+	AccountByID
 )
 
 // AuthParams represents the parameters used for authorization for token acquisition.
@@ -352,4 +353,21 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	resp := InstanceDiscoveryResponse{}
 	err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
 	return resp, err
+}
+
+func (a *AuthParams) CacheKey(isApp bool) string {
+	if a.AuthorizationType == ATClientCredentials || isApp {
+		return a.AppKey()
+	}
+	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
+		return a.HomeaccountID
+	}
+	return ""
+}
+
+func (a *AuthParams) AppKey() string {
+	if a.AuthorityInfo.Tenant != "" {
+		return fmt.Sprintf("%s_%s_AppTokenCache", a.ClientID, a.AuthorityInfo.Tenant)
+	}
+	return fmt.Sprintf("%s__AppTokenCache", a.ClientID)
 }

@@ -32,7 +32,8 @@ const (
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
-	AllAccounts() ([]shared.Account, error)
+	AllAccounts() []shared.Account
+	Accounts(homeAccountID string) []shared.Account
 }
 
 type noopCacheAccessor struct{}
@@ -202,7 +203,11 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := getKeyFromRequest(authParams)
+		var isApp bool
+		if silent.Account.IsZero() {
+			isApp = true
+		}
+		suggestedCacheKey := authParams.CacheKey(isApp)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
@@ -264,7 +269,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	}
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := getKeyFromResponse(authParams, token.ClientInfo.HomeAccountID())
+		suggestedCacheKey := token.CacheKey(authParams)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
@@ -276,17 +281,27 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return NewAuthResult(token, account)
 }
 
-func (b Client) Accounts() []shared.Account {
+func (b Client) AllAccounts() []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := getKeyFromRequest(b.AuthParams)
+		suggestedCacheKey := b.AuthParams.CacheKey(false)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 
-	accounts, err := b.manager.AllAccounts()
-	if err != nil {
-		return nil
+	accounts := b.manager.AllAccounts()
+	return accounts
+}
+
+func (b Client) Accounts(homeAccountID string) []shared.Account {
+	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams.AuthorizationType = authority.AccountByID
+	authParams.HomeaccountID = homeAccountID
+	if s, ok := b.manager.(cache.Serializer); ok {
+		suggestedCacheKey := b.AuthParams.CacheKey(false)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
+	accounts := b.manager.Accounts(homeAccountID)
 	return accounts
 }
 
@@ -305,31 +320,4 @@ func convertStrUnixToUTCTime(unixTime string) (time.Time, error) {
 		return time.Time{}, err
 	}
 	return time.Unix(timeInt, 0).UTC(), nil
-}
-
-func getKeyFromRequest(authParams authority.AuthParams) string {
-	if authParams.AuthorizationType == authority.ATClientCredentials {
-		return getAppKey(authParams)
-	}
-	if authParams.AuthorizationType == authority.ATRefreshToken {
-		return authParams.HomeaccountID
-	}
-	return ""
-}
-
-func getKeyFromResponse(authParams authority.AuthParams, homeaccountIDfromResponse string) string {
-	if authParams.AuthorizationType == authority.ATClientCredentials {
-		return getAppKey(authParams)
-	}
-	if authParams.IsConfidentialClient || authParams.AuthorizationType == authority.ATRefreshToken {
-		return homeaccountIDfromResponse
-	}
-	return ""
-}
-
-func getAppKey(authParams authority.AuthParams) string {
-	if authParams.AuthorityInfo.Tenant != "" {
-		return fmt.Sprintf("%s_%s_AppTokenCache", authParams.ClientID, authParams.AuthorityInfo.Tenant)
-	}
-	return fmt.Sprintf("%s_%s_AppTokenCache", authParams.ClientID, "")
 }

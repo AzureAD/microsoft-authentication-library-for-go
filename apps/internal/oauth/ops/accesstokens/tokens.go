@@ -220,6 +220,16 @@ func (tr *TokenResponse) Validate() error {
 	return nil
 }
 
+func (tr *TokenResponse) CacheKey(authParams authority.AuthParams) string {
+	if authParams.AuthorizationType == authority.ATClientCredentials {
+		return authParams.AppKey()
+	}
+	if authParams.IsConfidentialClient || authParams.AuthorizationType == authority.ATRefreshToken {
+		return tr.ClientInfo.HomeAccountID()
+	}
+	return ""
+}
+
 func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []string {
 	declined := []string{}
 	grantedMap := map[string]bool{}

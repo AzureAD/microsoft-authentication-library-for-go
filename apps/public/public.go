@@ -271,7 +271,7 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, scopes []string, o
 // Accounts gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
 func (pca Client) Accounts() []Account {
-	return pca.base.Accounts()
+	return pca.base.AllAccounts()
 }
 
 // InteractiveAuthOptions contains the optional parameters used to acquire an access token for interactive auth code flow.
