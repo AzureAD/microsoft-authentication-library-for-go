@@ -9,7 +9,7 @@ To run one of the dev app which uses MSAL Go, the `config.json` file and the `co
     "scopes": ["user.read"],
     "username": "your_username",
     "password": "your_password",
-    "redirect_uri": "The URL that the authorization server will send the user to once the app has been successfully authorized, and granted an authorization code",
+    "redirect_uri": "redirect uri registered on the portal",
     "code_challenge": "transformed code verifier from PKCE",  
     "state": "state parameter for authorization code flow",
     "client_secret": "client secret you generated for your app",

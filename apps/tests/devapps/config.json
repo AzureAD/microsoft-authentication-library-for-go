@@ -5,7 +5,7 @@
     "scopes": ["user.read"],
     "username": "your_username",
     "password": "your_password",
-    "redirect_uri": "redirect_uri_registered",
+    "redirect_uri": "redirect uri registered on the portal",
     "code_challenge": "transformed code verifier from PKCE",  
     "state": "state parameter for authorization code flow",
     "client_secret": "client secret you generated for your app",

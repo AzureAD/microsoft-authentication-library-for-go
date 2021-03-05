@@ -2,7 +2,7 @@
     "authority": "https://login.microsoftonline.com/your_tenant_id",
     "client_id": "your_client_id",
     "scopes": ["requested_scope- usually of the format - {ResourceId}+/.default"],
-    "redirect_uri": "redirect_uri_registered",
+    "redirect_uri": "redirect uri registered on the portal",
     "code_challenge": "transformed code verifier from PKCE",  
     "state": "state parameter for authorization code flow",
     "client_secret": "client secret you generated for your app",
