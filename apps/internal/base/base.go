@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -293,13 +292,4 @@ func toLower(s []string) []string {
 		s[i] = strings.ToLower(s[i])
 	}
 	return s
-}
-
-// convertStrUnixToUTCTime converts a string representation of unix time to a UTC timestamp.
-func convertStrUnixToUTCTime(unixTime string) (time.Time, error) {
-	timeInt, err := strconv.ParseInt(unixTime, 10, 64)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Unix(timeInt, 0).UTC(), nil
 }

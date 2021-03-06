@@ -4,8 +4,6 @@ import (
 	"os"
 )
 
-const port = "3000"
-
 var (
 	//config        = CreateConfig("config.json")
 	cacheAccessor = &TokenCache{"serialized_cache.json"}
