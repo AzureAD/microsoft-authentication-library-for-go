@@ -95,10 +95,7 @@ func TestAllAccounts(t *testing.T) {
 	storageManager := Manager{}
 	storageManager.update(cache)
 
-	actualAccounts, err := storageManager.AllAccounts()
-	if err != nil {
-		panic(err)
-	}
+	actualAccounts := storageManager.AllAccounts()
 	// AllAccounts() is unstable in that the order can be reversed between calls.
 	// This fixes that.
 	sort.Slice(

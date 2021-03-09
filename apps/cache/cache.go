@@ -30,8 +30,10 @@ type Serializer interface {
 // ExportReplace is used export or replace what is in the cache.
 type ExportReplace interface {
 	// Replace replaces the cache with what is in external storage.
-	Replace(cache Unmarshaler)
+	// key is the suggested key which can be used for partioning the cache
+	Replace(cache Unmarshaler, key string)
 	// Export writes the binary representation of the cache (cache.Marshal()) to
 	// external storage. This is considered opaque.
-	Export(cache Marshaler)
+	// key is the suggested key which can be used for partioning the cache
+	Export(cache Marshaler, key string)
 }

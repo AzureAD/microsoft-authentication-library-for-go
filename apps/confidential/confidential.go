@@ -284,12 +284,17 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	for _, o := range options {
 		o(&opts)
 	}
+	var isAppCache bool
+	if opts.Account.IsZero() {
+		isAppCache = true
+	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
+		IsAppCache:  isAppCache,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -343,7 +348,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-// Accounts gets all the accounts in the token cache.
-func (cca Client) Accounts() []Account {
-	return cca.base.Accounts()
+// Account gets the account in the token cache with the specified homeAccountID
+func (cca Client) Account(homeAccountID string) Account {
+	return cca.base.Account(homeAccountID)
 }

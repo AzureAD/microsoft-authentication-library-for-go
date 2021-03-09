@@ -196,9 +196,9 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
-	accounts := client.Accounts()
+	account := client.Account(tk.Account.HomeAccountID)
 	// second attempt should return the cached token
-	tk, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(accounts[0]))
+	tk, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -106,6 +106,7 @@ const (
 	ATClientCredentials
 	ATDeviceCode
 	ATRefreshToken
+	AccountByID
 )
 
 // These are all authority types
@@ -139,6 +140,8 @@ type AuthParams struct {
 	CodeChallengeMethod string
 	// Prompt specifies the user prompt type during interactive auth.
 	Prompt string
+	// IsConfidentialClient specifies if it is a confidential client
+	IsConfidentialClient bool
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -319,4 +322,21 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	resp := InstanceDiscoveryResponse{}
 	err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
 	return resp, err
+}
+
+func (a *AuthParams) CacheKey(isAppCache bool) string {
+	if a.AuthorizationType == ATClientCredentials || isAppCache {
+		return a.AppKey()
+	}
+	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
+		return a.HomeaccountID
+	}
+	return ""
+}
+
+func (a *AuthParams) AppKey() string {
+	if a.AuthorityInfo.Tenant != "" {
+		return fmt.Sprintf("%s_%s_AppTokenCache", a.ClientID, a.AuthorityInfo.Tenant)
+	}
+	return fmt.Sprintf("%s__AppTokenCache", a.ClientID)
 }

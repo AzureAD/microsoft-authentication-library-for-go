@@ -363,7 +363,7 @@ func (m *Manager) writeIDToken(idToken IDToken) error {
 	return nil
 }
 
-func (m *Manager) AllAccounts() ([]shared.Account, error) {
+func (m *Manager) AllAccounts() []shared.Account {
 	cache := m.Contract()
 
 	var accounts []shared.Account
@@ -371,7 +371,19 @@ func (m *Manager) AllAccounts() ([]shared.Account, error) {
 		accounts = append(accounts, v)
 	}
 
-	return accounts, nil
+	return accounts
+}
+
+func (m *Manager) Account(homeAccountID string) shared.Account {
+	cache := m.Contract()
+
+	for _, v := range cache.Accounts {
+		if v.HomeAccountID == homeAccountID {
+			return v
+		}
+	}
+
+	return shared.Account{}
 }
 
 func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (shared.Account, error) {
