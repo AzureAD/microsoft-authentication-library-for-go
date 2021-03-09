@@ -47,6 +47,7 @@ type AcquireTokenSilentParameters struct {
 	Account     shared.Account
 	RequestType accesstokens.AppType
 	Credential  *accesstokens.Credential
+	IsAppCache  bool
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -203,11 +204,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		var isAppCache bool
-		if silent.Account.IsZero() {
-			isAppCache = true
-		}
-		suggestedCacheKey := authParams.CacheKey(isAppCache)
+		suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}

@@ -156,6 +156,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 		Scopes:      scopes,
 		Account:     opts.Account,
 		RequestType: accesstokens.ATPublic,
+		IsAppCache:  false,
 	}
 
 	return pca.base.AcquireTokenSilent(ctx, silentParameters)

@@ -284,12 +284,17 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	for _, o := range options {
 		o(&opts)
 	}
+	var isAppCache bool
+	if opts.Account.IsZero() {
+		isAppCache = true
+	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
+		IsAppCache:  isAppCache,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
