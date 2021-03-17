@@ -140,8 +140,8 @@ type Credential struct {
 // code requires that client.go, requests.go and confidential.go share a credential type without
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
-func (c Credential) toInternal(sendX5C bool) *accesstokens.Credential {
-	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, SendX5C: sendX5C}
+func (c Credential) toInternal() *accesstokens.Credential {
+	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
 }
 
 // NewCredFromSecret creates a Credential from a secret.
@@ -250,14 +250,14 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.SendX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}
 
 	return Client{
 		base: base,
-		cred: cred.toInternal(opts.SendX5C),
+		cred: cred.toInternal(),
 	}, nil
 }
 

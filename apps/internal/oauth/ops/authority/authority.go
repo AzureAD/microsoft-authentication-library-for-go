@@ -142,6 +142,8 @@ type AuthParams struct {
 	Prompt string
 	// IsConfidentialClient specifies if it is a confidential client
 	IsConfidentialClient bool
+	// SendX5C does some things
+	SendX5C bool
 }
 
 // NewAuthParams creates an authorization parameters object.
