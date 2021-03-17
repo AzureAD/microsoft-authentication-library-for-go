@@ -140,9 +140,9 @@ type AuthParams struct {
 	CodeChallengeMethod string
 	// Prompt specifies the user prompt type during interactive auth.
 	Prompt string
-	// IsConfidentialClient specifies if it is a confidential client
+	// IsConfidentialClient specifies if it is a confidential client.
 	IsConfidentialClient bool
-	// SendX5C does some things
+	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
 	SendX5C bool
 }
 
