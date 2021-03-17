@@ -92,6 +92,9 @@ type Credential struct {
 	// Key is the private key for signing if we are doing any auth other than secret.
 	Key crypto.PrivateKey
 
+	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS
+	SendX5C bool
+
 	// mu protects everything below.
 	mu sync.Mutex
 	// Assertion is the JWT assertion if we have retrieved it. Public to allow faking in tests.
@@ -130,6 +133,9 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 		"x5t": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
 	}
 
+	if c.SendX5C {
+		token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(c.Cert.Raw)}
+	}
 	var err error
 	c.Assertion, err = token.SignedString(c.Key)
 	if err != nil {

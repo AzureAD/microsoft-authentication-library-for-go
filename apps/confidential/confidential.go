@@ -140,8 +140,8 @@ type Credential struct {
 // code requires that client.go, requests.go and confidential.go share a credential type without
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
-func (c Credential) toInternal() *accesstokens.Credential {
-	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
+func (c Credential) toInternal(sendX5C bool) *accesstokens.Credential {
+	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, SendX5C: sendX5C}
 }
 
 // NewCredFromSecret creates a Credential from a secret.
@@ -186,6 +186,9 @@ type Options struct {
 	// The HTTP client used for making requests.
 	// It defaults to a shared http.Client.
 	HTTPClient ops.HTTPClient
+
+	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS
+	SendX5C bool
 }
 
 func (o Options) validate() error {
@@ -224,6 +227,13 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
+// SendX5c allows to send X5C value
+func SendX5C() Option {
+	return func(o *Options) {
+		o.SendX5C = true
+	}
+}
+
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
@@ -247,7 +257,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 
 	return Client{
 		base: base,
-		cred: cred.toInternal(),
+		cred: cred.toInternal(opts.SendX5C),
 	}, nil
 }
 
