@@ -227,7 +227,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
-// SendX5c allows to send X5C value
+// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication
 func SendX5C() Option {
 	return func(o *Options) {
 		o.SendX5C = true
