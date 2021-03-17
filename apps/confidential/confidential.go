@@ -187,7 +187,7 @@ type Options struct {
 	// It defaults to a shared http.Client.
 	HTTPClient ops.HTTPClient
 
-	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS
+	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
 	SendX5C bool
 }
 
@@ -227,7 +227,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
-// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication
+// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
 func SendX5C() Option {
 	return func(o *Options) {
 		o.SendX5C = true
