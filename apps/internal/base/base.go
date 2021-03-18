@@ -130,8 +130,8 @@ func WithCacheAccessor(ca cache.ExportReplace) Option {
 	}
 }
 
-// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication
-func SendX5C(sendX5C bool) Option {
+// WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
+func WithX5C(sendX5C bool) Option {
 	return func(c *Client) {
 		c.AuthParams.SendX5C = sendX5C
 	}

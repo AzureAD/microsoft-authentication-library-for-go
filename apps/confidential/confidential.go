@@ -227,8 +227,8 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
-// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
-func SendX5C() Option {
+// WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
+func WithX5C() Option {
 	return func(o *Options) {
 		o.SendX5C = true
 	}
@@ -250,7 +250,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.SendX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}
