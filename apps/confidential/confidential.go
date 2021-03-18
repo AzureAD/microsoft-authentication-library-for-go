@@ -186,6 +186,9 @@ type Options struct {
 	// The HTTP client used for making requests.
 	// It defaults to a shared http.Client.
 	HTTPClient ops.HTTPClient
+
+	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
+	SendX5C bool
 }
 
 func (o Options) validate() error {
@@ -224,6 +227,13 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
+// WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
+func WithX5C() Option {
+	return func(o *Options) {
+		o.SendX5C = true
+	}
+}
+
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
@@ -240,7 +250,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}

@@ -130,6 +130,9 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 		"x5t": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
 	}
 
+	if authParams.SendX5C {
+		token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(c.Cert.Raw)}
+	}
 	var err error
 	c.Assertion, err = token.SignedString(c.Key)
 	if err != nil {
