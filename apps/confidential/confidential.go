@@ -75,6 +75,7 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			break
 		}
 
+		//nolint // x509.IsEncryptedPEMBlock and x509.DecryptPEMBlock are deprecated. They exist here only to support a usecase.
 		if x509.IsEncryptedPEMBlock(block) {
 			b, err := x509.DecryptPEMBlock(block, []byte(password))
 			if err != nil {
