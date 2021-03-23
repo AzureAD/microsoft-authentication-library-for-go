@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
@@ -46,19 +45,18 @@ type TokenResponse struct {
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
 type Manager struct {
-	contract atomic.Value           // Stores a *Contract
-	requests aadInstanceDiscoveryer // *oauth.Token
+	contract   *Contract
+	contractMu sync.RWMutex
+	requests   aadInstanceDiscoveryer // *oauth.Token
 
-	mu sync.Mutex
-
-	cacheMu  sync.Mutex
-	aadCache map[string]authority.InstanceDiscoveryMetadata
+	aadCacheMu sync.RWMutex
+	aadCache   map[string]authority.InstanceDiscoveryMetadata
 }
 
 // New is the constructor for Manager.
 func New(requests *oauth.Client) *Manager {
 	m := &Manager{requests: requests, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
-	m.contract.Store(NewContract())
+	m.contract = NewContract()
 	return m
 }
 
@@ -145,9 +143,6 @@ const scopeSeparator = " "
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
 func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
 	authParameters.HomeaccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
@@ -218,18 +213,13 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	return account, nil
 }
 
-// Contract returns the Contract for read operations.
-func (m *Manager) Contract() *Contract {
-	return m.contract.Load().(*Contract)
-}
-
 func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
-	m.cacheMu.Lock()
-	defer m.cacheMu.Unlock()
-
+	m.aadCacheMu.RLock()
 	if metadata, ok := m.aadCache[authorityInfo.Host]; ok {
+		m.aadCacheMu.RUnlock()
 		return metadata, nil
 	}
+	m.aadCacheMu.RUnlock()
 	metadata, err := m.aadMetadata(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err
@@ -238,6 +228,8 @@ func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.
 }
 
 func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
+	m.aadCacheMu.Lock()
+	defer m.aadCacheMu.Unlock()
 	discoveryResponse, err := m.requests.AADInstanceDiscovery(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err
@@ -262,9 +254,10 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 }
 
 func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessToken, error) {
-	cache := m.Contract()
-
-	for _, at := range cache.AccessTokens {
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
+	// TODO: linear search (over a map no less) is slow for a large number of tokens
+	for _, at := range m.contract.AccessTokens {
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
 			if checkAlias(at.Environment, envAliases) {
 				if isMatchingScopes(scopes, at.Scopes) {
@@ -277,11 +270,10 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 }
 
 func (m *Manager) writeAccessToken(accessToken AccessToken) error {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
 	key := accessToken.Key()
-
-	cache := m.Contract().copy()
-	cache.AccessTokens[key] = accessToken
-	m.contract.Store(cache)
+	m.contract.AccessTokens[key] = accessToken
 	return nil
 }
 
@@ -313,9 +305,10 @@ func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID,
 	// If application is NOT part of the family, search by client_ID
 	// If app is part of the family or if we DO NOT KNOW if it's part of the family, search by family ID, then by client_id (we will know if an app is part of the family after the first token response).
 	// https://github.com/AzureAD/microsoft-authentication-library-for-dotnet/blob/311fe8b16e7c293462806f397e189a6aa1159769/src/client/Microsoft.Identity.Client/Internal/Requests/Silent/CacheSilentStrategy.cs#L95
-	cache := m.Contract()
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
 	for _, matcher := range matchers {
-		for _, rt := range cache.RefreshTokens {
+		for _, rt := range m.contract.RefreshTokens {
 			if matcher(rt) {
 				return rt, nil
 			}
@@ -335,16 +328,16 @@ func matchClientIDRefreshToken(rt accesstokens.RefreshToken, homeID string, envA
 
 func (m *Manager) writeRefreshToken(refreshToken accesstokens.RefreshToken) error {
 	key := refreshToken.Key()
-	cache := m.Contract().copy()
-	cache.RefreshTokens[key] = refreshToken
-	m.contract.Store(cache)
-
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	m.contract.RefreshTokens[key] = refreshToken
 	return nil
 }
 
 func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientID string) (IDToken, error) {
-	cache := m.Contract()
-	for _, idt := range cache.IDTokens {
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
+	for _, idt := range m.contract.IDTokens {
 		if idt.HomeAccountID == homeID && idt.Realm == realm && idt.ClientID == clientID {
 			if checkAlias(idt.Environment, envAliases) {
 				return idt, nil
@@ -356,18 +349,18 @@ func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientI
 
 func (m *Manager) writeIDToken(idToken IDToken) error {
 	key := idToken.Key()
-	cache := m.Contract().copy()
-	cache.IDTokens[key] = idToken
-	m.contract.Store(cache)
-
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	m.contract.IDTokens[key] = idToken
 	return nil
 }
 
 func (m *Manager) AllAccounts() []shared.Account {
-	cache := m.Contract()
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
 
 	var accounts []shared.Account
-	for _, v := range cache.Accounts {
+	for _, v := range m.contract.Accounts {
 		accounts = append(accounts, v)
 	}
 
@@ -375,9 +368,10 @@ func (m *Manager) AllAccounts() []shared.Account {
 }
 
 func (m *Manager) Account(homeAccountID string) shared.Account {
-	cache := m.Contract()
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
 
-	for _, v := range cache.Accounts {
+	for _, v := range m.contract.Accounts {
 		if v.HomeAccountID == homeAccountID {
 			return v
 		}
@@ -387,7 +381,8 @@ func (m *Manager) Account(homeAccountID string) shared.Account {
 }
 
 func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (shared.Account, error) {
-	cache := m.Contract()
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
 
 	// You might ask why, if cache.Accounts is a map, we would loop through all of these instead of using a key.
 	// We only use a map because the storage contract shared between all language implementations says use a map.
@@ -395,7 +390,7 @@ func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm s
 	// a match in multiple envs (envAlias). That means we either need to hash each possible keyand do the lookup
 	// or just statically check.  Since the design is to have a storage.Manager per user, the amount of keys stored
 	// is really low (say 2).  Each hash is more expensive than the entire iteration.
-	for _, acc := range cache.Accounts {
+	for _, acc := range m.contract.Accounts {
 		if acc.HomeAccountID == homeAccountID && checkAlias(acc.Environment, envAliases) && acc.Realm == realm {
 			return acc, nil
 		}
@@ -405,34 +400,30 @@ func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm s
 
 func (m *Manager) writeAccount(account shared.Account) error {
 	key := account.Key()
-
-	cache := m.Contract().copy()
-	cache.Accounts[key] = account
-	m.contract.Store(cache)
-
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	m.contract.Accounts[key] = account
 	return nil
 }
 
 func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
 
-	cache := m.Contract().copy()
-
-	for key, acc := range cache.Accounts {
+	for key, acc := range m.contract.Accounts {
 		if acc.HomeAccountID == homeID && checkAlias(acc.Environment, envAliases) {
-			delete(cache.Accounts, key)
+			delete(m.contract.Accounts, key)
 		}
 	}
 
-	m.contract.Store(cache)
 	return nil
 }
 
 func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {
-	cache := m.Contract()
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
 
-	for _, app := range cache.AppMetaData {
+	for _, app := range m.contract.AppMetaData {
 		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
 			return app, nil
 		}
@@ -442,31 +433,29 @@ func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMeta
 
 func (m *Manager) writeAppMetaData(AppMetaData AppMetaData) error {
 	key := AppMetaData.Key()
-	cache := m.Contract().copy()
-	cache.AppMetaData[key] = AppMetaData
-	m.contract.Store(cache)
-
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	m.contract.AppMetaData[key] = AppMetaData
 	return nil
 }
 
 // update updates the internal cache object. This is for use in tests, other uses are not
 // supported.
 func (m *Manager) update(cache *Contract) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	m.contract.Store(cache)
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	m.contract = cache
 }
 
 // Marshal implements cache.Marshaler.
 func (m *Manager) Marshal() ([]byte, error) {
-	return json.Marshal(m.Contract())
+	return json.Marshal(m.contract)
 }
 
 // Unmarshal implements cache.Unmarshaler.
 func (m *Manager) Unmarshal(b []byte) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
 
 	contract := NewContract()
 
@@ -475,7 +464,7 @@ func (m *Manager) Unmarshal(b []byte) error {
 		return err
 	}
 
-	m.contract.Store(contract)
+	m.contract = contract
 
 	return nil
 }
