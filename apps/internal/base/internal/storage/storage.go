@@ -13,6 +13,7 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"sync"
@@ -214,19 +215,22 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 }
 
 func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
-	// we can't defer m.aadCacheMu.RUnlock() here
-	// as m.aadMetadata() takes the write lock.
+	md, err := m.aadMetadataFromCache(ctx, authorityInfo)
+	if err != nil {
+		// not in the cache, retrieve it
+		md, err = m.aadMetadata(ctx, authorityInfo)
+	}
+	return md, err
+}
+
+func (m *Manager) aadMetadataFromCache(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
 	m.aadCacheMu.RLock()
-	if metadata, ok := m.aadCache[authorityInfo.Host]; ok {
-		m.aadCacheMu.RUnlock()
+	defer m.aadCacheMu.RUnlock()
+	metadata, ok := m.aadCache[authorityInfo.Host]
+	if ok {
 		return metadata, nil
 	}
-	m.aadCacheMu.RUnlock()
-	metadata, err := m.aadMetadata(ctx, authorityInfo)
-	if err != nil {
-		return authority.InstanceDiscoveryMetadata{}, err
-	}
-	return metadata, nil
+	return metadata, errors.New("not found")
 }
 
 func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
