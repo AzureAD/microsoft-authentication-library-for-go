@@ -214,6 +214,8 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 }
 
 func (m *Manager) getMetadataEntry(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
+	// we can't defer m.aadCacheMu.RUnlock() here
+	// as m.aadMetadata() takes the write lock.
 	m.aadCacheMu.RLock()
 	if metadata, ok := m.aadCache[authorityInfo.Host]; ok {
 		m.aadCacheMu.RUnlock()
