@@ -19,11 +19,11 @@ import (
 // the internal cache. This design is shared between MSAL versions in many languages.
 // This cannot be changed without design that includes other SDKs.
 type Contract struct {
-	AccessTokens  map[string]AccessToken               `json:"AccessToken"`
-	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken"`
-	IDTokens      map[string]IDToken                   `json:"IdToken"`
-	Accounts      map[string]shared.Account            `json:"Account"`
-	AppMetaData   map[string]AppMetaData               `json:"AppMetadata"`
+	AccessTokens  map[string]AccessToken               `json:"AccessToken,omitempty"`
+	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken,omitempty"`
+	IDTokens      map[string]IDToken                   `json:"IdToken,omitempty"`
+	Accounts      map[string]shared.Account            `json:"Account,omitempty"`
+	AppMetaData   map[string]AppMetaData               `json:"AppMetadata,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }

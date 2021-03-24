@@ -126,6 +126,11 @@ func marshalMap(v reflect.Value, buff *bytes.Buffer, enc *json.Encoder) error {
 	if v.Kind() != reflect.Map {
 		return fmt.Errorf("bug: marshalMap() called on %T", v.Interface())
 	}
+	if v.Len() == 0 {
+		buff.WriteByte(leftBrace)
+		buff.WriteByte(rightBrace)
+		return nil
+	}
 	encoder := mapEncode{m: v, buff: buff, enc: enc}
 	return encoder.run()
 }
@@ -224,6 +229,11 @@ func (m *mapEncode) encode() (stateFn, error) {
 func marshalSlice(v reflect.Value, buff *bytes.Buffer, enc *json.Encoder) error {
 	if v.Kind() != reflect.Slice {
 		return fmt.Errorf("bug: marshalSlice() called on %T", v.Interface())
+	}
+	if v.Len() == 0 {
+		buff.WriteByte(leftParen)
+		buff.WriteByte(rightParen)
+		return nil
 	}
 	encoder := sliceEncode{s: v, buff: buff, enc: enc}
 	return encoder.run()

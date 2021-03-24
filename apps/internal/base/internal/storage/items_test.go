@@ -550,3 +550,46 @@ func TestRefreshTokenMarshal(t *testing.T) {
 		t.Errorf("TestRefreshTokenMarshal: -want/+got:\n%s", diff)
 	}
 }
+
+func TestRegression196(t *testing.T) {
+	// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/196
+
+	// Note: all values here look real, but they have been altered to prevent any exposure
+	// of even a temporary security value.
+	contract := &Contract{
+		AccessTokens: map[string]AccessToken{
+			"-login.microsoftonline.com-AccessToken-5b0c5134eacb-https://graph.microsoft.com/.default": AccessToken{
+				HomeAccountID:     "",
+				Environment:       "login.microsoftonline.com",
+				Realm:             "2cce-489d-4002-8293-5b0eacb",
+				CredentialType:    "AccessToken",
+				ClientID:          "841-b1d2-460b-bc46-11cfb",
+				Secret:            "secret",
+				Scopes:            "https://graph.microsoft.com/.default",
+				ExpiresOn:         internalTime.Unix{expiresOn},
+				ExtendedExpiresOn: internalTime.Unix{extExpiresOn},
+				CachedAt:          internalTime.Unix{cachedAt},
+			},
+		},
+		AppMetaData: map[string]AppMetaData{
+			"AppMetaData-login.microsoftonline.com-84a31-b1d2-460b-bc46-1158fb": AppMetaData{
+				ClientID:    "8431-bd2-460b-bc46-11c4c8fb",
+				Environment: "login.microsoftonline.com",
+			},
+		},
+	}
+
+	b, err := json.Marshal(contract)
+	if err != nil {
+		t.Fatalf("TestRegression196: Marshal had unexpected error: %v", err)
+	}
+
+	got := &Contract{}
+	if err := json.Unmarshal(b, got); err != nil {
+		t.Fatalf("TestRegression196: Unmarshal had unexpected error: %v, json was:\n%s", err, string(b))
+	}
+
+	if diff := pretty.Compare(contract, got); diff != "" {
+		t.Fatalf("TestRegression196: -want/+got:\n%s", diff)
+	}
+}
