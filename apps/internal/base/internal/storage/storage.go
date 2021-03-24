@@ -262,7 +262,9 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessToken, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
-	// TODO: linear search (over a map no less) is slow for a large number of tokens
+	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
+	// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
+	// an issue, however if it does become a problem then we know where to look.
 	for _, at := range m.contract.AccessTokens {
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
 			if checkAlias(at.Environment, envAliases) {
