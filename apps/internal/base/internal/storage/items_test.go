@@ -566,9 +566,9 @@ func TestRegression196(t *testing.T) {
 				ClientID:          "841-b1d2-460b-bc46-11cfb",
 				Secret:            "secret",
 				Scopes:            "https://graph.microsoft.com/.default",
-				ExpiresOn:         internalTime.Unix{expiresOn},
-				ExtendedExpiresOn: internalTime.Unix{extExpiresOn},
-				CachedAt:          internalTime.Unix{cachedAt},
+				ExpiresOn:         internalTime.Unix{T: expiresOn},
+				ExtendedExpiresOn: internalTime.Unix{T: extExpiresOn},
+				CachedAt:          internalTime.Unix{T: cachedAt},
 			},
 		},
 		AppMetaData: map[string]AppMetaData{
