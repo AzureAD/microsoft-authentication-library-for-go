@@ -1,0 +1,49 @@
+name: Go
+
+on:
+  push:
+    branches: [dev]
+  pull_request:
+    branches: [dev]
+    # This guards against unknown PR until a community member vet it and label it.
+    types: [ labeled ]
+
+
+jobs:
+  build:
+    name: Build
+
+    runs-on: ubuntu-latest
+
+    strategy:
+      matrix:
+        go: ["1.15", "1.14", "1.13"]
+
+    steps:
+      - name: Set up Go 1.x
+        uses: actions/setup-go@v2
+        with:
+          go-version: ${{ matrix.go }}
+        id: go
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v2
+
+      - name: Get dependencies
+        run: go get -v -t -d ./...
+
+        # designed to only run on linux
+      - name: Format Check
+        run: if [ $(gofmt -l -s . | wc -l) -ne 0 ]; then echo "fmt failed"; exit 1; fi
+
+      - name: Build
+        run: go build ./apps/...
+
+      - name: Unit Tests
+        run: go test -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/...
+
+      - name: Integration Tests
+        run: go test -race ./apps/tests/integration/...
+        env :
+          clientId: ${{ secrets.LAB_APP_CLIENT_ID }}
+          clientSecret: ${{ secrets.LAB_APP_CLIENT_SECRET }}

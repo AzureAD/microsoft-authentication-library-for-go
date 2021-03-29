@@ -1,0 +1,13 @@
+{
+    "authority": "https://login.microsoftonline.com/organizations",
+    "client_id": "your_client_id",
+    "scopes": ["user.read"],
+    "username": "your_username",
+    "password": "your_password",
+    "redirect_uri": "redirect uri registered on the portal",
+    "code_challenge": "transformed code verifier from PKCE",  
+    "state": "state parameter for authorization code flow",
+    "client_secret": "client secret you generated for your app",
+    "thumbprint": "the certificate thumbprint defined in your app generation",
+    "pem_file": "the file path of your private key pem"
+}

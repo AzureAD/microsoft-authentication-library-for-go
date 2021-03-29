@@ -4,6 +4,12 @@
 *.dll
 *.so
 *.dylib
+*.golangci.yml
+*.swp
+*.pprof
+
+# OSX specific os files
+*.DS_Store
 
 # Test binary, build with `go test -c`
 *.test
@@ -14,3 +20,5 @@
 pkg/
 github.com/
 golang.org/
+.vscode/
+.idea/
