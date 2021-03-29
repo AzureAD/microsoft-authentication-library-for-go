@@ -558,7 +558,7 @@ func TestRegression196(t *testing.T) {
 	// of even a temporary security value.
 	contract := &Contract{
 		AccessTokens: map[string]AccessToken{
-			"-login.microsoftonline.com-AccessToken-5b0c5134eacb-https://graph.microsoft.com/.default": AccessToken{
+			"-login.microsoftonline.com-AccessToken-5b0c5134eacb-https://graph.microsoft.com/.default": {
 				HomeAccountID:     "",
 				Environment:       "login.microsoftonline.com",
 				Realm:             "2cce-489d-4002-8293-5b0eacb",
@@ -572,7 +572,7 @@ func TestRegression196(t *testing.T) {
 			},
 		},
 		AppMetaData: map[string]AppMetaData{
-			"AppMetaData-login.microsoftonline.com-84a31-b1d2-460b-bc46-1158fb": AppMetaData{
+			"AppMetaData-login.microsoftonline.com-84a31-b1d2-460b-bc46-1158fb": {
 				ClientID:    "8431-bd2-460b-bc46-11c4c8fb",
 				Environment: "login.microsoftonline.com",
 			},
