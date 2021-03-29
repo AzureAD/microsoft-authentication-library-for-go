@@ -21,10 +21,11 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
+	msalVersion "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/version"
 	"github.com/google/uuid"
 )
 
-const version = "0.1.0"
+const version = msalVersion.Version
 
 // HTTPClient represents an HTTP client.
 // It's usually an *http.Client from the standard library.
