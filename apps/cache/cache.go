@@ -21,7 +21,7 @@ type Unmarshaler interface {
 	Unmarshal([]byte) error
 }
 
-// Serializer can seralize the cache to binary or from binary into the cache.
+// Serializer can serialize the cache to binary or from binary into the cache.
 type Serializer interface {
 	Marshaler
 	Unmarshaler
