@@ -21,10 +21,9 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/version"
 	"github.com/google/uuid"
 )
-
-const version = "0.1.0"
 
 // HTTPClient represents an HTTP client.
 // It's usually an *http.Client from the standard library.
@@ -317,6 +316,6 @@ func addStdHeaders(headers http.Header) http.Header {
 	headers.Set("x-client-sku", "MSAL.Go")
 	headers.Set("x-client-os", runtime.GOOS)
 	headers.Set("x-client-cpu", runtime.GOARCH)
-	headers.Set("x-client-ver", version)
+	headers.Set("x-client-ver", version.Version)
 	return headers
 }
