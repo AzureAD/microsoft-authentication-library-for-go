@@ -101,10 +101,6 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 		return TokenResponse{}, err
 	}
 
-	if err := accessToken.Validate(); err != nil {
-		return TokenResponse{}, err
-	}
-
 	if account.IsZero() {
 		return TokenResponse{
 			AccessToken:  accessToken,
