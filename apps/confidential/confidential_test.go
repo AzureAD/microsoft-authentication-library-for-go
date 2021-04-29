@@ -150,22 +150,22 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		_, err = client.AcquireTokenSilent(context.Background(), tokenScope)
 		// first attempt should fail
 		if err == nil {
-			t.Fatal("unexpected nil error from AcquireTokenSilent")
+			t.Errorf("TestAcquireTokenByCredential(%s): unexpected nil error from AcquireTokenSilent", test.desc)
 		}
 		tk, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("TestAcquireTokenByCredential(%s): got err == %s, want err == nil", test.desc, err)
 		}
 		if tk.AccessToken != token {
-			t.Fatalf("unexpected access token %s", tk.AccessToken)
+			t.Errorf("TestAcquireTokenByCredential(%s): unexpected access token %s", test.desc, tk.AccessToken)
 		}
 		// second attempt should return the cached token
 		tk, err = client.AcquireTokenSilent(context.Background(), tokenScope)
 		if err != nil {
-			t.Fatal(err)
+			t.Errorf("TestAcquireTokenByCredential(%s): got err == %s, want err == nil", test.desc, err)
 		}
 		if tk.AccessToken != token {
-			t.Fatalf("unexpected access token %s", tk.AccessToken)
+			t.Errorf("TestAcquireTokenByCredential(%s): unexpected access token %s", test.desc, tk.AccessToken)
 		}
 	}
 }
