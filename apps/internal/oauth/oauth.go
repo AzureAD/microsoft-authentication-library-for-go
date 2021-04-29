@@ -97,9 +97,11 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 	if cred.Secret != "" {
 		return t.AccessTokens.FromClientSecret(ctx, authParams, cred.Secret)
 	}
-
-	jwt, err := cred.JWT(authParams)
-	if err != nil {
+	var jwt string
+	var err error
+	if cred.Assertion != "" {
+		jwt = cred.Assertion
+	} else if jwt, err = cred.JWT(authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 	return t.AccessTokens.FromAssertion(ctx, authParams, jwt)
