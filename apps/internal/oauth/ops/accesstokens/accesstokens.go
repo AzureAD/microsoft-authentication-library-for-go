@@ -94,8 +94,7 @@ type Credential struct {
 
 	// mu protects everything below.
 	mu sync.Mutex
-	// Assertion is the JWT assertion if we have retrieved it. Public to allow faking in tests.
-	// Any use outside msal is not supported by a compatibility promise.
+	// Assertion is the signed JWT assertion if we have retrieved it or if it was passed.
 	Assertion string
 	// Expires is when the Assertion expires. Public to allow faking in tests.
 	// Any use outside msal is not supported by a compatibility promise.
