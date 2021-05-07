@@ -42,7 +42,7 @@ var (
 
 func newForTest(authorityClient aadInstanceDiscoveryer) *Manager {
 	m := &Manager{requests: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
-	m.contract.Store(NewContract())
+	m.contract = NewContract()
 	return m
 }
 
@@ -95,10 +95,7 @@ func TestAllAccounts(t *testing.T) {
 	storageManager := Manager{}
 	storageManager.update(cache)
 
-	actualAccounts, err := storageManager.AllAccounts()
-	if err != nil {
-		panic(err)
-	}
+	actualAccounts := storageManager.AllAccounts()
 	// AllAccounts() is unstable in that the order can be reversed between calls.
 	// This fixes that.
 	sort.Slice(
@@ -200,7 +197,7 @@ func TestWriteAccessToken(t *testing.T) {
 		t.Fatalf("TestwriteAccessToken: got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(testAccessToken, storageManager.Contract().AccessTokens[key]); diff != "" {
+	if diff := pretty.Compare(testAccessToken, storageManager.contract.AccessTokens[key]); diff != "" {
 		t.Errorf("TestwriteAccessToken: -want/+got:\n%s", diff)
 	}
 }
@@ -239,7 +236,7 @@ func TestWriteAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestwriteAccount: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAcc, storageManager.Contract().Accounts[key]); diff != "" {
+	if diff := pretty.Compare(testAcc, storageManager.contract.Accounts[key]); diff != "" {
 		t.Errorf("TestwriteAccount: -want/+got:\n%s", diff)
 	}
 }
@@ -278,7 +275,7 @@ func TestWriteAppMetaData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestwriteAppMetaData: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAppMeta, storageManager.Contract().AppMetaData[key]); diff != "" {
+	if diff := pretty.Compare(testAppMeta, storageManager.contract.AppMetaData[key]); diff != "" {
 		t.Errorf("TestwriteAppMetaData: -want/+got:\n%s", diff)
 	}
 }
@@ -341,7 +338,7 @@ func TestWriteIDToken(t *testing.T) {
 		t.Fatalf("TestwriteIDToken: got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(testIDToken, storageManager.Contract().IDTokens[key]); diff != "" {
+	if diff := pretty.Compare(testIDToken, storageManager.contract.IDTokens[key]); diff != "" {
 		t.Errorf("TestwriteIDToken: -want/+got:\n%s", diff)
 	}
 }
@@ -578,9 +575,9 @@ func TestWriteRefreshToken(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error should be nil, but it is %v", err)
 	}
-	if !reflect.DeepEqual(storageManager.Contract().RefreshTokens[key], testRefreshToken) {
+	if !reflect.DeepEqual(storageManager.contract.RefreshTokens[key], testRefreshToken) {
 		t.Errorf("Added refresh token %v differs from expected refresh token %v",
-			storageManager.Contract().RefreshTokens[key],
+			storageManager.contract.RefreshTokens[key],
 			testRefreshToken)
 	}
 }
@@ -666,26 +663,26 @@ func TestUnmarshal(t *testing.T) {
 		t.Fatalf("TestUnmarshal(unmarshal): got err == %s, want err == nil", err)
 	}
 
-	actualAccessTokenSecret := manager.Contract().AccessTokens["uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3"].Secret
+	actualAccessTokenSecret := manager.contract.AccessTokens["uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3"].Secret
 	if accessTokenSecret != actualAccessTokenSecret {
 		t.Errorf("TestUnmarshal(access token secret):got %q, want %q", actualAccessTokenSecret, accessTokenSecret)
 	}
 
-	actualRTSecret := manager.Contract().RefreshTokens["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
+	actualRTSecret := manager.contract.RefreshTokens["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
 	if diff := pretty.Compare(rtSecret, actualRTSecret); diff != "" {
 		t.Errorf("TestUnmarshal(refresh token secret): -want/+got:\n%s", diff)
 	}
 
-	actualIDSecret := manager.Contract().IDTokens["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
+	actualIDSecret := manager.contract.IDTokens["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
 	if diff := pretty.Compare(idSecret, actualIDSecret); diff != "" {
 		t.Errorf("TestUnmarshal(id secret): -want/+got:\n%s", diff)
 	}
-	actualUser := manager.Contract().Accounts["uid.utid-login.windows.net-contoso"].PreferredUsername
+	actualUser := manager.contract.Accounts["uid.utid-login.windows.net-contoso"].PreferredUsername
 	if diff := pretty.Compare(actualUser, accUser); diff != "" {
 		t.Errorf("TestUnmarshal(actula user): -want/+got:\n%s", diff)
 	}
-	if manager.Contract().AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID != "" {
-		t.Errorf("TestUnmarshal(app metadata family id): got %q, want empty string", manager.Contract().AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID)
+	if manager.contract.AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID != "" {
+		t.Errorf("TestUnmarshal(app metadata family id): got %q, want empty string", manager.contract.AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID)
 	}
 }
 
@@ -904,7 +901,7 @@ func TestWrite(t *testing.T) {
 		t.Errorf("Actual account %+v differs from expected account %+v", actualAccount, testAccount)
 	}
 
-	gotRefresh, ok := cacheManager.Contract().RefreshTokens[testRefreshToken.Key()]
+	gotRefresh, ok := cacheManager.contract.RefreshTokens[testRefreshToken.Key()]
 	if !ok {
 		t.Fatalf("TestWrite(refresh token): refresh token was not written as expected")
 	}
@@ -912,7 +909,7 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("TestWrite(refresh token): -want/+got\n%s", diff)
 	}
 
-	gotAccess, ok := cacheManager.Contract().AccessTokens[AccessToken.Key()]
+	gotAccess, ok := cacheManager.contract.AccessTokens[AccessToken.Key()]
 	if !ok {
 		t.Fatalf("TestWrite(access token): access token was not written as expected")
 	}
@@ -930,7 +927,7 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("TestWrite(access token): -want/+got\n%s", diff)
 	}
 
-	gotToken, ok := cacheManager.Contract().IDTokens[testIDToken.Key()]
+	gotToken, ok := cacheManager.contract.IDTokens[testIDToken.Key()]
 	if !ok {
 		t.Fatalf("TestWrite(id token): id token was not written as expected")
 	}
@@ -938,7 +935,7 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("TestWrite(id token): -want/+got\n%s", diff)
 	}
 
-	gotAccount, ok := cacheManager.Contract().Accounts[testAccount.Key()]
+	gotAccount, ok := cacheManager.contract.Accounts[testAccount.Key()]
 	if !ok {
 		t.Fatalf("TestWrite(account): account was not written as expected")
 	}
@@ -946,7 +943,7 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("TestWrite(account): -want/+got\n%s", diff)
 	}
 
-	gotMeta, ok := cacheManager.Contract().AppMetaData[testAppMeta.Key()]
+	gotMeta, ok := cacheManager.contract.AppMetaData[testAppMeta.Key()]
 	if !ok {
 		t.Fatalf("TestWrite(app metadata): metadata was not written as expected")
 	}

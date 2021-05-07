@@ -75,6 +75,7 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			break
 		}
 
+		//nolint:staticcheck // x509.IsEncryptedPEMBlock and x509.DecryptPEMBlock are deprecated. They are used here only to support a usecase.
 		if x509.IsEncryptedPEMBlock(block) {
 			b, err := x509.DecryptPEMBlock(block, []byte(password))
 			if err != nil {
@@ -134,6 +135,8 @@ type Credential struct {
 
 	cert *x509.Certificate
 	key  crypto.PrivateKey
+
+	assertion string
 }
 
 // toInternal returns the accesstokens.Credential that is used internally. The current structure of the
@@ -141,7 +144,7 @@ type Credential struct {
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
 func (c Credential) toInternal() *accesstokens.Credential {
-	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key}
+	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, Assertion: c.assertion}
 }
 
 // NewCredFromSecret creates a Credential from a secret.
@@ -150,6 +153,14 @@ func NewCredFromSecret(secret string) (Credential, error) {
 		return Credential{}, errors.New("secret can't be empty string")
 	}
 	return Credential{secret: secret}, nil
+}
+
+// NewCredFromAssertion creates a Credential from a signed assertion.
+func NewCredFromAssertion(assertion string) (Credential, error) {
+	if assertion == "" {
+		return Credential{}, errors.New("assertion can't be empty string")
+	}
+	return Credential{assertion: assertion}, nil
 }
 
 // NewCredFromCert creates a Credential from an x509.Certificate and a PKCS8 DER encoded private key.
@@ -186,6 +197,9 @@ type Options struct {
 	// The HTTP client used for making requests.
 	// It defaults to a shared http.Client.
 	HTTPClient ops.HTTPClient
+
+	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
+	SendX5C bool
 }
 
 func (o Options) validate() error {
@@ -224,6 +238,13 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
+// WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
+func WithX5C() Option {
+	return func(o *Options) {
+		o.SendX5C = true
+	}
+}
+
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
@@ -240,7 +261,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}
@@ -284,12 +305,17 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	for _, o := range options {
 		o(&opts)
 	}
+	var isAppCache bool
+	if opts.Account.IsZero() {
+		isAppCache = true
+	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
 		Account:     opts.Account,
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
+		IsAppCache:  isAppCache,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -311,18 +337,20 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
+// The specified redirect URI must be the same URI that was used when the authorization code was requested.
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		o(&opts)
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:     scopes,
-		Code:       code,
-		Challenge:  opts.Challenge,
-		AppType:    accesstokens.ATConfidential,
-		Credential: cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		Scopes:      scopes,
+		Code:        code,
+		Challenge:   opts.Challenge,
+		AppType:     accesstokens.ATConfidential,
+		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		RedirectURI: redirectURI,
 	}
 
 	return cca.base.AcquireTokenByAuthCode(ctx, params)
@@ -341,7 +369,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-// Accounts gets all the accounts in the token cache.
-func (cca Client) Accounts() []Account {
-	return cca.base.Accounts()
+// Account gets the account in the token cache with the specified homeAccountID
+func (cca Client) Account(homeAccountID string) Account {
+	return cca.base.Account(homeAccountID)
 }

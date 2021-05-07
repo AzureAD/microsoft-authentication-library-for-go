@@ -105,6 +105,13 @@ const (
 	ATClientCredentials
 	ATDeviceCode
 	ATRefreshToken
+	AccountByID
+)
+
+// These are all authority types
+const (
+	AAD  = "MSSTS"
+	ADFS = "ADFS"
 )
 
 // AuthParams represents the parameters used for authorization for token acquisition.
@@ -132,6 +139,10 @@ type AuthParams struct {
 	CodeChallengeMethod string
 	// Prompt specifies the user prompt type during interactive auth.
 	Prompt string
+	// IsConfidentialClient specifies if it is a confidential client.
+	IsConfidentialClient bool
+	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
+	SendX5C bool
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -165,48 +176,7 @@ func firstPathSegment(u *url.URL) (string, error) {
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
 func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info, error) {
 	authorityURI = strings.ToLower(authorityURI)
-
-	// TODO(msal): The original code I found had a validateAuthority() function.
-	// But the function just returned error == nil. I took this from the python and
-	// it looks like this needs a lot more. Right now we just pretend its validated.
-	/*
-			if (tenant != "adfs" and (not is_b2c) and validate_authority
-		                and self.instance not in WELL_KNOWN_AUTHORITY_HOSTS):
-		            payload = instance_discovery(
-		                "https://{}{}/oauth2/v2.0/authorize".format(
-		                    self.instance, authority.path),
-		                self.http_client)
-		            if payload.get("error") == "invalid_instance":
-		                raise ValueError(
-		                    "invalid_instance: "
-		                    "The authority you provided, %s, is not whitelisted. "
-		                    "If it is indeed your legit customized domain name, "
-		                    "you can turn off this check by passing in "
-		                    "validate_authority=False"
-		                    % authority_url)
-		            tenant_discovery_endpoint = payload['tenant_discovery_endpoint']
-		        else:
-		            tenant_discovery_endpoint = (
-		                'https://{}{}{}/.well-known/openid-configuration'.format(
-		                    self.instance,
-		                    authority.path,  # In B2C scenario, it is "/tenant/policy"
-		                    "" if tenant == "adfs" else "/v2.0" # the AAD v2 endpoint
-		                    ))
-		        try:
-		            openid_config = tenant_discovery(
-		                tenant_discovery_endpoint,
-		                self.http_client)
-		        except ValueError:
-		            raise ValueError(
-		                "Unable to get authority configuration for {}. "
-		                "Authority would typically be in a format of "
-		                "https://login.microsoftonline.com/your_tenant_name".format(
-						authority_url))
-	*/
-
-	// todo: check for other authority types...
-	authorityType := "MSSTS"
-
+	var authorityType string
 	u, err := url.Parse(authorityURI)
 	if err != nil {
 		return Info{}, fmt.Errorf("authorityURI passed could not be parsed: %w", err)
@@ -216,6 +186,12 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 	}
 
 	tenant, err := firstPathSegment(u)
+	if tenant == "adfs" {
+		authorityType = ADFS
+	} else {
+		authorityType = AAD
+	}
+
 	if err != nil {
 		return Info{}, err
 	}
@@ -306,8 +282,6 @@ func (c Client) UserRealm(ctx context.Context, authParams AuthParams) (UserRealm
 	err := c.Comm.JSONCall(
 		ctx,
 		endpoint,
-		// TODO(jdoak): not thrilled about this, because all calls should have this but
-		// only calls with authParameters is using this.
 		http.Header{"client-request-id": []string{authParams.CorrelationID}},
 		qv,
 		nil,
@@ -349,4 +323,21 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	resp := InstanceDiscoveryResponse{}
 	err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
 	return resp, err
+}
+
+func (a *AuthParams) CacheKey(isAppCache bool) string {
+	if a.AuthorizationType == ATClientCredentials || isAppCache {
+		return a.AppKey()
+	}
+	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
+		return a.HomeaccountID
+	}
+	return ""
+}
+
+func (a *AuthParams) AppKey() string {
+	if a.AuthorityInfo.Tenant != "" {
+		return fmt.Sprintf("%s_%s_AppTokenCache", a.ClientID, a.AuthorityInfo.Tenant)
+	}
+	return fmt.Sprintf("%s__AppTokenCache", a.ClientID)
 }

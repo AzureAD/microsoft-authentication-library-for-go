@@ -72,6 +72,9 @@ func TestServer(t *testing.T) {
 		}
 		defer serv.Shutdown()
 
+		if !strings.HasPrefix(serv.Addr, "http://localhost") {
+			t.Fatalf("unexpected server address %s", serv.Addr)
+		}
 		u, err := url.Parse(serv.Addr)
 		if err != nil {
 			panic(err)

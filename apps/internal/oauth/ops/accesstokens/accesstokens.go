@@ -94,8 +94,7 @@ type Credential struct {
 
 	// mu protects everything below.
 	mu sync.Mutex
-	// Assertion is the JWT assertion if we have retrieved it. Public to allow faking in tests.
-	// Any use outside msal is not supported by a compatibility promise.
+	// Assertion is the signed JWT assertion if we have retrieved it or if it was passed.
 	Assertion string
 	// Expires is when the Assertion expires. Public to allow faking in tests.
 	// Any use outside msal is not supported by a compatibility promise.
@@ -130,6 +129,9 @@ func (c *Credential) JWT(authParams authority.AuthParams) (string, error) {
 		"x5t": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
 	}
 
+	if authParams.SendX5C {
+		token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(c.Cert.Raw)}
+	}
 	var err error
 	c.Assertion, err = token.SignedString(c.Key)
 	if err != nil {

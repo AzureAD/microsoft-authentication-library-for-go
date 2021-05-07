@@ -123,12 +123,13 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, use
 }
 
 func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (string, error) {
-	if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
+	if authorityInfo.Tenant == "adfs" {
+		return fmt.Sprintf("https://%s/adfs/.well-known/openid-configuration", authorityInfo.Host), nil
+	} else if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
 		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
 		if err != nil {
 			return "", err
 		}
-
 		return resp.TenantDiscoveryEndpoint, nil
 	}
 

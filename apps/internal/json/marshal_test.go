@@ -212,3 +212,36 @@ func TestMarshalStruct(t *testing.T) {
 		}
 	}
 }
+
+func TestEmptyTypes(t *testing.T) {
+	type structA struct {
+		EmptyMap   map[string]bool
+		EmptySlice []string
+		Slice      []string
+		EmptyInt   int
+		Int        int
+
+		AdditionalFields map[string]interface{}
+	}
+
+	val := structA{
+		EmptyMap: map[string]bool{},
+		Slice:    []string{"hello"},
+		Int:      1,
+	}
+
+	b, err := Marshal(val)
+	if err != nil {
+		t.Fatalf("TestEmptyTypes: unexpected error on Marshal: %v", err)
+	}
+
+	got := structA{}
+
+	if err := Unmarshal(b, &got); err != nil {
+		t.Fatalf("TestEmptyTypes: unexpected error when Umarshalling: %v", err)
+	}
+
+	if diff := pretty.Compare(got, val); diff != "" {
+		t.Fatalf("TestEmptyTypes: -want/+got:\n%s", diff)
+	}
+}

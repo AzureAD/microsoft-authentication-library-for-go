@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
-	"strconv"
 	"strings"
 	"time"
 
@@ -32,14 +31,15 @@ const (
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
-	AllAccounts() ([]shared.Account, error)
+	AllAccounts() []shared.Account
+	Account(homeAccountID string) shared.Account
 	RemoveAccount(account shared.Account, envAliases []string)
 }
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) Replace(cache cache.Unmarshaler) {}
-func (n noopCacheAccessor) Export(cache cache.Marshaler)    {}
+func (n noopCacheAccessor) Replace(cache cache.Unmarshaler, key string) {}
+func (n noopCacheAccessor) Export(cache cache.Marshaler, key string)    {}
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
@@ -47,6 +47,7 @@ type AcquireTokenSilentParameters struct {
 	Account     shared.Account
 	RequestType accesstokens.AppType
 	Credential  *accesstokens.Credential
+	IsAppCache  bool
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -54,11 +55,12 @@ type AcquireTokenSilentParameters struct {
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
-	Scopes     []string
-	Code       string
-	Challenge  string
-	AppType    accesstokens.AppType
-	Credential *accesstokens.Credential
+	Scopes      []string
+	Code        string
+	Challenge   string
+	RedirectURI string
+	AppType     accesstokens.AppType
+	Credential  *accesstokens.Credential
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -126,6 +128,13 @@ func WithCacheAccessor(ca cache.ExportReplace) Option {
 		if ca != nil {
 			c.cacheAccessor = ca
 		}
+	}
+}
+
+// WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
+func WithX5C(sendX5C bool) Option {
+	return func(c *Client) {
+		c.AuthParams.SendX5C = sendX5C
 	}
 }
 
@@ -203,8 +212,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.HomeaccountID = silent.Account.HomeAccountID
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		b.cacheAccessor.Replace(s)
-		defer b.cacheAccessor.Export(s)
+		suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 
 	storageTokenResponse, err := b.manager.Read(ctx, authParams, silent.Account)
@@ -236,12 +246,13 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.Scopes = authCodeParams.Scopes
-	authParams.Redirecturi = "https://login.microsoftonline.com/common/oauth2/nativeclient"
+	authParams.Redirecturi = authCodeParams.RedirectURI
 	authParams.AuthorizationType = authority.ATAuthCode
 
 	var cc *accesstokens.Credential
 	if authCodeParams.AppType == accesstokens.ATConfidential {
 		cc = authCodeParams.Credential
+		authParams.IsConfidentialClient = true
 	}
 
 	req, err := accesstokens.NewCodeChallengeRequest(authParams, authCodeParams.AppType, cc, authCodeParams.Code, authCodeParams.Challenge)
@@ -263,8 +274,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	}
 
 	if s, ok := b.manager.(cache.Serializer); ok {
-		b.cacheAccessor.Replace(s)
-		defer b.cacheAccessor.Export(s)
+		suggestedCacheKey := token.CacheKey(authParams)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 
 	account, err := b.manager.Write(authParams, token)
@@ -274,17 +286,28 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return NewAuthResult(token, account)
 }
 
-func (b Client) Accounts() []shared.Account {
+func (b Client) AllAccounts() []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
-		b.cacheAccessor.Replace(s)
-		defer b.cacheAccessor.Export(s)
+		suggestedCacheKey := b.AuthParams.CacheKey(false)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 
-	accounts, err := b.manager.AllAccounts()
-	if err != nil {
-		return nil
-	}
+	accounts := b.manager.AllAccounts()
 	return accounts
+}
+
+func (b Client) Account(homeAccountID string) shared.Account {
+	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams.AuthorizationType = authority.AccountByID
+	authParams.HomeaccountID = homeAccountID
+	if s, ok := b.manager.(cache.Serializer); ok {
+		suggestedCacheKey := b.AuthParams.CacheKey(false)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
+	}
+	account := b.manager.Account(homeAccountID)
+	return account
 }
 
 func (b Client) RemoveAccount(account shared.Account) {
@@ -297,13 +320,4 @@ func toLower(s []string) []string {
 		s[i] = strings.ToLower(s[i])
 	}
 	return s
-}
-
-// convertStrUnixToUTCTime converts a string representation of unix time to a UTC timestamp.
-func convertStrUnixToUTCTime(unixTime string) (time.Time, error) {
-	timeInt, err := strconv.ParseInt(unixTime, 10, 64)
-	if err != nil {
-		return time.Time{}, err
-	}
-	return time.Unix(timeInt, 0).UTC(), nil
 }

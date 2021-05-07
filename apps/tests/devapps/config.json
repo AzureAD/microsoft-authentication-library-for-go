@@ -1,10 +1,10 @@
 {
-    "authority": "https://login.microsoftonline.com/common",
-    "client_id": "4a1aa1d5-c567-49d0-ad0b-cd957a47f842",
+    "authority": "https://login.microsoftonline.com/organizations",
+    "client_id": "your_client_id",
     "scopes": ["user.read"],
     "username": "your_username",
     "password": "your_password",
-    "redirect_uri": "https://login.microsoftonline.com/common/oauth2/nativeclient",
+    "redirect_uri": "redirect uri registered on the portal",
     "code_challenge": "transformed code verifier from PKCE",  
     "state": "state parameter for authorization code flow",
     "client_secret": "client secret you generated for your app",

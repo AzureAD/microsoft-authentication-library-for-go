@@ -6,6 +6,7 @@
 *.dylib
 *.golangci.yml
 *.swp
+*.pprof
 
 # OSX specific os files
 *.DS_Store

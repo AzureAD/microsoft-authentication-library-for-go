@@ -19,49 +19,25 @@ import (
 // the internal cache. This design is shared between MSAL versions in many languages.
 // This cannot be changed without design that includes other SDKs.
 type Contract struct {
-	AccessTokens  map[string]AccessToken               `json:"AccessToken"`
-	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken"`
-	IDTokens      map[string]IDToken                   `json:"IdToken"`
-	Accounts      map[string]shared.Account            `json:"Account"`
-	AppMetaData   map[string]AppMetaData               `json:"AppMetadata"`
+	AccessTokens  map[string]AccessToken               `json:"AccessToken,omitempty"`
+	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken,omitempty"`
+	IDTokens      map[string]IDToken                   `json:"IdToken,omitempty"`
+	Accounts      map[string]shared.Account            `json:"Account,omitempty"`
+	AppMetaData   map[string]AppMetaData               `json:"AppMetadata,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
 
 // NewContract is the constructor for Contract.
 func NewContract() *Contract {
-	return &Contract{}
-}
-
-// copy returns a copy of the Contract.
-func (c *Contract) copy() *Contract {
-	n := &Contract{
-		AccessTokens:     make(map[string]AccessToken, len(c.AccessTokens)),
-		RefreshTokens:    make(map[string]accesstokens.RefreshToken, len(c.RefreshTokens)),
-		IDTokens:         make(map[string]IDToken, len(c.IDTokens)),
-		Accounts:         make(map[string]shared.Account, len(c.Accounts)),
-		AppMetaData:      make(map[string]AppMetaData, len(c.AppMetaData)),
-		AdditionalFields: make(map[string]interface{}, len(c.AdditionalFields)),
+	return &Contract{
+		AccessTokens:     map[string]AccessToken{},
+		RefreshTokens:    map[string]accesstokens.RefreshToken{},
+		IDTokens:         map[string]IDToken{},
+		Accounts:         map[string]shared.Account{},
+		AppMetaData:      map[string]AppMetaData{},
+		AdditionalFields: map[string]interface{}{},
 	}
-	for k, v := range c.AccessTokens {
-		n.AccessTokens[k] = v
-	}
-	for k, v := range c.RefreshTokens {
-		n.RefreshTokens[k] = v
-	}
-	for k, v := range c.IDTokens {
-		n.IDTokens[k] = v
-	}
-	for k, v := range c.Accounts {
-		n.Accounts[k] = v
-	}
-	for k, v := range c.AppMetaData {
-		n.AppMetaData[k] = v
-	}
-	for k, v := range c.AdditionalFields {
-		n.AdditionalFields[k] = v
-	}
-	return n
 }
 
 // AccessToken is the JSON representation of a MSAL access token for encoding to storage.

@@ -15,7 +15,7 @@ type TokenCache struct {
 	file string
 }
 
-func (t *TokenCache) Replace(cache cache.Unmarshaler) {
+func (t *TokenCache) Replace(cache cache.Unmarshaler, key string) {
 	jsonFile, err := os.Open(t.file)
 	if err != nil {
 		log.Println(err)
@@ -31,7 +31,7 @@ func (t *TokenCache) Replace(cache cache.Unmarshaler) {
 	}
 }
 
-func (t *TokenCache) Export(cache cache.Marshaler) {
+func (t *TokenCache) Export(cache cache.Marshaler, key string) {
 	data, err := cache.Marshal()
 	if err != nil {
 		log.Println(err)
