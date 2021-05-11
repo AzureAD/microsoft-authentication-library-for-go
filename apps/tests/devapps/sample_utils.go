@@ -23,7 +23,7 @@ type Config struct {
 	State               string   `json:"state"`
 	ClientSecret        string   `json:"client_secret"`
 	Thumbprint          string   `json:"thumbprint"`
-	KeyFile             string   `json:"pem_file"`
+	PemData             string   `json:"pem_file"`
 }
 
 // CreateConfig creates the Config struct from a json file.

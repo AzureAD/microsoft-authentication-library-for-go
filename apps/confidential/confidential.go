@@ -61,7 +61,7 @@ type Account = shared.Account
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
 // must have the public certificate and the private key encoded. The private key must be encoded
-// in PKCS8 (not PKCS1). This is usally denoted by the section "PRIVATE KEY" (instead of PKCS1's
+// in PKCS8 (not PKCS1). This is usually denoted by the section "PRIVATE KEY" (instead of PKCS1's
 // "RSA PRIVATE KEY"). If a PEM block is encoded and password is not an empty string, it attempts
 // to decrypt the PEM blocks using the password. This will return multiple x509 certificates,
 // though this use case should have a single cert. Multiple certs are due to certificate
