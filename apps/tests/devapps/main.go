@@ -25,7 +25,6 @@ func main() {
 	} else if exampleType == "5" {
 		//acquireTokenClientSecret()
 	} else if exampleType == "6" {
-		panic("currently not implemented")
-		//acquireTokenClientCertificate()
+		acquireTokenClientCertificate()
 	}
 }
