@@ -15,7 +15,7 @@ func ExampleNewCredFromCert_pem() {
 		log.Fatal(err)
 	}
 
-	// This extracts our public certificates and privage key from the PEM file.
+	// This extracts our public certificates and private key from the PEM file.
 	// The private key must be in PKCS8 format. If it is encrypted, the second argument
 	// must be password to decode.
 	certs, priv, err := CertFromPEM(b, "")
@@ -24,7 +24,7 @@ func ExampleNewCredFromCert_pem() {
 	}
 
 	// PEM files can have multiple certs. This is usually for certificate chaining where roots
-	// sign to leafs. Usefule for TLS, not for this use case.
+	// sign to leafs. Useful for TLS, not for this use case.
 	if len(certs) > 1 {
 		log.Fatal("too many certificates in PEM file")
 	}
