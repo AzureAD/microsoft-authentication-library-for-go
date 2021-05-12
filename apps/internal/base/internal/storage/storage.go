@@ -420,19 +420,15 @@ func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
 }
 
 func (m *Manager) RemoveAccount(account shared.Account, envAliases []string) {
-	m.mu.Lock()
-	defer m.mu.Unlock()
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
 
-	cache := m.Contract().copy()
-
-	for key, acc := range cache.Accounts {
+	for key, acc := range m.contract.Accounts {
 		if acc.HomeAccountID == account.HomeAccountID && checkAlias(acc.Environment, envAliases) {
-			delete(cache.Accounts, key)
+			delete(m.contract.Accounts, key)
 			//delete(cache.AccessTokens, key)
 		}
 	}
-
-	m.contract.Store(cache)
 }
 
 func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {
