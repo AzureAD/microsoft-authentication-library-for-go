@@ -419,16 +419,68 @@ func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
 	return nil
 }
 
-func (m *Manager) RemoveAccount(account shared.Account, envAliases []string) {
+func (m *Manager) RemoveAccount(account shared.Account, envAliases []string, clientID string) {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 
 	for key, acc := range m.contract.Accounts {
 		if acc.HomeAccountID == account.HomeAccountID && checkAlias(acc.Environment, envAliases) {
+			appMetaData, err := m.readAppMetaDatawithoutLock([]string{account.Environment}, clientID)
+			if err != nil {
+				return
+			}
+			m.removeRefreshToken(appMetaData, account.HomeAccountID, clientID, envAliases)
+			m.removeAccessToken(account)
+			m.removeIDToken(account)
 			delete(m.contract.Accounts, key)
-			//delete(cache.AccessTokens, key)
 		}
 	}
+}
+
+func (m *Manager) removeRefreshToken(appMetadata AppMetaData, homeID string, clientID string, envAliases []string) {
+	byFamily := func(rt accesstokens.RefreshToken) bool {
+		return matchFamilyRefreshToken(rt, homeID, envAliases)
+	}
+	byClient := func(rt accesstokens.RefreshToken) bool {
+		return matchClientIDRefreshToken(rt, homeID, envAliases, clientID)
+	}
+	matchers := []func(rt accesstokens.RefreshToken) bool{
+		byFamily, byClient,
+	}
+	for _, matcher := range matchers {
+		for key, rt := range m.contract.RefreshTokens {
+			if matcher(rt) {
+				delete(m.contract.RefreshTokens, key)
+			}
+		}
+	}
+
+}
+
+func (m *Manager) removeAccessToken(account shared.Account) {
+	for key, at := range m.contract.AccessTokens {
+		if at.HomeAccountID == account.HomeAccountID && at.Environment == account.Environment {
+			delete(m.contract.AccessTokens, key)
+		}
+	}
+}
+
+func (m *Manager) removeIDToken(account shared.Account) {
+	for key, idt := range m.contract.IDTokens {
+		if idt.HomeAccountID == account.HomeAccountID && idt.Environment == account.Environment {
+			delete(m.contract.IDTokens, key)
+		}
+	}
+}
+
+func (m *Manager) readAppMetaDatawithoutLock(envAliases []string, clientID string) (AppMetaData, error) {
+
+	for _, app := range m.contract.AppMetaData {
+		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
+			return app, nil
+		}
+	}
+	return AppMetaData{}, fmt.Errorf("not found")
 }
 
 func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {

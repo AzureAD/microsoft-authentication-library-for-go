@@ -951,3 +951,68 @@ func TestWrite(t *testing.T) {
 		t.Fatalf("TestWrite(app metadata): -want/+got\n%s", diff)
 	}
 }
+
+func TestRemoveAccount(t *testing.T) {
+	accessTokenCacheItem := NewAccessToken(
+		"hid",
+		"env",
+		"realm",
+		"cid",
+		time.Now(),
+		time.Now().Add(1000*time.Second),
+		time.Now(),
+		"openid profile",
+		"secret",
+	)
+	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
+	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
+	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+
+	contract := &Contract{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
+			testRefreshToken.Key(): testRefreshToken,
+		},
+		Accounts: map[string]shared.Account{
+			testAccount.Key(): testAccount,
+		},
+		AppMetaData: map[string]AppMetaData{
+			testAppMeta.Key(): testAppMeta,
+		},
+		IDTokens: map[string]IDToken{
+			testIDToken.Key(): testIDToken,
+		},
+		AccessTokens: map[string]AccessToken{
+			accessTokenCacheItem.Key(): accessTokenCacheItem,
+		},
+	}
+
+	authInfo := authority.Info{
+		Host:   "env",
+		Tenant: "realm",
+	}
+	authParameters := authority.AuthParams{
+		HomeaccountID: "hid",
+		AuthorityInfo: authInfo,
+		ClientID:      "cid",
+		Scopes:        []string{"openid", "profile"},
+	}
+	discResp := authority.InstanceDiscoveryResponse{
+		TenantDiscoveryEndpoint: "tenant",
+		Metadata: []authority.InstanceDiscoveryMetadata{
+			{
+				Aliases: []string{"env", "alias2"},
+			},
+			{
+				Aliases: []string{"alias3", "alias4"},
+			},
+		},
+	}
+	responder := &fakeDiscoveryResponser{err: false, ret: discResp}
+	manager := newForTest(responder)
+	manager.update(contract)
+	manager.RemoveAccount(testAccount, []string{"env", "alias2"}, authParameters.ClientID)
+	if len(manager.contract.AccessTokens) != 0 {
+		t.Fatal("test failed")
+	}
+}
