@@ -259,8 +259,11 @@ func (pca Client) Accounts() []Account {
 }
 
 // RemoveAccount signs the account out and forgets account from token cache
-func (pca Client) RemoveAccount(account Account) {
-	pca.base.RemoveAccount(account)
+func (pca Client) RemoveAccount(account Account) error {
+	if err := pca.base.RemoveAccount(account); err != nil {
+		return err
+	}
+	return nil
 }
 
 // InteractiveAuthOptions contains the optional parameters used to acquire an access token for interactive auth code flow.

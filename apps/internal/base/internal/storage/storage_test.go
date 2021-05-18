@@ -111,25 +111,6 @@ func TestAllAccounts(t *testing.T) {
 	}
 }
 
-func TestDeleteAccounts(t *testing.T) {
-
-	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
-	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
-	cache := &Contract{
-		Accounts: map[string]shared.Account{
-			testAccOne.Key(): testAccOne,
-			testAccTwo.Key(): testAccTwo,
-		},
-	}
-	storageManager := newForTest(nil)
-	storageManager.update(cache)
-
-	err := storageManager.deleteAccounts("hid", []string{"hello", "env", "test"})
-	if err != nil {
-		t.Errorf("Error is supposed to be nil; instead it is %v", err)
-	}
-}
-
 func TestReadAccessToken(t *testing.T) {
 	now := time.Now()
 	testAccessToken := NewAccessToken(
@@ -954,15 +935,11 @@ func TestWrite(t *testing.T) {
 
 func TestRemoveAccount(t *testing.T) {
 	accessTokenCacheItem := NewAccessToken(
-		"hid",
-		"env",
-		"realm",
-		"cid",
+		"hid", "env", "realm", "cid",
 		time.Now(),
 		time.Now().Add(1000*time.Second),
 		time.Now(),
-		"openid profile",
-		"secret",
+		"openid profile", "secret",
 	)
 	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
@@ -986,33 +963,21 @@ func TestRemoveAccount(t *testing.T) {
 			accessTokenCacheItem.Key(): accessTokenCacheItem,
 		},
 	}
-
-	authInfo := authority.Info{
-		Host:   "env",
-		Tenant: "realm",
-	}
 	authParameters := authority.AuthParams{
 		HomeaccountID: "hid",
-		AuthorityInfo: authInfo,
+		AuthorityInfo: authority.Info{},
 		ClientID:      "cid",
 		Scopes:        []string{"openid", "profile"},
 	}
 	discResp := authority.InstanceDiscoveryResponse{
 		TenantDiscoveryEndpoint: "tenant",
-		Metadata: []authority.InstanceDiscoveryMetadata{
-			{
-				Aliases: []string{"env", "alias2"},
-			},
-			{
-				Aliases: []string{"alias3", "alias4"},
-			},
-		},
+		Metadata:                []authority.InstanceDiscoveryMetadata{},
 	}
 	responder := &fakeDiscoveryResponser{err: false, ret: discResp}
 	manager := newForTest(responder)
 	manager.update(contract)
-	manager.RemoveAccount(testAccount, authParameters.ClientID)
-	if len(manager.contract.AccessTokens) != 0 {
-		t.Fatal("test failed")
+	err := manager.RemoveAccount(testAccount, authParameters.ClientID)
+	if err != nil {
+		t.Errorf("Error should be nil; instead, it is %v", err)
 	}
 }
