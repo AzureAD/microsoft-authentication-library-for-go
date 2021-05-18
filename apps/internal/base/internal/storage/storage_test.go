@@ -1011,7 +1011,7 @@ func TestRemoveAccount(t *testing.T) {
 	responder := &fakeDiscoveryResponser{err: false, ret: discResp}
 	manager := newForTest(responder)
 	manager.update(contract)
-	manager.RemoveAccount(testAccount, []string{"env", "alias2"}, authParameters.ClientID)
+	manager.RemoveAccount(testAccount, authParameters.ClientID)
 	if len(manager.contract.AccessTokens) != 0 {
 		t.Fatal("test failed")
 	}

@@ -419,68 +419,66 @@ func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
 	return nil
 }
 
-func (m *Manager) RemoveAccount(account shared.Account, envAliases []string, clientID string) {
-	m.contractMu.Lock()
-	defer m.contractMu.Unlock()
+func (m *Manager) RemoveAccount(account shared.Account, clientID string) {
+	familyID := m.getFamilyID(account.Environment, clientID)
+	m.removeRefreshToken(account.HomeAccountID, account.Environment, familyID, clientID)
+	m.removeAccessToken(account.HomeAccountID, account.Environment)
+	m.removeIDToken(account.HomeAccountID, account.Environment)
+	m.removeAccount(account.HomeAccountID, account.Environment)
 
-	for key, acc := range m.contract.Accounts {
-		if acc.HomeAccountID == account.HomeAccountID && checkAlias(acc.Environment, envAliases) {
-			appMetaData, err := m.readAppMetaDatawithoutLock([]string{account.Environment}, clientID)
-			if err != nil {
-				return
-			}
-			m.removeRefreshToken(appMetaData, account.HomeAccountID, clientID, envAliases)
-			m.removeAccessToken(account)
-			m.removeIDToken(account)
-			delete(m.contract.Accounts, key)
-		}
-	}
 }
 
-func (m *Manager) removeRefreshToken(appMetadata AppMetaData, homeID string, clientID string, envAliases []string) {
-	byFamily := func(rt accesstokens.RefreshToken) bool {
-		return matchFamilyRefreshToken(rt, homeID, envAliases)
+func (m *Manager) getFamilyID(env string, clientID string) string {
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
+	for _, app := range m.contract.AppMetaData {
+		if app.Environment == env && app.ClientID == clientID {
+			return app.FamilyID
+		}
 	}
-	byClient := func(rt accesstokens.RefreshToken) bool {
-		return matchClientIDRefreshToken(rt, homeID, envAliases, clientID)
-	}
-	matchers := []func(rt accesstokens.RefreshToken) bool{
-		byFamily, byClient,
-	}
-	for _, matcher := range matchers {
-		for key, rt := range m.contract.RefreshTokens {
-			if matcher(rt) {
+	return ""
+}
+
+func (m *Manager) removeRefreshToken(homeID string, env string, familyID string, clientID string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	for key, rt := range m.contract.RefreshTokens {
+		if rt.HomeAccountID == homeID && rt.Environment == env {
+			if rt.ClientID == clientID || rt.FamilyID == familyID {
 				delete(m.contract.RefreshTokens, key)
 			}
 		}
 	}
-
 }
 
-func (m *Manager) removeAccessToken(account shared.Account) {
+func (m *Manager) removeAccessToken(homeID string, env string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
 	for key, at := range m.contract.AccessTokens {
-		if at.HomeAccountID == account.HomeAccountID && at.Environment == account.Environment {
+		if at.HomeAccountID == homeID && at.Environment == env {
 			delete(m.contract.AccessTokens, key)
 		}
 	}
 }
 
-func (m *Manager) removeIDToken(account shared.Account) {
+func (m *Manager) removeIDToken(homeID string, env string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
 	for key, idt := range m.contract.IDTokens {
-		if idt.HomeAccountID == account.HomeAccountID && idt.Environment == account.Environment {
+		if idt.HomeAccountID == homeID && idt.Environment == env {
 			delete(m.contract.IDTokens, key)
 		}
 	}
 }
 
-func (m *Manager) readAppMetaDatawithoutLock(envAliases []string, clientID string) (AppMetaData, error) {
-
-	for _, app := range m.contract.AppMetaData {
-		if checkAlias(app.Environment, envAliases) && app.ClientID == clientID {
-			return app, nil
+func (m *Manager) removeAccount(homeID string, env string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	for key, acc := range m.contract.Accounts {
+		if acc.HomeAccountID == homeID && acc.Environment == env {
+			delete(m.contract.Accounts, key)
 		}
 	}
-	return AppMetaData{}, fmt.Errorf("not found")
 }
 
 func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {

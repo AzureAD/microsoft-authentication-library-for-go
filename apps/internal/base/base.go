@@ -33,7 +33,7 @@ type manager interface {
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() []shared.Account
 	Account(homeAccountID string) shared.Account
-	RemoveAccount(account shared.Account, envAliases []string, clientID string)
+	RemoveAccount(account shared.Account, clientID string)
 }
 
 type noopCacheAccessor struct{}
@@ -316,7 +316,7 @@ func (b Client) RemoveAccount(account shared.Account) {
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
-	b.manager.RemoveAccount(account, []string{"login.microsoftonline.com"}, b.AuthParams.ClientID)
+	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
 }
 
 // toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.
