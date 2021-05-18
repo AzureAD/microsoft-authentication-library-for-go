@@ -427,22 +427,22 @@ func (m *Manager) writeAppMetaData(AppMetaData AppMetaData) error {
 }
 
 func (m *Manager) RemoveAccount(account shared.Account, clientID string) error {
-	if err := m.removeRefreshToken(account.HomeAccountID, account.Environment, clientID); err != nil {
+	if err := m.removeRefreshTokens(account.HomeAccountID, account.Environment, clientID); err != nil {
 		return err
 	}
-	if err := m.removeAccessToken(account.HomeAccountID, account.Environment); err != nil {
+	if err := m.removeAccessTokens(account.HomeAccountID, account.Environment); err != nil {
 		return err
 	}
-	if err := m.removeIDToken(account.HomeAccountID, account.Environment); err != nil {
+	if err := m.removeIDTokens(account.HomeAccountID, account.Environment); err != nil {
 		return err
 	}
-	if err := m.removeAccount(account.HomeAccountID, account.Environment); err != nil {
+	if err := m.removeAccounts(account.HomeAccountID, account.Environment); err != nil {
 		return err
 	}
 	return nil
 }
 
-func (m *Manager) removeRefreshToken(homeID string, env string, clientID string) error {
+func (m *Manager) removeRefreshTokens(homeID string, env string, clientID string) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, rt := range m.contract.RefreshTokens {
@@ -455,7 +455,7 @@ func (m *Manager) removeRefreshToken(homeID string, env string, clientID string)
 	return nil
 }
 
-func (m *Manager) removeAccessToken(homeID string, env string) error {
+func (m *Manager) removeAccessTokens(homeID string, env string) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, at := range m.contract.AccessTokens {
@@ -466,7 +466,7 @@ func (m *Manager) removeAccessToken(homeID string, env string) error {
 	return nil
 }
 
-func (m *Manager) removeIDToken(homeID string, env string) error {
+func (m *Manager) removeIDTokens(homeID string, env string) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, idt := range m.contract.IDTokens {
@@ -477,7 +477,7 @@ func (m *Manager) removeIDToken(homeID string, env string) error {
 	return nil
 }
 
-func (m *Manager) removeAccount(homeID string, env string) error {
+func (m *Manager) removeAccounts(homeID string, env string) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, acc := range m.contract.Accounts {
