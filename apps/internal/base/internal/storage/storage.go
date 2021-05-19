@@ -40,8 +40,6 @@ type TokenResponse struct {
 	Account      shared.Account
 }
 
-// TODO(someone): This thing does not expire tokens.
-
 // Manager is an in-memory cache of access tokens, accounts and meta data. This data is
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
