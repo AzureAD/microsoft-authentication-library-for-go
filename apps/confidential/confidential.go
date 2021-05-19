@@ -369,7 +369,15 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-// Account gets the account in the token cache with the specified homeAccountID
+// Account gets the account in the token cache with the specified homeAccountID.
 func (cca Client) Account(homeAccountID string) Account {
 	return cca.base.Account(homeAccountID)
+}
+
+// RemoveAccount signs the account out and forgets account from token cache.
+func (cca Client) RemoveAccount(account Account) error {
+	if err := cca.base.RemoveAccount(account); err != nil {
+		return err
+	}
+	return nil
 }
