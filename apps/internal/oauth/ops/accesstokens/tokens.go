@@ -165,7 +165,7 @@ func (s *Scopes) UnmarshalJSON(b []byte) error {
 	if len(str) == 0 {
 		return nil
 	}
-	sl := strings.Split(strings.ToLower(str), " ")
+	sl := strings.Split(str, " ")
 	s.Slice = sl
 	return nil
 }
@@ -234,11 +234,11 @@ func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []stri
 	declined := []string{}
 	grantedMap := map[string]bool{}
 	for _, s := range grantedScopes {
-		grantedMap[s] = true
+		grantedMap[strings.ToLower(s)] = true
 	}
 	// Comparing the requested scopes with the granted scopes to see if there are any scopes that have been declined.
 	for _, r := range requestedScopes {
-		if !grantedMap[r] {
+		if !grantedMap[strings.ToLower(r)] {
 			declined = append(declined, r)
 		}
 	}
