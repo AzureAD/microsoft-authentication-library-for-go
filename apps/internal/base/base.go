@@ -33,7 +33,7 @@ type manager interface {
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() []shared.Account
 	Account(homeAccountID string) shared.Account
-	RemoveAccount(account shared.Account, clientID string) error
+	RemoveAccount(account shared.Account, clientID string)
 }
 
 type noopCacheAccessor struct{}
@@ -310,16 +310,14 @@ func (b Client) Account(homeAccountID string) shared.Account {
 	return account
 }
 
-func (b Client) RemoveAccount(account shared.Account) error {
+// RemoveAccount removes all the ATs, RTs and IDTs from the cache associated with this account.
+func (b Client) RemoveAccount(account shared.Account) {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
-	if err := b.manager.RemoveAccount(account, b.AuthParams.ClientID); err != nil {
-		return err
-	}
-	return nil
+	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
 }
 
 // toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.

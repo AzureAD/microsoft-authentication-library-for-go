@@ -424,66 +424,64 @@ func (m *Manager) writeAppMetaData(AppMetaData AppMetaData) error {
 	return nil
 }
 
-func (m *Manager) RemoveAccount(account shared.Account, clientID string) error {
-	if err := m.removeRefreshTokens(account.HomeAccountID, account.Environment, clientID); err != nil {
-		return err
-	}
-	if err := m.removeAccessTokens(account.HomeAccountID, account.Environment); err != nil {
-		return err
-	}
-	if err := m.removeIDTokens(account.HomeAccountID, account.Environment); err != nil {
-		return err
-	}
-	if err := m.removeAccounts(account.HomeAccountID, account.Environment); err != nil {
-		return err
-	}
-	return nil
+// RemoveAccount removes all the associated ATs, RTs and IDTs from the cache associated with this account.
+func (m *Manager) RemoveAccount(account shared.Account, clientID string) {
+	m.removeRefreshTokens(account.HomeAccountID, account.Environment, clientID)
+	m.removeAccessTokens(account.HomeAccountID, account.Environment)
+	m.removeIDTokens(account.HomeAccountID, account.Environment)
+	m.removeAccounts(account.HomeAccountID, account.Environment)
 }
 
-func (m *Manager) removeRefreshTokens(homeID string, env string, clientID string) error {
+func (m *Manager) removeRefreshTokens(homeID string, env string, clientID string) {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, rt := range m.contract.RefreshTokens {
+		// Check for RTs associated with the account.
 		if rt.HomeAccountID == homeID && rt.Environment == env {
+			// Do RT's app ownership check as a precaution, in case family apps
+			// and 3rd-party apps share same token cache, although they should not.
 			if rt.ClientID == clientID || rt.FamilyID != "" {
 				delete(m.contract.RefreshTokens, key)
 			}
 		}
 	}
-	return nil
 }
 
-func (m *Manager) removeAccessTokens(homeID string, env string) error {
+func (m *Manager) removeAccessTokens(homeID string, env string) {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, at := range m.contract.AccessTokens {
+		// Remove AT's associated with the account
 		if at.HomeAccountID == homeID && at.Environment == env {
+			// # To avoid the complexity of locating sibling family app's AT, we skip AT's app ownership check.
+			// It means ATs for other apps will also be removed, it is OK because:
+			// non-family apps are not supposed to share token cache to begin with;
+			// Even if it happens, we keep other app's RT already, so SSO still works.
 			delete(m.contract.AccessTokens, key)
 		}
 	}
-	return nil
 }
 
-func (m *Manager) removeIDTokens(homeID string, env string) error {
+func (m *Manager) removeIDTokens(homeID string, env string) {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, idt := range m.contract.IDTokens {
+		// Remove ID tokens associated with the account.
 		if idt.HomeAccountID == homeID && idt.Environment == env {
 			delete(m.contract.IDTokens, key)
 		}
 	}
-	return nil
 }
 
-func (m *Manager) removeAccounts(homeID string, env string) error {
+func (m *Manager) removeAccounts(homeID string, env string) {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	for key, acc := range m.contract.Accounts {
+		// Remove the specified account.
 		if acc.HomeAccountID == homeID && acc.Environment == env {
 			delete(m.contract.Accounts, key)
 		}
 	}
-	return nil
 }
 
 // update updates the internal cache object. This is for use in tests, other uses are not

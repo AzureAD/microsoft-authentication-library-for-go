@@ -260,9 +260,7 @@ func (pca Client) Accounts() []Account {
 
 // RemoveAccount signs the account out and forgets account from token cache.
 func (pca Client) RemoveAccount(account Account) error {
-	if err := pca.base.RemoveAccount(account); err != nil {
-		return err
-	}
+	pca.base.RemoveAccount(account)
 	return nil
 }
 

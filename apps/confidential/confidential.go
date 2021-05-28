@@ -376,8 +376,6 @@ func (cca Client) Account(homeAccountID string) Account {
 
 // RemoveAccount signs the account out and forgets account from token cache.
 func (cca Client) RemoveAccount(account Account) error {
-	if err := cca.base.RemoveAccount(account); err != nil {
-		return err
-	}
+	cca.base.RemoveAccount(account)
 	return nil
 }
