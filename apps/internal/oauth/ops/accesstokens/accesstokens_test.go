@@ -901,6 +901,30 @@ func TestComputeScopes(t *testing.T) {
 				scopesComputed: true,
 			},
 		},
+		{
+			desc: "no declined scopes case insensitive",
+			authParams: authority.AuthParams{
+				Scopes: []string{
+					"scope0",
+					"scope1",
+				},
+			},
+			input: TokenResponse{
+				GrantedScopes: Scopes{
+					Slice: []string{
+						"Scope0",
+						"Scope1",
+					},
+				},
+			},
+			want: TokenResponse{
+				GrantedScopes: Scopes{
+					Slice: []string{"Scope0", "Scope1"},
+				},
+				DeclinedScopes: nil,
+				scopesComputed: true,
+			},
+		},
 	}
 
 	for _, test := range tests {
