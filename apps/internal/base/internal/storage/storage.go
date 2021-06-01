@@ -40,8 +40,6 @@ type TokenResponse struct {
 	Account      shared.Account
 }
 
-// TODO(someone): This thing does not expire tokens.
-
 // Manager is an in-memory cache of access tokens, accounts and meta data. This data is
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
@@ -238,14 +236,10 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	}
 
 	for _, metadataEntry := range discoveryResponse.Metadata {
-		metadataEntry.TenantDiscoveryEndpoint = discoveryResponse.TenantDiscoveryEndpoint
 		for _, aliasedAuthority := range metadataEntry.Aliases {
 			m.aadCache[aliasedAuthority] = metadataEntry
 		}
 	}
-	// TODO(msal): Don't understand this logic.  We query first this data, we enter all the data that
-	// the server has.  If our host was not detailed by the server, we just insert it???
-	// This is either broken or needs to be explained with a comment.
 	if _, ok := m.aadCache[authorityInfo.Host]; !ok {
 		m.aadCache[authorityInfo.Host] = authority.InstanceDiscoveryMetadata{
 			PreferredNetwork: authorityInfo.Host,
@@ -410,19 +404,6 @@ func (m *Manager) writeAccount(account shared.Account) error {
 	return nil
 }
 
-func (m *Manager) deleteAccounts(homeID string, envAliases []string) error {
-	m.contractMu.Lock()
-	defer m.contractMu.Unlock()
-
-	for key, acc := range m.contract.Accounts {
-		if acc.HomeAccountID == homeID && checkAlias(acc.Environment, envAliases) {
-			delete(m.contract.Accounts, key)
-		}
-	}
-
-	return nil
-}
-
 func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
@@ -441,6 +422,66 @@ func (m *Manager) writeAppMetaData(AppMetaData AppMetaData) error {
 	defer m.contractMu.Unlock()
 	m.contract.AppMetaData[key] = AppMetaData
 	return nil
+}
+
+// RemoveAccount removes all the associated ATs, RTs and IDTs from the cache associated with this account.
+func (m *Manager) RemoveAccount(account shared.Account, clientID string) {
+	m.removeRefreshTokens(account.HomeAccountID, account.Environment, clientID)
+	m.removeAccessTokens(account.HomeAccountID, account.Environment)
+	m.removeIDTokens(account.HomeAccountID, account.Environment)
+	m.removeAccounts(account.HomeAccountID, account.Environment)
+}
+
+func (m *Manager) removeRefreshTokens(homeID string, env string, clientID string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	for key, rt := range m.contract.RefreshTokens {
+		// Check for RTs associated with the account.
+		if rt.HomeAccountID == homeID && rt.Environment == env {
+			// Do RT's app ownership check as a precaution, in case family apps
+			// and 3rd-party apps share same token cache, although they should not.
+			if rt.ClientID == clientID || rt.FamilyID != "" {
+				delete(m.contract.RefreshTokens, key)
+			}
+		}
+	}
+}
+
+func (m *Manager) removeAccessTokens(homeID string, env string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	for key, at := range m.contract.AccessTokens {
+		// Remove AT's associated with the account
+		if at.HomeAccountID == homeID && at.Environment == env {
+			// # To avoid the complexity of locating sibling family app's AT, we skip AT's app ownership check.
+			// It means ATs for other apps will also be removed, it is OK because:
+			// non-family apps are not supposed to share token cache to begin with;
+			// Even if it happens, we keep other app's RT already, so SSO still works.
+			delete(m.contract.AccessTokens, key)
+		}
+	}
+}
+
+func (m *Manager) removeIDTokens(homeID string, env string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	for key, idt := range m.contract.IDTokens {
+		// Remove ID tokens associated with the account.
+		if idt.HomeAccountID == homeID && idt.Environment == env {
+			delete(m.contract.IDTokens, key)
+		}
+	}
+}
+
+func (m *Manager) removeAccounts(homeID string, env string) {
+	m.contractMu.Lock()
+	defer m.contractMu.Unlock()
+	for key, acc := range m.contract.Accounts {
+		// Remove the specified account.
+		if acc.HomeAccountID == homeID && acc.Environment == env {
+			delete(m.contract.Accounts, key)
+		}
+	}
 }
 
 // update updates the internal cache object. This is for use in tests, other uses are not
