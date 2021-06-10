@@ -7,10 +7,15 @@ package local
 import (
 	"context"
 	"fmt"
+	"log"
 	"net"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"strings"
+	"syscall"
+	"time"
 )
 
 var okPage = []byte(`
@@ -55,6 +60,7 @@ type Server struct {
 	resultCh chan Result
 	s        *http.Server
 	reqState string
+	shutdown chan os.Signal
 }
 
 // New creates a local HTTP server and starts it.
@@ -83,11 +89,17 @@ func New(reqState string, port int) (*Server, error) {
 	}
 
 	serv := &Server{
-		Addr:     fmt.Sprintf("http://localhost:%s", portStr),
-		s:        &http.Server{Addr: "localhost:0"},
+		Addr: fmt.Sprintf("http://localhost:%s", portStr),
+		s: &http.Server{Addr: "localhost:0",
+			ReadTimeout:  5 * time.Second,
+			WriteTimeout: 5 * time.Second},
 		reqState: reqState,
 		resultCh: make(chan Result, 1),
+		shutdown: make(chan os.Signal, 1),
 	}
+	//Make a channel to listen for terminate and interrupt signals.
+	signal.Notify(serv.shutdown, os.Interrupt, syscall.SIGTERM)
+
 	serv.s.Handler = http.HandlerFunc(serv.handler)
 
 	if err := serv.start(l); err != nil {
@@ -102,6 +114,21 @@ func (s *Server) start(l net.Listener) error {
 		err := s.s.Serve(l)
 		if err != nil {
 			select {
+			case <-s.shutdown:
+				//Give outstanding requests a deadline for completion.
+				const timeout = 5 * time.Second
+				ctx, cancel := context.WithTimeout(context.Background(), timeout)
+				defer cancel()
+				err := s.s.Shutdown(ctx)
+				if err != nil {
+					//We force shutdown if gracefull shutdown fails.
+					err = s.s.Close()
+				}
+				if err != nil {
+					//TODO we should pass a logger into this function
+					log.Fatalf("start: could not stop the server gracefully: %v", err)
+				}
+
 			case s.resultCh <- Result{Err: err}:
 			default:
 			}
