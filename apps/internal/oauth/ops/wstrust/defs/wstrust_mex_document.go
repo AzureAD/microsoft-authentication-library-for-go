@@ -6,7 +6,6 @@ package defs
 import (
 	"errors"
 	"fmt"
-	"log"
 	"strings"
 )
 
@@ -138,8 +137,6 @@ func endpoints(defs Definitions, bindings map[string]wsEndpointData) (userPass, 
 
 		if binding, ok := bindings[bindingName]; ok {
 			url := strings.TrimSpace(port.EndpointReference.Address.Text)
-			log.Printf("version(%s) url(%s): ", binding.Version, url)
-
 			if url == "" {
 				return Endpoint{}, Endpoint{}, fmt.Errorf("MexDocument cannot have blank URL endpoint")
 			}
