@@ -162,7 +162,6 @@ func (s *Server) Shutdown() {
 	}
 	if err != nil {
 		//We failed to shutdown completely.
-		//TODO we should pass a logger into this function
 		log.Fatalf("Shutdown: could not stop the server gracefully: %v", err)
 	}
 
