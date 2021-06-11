@@ -152,7 +152,20 @@ func (s *Server) Result(ctx context.Context) Result {
 // Shutdown shuts down the server.
 func (s *Server) Shutdown() {
 	// Note: You might get clever and think you can do this in handler() as a defer, you can't.
-	_ = s.s.Shutdown(context.Background())
+	const timeout = 5 * time.Second
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
+	defer cancel()
+	err := s.s.Shutdown(ctx)
+	if err != nil {
+		//If gracefull shutdown fails, then we force shutdown.
+		err = s.s.Close()
+	}
+	if err != nil {
+		//We failed to shutdown completely.
+		//TODO we should pass a logger into this function
+		log.Fatalf("Shutdown: could not stop the server gracefully: %v", err)
+	}
+
 }
 
 func (s *Server) putResult(r Result) {
