@@ -405,6 +405,7 @@ func TestAccessTokenWithAssertion(t *testing.T) {
 				"client_assertion":      []string{"assertion"},
 				grantType:               []string{grant.ClientCredential},
 				clientInfo:              []string{clientInfoVal},
+				clientID:                []string{authParams.ClientID},
 			},
 		},
 		{
@@ -415,6 +416,7 @@ func TestAccessTokenWithAssertion(t *testing.T) {
 				"client_assertion":      []string{"assertion"},
 				grantType:               []string{grant.ClientCredential},
 				clientInfo:              []string{clientInfoVal},
+				clientID:                []string{authParams.ClientID},
 			},
 		},
 	}

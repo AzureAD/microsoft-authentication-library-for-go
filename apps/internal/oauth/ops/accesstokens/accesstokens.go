@@ -266,6 +266,7 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	qv.Set(grantType, grant.ClientCredential)
 	qv.Set("client_assertion_type", grant.ClientAssertion)
 	qv.Set("client_assertion", assertion)
+	qv.Set(clientID, authParameters.ClientID)
 	qv.Set(clientInfo, clientInfoVal)
 	addScopeQueryParam(qv, authParameters)
 
