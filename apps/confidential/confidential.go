@@ -51,7 +51,7 @@ put a PEM decoder into here.
 */
 
 // TODO(msal): This should have example code for each method on client using Go's example doc framework.
-// base usage details should be includee in the package documentation.
+// base usage details should be include in the package documentation.
 
 // AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
