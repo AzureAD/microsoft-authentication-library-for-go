@@ -83,7 +83,7 @@ const (
 
 var tokenScope = []string{"the_scope"}
 
-func fakeClient(tk accesstokens.TokenResponse, credential string) (Client, error) {
+func FakeClient(tk accesstokens.TokenResponse, credential string) (Client, error) {
 	cred, err := NewCredFromSecret(credential)
 	if err != nil {
 		return Client{}, err
@@ -138,7 +138,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		client, err := fakeClient(accesstokens.TokenResponse{
+		client, err := FakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
@@ -171,7 +171,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 }
 
 func TestAcquireTokenByAuthCode(t *testing.T) {
-	client, err := fakeClient(accesstokens.TokenResponse{
+	client, err := FakeClient(accesstokens.TokenResponse{
 		AccessToken:   token,
 		RefreshToken:  refresh,
 		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
