@@ -29,7 +29,7 @@ const microsoftAuthorityHost = "https://login.microsoftonline.com/"
 const (
 	organizationsAuthority = microsoftAuthorityHost + "organizations/"
 	microsoftAuthority     = microsoftAuthorityHost + "microsoft.onmicrosoft.com"
-	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the furture
+	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the future
 )
 
 var httpClient = http.Client{}
