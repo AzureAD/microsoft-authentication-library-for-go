@@ -29,7 +29,7 @@ const microsoftAuthorityHost = "https://login.microsoftonline.com/"
 const (
 	organizationsAuthority = microsoftAuthorityHost + "organizations/"
 	microsoftAuthority     = microsoftAuthorityHost + "microsoft.onmicrosoft.com"
-	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the furture
+	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the future
 )
 
 var httpClient = http.Client{}
@@ -245,6 +245,48 @@ func TestConfidentialClientwithSecret(t *testing.T) {
 	}
 	if silentResult.AccessToken == "" {
 		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
+	}
+
+}
+
+func TestRemoveAccount(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	labClientInstance, err := newLabClient()
+	if err != nil {
+		panic("failed to get a lab client: " + err.Error())
+	}
+	ctx := context.Background()
+
+	user := testUser(ctx, "TestRemoveAccount", labClientInstance, url.Values{"usertype": []string{"cloud"}})
+	app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority))
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	// Populate the cache
+	_, err = app.AcquireTokenByUsernamePassword(
+		context.Background(),
+		[]string{graphDefaultScope},
+		user.Upn,
+		user.Password,
+	)
+	if err != nil {
+		t.Fatalf("TestRemoveAccount: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	accounts := app.Accounts()
+	if len(accounts) == 0 {
+		t.Fatal("TestRemoveAccount: No user accounts found in cache")
+	}
+	testAccount := accounts[0] // Only one account is populated and that is what we will remove.
+	err = app.RemoveAccount(testAccount)
+	if err != nil {
+		t.Fatalf("TestRemoveAccount: on RemoveAccount(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	// Remove Account will clear the cache fields associated with this account so acquire token silent should fail
+	_, err = app.AcquireTokenSilent(ctx, []string{graphDefaultScope}, public.WithSilentAccount(testAccount))
+	if err == nil {
+		t.Fatal("TestRemoveAccount: RemoveAccount() didn't clear the cache as expected")
 	}
 
 }

@@ -111,25 +111,6 @@ func TestAllAccounts(t *testing.T) {
 	}
 }
 
-func TestDeleteAccounts(t *testing.T) {
-
-	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
-	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
-	cache := &Contract{
-		Accounts: map[string]shared.Account{
-			testAccOne.Key(): testAccOne,
-			testAccTwo.Key(): testAccTwo,
-		},
-	}
-	storageManager := newForTest(nil)
-	storageManager.update(cache)
-
-	err := storageManager.deleteAccounts("hid", []string{"hello", "env", "test"})
-	if err != nil {
-		t.Errorf("Error is supposed to be nil; instead it is %v", err)
-	}
-}
-
 func TestReadAccessToken(t *testing.T) {
 	now := time.Now()
 	testAccessToken := NewAccessToken(
@@ -949,5 +930,157 @@ func TestWrite(t *testing.T) {
 	}
 	if diff := pretty.Compare(testAppMeta, gotMeta); diff != "" {
 		t.Fatalf("TestWrite(app metadata): -want/+got\n%s", diff)
+	}
+}
+func TestRemoveRefreshTokens(t *testing.T) {
+	storageManager := newForTest(nil)
+	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
+	key := testRefreshToken.Key()
+	contract := &Contract{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
+			key: testRefreshToken,
+		},
+	}
+	storageManager.update(contract)
+	storageManager.removeRefreshTokens("hid", "env", "cid")
+
+	if val, ok := storageManager.contract.RefreshTokens[key]; ok {
+		t.Fatalf("TestRemoveRefreshTokens: got refreshToken == %s, want refreshToken == empty", val)
+	}
+}
+
+func TestRemoveAccessTokens(t *testing.T) {
+	now := time.Now()
+	storageManager := newForTest(nil)
+	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid", "secret")
+	key := testAccessToken.Key()
+	contract := &Contract{
+		AccessTokens: map[string]AccessToken{
+			key: testAccessToken,
+		},
+	}
+	storageManager.update(contract)
+	storageManager.removeAccessTokens("hid", "env")
+
+	if val, ok := storageManager.contract.AccessTokens[key]; ok {
+		t.Fatalf("TestRemoveAccessTokens: got accessToken == %s, want accessToken == empty", val)
+	}
+}
+
+func TestRemoveIDTokens(t *testing.T) {
+	storageManager := newForTest(nil)
+	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
+	key := testIDToken.Key()
+	contract := &Contract{
+		IDTokens: map[string]IDToken{
+			key: testIDToken,
+		},
+	}
+	storageManager.update(contract)
+	storageManager.removeIDTokens("hid", "env")
+
+	if val, ok := storageManager.contract.IDTokens[key]; ok {
+		t.Fatalf("TestRemoveIDTokens: got IDToken == %s, want IDToken == empty", val)
+	}
+}
+
+func TestRemoveAccountObject(t *testing.T) {
+	storageManager := newForTest(nil)
+	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+	key := testAccount.Key()
+	contract := &Contract{
+		Accounts: map[string]shared.Account{
+			key: testAccount,
+		},
+	}
+	storageManager.update(contract)
+	storageManager.removeAccounts("hid", "env")
+
+	if val, ok := storageManager.contract.Accounts[key]; ok {
+		t.Fatalf("TestRemoveAccountObject: got Account == %s, want Account == empty", val)
+	}
+}
+
+func TestRemoveAccount(t *testing.T) {
+	now := time.Now()
+	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
+	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
+	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
+	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+
+	contract := &Contract{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
+			testRefreshToken.Key(): testRefreshToken,
+		},
+		Accounts: map[string]shared.Account{
+			testAccount.Key(): testAccount,
+		},
+		AppMetaData: map[string]AppMetaData{
+			testAppMeta.Key(): testAppMeta,
+		},
+		IDTokens: map[string]IDToken{
+			testIDToken.Key(): testIDToken,
+		},
+		AccessTokens: map[string]AccessToken{
+			testAccessToken.Key(): testAccessToken,
+		},
+	}
+	manager := newForTest(nil)
+	manager.update(contract)
+	manager.RemoveAccount(testAccount, "cid")
+	if val, ok := manager.contract.RefreshTokens[testRefreshToken.Key()]; ok {
+		t.Fatalf("TestRemoveAccount: got refreshToken == %s, want refreshToken == empty", val)
+	}
+	if val, ok := manager.contract.AccessTokens[testAccessToken.Key()]; ok {
+		t.Fatalf("TestRemoveAccount: got accessToken == %s, want accessToken == empty", val)
+	}
+	if val, ok := manager.contract.IDTokens[testIDToken.Key()]; ok {
+		t.Fatalf("TestRemoveAccount: got IDToken == %s, want IDToken == empty", val)
+	}
+	if val, ok := manager.contract.Accounts[testAccount.Key()]; ok {
+		t.Fatalf("TestRemoveAccount: got Account == %s, want Account == empty", val)
+	}
+}
+
+func TestRemoveEmptyAccount(t *testing.T) {
+	now := time.Now()
+	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
+	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
+	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
+	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
+
+	contract := &Contract{
+		RefreshTokens: map[string]accesstokens.RefreshToken{
+			testRefreshToken.Key(): testRefreshToken,
+		},
+		Accounts: map[string]shared.Account{
+			testAccount.Key(): testAccount,
+		},
+		AppMetaData: map[string]AppMetaData{
+			testAppMeta.Key(): testAppMeta,
+		},
+		IDTokens: map[string]IDToken{
+			testIDToken.Key(): testIDToken,
+		},
+		AccessTokens: map[string]AccessToken{
+			testAccessToken.Key(): testAccessToken,
+		},
+	}
+	manager := newForTest(nil)
+	manager.update(contract)
+	manager.RemoveAccount(shared.Account{}, "cid")
+	if _, ok := manager.contract.RefreshTokens[testRefreshToken.Key()]; !ok {
+		t.Fatalf("TestRemoveEmptyAccount: got refreshToken == empty, want refreshToken == %s", testRefreshToken)
+	}
+	if _, ok := manager.contract.AccessTokens[testAccessToken.Key()]; !ok {
+		t.Fatalf("TestRemoveEmptyAccount: got accessToken == empty, want accessToken == %s", testAccessToken)
+	}
+	if _, ok := manager.contract.IDTokens[testIDToken.Key()]; !ok {
+		t.Fatalf("TestRemoveEmptyAccount: got IDToken == empty, want IDToken == %s", testIDToken)
+	}
+	if _, ok := manager.contract.Accounts[testAccount.Key()]; !ok {
+		t.Fatalf("TestRemoveEmptyAccount: got Account == empty, want Account == %s", testAccount)
 	}
 }

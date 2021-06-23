@@ -3,47 +3,53 @@
 
 package main
 
-/*
-func tryClientCertificateFlow(app confidential.Client) {
-	result, err := app.AcquireTokenByCredential(context.Background(), confidentialConfig.Scopes)
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("Access token is " + result.GetAccessToken())
-}
-*/
+import (
+	"context"
+	"fmt"
+	"io/ioutil"
+	"log"
 
-// This needs to be repaired.  We moved from "thumbprint" to requiring the x509 certificate and key
-// as this is how you would do this in a Go world.
-/*
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
+)
+
 func acquireTokenClientCertificate() {
-	file, err := os.Open(confidentialConfig.KeyFile)
+	config := CreateConfig("confidential_config.json")
+
+	pemData, err := ioutil.ReadFile(config.PemData)
 	if err != nil {
 		log.Fatal(err)
 	}
-	defer file.Close()
-	key, err := ioutil.ReadAll(file)
+
+	// This extracts our public certificates and private key from the PEM file.
+	// The private key must be in PKCS8 format. If it is encrypted, the second argument
+	// must be password to decode.
+	certs, privateKey, err := confidential.CertFromPEM(pemData, "")
 	if err != nil {
 		log.Fatal(err)
 	}
-	// confidential.NewCredFromCert()
-	certificate, err := msal.CreateClientCredentialFromCertificate(confidentialConfig.Thumbprint, key)
+
+	// PEM files can have multiple certs. This is usually for certificate chaining where roots
+	// sign to leafs. Useful for TLS, not for this use case.
+	if len(certs) > 1 {
+		log.Fatal("too many certificates in PEM file")
+	}
+
+	cred := confidential.NewCredFromCert(certs[0], privateKey)
 	if err != nil {
 		log.Fatal(err)
 	}
-	options := msal.DefaultConfidentialClientApplicationOptions()
-	options.Accessor = cacheAccessor
-	options.Authority = confidentialConfig.Authority
-	confidentialClientApp, err := msal.NewConfidentialClientApplication(confidentialConfig.ClientID, certificate, &options)
+	app, err := confidential.New(config.ClientID, cred, confidential.WithAuthority(config.Authority), confidential.WithAccessor(cacheAccessor))
 	if err != nil {
 		log.Fatal(err)
 	}
-	result, err := confidentialClientApp.AcquireTokenSilent(context.Background(), confidentialConfig.Scopes, nil)
+	result, err := app.AcquireTokenSilent(context.Background(), config.Scopes)
 	if err != nil {
-		log.Println(err)
-		tryClientCertificateFlow(confidentialClientApp)
-	} else {
-		fmt.Println("Access token is " + result.GetAccessToken())
+		result, err = app.AcquireTokenByCredential(context.Background(), config.Scopes)
+		if err != nil {
+			log.Fatal(err)
+		}
+		fmt.Println("Access Token Is " + result.AccessToken)
+		return
 	}
+	fmt.Println("Silently acquired token " + result.AccessToken)
 }
-*/

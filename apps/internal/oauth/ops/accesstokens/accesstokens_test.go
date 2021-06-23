@@ -405,6 +405,7 @@ func TestAccessTokenWithAssertion(t *testing.T) {
 				"client_assertion":      []string{"assertion"},
 				grantType:               []string{grant.ClientCredential},
 				clientInfo:              []string{clientInfoVal},
+				clientID:                []string{authParams.ClientID},
 			},
 		},
 		{
@@ -415,6 +416,7 @@ func TestAccessTokenWithAssertion(t *testing.T) {
 				"client_assertion":      []string{"assertion"},
 				grantType:               []string{grant.ClientCredential},
 				clientInfo:              []string{clientInfoVal},
+				clientID:                []string{authParams.ClientID},
 			},
 		},
 	}
@@ -898,6 +900,30 @@ func TestComputeScopes(t *testing.T) {
 					Slice: []string{"scope0", "scope1"},
 				},
 				DeclinedScopes: []string{"scope2"},
+				scopesComputed: true,
+			},
+		},
+		{
+			desc: "no declined scopes case insensitive",
+			authParams: authority.AuthParams{
+				Scopes: []string{
+					"scope0",
+					"scope1",
+				},
+			},
+			input: TokenResponse{
+				GrantedScopes: Scopes{
+					Slice: []string{
+						"Scope0",
+						"Scope1",
+					},
+				},
+			},
+			want: TokenResponse{
+				GrantedScopes: Scopes{
+					Slice: []string{"Scope0", "Scope1"},
+				},
+				DeclinedScopes: nil,
 				scopesComputed: true,
 			},
 		},

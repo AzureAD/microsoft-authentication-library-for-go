@@ -51,7 +51,7 @@ put a PEM decoder into here.
 */
 
 // TODO(msal): This should have example code for each method on client using Go's example doc framework.
-// base usage details should be includee in the package documentation.
+// base usage details should be include in the package documentation.
 
 // AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
@@ -61,7 +61,7 @@ type Account = shared.Account
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
 // must have the public certificate and the private key encoded. The private key must be encoded
-// in PKCS8 (not PKCS1). This is usally denoted by the section "PRIVATE KEY" (instead of PKCS1's
+// in PKCS8 (not PKCS1). This is usually denoted by the section "PRIVATE KEY" (instead of PKCS1's
 // "RSA PRIVATE KEY"). If a PEM block is encoded and password is not an empty string, it attempts
 // to decrypt the PEM blocks using the password. This will return multiple x509 certificates,
 // though this use case should have a single cert. Multiple certs are due to certificate
@@ -369,7 +369,13 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
-// Account gets the account in the token cache with the specified homeAccountID
+// Account gets the account in the token cache with the specified homeAccountID.
 func (cca Client) Account(homeAccountID string) Account {
 	return cca.base.Account(homeAccountID)
+}
+
+// RemoveAccount signs the account out and forgets account from token cache.
+func (cca Client) RemoveAccount(account Account) error {
+	cca.base.RemoveAccount(account)
+	return nil
 }

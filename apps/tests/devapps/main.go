@@ -23,9 +23,8 @@ func main() {
 		panic("currently not implemented")
 		//acquireByAuthorizationCodeConfidential()
 	} else if exampleType == "5" {
-		//acquireTokenClientSecret()
+		acquireTokenClientSecret()
 	} else if exampleType == "6" {
-		panic("currently not implemented")
-		//acquireTokenClientCertificate()
+		acquireTokenClientCertificate()
 	}
 }
