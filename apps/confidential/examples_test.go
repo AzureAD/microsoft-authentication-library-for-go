@@ -42,11 +42,9 @@ func ExampleNewCredFromCert_pem() {
 }
 
 // ExampleAcquireTokenByCredential gives an example of acquiring token by credential.
-// First attempt is made at getting the token from the cache using AcquireTokenSilent.
-// If the token is missing from the cache, then it will fetch the token using AcquireTokenByCredential and cache it.
 func ExampleAcquireTokenByCredential() {
 	var tokenScope = []string{"the_scope"}
-	client, err := FakeClient(accesstokens.TokenResponse{
+	client, err := fakeClient(accesstokens.TokenResponse{
 		AccessToken:   token,
 		RefreshToken:  refresh,
 		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
@@ -78,25 +76,18 @@ func ExampleAcquireTokenByCredential() {
 	}
 
 	ctx := context.Background()
-	token, err := client.AcquireTokenSilent(ctx, tokenScope)
+	token, err := client.AcquireTokenByCredential(ctx, tokenScope)
 	if err != nil {
-		token, err = client.AcquireTokenByCredential(context.Background(), tokenScope)
-		if err != nil {
-			log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
-		}
-		fmt.Println(token)
-		return
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
 	}
 	fmt.Println(token)
 
 }
 
 // ExampleAcquireTokenByAuthCode gives an example of acquiring token by auth code.
-// First attempt is made at getting the token from the cache using AcquireTokenSilent.
-// If the token is missing from the cache, then it will fetch the token using AcquireTokenByAuthCode and cache it.
 func ExampleAcquireTokenByAuthCode() {
 	var tokenScope = []string{"the_scope"}
-	client, err := FakeClient(accesstokens.TokenResponse{
+	client, err := fakeClient(accesstokens.TokenResponse{
 		AccessToken:   token,
 		RefreshToken:  refresh,
 		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
@@ -128,14 +119,9 @@ func ExampleAcquireTokenByAuthCode() {
 	}
 
 	ctx := context.Background()
-	token, err := client.AcquireTokenSilent(ctx, tokenScope)
+	token, err := client.AcquireTokenByAuthCode(ctx, "fake_auth_code", "fake_redirect_uri", tokenScope)
 	if err != nil {
-		token, err = client.AcquireTokenByAuthCode(context.Background(), "xxxcodexxx", "http://localhost/auth_code", tokenScope)
-		if err != nil {
-			log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by credential %v", err)
-		}
-		fmt.Println(token)
-		return
+		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by credential %v", err)
 	}
 	fmt.Println(token)
 
