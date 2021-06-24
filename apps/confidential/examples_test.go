@@ -71,17 +71,17 @@ func ExampleAcquireTokenByAuthCode() {
 	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
 	cred, err := NewCredFromSecret(secret)
 	if err != nil {
-		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by credential %v", err)
+		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
 	}
 	client, err := New("fake_client_id", cred)
 	if err != nil {
-		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by credential %v", err)
+		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
 	}
 
 	ctx := context.Background()
 	token, err := client.AcquireTokenByAuthCode(ctx, "fake_auth_code", "fake_redirect_uri", tokenScope)
 	if err != nil {
-		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by credential %v", err)
+		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
 	}
 	fmt.Println(token)
 
