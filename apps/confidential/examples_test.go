@@ -47,7 +47,7 @@ func ExampleAcquireTokenByCredential() {
 	if err != nil {
 		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
 	}
-	client, err := New("fake_client_id", cred)
+	client, err := New("client_id", cred)
 	if err != nil {
 		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
 	}
@@ -71,13 +71,13 @@ func ExampleAcquireTokenByAuthCode() {
 	if err != nil {
 		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
 	}
-	client, err := New("fake_client_id", cred)
+	client, err := New("client_id", cred)
 	if err != nil {
 		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
 	}
 
 	ctx := context.Background()
-	token, err := client.AcquireTokenByAuthCode(ctx, "fake_auth_code", "fake_redirect_uri", tokenScope)
+	token, err := client.AcquireTokenByAuthCode(ctx, "auth_code", "redirect_uri", tokenScope)
 	if err != nil {
 		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
 	}
