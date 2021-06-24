@@ -39,7 +39,7 @@ func ExampleNewCredFromCert_pem() {
 
 // ExampleAcquireTokenByCredential gives an example of acquiring token by credential.
 func ExampleAcquireTokenByCredential() {
-	//In this case, we are getting a credential using a secret.
+	// In this case, we are getting a credential using a secret.
 	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
 	var secret = "the_secret"
 	cred, err := NewCredFromSecret(secret)
@@ -64,7 +64,7 @@ func ExampleAcquireTokenByCredential() {
 
 // ExampleAcquireTokenByAuthCode gives an example of acquiring token by auth code.
 func ExampleAcquireTokenByAuthCode() {
-	//In this case, we are getting a credential using a secret.
+	// In this case, we are getting a credential using a secret.
 	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
 	var secret = "the_secret"
 	cred, err := NewCredFromSecret(secret)
