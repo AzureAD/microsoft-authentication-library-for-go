@@ -8,10 +8,6 @@ import (
 	"fmt"
 	"io/ioutil"
 	"log"
-	"time"
-
-	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 )
 
 func ExampleNewCredFromCert_pem() {
@@ -44,35 +40,17 @@ func ExampleNewCredFromCert_pem() {
 // ExampleAcquireTokenByCredential gives an example of acquiring token by credential.
 func ExampleAcquireTokenByCredential() {
 	var tokenScope = []string{"the_scope"}
-	client, err := fakeClient(accesstokens.TokenResponse{
-		AccessToken:   token,
-		RefreshToken:  refresh,
-		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-		IDToken: accesstokens.IDToken{
-			PreferredUsername: "fakeuser@fakeplace.fake",
-			Name:              "fake person",
-			Oid:               "123-456",
-			TenantID:          "fake",
-			Subject:           "nothing",
-			Issuer:            "https://fake_authority/fake",
-			Audience:          "abc-123",
-			ExpirationTime:    time.Now().Add(time.Hour).Unix(),
-			IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
-			NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
-			// NOTE: this is an invalid JWT however this doesn't cause a failure.
-			// it simply falls back to calling Token.Refresh() which will obviously succeed.
-			RawToken: "fake.raw.token",
-		},
-		ClientInfo: accesstokens.ClientInfo{
-			UID:  "123-456",
-			UTID: "fake",
-		},
-	}, "fake_secret")
+	var secret = "the_secret"
 
+	//In this case, we are getting a credential using a secret.
+	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
+	cred, err := NewCredFromSecret(secret)
 	if err != nil {
-		log.Fatalf("ExampleAcquireTokenByCredential: intializing client %v", err)
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
+	}
+	client, err := New("fake_client_id", cred)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
 	}
 
 	ctx := context.Background()
@@ -87,35 +65,17 @@ func ExampleAcquireTokenByCredential() {
 // ExampleAcquireTokenByAuthCode gives an example of acquiring token by auth code.
 func ExampleAcquireTokenByAuthCode() {
 	var tokenScope = []string{"the_scope"}
-	client, err := fakeClient(accesstokens.TokenResponse{
-		AccessToken:   token,
-		RefreshToken:  refresh,
-		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-		IDToken: accesstokens.IDToken{
-			PreferredUsername: "fakeuser@fakeplace.fake",
-			Name:              "fake person",
-			Oid:               "123-456",
-			TenantID:          "fake",
-			Subject:           "nothing",
-			Issuer:            "https://fake_authority/fake",
-			Audience:          "abc-123",
-			ExpirationTime:    time.Now().Add(time.Hour).Unix(),
-			IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
-			NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
-			// NOTE: this is an invalid JWT however this doesn't cause a failure.
-			// it simply falls back to calling Token.Refresh() which will obviously succeed.
-			RawToken: "fake.raw.token",
-		},
-		ClientInfo: accesstokens.ClientInfo{
-			UID:  "123-456",
-			UTID: "fake",
-		},
-	}, "fake_secret")
+	var secret = "the_secret"
 
+	//In this case, we are getting a credential using a secret.
+	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
+	cred, err := NewCredFromSecret(secret)
 	if err != nil {
-		log.Fatalf("ExampleAcquireTokenByAuthCode: intializing client %v", err)
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
+	}
+	client, err := New("fake_client_id", cred)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
 	}
 
 	ctx := context.Background()
