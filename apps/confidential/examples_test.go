@@ -39,7 +39,6 @@ func ExampleNewCredFromCert_pem() {
 
 // ExampleAcquireTokenByCredential gives an example of acquiring token by credential.
 func ExampleAcquireTokenByCredential() {
-	var tokenScope = []string{"the_scope"}
 	//In this case, we are getting a credential using a secret.
 	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
 	var secret = "the_secret"
@@ -53,6 +52,8 @@ func ExampleAcquireTokenByCredential() {
 	}
 
 	ctx := context.Background()
+	var tokenScope = []string{"the_scope"}
+
 	token, err := client.AcquireTokenByCredential(ctx, tokenScope)
 	if err != nil {
 		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
@@ -63,7 +64,6 @@ func ExampleAcquireTokenByCredential() {
 
 // ExampleAcquireTokenByAuthCode gives an example of acquiring token by auth code.
 func ExampleAcquireTokenByAuthCode() {
-	var tokenScope = []string{"the_scope"}
 	//In this case, we are getting a credential using a secret.
 	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
 	var secret = "the_secret"
@@ -77,6 +77,8 @@ func ExampleAcquireTokenByAuthCode() {
 	}
 
 	ctx := context.Background()
+	var tokenScope = []string{"the_scope"}
+
 	token, err := client.AcquireTokenByAuthCode(ctx, "auth_code", "redirect_uri", tokenScope)
 	if err != nil {
 		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
