@@ -4,6 +4,7 @@
 package confidential
 
 import (
+	"context"
 	"fmt"
 	"io/ioutil"
 	"log"
@@ -31,4 +32,52 @@ func ExampleNewCredFromCert_pem() {
 
 	cred := NewCredFromCert(certs[0], priv)
 	fmt.Println(cred) // Simply here so cred is used, otherwise won't compile.
+}
+
+func ExampleClient_AcquireTokenByCredential() {
+	// In this case, we are getting a credential using a secret.
+	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
+	var secret = "the_secret"
+	cred, err := NewCredFromSecret(secret)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
+	}
+	client, err := New("client_id", cred)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
+	}
+
+	ctx := context.Background()
+	var tokenScope = []string{"the_scope"}
+
+	result, err := client.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByCredential: acquring token by credential %v", err)
+	}
+	fmt.Println(result)
+
+}
+
+func ExampleClient_AcquireTokenByAuthCode() {
+	// In this case, we are getting a credential using a secret.
+	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
+	var secret = "the_secret"
+	cred, err := NewCredFromSecret(secret)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
+	}
+	client, err := New("client_id", cred)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
+	}
+
+	ctx := context.Background()
+	var tokenScope = []string{"the_scope"}
+
+	result, err := client.AcquireTokenByAuthCode(ctx, "auth_code", "redirect_uri", tokenScope)
+	if err != nil {
+		log.Fatalf("ExampleAcquireTokenByAuthCode: acquring token by auth code %v", err)
+	}
+	fmt.Println(result)
+
 }
