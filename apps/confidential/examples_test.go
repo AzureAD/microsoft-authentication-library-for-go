@@ -37,7 +37,6 @@ func ExampleNewCredFromCert_pem() {
 	fmt.Println(cred) // Simply here so cred is used, otherwise won't compile.
 }
 
-// ExampleClient_AcquireTokenByCredential gives an example of acquiring token by credential.
 func ExampleClient_AcquireTokenByCredential() {
 	// In this case, we are getting a credential using a secret.
 	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
@@ -62,7 +61,6 @@ func ExampleClient_AcquireTokenByCredential() {
 
 }
 
-// ExampleClient_AcquireTokenByAuthCode gives an example of acquiring token by auth code.
 func ExampleClient_AcquireTokenByAuthCode() {
 	// In this case, we are getting a credential using a secret.
 	// We could also use an assertion (NewCredFromAssertion) or a certificate (NewCredFromCert) to obtain a credential.
