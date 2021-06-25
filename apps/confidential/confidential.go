@@ -59,6 +59,9 @@ type AuthResult = base.AuthResult
 
 type Account = shared.Account
 
+// LeafCertificateNotFoundError is returned when we cannot find a leaf certificate from a chain.
+var LeafCertificateNotFoundError = errors.New("confidential: leaf certificate not found")
+
 // CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
 // must have the public certificate and the private key encoded. The private key must be encoded
 // in PKCS8 (not PKCS1). This is usually denoted by the section "PRIVATE KEY" (instead of PKCS1's
@@ -261,13 +264,13 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
+	baseClient, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}
 
 	return Client{
-		base: base,
+		base: baseClient,
 		cred: cred.toInternal(),
 	}, nil
 }
@@ -378,4 +381,16 @@ func (cca Client) Account(homeAccountID string) Account {
 func (cca Client) RemoveAccount(account Account) error {
 	cca.base.RemoveAccount(account)
 	return nil
+}
+
+// LeafCertificate checks and returns the leaf certificate from a chain (refer to RFC 5280).
+// Root and Intermediary certificates have IsCA marked to TRUE.
+func LeafCertificate(chain []*x509.Certificate) (*x509.Certificate, error) {
+
+	for _, certificate := range chain {
+		if !certificate.IsCA {
+			return certificate, nil
+		}
+	}
+	return nil, LeafCertificateNotFoundError
 }

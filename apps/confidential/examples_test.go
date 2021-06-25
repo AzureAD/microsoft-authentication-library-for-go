@@ -29,6 +29,11 @@ func ExampleNewCredFromCert_pem() {
 		log.Fatal("too many certificates in PEM file")
 	}
 
-	cred := NewCredFromCert(certs[0], priv)
+	leaf, err := LeafCertificate(certs)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	cred := NewCredFromCert(leaf, priv)
 	fmt.Println(cred) // Simply here so cred is used, otherwise won't compile.
 }

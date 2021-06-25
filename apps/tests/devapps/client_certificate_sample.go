@@ -34,10 +34,12 @@ func acquireTokenClientCertificate() {
 		log.Fatal("too many certificates in PEM file")
 	}
 
-	cred := confidential.NewCredFromCert(certs[0], privateKey)
+	leaf, err := confidential.LeafCertificate(certs)
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	cred := confidential.NewCredFromCert(leaf, privateKey)
 	app, err := confidential.New(config.ClientID, cred, confidential.WithAuthority(config.Authority), confidential.WithAccessor(cacheAccessor))
 	if err != nil {
 		log.Fatal(err)
