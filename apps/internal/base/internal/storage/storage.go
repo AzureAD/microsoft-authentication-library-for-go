@@ -73,7 +73,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 	scopeCounter := 0
 	for _, scope := range scopesOne {
 		for _, otherScope := range newScopesTwo {
-			if scope == otherScope {
+			if strings.EqualFold(scope, otherScope) {
 				scopeCounter++
 				continue
 			}
