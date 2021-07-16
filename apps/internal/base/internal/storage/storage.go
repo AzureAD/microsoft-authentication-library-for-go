@@ -70,26 +70,16 @@ func checkAlias(alias string, aliases []string) bool {
 
 func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 	newScopesTwo := strings.Split(scopesTwo, scopeSeparator)
-	toLower(newScopesTwo)
 	scopeCounter := 0
 	for _, scope := range scopesOne {
-		scope = strings.ToLower(scope)
 		for _, otherScope := range newScopesTwo {
-			if scope == otherScope {
+			if strings.EqualFold(scope, otherScope) {
 				scopeCounter++
 				continue
 			}
 		}
 	}
 	return scopeCounter == len(scopesOne)
-}
-
-// toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.
-func toLower(s []string) []string {
-	for i := 0; i < len(s); i++ {
-		s[i] = strings.ToLower(s[i])
-	}
-	return s
 }
 
 // Read reads a storage token from the cache if it exists.
