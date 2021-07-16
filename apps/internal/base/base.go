@@ -206,7 +206,6 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
-	toLower(silent.Scopes)
 	authParams.Scopes = silent.Scopes
 	authParams.AuthorizationType = authority.ATRefreshToken
 	authParams.HomeaccountID = silent.Account.HomeAccountID
@@ -318,12 +317,4 @@ func (b Client) RemoveAccount(account shared.Account) {
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
 	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
-}
-
-// toLower makes all slice entries lowercase in-place. Returns the same slice that was put in.
-func toLower(s []string) []string {
-	for i := 0; i < len(s); i++ {
-		s[i] = strings.ToLower(s[i])
-	}
-	return s
 }
