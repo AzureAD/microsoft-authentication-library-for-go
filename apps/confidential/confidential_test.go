@@ -221,4 +221,9 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
 	}
+
+	accounts := client.Accounts()
+	if len(accounts) != 1 {
+		t.Fatalf("expected 1 account, got %d", len(accounts))
+	}
 }
