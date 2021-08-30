@@ -83,7 +83,10 @@ Acquiring tokens with MSAL Go follows this general three step pattern. There mig
 
 You can view the [dev apps](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/apps/tests/devapps) on how to use MSAL Go with various application types in various scenarios. For more detailed information, please refer to the [wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki).
 
-## Road map
+# Releases
+The list of [releases](https://github.com/AzureAD/microsoft-authentication-library-for-go/releases)
+
+## Roadmap
 
 This is a preview library. Details of the roadmap will come soon in the [wiki pages](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki), along with release notes.
 
