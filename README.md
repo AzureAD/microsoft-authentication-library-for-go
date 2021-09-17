@@ -1,10 +1,10 @@
 # Microsoft Authentication Library (MSAL) for Go
 
-**MSAL Go is a new addition to the MSAL family of libraries, not yet in public preview, that has been made available to gauge customer interest and to gather early feedback from the community. We welcome all contributors (see [CONTRIBUTING.md](https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/dev/CONTRIBUTING.md)) to help us grow our list of supported MSAL SDKs.**
+**MSAL for Go is a new addition to the MSAL family of libraries, has been made available in production ready preview to gauge customer interest and to gather feedback from the community. We welcome all contributors (see [CONTRIBUTING.md](https://github.com/AzureAD/microsoft-authentication-library-for-go/blob/dev/CONTRIBUTING.md)) to help us grow our list of supported MSAL SDKs.**
 
 The Microsoft Authentication Library (MSAL) for Go is part of the [Microsoft identity platform for developers](https://aka.ms/aaddevv2) (formerly named Azure AD) v2.0. It allows you to sign in users or apps with Microsoft identities ([Azure AD](https://azure.microsoft.com/services/active-directory/) and [Microsoft Accounts](https://account.microsoft.com)) and obtain tokens to call Microsoft APIs such as [Microsoft Graph](https://graph.microsoft.io/) or your own APIs registered with the Microsoft identity platform. It is built using industry standard OAuth2 and OpenID Connect protocols.
 
-The first public preview of this library is yet to be released, until then, the latest code resides in the `dev` branch.
+The latest code resides in the `dev` branch.
 
 Quick links:
 
@@ -83,7 +83,10 @@ Acquiring tokens with MSAL Go follows this general three step pattern. There mig
 
 You can view the [dev apps](https://github.com/AzureAD/microsoft-authentication-library-for-go/tree/dev/apps/tests/devapps) on how to use MSAL Go with various application types in various scenarios. For more detailed information, please refer to the [wiki](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki).
 
-## Road map
+# Releases
+The list of [releases](https://github.com/AzureAD/microsoft-authentication-library-for-go/releases)
+
+## Roadmap
 
 This is a preview library. Details of the roadmap will come soon in the [wiki pages](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki), along with release notes.
 
@@ -118,6 +121,4 @@ This library controls how users sign-in and access services. We recommend you al
 
 If you find a security issue with our libraries or services please report it to [secure@microsoft.com](mailto:secure@microsoft.com) with as much detail as possible. Your submission may be eligible for a bounty through the [Microsoft Bounty](http://aka.ms/bugbounty) program. Please do not post security issues to GitHub Issues or any other public site. We will contact you shortly upon receiving the information. We encourage you to get notifications of when security incidents occur by visiting [this page](https://technet.microsoft.com/en-us/security/dd252948) and subscribing to Security Advisory Alerts.
 
-Copyright (c) Microsoft Corporation.  All rights reserved. Licensed under the MIT License (the "License");
-
-
+Copyright (c) Microsoft Corporation.  All rights reserved. Licensed under the MIT License (the "License").

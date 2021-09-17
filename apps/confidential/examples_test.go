@@ -30,8 +30,5 @@ func ExampleNewCredFromCert_pem() {
 	}
 
 	cred := NewCredFromCert(certs[0], priv)
-	if err != nil {
-		log.Fatal(err)
-	}
 	fmt.Println(cred) // Simply here so cred is used, otherwise won't compile.
 }

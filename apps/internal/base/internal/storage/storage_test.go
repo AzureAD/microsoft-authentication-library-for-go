@@ -76,6 +76,10 @@ func TestIsMatchingScopes(t *testing.T) {
 	if !isMatchingScopes(scopesOne, scopesTwo) {
 		t.Fatalf("Scopes %v and %v are supposed to be the same", scopesOne, scopesTwo)
 	}
+	scopesUpperCase := "openid User.Write User.Read"
+	if !isMatchingScopes(scopesOne, scopesUpperCase) {
+		t.Fatalf("Scopes %v and %v are supposed to be the same as the comparison is case insensitive", scopesOne, scopesUpperCase)
+	}
 	errorScopes := "openid user.read hello"
 	if isMatchingScopes(scopesOne, errorScopes) {
 		t.Fatalf("Scopes %v and %v are not supposed to be the same", scopesOne, errorScopes)
