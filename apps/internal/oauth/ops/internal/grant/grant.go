@@ -6,6 +6,7 @@ package grant
 
 const (
 	Password         = "password"
+	JWT              = "urn:ietf:params:oauth:grant-type:jwt-bearer"
 	SAMLV1           = "urn:ietf:params:oauth:grant-type:saml1_1-bearer"
 	SAMLV2           = "urn:ietf:params:oauth:grant-type:saml2-bearer"
 	DeviceCode       = "device_code"

@@ -106,6 +106,7 @@ const (
 	ATDeviceCode
 	ATRefreshToken
 	AccountByID
+	ATOnBehalfOf
 )
 
 // These are all authority types

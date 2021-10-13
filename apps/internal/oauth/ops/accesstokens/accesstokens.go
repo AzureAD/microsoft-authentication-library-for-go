@@ -277,6 +277,41 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	return token, nil
 }
 
+func (c Client) FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion string, clientSecret string) (TokenResponse, error) {
+	qv := url.Values{}
+	qv.Set(grantType, grant.JWT)
+	qv.Set(clientID, authParameters.ClientID)
+	qv.Set("client_secret", clientSecret)
+	qv.Set("assertion", userAssertion)
+	qv.Set(clientInfo, clientInfoVal)
+	qv.Set("requested_token_use", "on_behalf_of")
+	addScopeQueryParam(qv, authParameters)
+
+	token, err := c.doTokenResp(ctx, authParameters, qv)
+	if err != nil {
+		return token, fmt.Errorf("FromUserAssertionClientSecret(): %w", err)
+	}
+	return token, nil
+}
+
+func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authParameters authority.AuthParams, userAssertion string, assertion string) (TokenResponse, error) {
+	qv := url.Values{}
+	qv.Set(grantType, grant.JWT)
+	qv.Set("client_assertion_type", grant.ClientAssertion)
+	qv.Set("client_assertion", assertion)
+	qv.Set(clientID, authParameters.ClientID)
+	qv.Set("assertion", userAssertion)
+	qv.Set(clientInfo, clientInfoVal)
+	qv.Set("requested_token_use", "on_behalf_of")
+	addScopeQueryParam(qv, authParameters)
+
+	token, err := c.doTokenResp(ctx, authParameters, qv)
+	if err != nil {
+		return token, fmt.Errorf("FromUserAssertionClientCertificate(): %w", err)
+	}
+	return token, nil
+}
+
 func (c Client) DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (DeviceCodeResult, error) {
 	qv := url.Values{}
 	qv.Set(clientID, authParameters.ClientID)

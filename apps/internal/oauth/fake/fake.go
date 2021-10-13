@@ -79,6 +79,18 @@ func (f *AccessTokens) FromAssertion(ctx context.Context, authParameters authori
 	}
 	return f.AccessToken, nil
 }
+func (f *AccessTokens) FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion, clientSecret string) (accesstokens.TokenResponse, error) {
+	if f.Err {
+		return accesstokens.TokenResponse{}, fmt.Errorf("error")
+	}
+	return f.AccessToken, nil
+}
+func (f *AccessTokens) FromUserAssertionClientCertificate(ctx context.Context, authParameters authority.AuthParams, userAssertion, assertion string) (accesstokens.TokenResponse, error) {
+	if f.Err {
+		return accesstokens.TokenResponse{}, fmt.Errorf("error")
+	}
+	return f.AccessToken, nil
+}
 func (f *AccessTokens) DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (accesstokens.DeviceCodeResult, error) {
 	if f.Err {
 		return accesstokens.DeviceCodeResult{}, fmt.Errorf("error")
