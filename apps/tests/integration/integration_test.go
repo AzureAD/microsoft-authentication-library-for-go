@@ -249,6 +249,79 @@ func TestConfidentialClientwithSecret(t *testing.T) {
 
 }
 
+func TestOnBehalfOf(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	labClientInstance, err := newLabClient()
+	if err != nil {
+		panic("failed to get a lab client: " + err.Error())
+	}
+
+	ctx := context.Background()
+
+	//Confidential Client Application Config
+	ccaClientID := os.Getenv("oboConfidentialClientId")
+	ccaClientSecret := os.Getenv("oboConfidentialClientSecret")
+	ccaScopes := []string{"https://graph.microsoft.com/.default"}
+
+	// Public Client Application Confifg
+	pcaClientID := os.Getenv("oboPublicClientId")
+	user := testUser(ctx, "OnBehalfOf", labClientInstance, url.Values{"usertype": []string{"cloud"}})
+	pcaScopes := []string{fmt.Sprintf("api://%s/.default", ccaClientID)}
+
+	// 1. An app obtains a token representing a user, for our mid-tier service
+	pca, err := public.New(pcaClientID, public.WithAuthority(organizationsAuthority))
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	result, err := pca.AcquireTokenByUsernamePassword(
+		ctx, pcaScopes, user.Upn, user.Password,
+	)
+	if err != nil {
+		t.Fatalf("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got AccessToken == '', want AccessToken != ''")
+	}
+
+	// 2. Our mid-tier service uses OBO to obtain a token for downstream service
+	cred, err := confidential.NewCredFromSecret(ccaClientSecret)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	cca, err := confidential.New(ccaClientID, cred)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	finalResult, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, ccaScopes)
+	if err != nil {
+		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if finalResult.AccessToken == "" {
+		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
+	}
+
+	// 3. Now the OBO app can simply store downstream token(s) in same session.
+	//    Alternatively, if you want to persist the downstream AT, and possibly
+	//    the RT (if any) for prolonged access even after your own AT expires,
+	//    now it is the time to persist current cache state for current user.
+	//    Assuming you already did that (which is not shown in this test case),
+	//    the following part shows one of the ways to obtain an AT from cache.
+	username := finalResult.IDToken.PreferredUsername
+	if username != user.Upn {
+		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got username == '%s', want username == '%s'", username, user.Upn)
+	}
+	account := cca.Account(finalResult.Account.HomeAccountID)
+	silentResult, err := cca.AcquireTokenSilent(ctx, ccaScopes, confidential.WithSilentAccount(account))
+	if err != nil {
+		t.Fatalf("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if silentResult.AccessToken != finalResult.AccessToken {
+		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens dont match ")
+	}
+}
+
 func TestRemoveAccount(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
