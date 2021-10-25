@@ -374,8 +374,9 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 	authParams := cca.base.AuthParams
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATOnBehalfOf
+	authParams.UserAssertion = userAssertion
 
-	token, err := cca.base.Token.OnBehalfOf(ctx, authParams, cca.cred, userAssertion)
+	token, err := cca.base.Token.OnBehalfOf(ctx, authParams, cca.cred)
 	if err != nil {
 		return AuthResult{}, err
 	}

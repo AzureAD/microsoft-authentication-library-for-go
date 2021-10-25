@@ -110,13 +110,13 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 }
 
 // Credential acquires a token from the authority using a client credentials grant.
-func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential, userAssertion string) (accesstokens.TokenResponse, error) {
+func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 
 	if cred.Secret != "" {
-		return t.AccessTokens.FromUserAssertionClientSecret(ctx, authParams, userAssertion, cred.Secret)
+		return t.AccessTokens.FromUserAssertionClientSecret(ctx, authParams, authParams.UserAssertion, cred.Secret)
 
 	}
 	var jwt string
@@ -126,7 +126,7 @@ func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams
 	} else if jwt, err = cred.JWT(authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	return t.AccessTokens.FromUserAssertionClientCertificate(ctx, authParams, userAssertion, jwt)
+	return t.AccessTokens.FromUserAssertionClientCertificate(ctx, authParams, authParams.UserAssertion, jwt)
 }
 
 func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
