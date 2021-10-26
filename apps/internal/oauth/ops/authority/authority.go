@@ -5,7 +5,7 @@ package authority
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha256"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -343,7 +343,7 @@ func (a *AuthParams) CacheKey(isAppCache bool) string {
 	return ""
 }
 func (a *AuthParams) AssertionHash() string {
-	hasher := sha1.New()
+	hasher := sha256.New()
 	hasher.Write([]byte(a.UserAssertion))
 	sha := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
 	return sha
