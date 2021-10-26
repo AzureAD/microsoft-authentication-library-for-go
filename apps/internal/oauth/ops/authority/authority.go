@@ -344,7 +344,8 @@ func (a *AuthParams) CacheKey(isAppCache bool) string {
 }
 func (a *AuthParams) AssertionHash() string {
 	hasher := sha256.New()
-	hasher.Write([]byte(a.UserAssertion))
+	// Per documentation this never returns an error : https://pkg.go.dev/hash#pkg-types
+	hasher.Write([]byte(a.UserAssertion)) //nolint
 	sha := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
 	return sha
 }
