@@ -301,25 +301,6 @@ func TestOnBehalfOf(t *testing.T) {
 	if finalResult.AccessToken == "" {
 		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
 	}
-
-	// 3. Now the OBO app can simply store downstream token(s) in same session.
-	//    Alternatively, if you want to persist the downstream AT, and possibly
-	//    the RT (if any) for prolonged access even after your own AT expires,
-	//    now it is the time to persist current cache state for current user.
-	//    Assuming you already did that (which is not shown in this test case),
-	//    the following part shows one of the ways to obtain an AT from cache.
-	username := finalResult.IDToken.PreferredUsername
-	if username != user.Upn {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got username == '%s', want username == '%s'", username, user.Upn)
-	}
-	account := cca.Account(finalResult.Account.HomeAccountID)
-	silentResult, err := cca.AcquireTokenSilent(ctx, ccaScopes, confidential.WithSilentAccount(account))
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	if silentResult.AccessToken != finalResult.AccessToken {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens dont match ")
-	}
 }
 
 func TestRemoveAccount(t *testing.T) {

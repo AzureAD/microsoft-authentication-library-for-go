@@ -223,7 +223,6 @@ func (tr *TokenResponse) Validate() error {
 func (tr *TokenResponse) CacheKey(authParams authority.AuthParams) string {
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		return authParams.AssertionHash()
-
 	}
 	if authParams.AuthorizationType == authority.ATClientCredentials {
 		return authParams.AppKey()

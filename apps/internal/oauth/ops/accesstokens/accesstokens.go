@@ -287,11 +287,7 @@ func (c Client) FromUserAssertionClientSecret(ctx context.Context, authParameter
 	qv.Set("requested_token_use", "on_behalf_of")
 	addScopeQueryParam(qv, authParameters)
 
-	token, err := c.doTokenResp(ctx, authParameters, qv)
-	if err != nil {
-		return token, fmt.Errorf("FromUserAssertionClientSecret(): %w", err)
-	}
-	return token, nil
+	return c.doTokenResp(ctx, authParameters, qv)
 }
 
 func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authParameters authority.AuthParams, userAssertion string, assertion string) (TokenResponse, error) {
@@ -305,11 +301,7 @@ func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authPara
 	qv.Set("requested_token_use", "on_behalf_of")
 	addScopeQueryParam(qv, authParameters)
 
-	token, err := c.doTokenResp(ctx, authParameters, qv)
-	if err != nil {
-		return token, fmt.Errorf("FromUserAssertionClientCertificate(): %w", err)
-	}
-	return token, nil
+	return c.doTokenResp(ctx, authParameters, qv)
 }
 
 func (c Client) DeviceCodeResult(ctx context.Context, authParameters authority.AuthParams) (DeviceCodeResult, error) {
