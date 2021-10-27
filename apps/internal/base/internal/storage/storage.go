@@ -82,6 +82,42 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 	return scopeCounter == len(scopesOne)
 }
 
+// ReadWithAssertion reads a storage token from the cache if it exists.
+func (m *Manager) ReadWithAssertion(ctx context.Context, authParameters authority.AuthParams, userAssertion string) (TokenResponse, error) {
+	realm := authParameters.AuthorityInfo.Tenant
+	clientID := authParameters.ClientID
+	scopes := authParameters.Scopes
+
+	metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	// User Assertion Hash Calculation - TODO
+	userAssertionHash := ""
+
+	account, err := m.readAccountWithAssertionHash(userAssertionHash, metadata.Aliases, realm)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	accessToken, err := m.readAccessTokenWithAssertionHash(metadata.Aliases, realm, clientID, userAssertionHash, scopes)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	idToken, err := m.readIDTokenWithAssertionHash(metadata.Aliases, realm, clientID, userAssertionHash)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	return TokenResponse{
+		AccessToken: accessToken,
+		IDToken:     idToken,
+		Account:     account,
+	}, nil
+}
+
 // Read reads a storage token from the cache if it exists.
 func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
@@ -151,6 +187,9 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 
 	if len(tokenResponse.RefreshToken) > 0 {
 		refreshToken := accesstokens.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
+		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
+			refreshToken.UserAssertionHash = authParameters.UserAssertion // get Hash method on this
+		}
 		if err := m.writeRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
@@ -168,6 +207,9 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			target,
 			tokenResponse.AccessToken,
 		)
+		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
+			accessToken.UserAssertionHash = authParameters.UserAssertion // get Hash method on this
+		}
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
@@ -247,6 +289,24 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 		}
 	}
 	return m.aadCache[authorityInfo.Host], nil
+}
+
+func (m *Manager) readAccessTokenWithAssertionHash(envAliases []string, realm, clientID, userAssertion string, scopes []string) (AccessToken, error) {
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
+	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
+	// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
+	// an issue, however if it does become a problem then we know where to look.
+	for _, at := range m.contract.AccessTokens {
+		if true && at.Realm == realm && at.ClientID == clientID { //User Assertion Hash check
+			if checkAlias(at.Environment, envAliases) {
+				if isMatchingScopes(scopes, at.Scopes) {
+					return at, nil
+				}
+			}
+		}
+	}
+	return AccessToken{}, fmt.Errorf("access token not found")
 }
 
 func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessToken, error) {
@@ -332,6 +392,19 @@ func (m *Manager) writeRefreshToken(refreshToken accesstokens.RefreshToken) erro
 	return nil
 }
 
+func (m *Manager) readIDTokenWithAssertionHash(envAliases []string, realm, clientID, UserAssetionHash string) (IDToken, error) {
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
+	for _, idt := range m.contract.IDTokens {
+		if idt.Realm == realm && idt.ClientID == clientID { // Add AssertionHash check
+			if checkAlias(idt.Environment, envAliases) {
+				return idt, nil
+			}
+		}
+	}
+	return IDToken{}, fmt.Errorf("token not found")
+}
+
 func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientID string) (IDToken, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
@@ -378,6 +451,17 @@ func (m *Manager) Account(homeAccountID string) shared.Account {
 	return shared.Account{}
 }
 
+func (m *Manager) readAccountWithAssertionHash(assertionHash string, envAliases []string, realm string) (shared.Account, error) {
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
+
+	for _, acc := range m.contract.Accounts {
+		if checkAlias(acc.Environment, envAliases) && acc.Realm == realm { //UserAssetionHash check add
+			return acc, nil
+		}
+	}
+	return shared.Account{}, fmt.Errorf("account not found")
+}
 func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (shared.Account, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()

@@ -30,6 +30,7 @@ const (
 // In all production use it is a *storage.Manager.
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
+	ReadWithAssertion(ctx context.Context, authParameters authority.AuthParams, userAssertion string) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 	AllAccounts() []shared.Account
 	Account(homeAccountID string) shared.Account
@@ -43,11 +44,13 @@ func (n noopCacheAccessor) Export(cache cache.Marshaler, key string)    {}
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
-	Scopes      []string
-	Account     shared.Account
-	RequestType accesstokens.AppType
-	Credential  *accesstokens.Credential
-	IsAppCache  bool
+	Scopes            []string
+	Account           shared.Account
+	RequestType       accesstokens.AppType
+	Credential        *accesstokens.Credential
+	IsAppCache        bool
+	UserAssertion     string
+	AuthorizationType authority.AuthorizeType
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -214,6 +217,18 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
+	}
+
+	if silent.Account.IsZero() && silent.UserAssertion != "" {
+		storageTokenResponse, err := b.manager.ReadWithAssertion(ctx, authParams, silent.UserAssertion)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		result, err := AuthResultFromStorage(storageTokenResponse)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		return result, err
 	}
 
 	storageTokenResponse, err := b.manager.Read(ctx, authParams, silent.Account)

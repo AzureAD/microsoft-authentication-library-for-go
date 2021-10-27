@@ -376,11 +376,22 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 	authParams.AuthorizationType = authority.ATOnBehalfOf
 	authParams.UserAssertion = userAssertion
 
-	token, err := cca.base.Token.OnBehalfOf(ctx, authParams, cca.cred)
-	if err != nil {
-		return AuthResult{}, err
+	silentParameters := base.AcquireTokenSilentParameters{
+		Scopes:            scopes,
+		RequestType:       accesstokens.ATConfidential,
+		Credential:        cca.cred,
+		UserAssertion:     userAssertion,
+		AuthorizationType: authority.ATOnBehalfOf,
 	}
-	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
+	token, err := cca.base.AcquireTokenSilent(ctx, silentParameters)
+	if err != nil {
+		token, err := cca.base.Token.OnBehalfOf(ctx, authParams, cca.cred)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		return cca.base.AuthResultFromToken(ctx, authParams, token, true)
+	}
+	return token, err
 }
 
 // Account gets the account in the token cache with the specified homeAccountID.
