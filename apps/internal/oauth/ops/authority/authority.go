@@ -5,6 +5,8 @@ package authority
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -106,6 +108,7 @@ const (
 	ATDeviceCode
 	ATRefreshToken
 	AccountByID
+	ATOnBehalfOf
 )
 
 // These are all authority types
@@ -143,6 +146,8 @@ type AuthParams struct {
 	IsConfidentialClient bool
 	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
 	SendX5C bool
+	// UserAssertion is the access token used to acquire token on behalf of user
+	UserAssertion string
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -326,6 +331,9 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 }
 
 func (a *AuthParams) CacheKey(isAppCache bool) string {
+	if a.AuthorizationType == ATOnBehalfOf {
+		return a.AssertionHash()
+	}
 	if a.AuthorizationType == ATClientCredentials || isAppCache {
 		return a.AppKey()
 	}
@@ -333,6 +341,13 @@ func (a *AuthParams) CacheKey(isAppCache bool) string {
 		return a.HomeaccountID
 	}
 	return ""
+}
+func (a *AuthParams) AssertionHash() string {
+	hasher := sha256.New()
+	// Per documentation this never returns an error : https://pkg.go.dev/hash#pkg-types
+	_, _ = hasher.Write([]byte(a.UserAssertion))
+	sha := base64.URLEncoding.EncodeToString(hasher.Sum(nil))
+	return sha
 }
 
 func (a *AuthParams) AppKey() string {

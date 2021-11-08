@@ -31,6 +31,8 @@ type AccessTokens interface {
 	FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error)
 	FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
 	FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
+	FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion string, clientSecret string) (accesstokens.TokenResponse, error)
+	FromUserAssertionClientCertificate(ctx context.Context, authParameters authority.AuthParams, userAssertion string, assertion string) (accesstokens.TokenResponse, error)
 	FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error)
 	FromSamlGrant(ctx context.Context, authParameters authority.AuthParams, samlGrant wstrust.SamlTokenInfo) (accesstokens.TokenResponse, error)
 }
@@ -105,6 +107,26 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 		return accesstokens.TokenResponse{}, err
 	}
 	return t.AccessTokens.FromAssertion(ctx, authParams, jwt)
+}
+
+// Credential acquires a token from the authority using a client credentials grant.
+func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
+	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
+
+	if cred.Secret != "" {
+		return t.AccessTokens.FromUserAssertionClientSecret(ctx, authParams, authParams.UserAssertion, cred.Secret)
+
+	}
+	var jwt string
+	var err error
+	if cred.Assertion != "" {
+		jwt = cred.Assertion
+	} else if jwt, err = cred.JWT(authParams); err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
+	return t.AccessTokens.FromUserAssertionClientCertificate(ctx, authParams, authParams.UserAssertion, jwt)
 }
 
 func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
