@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/partitioned_storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -170,7 +169,7 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		AuthParams:    authParams,
 		cacheAccessor: noopCacheAccessor{},
 		manager:       storage.New(token),
-		pmanager:      partitioned_storage.New(token),
+		pmanager:      storage.NewPartitionedManager(token),
 	}
 	for _, o := range options {
 		o(&client)

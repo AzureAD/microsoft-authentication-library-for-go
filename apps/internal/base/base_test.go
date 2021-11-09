@@ -7,7 +7,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/items"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -83,25 +82,25 @@ func TestAuthResultFromStorage(t *testing.T) {
 		{
 			desc: "Error: AccessToken.Validate error (AccessToken.CachedAt not set)",
 			storeToken: storage.TokenResponse{
-				AccessToken: items.AccessToken{
+				AccessToken: storage.AccessToken{
 					ExpiresOn: internalTime.Unix{T: future},
 					Secret:    "secret",
 					Scopes:    "profile openid user.read",
 				},
-				IDToken: items.IDToken{Secret: "x.e30"},
+				IDToken: storage.IDToken{Secret: "x.e30"},
 			},
 			err: true,
 		},
 		{
 			desc: "Success",
 			storeToken: storage.TokenResponse{
-				AccessToken: items.AccessToken{
+				AccessToken: storage.AccessToken{
 					CachedAt:  internalTime.Unix{T: now},
 					ExpiresOn: internalTime.Unix{T: future},
 					Secret:    "secret",
 					Scopes:    "profile openid user.read",
 				},
-				IDToken: items.IDToken{Secret: "x.e30"},
+				IDToken: storage.IDToken{Secret: "x.e30"},
 			},
 			want: AuthResult{
 				AccessToken: "secret",

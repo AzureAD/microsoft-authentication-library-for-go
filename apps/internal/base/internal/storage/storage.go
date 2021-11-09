@@ -19,7 +19,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/items"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -36,8 +35,8 @@ type aadInstanceDiscoveryer interface {
 // TokenResponse mimics a token response that was pulled from the cache.
 type TokenResponse struct {
 	RefreshToken accesstokens.RefreshToken
-	IDToken      items.IDToken // *Credential
-	AccessToken  items.AccessToken
+	IDToken      IDToken // *Credential
+	AccessToken  AccessToken
 	Account      shared.Account
 }
 
@@ -45,7 +44,7 @@ type TokenResponse struct {
 // updated on read/write calls. Unmarshal() replaces all data stored here with whatever
 // was given to it on each call.
 type Manager struct {
-	contract   *items.Contract
+	contract   *Contract
 	contractMu sync.RWMutex
 	requests   aadInstanceDiscoveryer // *oauth.Token
 
@@ -56,7 +55,7 @@ type Manager struct {
 // New is the constructor for Manager.
 func New(requests *oauth.Client) *Manager {
 	m := &Manager{requests: requests, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
-	m.contract = items.NewContract()
+	m.contract = NewContract()
 	return m
 }
 
@@ -104,7 +103,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 		return TokenResponse{
 			AccessToken:  accessToken,
 			RefreshToken: accesstokens.RefreshToken{},
-			IDToken:      items.IDToken{},
+			IDToken:      IDToken{},
 			Account:      shared.Account{},
 		}, nil
 	}
@@ -152,16 +151,13 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 
 	if len(tokenResponse.RefreshToken) > 0 {
 		refreshToken := accesstokens.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
-		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
-			refreshToken.UserAssertionHash = authParameters.UserAssertion // get Hash method on this
-		}
 		if err := m.writeRefreshToken(refreshToken); err != nil {
 			return account, err
 		}
 	}
 
 	if len(tokenResponse.AccessToken) > 0 {
-		accessToken := items.NewAccessToken(
+		accessToken := NewAccessToken(
 			homeAccountID,
 			environment,
 			realm,
@@ -172,9 +168,6 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			target,
 			tokenResponse.AccessToken,
 		)
-		// if authParameters.AuthorizationType == authority.ATOnBehalfOf {
-		// 	//accessToken.UserAssertionHash = authParameters.UserAssertion // get Hash method on this
-		// }
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
@@ -186,7 +179,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 
 	idTokenJwt := tokenResponse.IDToken
 	if !idTokenJwt.IsZero() {
-		idToken := items.NewIDToken(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
+		idToken := NewIDToken(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
 		if err := m.writeIDToken(idToken); err != nil {
 			return shared.Account{}, err
 		}
@@ -207,7 +200,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 		}
 	}
 
-	AppMetaData := items.NewAppMetaData(tokenResponse.FamilyID, clientID, environment)
+	AppMetaData := NewAppMetaData(tokenResponse.FamilyID, clientID, environment)
 
 	if err := m.writeAppMetaData(AppMetaData); err != nil {
 		return shared.Account{}, err
@@ -256,25 +249,7 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *Manager) readAccessTokenWithAssertionHash(envAliases []string, realm, clientID, userAssertion string, scopes []string) (items.AccessToken, error) {
-	m.contractMu.RLock()
-	defer m.contractMu.RUnlock()
-	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
-	// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
-	// an issue, however if it does become a problem then we know where to look.
-	for _, at := range m.contract.AccessTokens {
-		if true && at.Realm == realm && at.ClientID == clientID { //User Assertion Hash check
-			if checkAlias(at.Environment, envAliases) {
-				if isMatchingScopes(scopes, at.Scopes) {
-					return at, nil
-				}
-			}
-		}
-	}
-	return items.AccessToken{}, fmt.Errorf("access token not found")
-}
-
-func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (items.AccessToken, error) {
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessToken, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
@@ -289,10 +264,10 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 			}
 		}
 	}
-	return items.AccessToken{}, fmt.Errorf("access token not found")
+	return AccessToken{}, fmt.Errorf("access token not found")
 }
 
-func (m *Manager) writeAccessToken(accessToken items.AccessToken) error {
+func (m *Manager) writeAccessToken(accessToken AccessToken) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	key := accessToken.Key()
@@ -357,20 +332,7 @@ func (m *Manager) writeRefreshToken(refreshToken accesstokens.RefreshToken) erro
 	return nil
 }
 
-func (m *Manager) readIDTokenWithAssertionHash(envAliases []string, realm, clientID, UserAssetionHash string) (items.IDToken, error) {
-	m.contractMu.RLock()
-	defer m.contractMu.RUnlock()
-	for _, idt := range m.contract.IDTokens {
-		if idt.Realm == realm && idt.ClientID == clientID { // Add AssertionHash check
-			if checkAlias(idt.Environment, envAliases) {
-				return idt, nil
-			}
-		}
-	}
-	return items.IDToken{}, fmt.Errorf("token not found")
-}
-
-func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientID string) (items.IDToken, error) {
+func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientID string) (IDToken, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 	for _, idt := range m.contract.IDTokens {
@@ -380,10 +342,10 @@ func (m *Manager) readIDToken(homeID string, envAliases []string, realm, clientI
 			}
 		}
 	}
-	return items.IDToken{}, fmt.Errorf("token not found")
+	return IDToken{}, fmt.Errorf("token not found")
 }
 
-func (m *Manager) writeIDToken(idToken items.IDToken) error {
+func (m *Manager) writeIDToken(idToken IDToken) error {
 	key := idToken.Key()
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
@@ -416,17 +378,6 @@ func (m *Manager) Account(homeAccountID string) shared.Account {
 	return shared.Account{}
 }
 
-func (m *Manager) readAccountWithAssertionHash(assertionHash string, envAliases []string, realm string) (shared.Account, error) {
-	m.contractMu.RLock()
-	defer m.contractMu.RUnlock()
-
-	for _, acc := range m.contract.Accounts {
-		if checkAlias(acc.Environment, envAliases) && acc.Realm == realm { //UserAssetionHash check add
-			return acc, nil
-		}
-	}
-	return shared.Account{}, fmt.Errorf("account not found")
-}
 func (m *Manager) readAccount(homeAccountID string, envAliases []string, realm string) (shared.Account, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
@@ -453,7 +404,7 @@ func (m *Manager) writeAccount(account shared.Account) error {
 	return nil
 }
 
-func (m *Manager) readAppMetaData(envAliases []string, clientID string) (items.AppMetaData, error) {
+func (m *Manager) readAppMetaData(envAliases []string, clientID string) (AppMetaData, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 
@@ -462,10 +413,10 @@ func (m *Manager) readAppMetaData(envAliases []string, clientID string) (items.A
 			return app, nil
 		}
 	}
-	return items.AppMetaData{}, fmt.Errorf("not found")
+	return AppMetaData{}, fmt.Errorf("not found")
 }
 
-func (m *Manager) writeAppMetaData(AppMetaData items.AppMetaData) error {
+func (m *Manager) writeAppMetaData(AppMetaData AppMetaData) error {
 	key := AppMetaData.Key()
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
@@ -535,7 +486,7 @@ func (m *Manager) removeAccounts(homeID string, env string) {
 
 // update updates the internal cache object. This is for use in tests, other uses are not
 // supported.
-func (m *Manager) update(cache *items.Contract) {
+func (m *Manager) update(cache *Contract) {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	m.contract = cache
@@ -551,7 +502,7 @@ func (m *Manager) Unmarshal(b []byte) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 
-	contract := items.NewContract()
+	contract := NewContract()
 
 	err := json.Unmarshal(b, contract)
 	if err != nil {
