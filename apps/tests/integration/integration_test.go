@@ -246,6 +246,7 @@ func TestConfidentialClientwithSecret(t *testing.T) {
 	if silentResult.AccessToken == "" {
 		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
 	}
+
 }
 
 func TestOnBehalfOf(t *testing.T) {
