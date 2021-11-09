@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package storage
+package items
 
 import (
 	"errors"
@@ -28,6 +28,28 @@ type Contract struct {
 	AdditionalFields map[string]interface{}
 }
 
+// Contract is the JSON structure that is written to any storage medium when serializing
+// the internal cache. This design is shared between MSAL versions in many languages.
+// This cannot be changed without design that includes other SDKs.
+type InMemoryContract struct {
+	AccessTokensPartition  map[string]map[string]AccessToken
+	RefreshTokensPartition map[string]map[string]accesstokens.RefreshToken
+	IDTokensPartition      map[string]map[string]IDToken
+	AccountsPartition      map[string]map[string]shared.Account
+	AppMetaData            map[string]AppMetaData
+}
+
+// NewContract is the constructor for Contract.
+func NewInMemoryContract() *InMemoryContract {
+	return &InMemoryContract{
+		AccessTokensPartition:  map[string]map[string]AccessToken{},
+		RefreshTokensPartition: map[string]map[string]accesstokens.RefreshToken{},
+		IDTokensPartition:      map[string]map[string]IDToken{},
+		AccountsPartition:      map[string]map[string]shared.Account{},
+		AppMetaData:            map[string]AppMetaData{},
+	}
+}
+
 // NewContract is the constructor for Contract.
 func NewContract() *Contract {
 	return &Contract{
@@ -52,6 +74,7 @@ type AccessToken struct {
 	ExpiresOn         internalTime.Unix `json:"expires_on,omitempty"`
 	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
 	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
+	UserAssertionHash string            `json:"user_assertion_hash,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -96,13 +119,14 @@ func (a AccessToken) Validate() error {
 
 // IDToken is the JSON representation of an MSAL id token for encoding to storage.
 type IDToken struct {
-	HomeAccountID    string `json:"home_account_id,omitempty"`
-	Environment      string `json:"environment,omitempty"`
-	Realm            string `json:"realm,omitempty"`
-	CredentialType   string `json:"credential_type,omitempty"`
-	ClientID         string `json:"client_id,omitempty"`
-	Secret           string `json:"secret,omitempty"`
-	AdditionalFields map[string]interface{}
+	HomeAccountID     string `json:"home_account_id,omitempty"`
+	Environment       string `json:"environment,omitempty"`
+	Realm             string `json:"realm,omitempty"`
+	CredentialType    string `json:"credential_type,omitempty"`
+	ClientID          string `json:"client_id,omitempty"`
+	Secret            string `json:"secret,omitempty"`
+	UserAssertionHash string `json:"user_assertion_hash,omitempty"`
+	AdditionalFields  map[string]interface{}
 }
 
 // IsZero determines if IDToken is the zero value.

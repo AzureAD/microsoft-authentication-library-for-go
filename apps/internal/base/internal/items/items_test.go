@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package storage
+package items
 
 import (
 	stdJSON "encoding/json"
@@ -18,6 +18,8 @@ import (
 )
 
 var (
+	atCached      = time.Unix(1000, 0)
+	atExpires     = time.Unix(4600, 0)
 	testHID       = "testHID"
 	env           = "env"
 	credential    = "AccessToken"
@@ -40,6 +42,22 @@ var (
 		ExtendedExpiresOn: internalTime.Unix{T: extExpiresOn},
 		CachedAt:          internalTime.Unix{T: cachedAt},
 	}
+)
+
+const (
+	testFile           = "test_serialized_cache.json"
+	defaultEnvironment = "login.windows.net"
+	defaultHID         = "uid.utid"
+	defaultRealm       = "contoso"
+	defaultScopes      = "s2 s1 s3"
+	defaultClientID    = "my_client_id"
+	accessTokenSecret  = "an access token"
+	rtSecret           = "a refresh token"
+	idCred             = "IdToken"
+	idSecret           = "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature"
+	accUser            = "John Doe"
+	accLID             = "object1234"
+	accAuth            = "MSSTS"
 )
 
 func TestCreateAccessToken(t *testing.T) {

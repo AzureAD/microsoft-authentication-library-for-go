@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/partitioned_storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -30,8 +31,17 @@ const (
 // In all production use it is a *storage.Manager.
 type manager interface {
 	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
-	ReadWithAssertion(ctx context.Context, authParameters authority.AuthParams, userAssertion string) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
+	AllAccounts() []shared.Account
+	Account(homeAccountID string) shared.Account
+	RemoveAccount(account shared.Account, clientID string)
+}
+
+// manager provides an internal cache. It is defined to allow faking the cache in tests.
+// In all production use it is a *storage.Manager.
+type partitionedManager interface {
+	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account, partitionKey string) (storage.TokenResponse, error)
+	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse, partitionKey string) (shared.Account, error)
 	AllAccounts() []shared.Account
 	Account(homeAccountID string) shared.Account
 	RemoveAccount(account shared.Account, clientID string)
@@ -64,6 +74,12 @@ type AcquireTokenAuthCodeParameters struct {
 	RedirectURI string
 	AppType     accesstokens.AppType
 	Credential  *accesstokens.Credential
+}
+
+type AcquireTokenOnBehalfOfParameters struct {
+	Scopes        []string
+	Credential    *accesstokens.Credential
+	UserAssertion string
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -115,8 +131,9 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 // Client is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Client struct {
-	Token   *oauth.Client
-	manager manager // *storage.Manager or fakeManager in tests
+	Token    *oauth.Client
+	manager  manager // *storage.Manager or fakeManager in tests
+	pmanager partitionedManager
 
 	AuthParams    authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
 	cacheAccessor cache.ExportReplace
@@ -153,6 +170,7 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		AuthParams:    authParams,
 		cacheAccessor: noopCacheAccessor{},
 		manager:       storage.New(token),
+		pmanager:      partitioned_storage.New(token),
 	}
 	for _, o := range options {
 		o(&client)
@@ -210,30 +228,28 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
 	authParams.Scopes = silent.Scopes
-	authParams.AuthorizationType = authority.ATRefreshToken
 	authParams.HomeaccountID = silent.Account.HomeAccountID
+	authParams.AuthorizationType = silent.AuthorizationType
+	authParams.UserAssertion = silent.UserAssertion
 
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
 		b.cacheAccessor.Replace(s, suggestedCacheKey)
 		defer b.cacheAccessor.Export(s, suggestedCacheKey)
 	}
-
-	if silent.Account.IsZero() && silent.UserAssertion != "" {
-		storageTokenResponse, err := b.manager.ReadWithAssertion(ctx, authParams, silent.UserAssertion)
+	var storageTokenResponse storage.TokenResponse
+	var err error
+	if authParams.AuthorizationType == authority.ATOnBehalfOf {
+		storageTokenResponse, err = b.pmanager.Read(ctx, authParams, silent.Account, authParams.CacheKey(silent.IsAppCache))
 		if err != nil {
 			return AuthResult{}, err
 		}
-		result, err := AuthResultFromStorage(storageTokenResponse)
+	} else {
+		authParams.AuthorizationType = authority.ATRefreshToken
+		storageTokenResponse, err = b.manager.Read(ctx, authParams, silent.Account)
 		if err != nil {
 			return AuthResult{}, err
 		}
-		return result, err
-	}
-
-	storageTokenResponse, err := b.manager.Read(ctx, authParams, silent.Account)
-	if err != nil {
-		return AuthResult{}, err
 	}
 
 	result, err := AuthResultFromStorage(storageTokenResponse)
@@ -282,30 +298,65 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
+// AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
+func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams AcquireTokenOnBehalfOfParameters) (AuthResult, error) {
+	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams.Scopes = onBehalfOfParams.Scopes
+	authParams.AuthorizationType = authority.ATOnBehalfOf
+	authParams.UserAssertion = onBehalfOfParams.UserAssertion
+
+	silentParameters := AcquireTokenSilentParameters{
+		Scopes:            onBehalfOfParams.Scopes,
+		RequestType:       accesstokens.ATConfidential,
+		Credential:        onBehalfOfParams.Credential,
+		UserAssertion:     onBehalfOfParams.UserAssertion,
+		AuthorizationType: authority.ATOnBehalfOf,
+	}
+	token, err := b.AcquireTokenSilent(ctx, silentParameters)
+	if err != nil {
+		fmt.Println("Acquire Token Silent failed ")
+		token, err := b.Token.OnBehalfOf(ctx, authParams, onBehalfOfParams.Credential)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		return b.AuthResultFromToken(ctx, authParams, token, true)
+	}
+	return token, err
+}
+
 func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthResult, error) {
 	if !cacheWrite {
 		return NewAuthResult(token, shared.Account{})
 	}
 
-	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := token.CacheKey(authParams)
-		b.cacheAccessor.Replace(s, suggestedCacheKey)
-		defer b.cacheAccessor.Export(s, suggestedCacheKey)
-	}
+	// if s, ok := b.manager.(cache.Serializer); ok {
+	// suggestedCacheKey := token.CacheKey(authParams)
+	// 	b.cacheAccessor.Replace(s, suggestedCacheKey)
+	// 	defer b.cacheAccessor.Export(s, suggestedCacheKey)
+	// }
+	var account shared.Account
+	var err error
+	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 
-	account, err := b.manager.Write(authParams, token)
-	if err != nil {
-		return AuthResult{}, err
+		account, err = b.pmanager.Write(authParams, token, token.CacheKey(authParams))
+		if err != nil {
+			return AuthResult{}, err
+		}
+	} else {
+		account, err = b.manager.Write(authParams, token)
+		if err != nil {
+			return AuthResult{}, err
+		}
 	}
 	return NewAuthResult(token, account)
 }
 
 func (b Client) AllAccounts() []shared.Account {
-	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.cacheAccessor.Replace(s, suggestedCacheKey)
-		defer b.cacheAccessor.Export(s, suggestedCacheKey)
-	}
+	// if s, ok := b.manager.(cache.Serializer); ok {
+	// 	suggestedCacheKey := b.AuthParams.CacheKey(false)
+	// 	b.cacheAccessor.Replace(s, suggestedCacheKey)
+	// 	defer b.cacheAccessor.Export(s, suggestedCacheKey)
+	// }
 
 	accounts := b.manager.AllAccounts()
 	return accounts
@@ -315,21 +366,21 @@ func (b Client) Account(homeAccountID string) shared.Account {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.AuthorizationType = authority.AccountByID
 	authParams.HomeaccountID = homeAccountID
-	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.cacheAccessor.Replace(s, suggestedCacheKey)
-		defer b.cacheAccessor.Export(s, suggestedCacheKey)
-	}
+	// if s, ok := b.manager.(cache.Serializer); ok {
+	// 	suggestedCacheKey := b.AuthParams.CacheKey(false)
+	// 	b.cacheAccessor.Replace(s, suggestedCacheKey)
+	// 	defer b.cacheAccessor.Export(s, suggestedCacheKey)
+	// }
 	account := b.manager.Account(homeAccountID)
 	return account
 }
 
 // RemoveAccount removes all the ATs, RTs and IDTs from the cache associated with this account.
 func (b Client) RemoveAccount(account shared.Account) {
-	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.cacheAccessor.Replace(s, suggestedCacheKey)
-		defer b.cacheAccessor.Export(s, suggestedCacheKey)
-	}
+	// if s, ok := b.manager.(cache.Serializer); ok {
+	// 	suggestedCacheKey := b.AuthParams.CacheKey(false)
+	// 	b.cacheAccessor.Replace(s, suggestedCacheKey)
+	// 	defer b.cacheAccessor.Export(s, suggestedCacheKey)
+	// }
 	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
 }

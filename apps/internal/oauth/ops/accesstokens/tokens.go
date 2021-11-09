@@ -268,7 +268,7 @@ type RefreshToken struct {
 	Secret            string `json:"secret,omitempty"`
 	Realm             string `json:"realm,omitempty"`
 	Target            string `json:"target,omitempty"`
-	UserAssertionHash string
+	UserAssertionHash string `json:"user_assertion_hash,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }

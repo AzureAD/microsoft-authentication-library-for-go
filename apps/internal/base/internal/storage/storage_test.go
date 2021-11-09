@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/items"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -42,7 +43,7 @@ var (
 
 func newForTest(authorityClient aadInstanceDiscoveryer) *Manager {
 	m := &Manager{requests: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
-	m.contract = NewContract()
+	m.contract = items.NewContract()
 	return m
 }
 
@@ -89,7 +90,7 @@ func TestIsMatchingScopes(t *testing.T) {
 func TestAllAccounts(t *testing.T) {
 	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
-	cache := &Contract{
+	cache := &items.Contract{
 		Accounts: map[string]shared.Account{
 			testAccOne.Key(): testAccOne,
 			testAccTwo.Key(): testAccTwo,
@@ -117,7 +118,7 @@ func TestAllAccounts(t *testing.T) {
 
 func TestReadAccessToken(t *testing.T) {
 	now := time.Now()
-	testAccessToken := NewAccessToken(
+	testAccessToken := items.NewAccessToken(
 		"hid",
 		"env",
 		"realm",
@@ -128,8 +129,8 @@ func TestReadAccessToken(t *testing.T) {
 		"openid user.read",
 		"secret",
 	)
-	cache := &Contract{
-		AccessTokens: map[string]AccessToken{
+	cache := &items.Contract{
+		AccessTokens: map[string]items.AccessToken{
 			testAccessToken.Key(): testAccessToken,
 		},
 	}
@@ -164,7 +165,7 @@ func TestReadAccessToken(t *testing.T) {
 func TestWriteAccessToken(t *testing.T) {
 	now := time.Now()
 	storageManager := newForTest(nil)
-	testAccessToken := NewAccessToken(
+	testAccessToken := items.NewAccessToken(
 		"hid",
 		"env",
 		"realm",
@@ -190,7 +191,7 @@ func TestWriteAccessToken(t *testing.T) {
 func TestReadAccount(t *testing.T) {
 	testAcc := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
-	cache := &Contract{
+	cache := &items.Contract{
 		Accounts: map[string]shared.Account{
 			testAcc.Key(): testAcc,
 		},
@@ -227,10 +228,10 @@ func TestWriteAccount(t *testing.T) {
 }
 
 func TestReadAppMetaData(t *testing.T) {
-	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testAppMeta := items.NewAppMetaData("fid", "cid", "env")
 
-	cache := &Contract{
-		AppMetaData: map[string]AppMetaData{
+	cache := &items.Contract{
+		AppMetaData: map[string]items.AppMetaData{
 			testAppMeta.Key(): testAppMeta,
 		},
 	}
@@ -254,7 +255,7 @@ func TestReadAppMetaData(t *testing.T) {
 func TestWriteAppMetaData(t *testing.T) {
 	storageManager := newForTest(nil)
 
-	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testAppMeta := items.NewAppMetaData("fid", "cid", "env")
 	key := testAppMeta.Key()
 	err := storageManager.writeAppMetaData(testAppMeta)
 	if err != nil {
@@ -266,15 +267,15 @@ func TestWriteAppMetaData(t *testing.T) {
 }
 
 func TestReadIDToken(t *testing.T) {
-	testIDToken := NewIDToken(
+	testIDToken := items.NewIDToken(
 		"hid",
 		"env",
 		"realm",
 		"cid",
 		"secret",
 	)
-	cache := &Contract{
-		IDTokens: map[string]IDToken{
+	cache := &items.Contract{
+		IDTokens: map[string]items.IDToken{
 			testIDToken.Key(): testIDToken,
 		},
 	}
@@ -308,7 +309,7 @@ func TestReadIDToken(t *testing.T) {
 
 func TestWriteIDToken(t *testing.T) {
 	storageManager := newForTest(nil)
-	testIDToken := NewIDToken(
+	testIDToken := items.NewIDToken(
 		"hid",
 		"env",
 		"realm",
@@ -360,14 +361,14 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 
 	tests := []struct {
 		name     string
-		contract *Contract
+		contract *items.Contract
 		args     args
 		want     accesstokens.RefreshToken
 		err      bool
 	}{
 		{
 			name: "Token without fid, read with fid, cid, env, and hid",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
@@ -382,7 +383,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Token without fid, read with cid, env, and hid",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
@@ -397,7 +398,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Token without fid, verify CID is required",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
@@ -412,7 +413,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Token without fid, Verify env is required",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWoFID,
 				},
@@ -427,7 +428,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Token without fid, read with fid, cid, env, and hid",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
@@ -442,7 +443,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Token with fid, read with cid, env, and hid",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
@@ -457,7 +458,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Token with fid, verify CID is not required", // match on hid, env, and has fid
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
@@ -472,7 +473,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Token with fid, Verify env is required",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key(): testRefreshTokenWithFID,
 				},
@@ -487,7 +488,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		},
 		{
 			name: "Multiple items in cache, given a fid, item with fid will be returned",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key():       testRefreshTokenWoFID,
 					testRefreshTokenWithFID.Key():     testRefreshTokenWithFID,
@@ -506,7 +507,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		// returned deterministically when HID, CID, and env match.
 		{
 			name: "Multiple items in cache, without a fid and with alternate CID, token with alternate CID is returned",
-			contract: &Contract{
+			contract: &items.Contract{
 				RefreshTokens: map[string]accesstokens.RefreshToken{
 					testRefreshTokenWoFID.Key():       testRefreshTokenWoFID,
 					testRefreshTokenWithFID.Key():     testRefreshTokenWithFID,
@@ -568,8 +569,8 @@ func TestWriteRefreshToken(t *testing.T) {
 }
 
 func TestStorageManagerSerialize(t *testing.T) {
-	contract := &Contract{
-		AccessTokens: map[string]AccessToken{
+	contract := &items.Contract{
+		AccessTokens: map[string]items.AccessToken{
 			"an-entry": {
 				AdditionalFields: map[string]interface{}{
 					"foo": "bar",
@@ -598,7 +599,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 				HomeAccountID:  defaultHID,
 			},
 		},
-		IDTokens: map[string]IDToken{
+		IDTokens: map[string]items.IDToken{
 			"uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
 				Realm:          defaultRealm,
 				Environment:    defaultEnvironment,
@@ -618,7 +619,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 				AuthorityType:     accAuth,
 			},
 		},
-		AppMetaData: map[string]AppMetaData{
+		AppMetaData: map[string]items.AppMetaData{
 			"AppMetadata-login.windows.net-my_client_id": {
 				Environment: defaultEnvironment,
 				FamilyID:    "",
@@ -680,21 +681,21 @@ func TestIsAccessTokenValid(t *testing.T) {
 
 	tests := []struct {
 		desc  string
-		token AccessToken
+		token items.AccessToken
 		err   bool
 	}{
 		{
 			desc:  "Success",
-			token: NewAccessToken("hid", "env", "realm", "cid", cachedAt, expiresOn, extended, "openid", "secret"),
+			token: items.NewAccessToken("hid", "env", "realm", "cid", cachedAt, expiresOn, extended, "openid", "secret"),
 		},
 		{
 			desc:  "ExpiresOnUnixTimestamp has expired",
-			token: NewAccessToken("hid", "env", "realm", "cid", cachedAt, badExpiresOn, extended, "openid", "secret"),
+			token: items.NewAccessToken("hid", "env", "realm", "cid", cachedAt, badExpiresOn, extended, "openid", "secret"),
 			err:   true,
 		},
 		{
 			desc:  "Success",
-			token: NewAccessToken("hid", "env", "realm", "cid", badCachedAt, expiresOn, extended, "openid", "secret"),
+			token: items.NewAccessToken("hid", "env", "realm", "cid", badCachedAt, expiresOn, extended, "openid", "secret"),
 			err:   true,
 		},
 	}
@@ -711,7 +712,7 @@ func TestIsAccessTokenValid(t *testing.T) {
 }
 
 func TestRead(t *testing.T) {
-	accessTokenCacheItem := NewAccessToken(
+	accessTokenCacheItem := items.NewAccessToken(
 		"hid",
 		"env",
 		"realm",
@@ -722,25 +723,25 @@ func TestRead(t *testing.T) {
 		"openid profile",
 		"secret",
 	)
-	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
-	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testIDToken := items.NewIDToken("hid", "env", "realm", "cid", "secret")
+	testAppMeta := items.NewAppMetaData("fid", "cid", "env")
 	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
 	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
-	contract := &Contract{
+	contract := &items.Contract{
 		RefreshTokens: map[string]accesstokens.RefreshToken{
 			testRefreshToken.Key(): testRefreshToken,
 		},
 		Accounts: map[string]shared.Account{
 			testAccount.Key(): testAccount,
 		},
-		AppMetaData: map[string]AppMetaData{
+		AppMetaData: map[string]items.AppMetaData{
 			testAppMeta.Key(): testAppMeta,
 		},
-		IDTokens: map[string]IDToken{
+		IDTokens: map[string]items.IDToken{
 			testIDToken.Key(): testIDToken,
 		},
-		AccessTokens: map[string]AccessToken{
+		AccessTokens: map[string]items.AccessToken{
 			accessTokenCacheItem.Key(): accessTokenCacheItem,
 		},
 	}
@@ -855,7 +856,7 @@ func TestWrite(t *testing.T) {
 		"fid",
 	)
 
-	AccessToken := NewAccessToken(
+	AccessToken := items.NewAccessToken(
 		"testUID.testUtid",
 		"env",
 		"realm",
@@ -867,7 +868,7 @@ func TestWrite(t *testing.T) {
 		"accessToken",
 	)
 
-	testIDToken := NewIDToken(
+	testIDToken := items.NewIDToken(
 		"testUID.testUtid",
 		"env",
 		"realm",
@@ -876,7 +877,7 @@ func TestWrite(t *testing.T) {
 	)
 
 	testAccount := shared.NewAccount("testUID.testUtid", "env", "realm", "lid", accAuth, "username")
-	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testAppMeta := items.NewAppMetaData("fid", "cid", "env")
 
 	actualAccount, err := cacheManager.Write(authParams, tokenResponse)
 	if err != nil {
@@ -940,7 +941,7 @@ func TestRemoveRefreshTokens(t *testing.T) {
 	storageManager := newForTest(nil)
 	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
 	key := testRefreshToken.Key()
-	contract := &Contract{
+	contract := &items.Contract{
 		RefreshTokens: map[string]accesstokens.RefreshToken{
 			key: testRefreshToken,
 		},
@@ -956,10 +957,10 @@ func TestRemoveRefreshTokens(t *testing.T) {
 func TestRemoveAccessTokens(t *testing.T) {
 	now := time.Now()
 	storageManager := newForTest(nil)
-	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid", "secret")
+	testAccessToken := items.NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid", "secret")
 	key := testAccessToken.Key()
-	contract := &Contract{
-		AccessTokens: map[string]AccessToken{
+	contract := &items.Contract{
+		AccessTokens: map[string]items.AccessToken{
 			key: testAccessToken,
 		},
 	}
@@ -973,10 +974,10 @@ func TestRemoveAccessTokens(t *testing.T) {
 
 func TestRemoveIDTokens(t *testing.T) {
 	storageManager := newForTest(nil)
-	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
+	testIDToken := items.NewIDToken("hid", "env", "realm", "cid", "secret")
 	key := testIDToken.Key()
-	contract := &Contract{
-		IDTokens: map[string]IDToken{
+	contract := &items.Contract{
+		IDTokens: map[string]items.IDToken{
 			key: testIDToken,
 		},
 	}
@@ -992,7 +993,7 @@ func TestRemoveAccountObject(t *testing.T) {
 	storageManager := newForTest(nil)
 	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 	key := testAccount.Key()
-	contract := &Contract{
+	contract := &items.Contract{
 		Accounts: map[string]shared.Account{
 			key: testAccount,
 		},
@@ -1007,26 +1008,26 @@ func TestRemoveAccountObject(t *testing.T) {
 
 func TestRemoveAccount(t *testing.T) {
 	now := time.Now()
-	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
-	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
-	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testAccessToken := items.NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
+	testIDToken := items.NewIDToken("hid", "env", "realm", "cid", "secret")
+	testAppMeta := items.NewAppMetaData("fid", "cid", "env")
 	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
 	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
-	contract := &Contract{
+	contract := &items.Contract{
 		RefreshTokens: map[string]accesstokens.RefreshToken{
 			testRefreshToken.Key(): testRefreshToken,
 		},
 		Accounts: map[string]shared.Account{
 			testAccount.Key(): testAccount,
 		},
-		AppMetaData: map[string]AppMetaData{
+		AppMetaData: map[string]items.AppMetaData{
 			testAppMeta.Key(): testAppMeta,
 		},
-		IDTokens: map[string]IDToken{
+		IDTokens: map[string]items.IDToken{
 			testIDToken.Key(): testIDToken,
 		},
-		AccessTokens: map[string]AccessToken{
+		AccessTokens: map[string]items.AccessToken{
 			testAccessToken.Key(): testAccessToken,
 		},
 	}
@@ -1049,26 +1050,26 @@ func TestRemoveAccount(t *testing.T) {
 
 func TestRemoveEmptyAccount(t *testing.T) {
 	now := time.Now()
-	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
-	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
-	testAppMeta := NewAppMetaData("fid", "cid", "env")
+	testAccessToken := items.NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
+	testIDToken := items.NewIDToken("hid", "env", "realm", "cid", "secret")
+	testAppMeta := items.NewAppMetaData("fid", "cid", "env")
 	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
 	testAccount := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 
-	contract := &Contract{
+	contract := &items.Contract{
 		RefreshTokens: map[string]accesstokens.RefreshToken{
 			testRefreshToken.Key(): testRefreshToken,
 		},
 		Accounts: map[string]shared.Account{
 			testAccount.Key(): testAccount,
 		},
-		AppMetaData: map[string]AppMetaData{
+		AppMetaData: map[string]items.AppMetaData{
 			testAppMeta.Key(): testAppMeta,
 		},
-		IDTokens: map[string]IDToken{
+		IDTokens: map[string]items.IDToken{
 			testIDToken.Key(): testIDToken,
 		},
-		AccessTokens: map[string]AccessToken{
+		AccessTokens: map[string]items.AccessToken{
 			testAccessToken.Key(): testAccessToken,
 		},
 	}

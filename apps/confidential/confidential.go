@@ -371,27 +371,12 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string) (AuthResult, error) {
-	authParams := cca.base.AuthParams
-	authParams.Scopes = scopes
-	authParams.AuthorizationType = authority.ATOnBehalfOf
-	authParams.UserAssertion = userAssertion
-
-	silentParameters := base.AcquireTokenSilentParameters{
-		Scopes:            scopes,
-		RequestType:       accesstokens.ATConfidential,
-		Credential:        cca.cred,
-		UserAssertion:     userAssertion,
-		AuthorizationType: authority.ATOnBehalfOf,
+	params := base.AcquireTokenOnBehalfOfParameters{
+		Scopes:        scopes,
+		UserAssertion: userAssertion,
+		Credential:    cca.cred,
 	}
-	token, err := cca.base.AcquireTokenSilent(ctx, silentParameters)
-	if err != nil {
-		token, err := cca.base.Token.OnBehalfOf(ctx, authParams, cca.cred)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		return cca.base.AuthResultFromToken(ctx, authParams, token, true)
-	}
-	return token, err
+	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
 
 // Account gets the account in the token cache with the specified homeAccountID.
