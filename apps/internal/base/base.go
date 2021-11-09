@@ -39,11 +39,8 @@ type manager interface {
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
 // In all production use it is a *storage.Manager.
 type partitionedManager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account, partitionKey string) (storage.TokenResponse, error)
-	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse, partitionKey string) (shared.Account, error)
-	AllAccounts() []shared.Account
-	Account(homeAccountID string) shared.Account
-	RemoveAccount(account shared.Account, clientID string)
+	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
+	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 }
 
 type noopCacheAccessor struct{}
@@ -239,7 +236,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	var storageTokenResponse storage.TokenResponse
 	var err error
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
-		storageTokenResponse, err = b.pmanager.Read(ctx, authParams, silent.Account, authParams.CacheKey(silent.IsAppCache))
+		storageTokenResponse, err = b.pmanager.Read(ctx, authParams, silent.Account)
 		if err != nil {
 			return AuthResult{}, err
 		}
@@ -328,16 +325,16 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		return NewAuthResult(token, shared.Account{})
 	}
 
-	// if s, ok := b.manager.(cache.Serializer); ok {
-	// suggestedCacheKey := token.CacheKey(authParams)
-	// 	b.cacheAccessor.Replace(s, suggestedCacheKey)
-	// 	defer b.cacheAccessor.Export(s, suggestedCacheKey)
-	// }
+	if s, ok := b.manager.(cache.Serializer); ok {
+		suggestedCacheKey := token.CacheKey(authParams)
+		b.cacheAccessor.Replace(s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(s, suggestedCacheKey)
+	}
 	var account shared.Account
 	var err error
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 
-		account, err = b.pmanager.Write(authParams, token, token.CacheKey(authParams))
+		account, err = b.pmanager.Write(authParams, token)
 		if err != nil {
 			return AuthResult{}, err
 		}

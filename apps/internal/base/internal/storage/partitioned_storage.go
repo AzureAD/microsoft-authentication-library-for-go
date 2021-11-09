@@ -38,7 +38,7 @@ func NewPartitionedManager(requests *oauth.Client) *PartitionedManager {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account, partitionKey string) (TokenResponse, error) {
+func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
 	homeAccountID := authParameters.HomeaccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -48,41 +48,50 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	if err != nil {
 		return TokenResponse{}, err
 	}
+	userAssertionHash := authParameters.AssertionHash()
 
-	accessToken, err := m.readApplicationAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes, partitionKey)
+	accessToken, err := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, userAssertionHash, scopes, userAssertionHash)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 
-	if account.IsZero() {
-		return TokenResponse{
-			AccessToken:  accessToken,
-			RefreshToken: accesstokens.RefreshToken{},
-			IDToken:      IDToken{},
-			Account:      shared.Account{},
-		}, nil
+	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
+	if err != nil {
+		return TokenResponse{}, err
 	}
-	idToken, err := m.readIDToken(metadata.Aliases, realm, clientID, partitionKey)
+	familyID := AppMetaData.FamilyID
+
+	refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID, userAssertionHash)
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	idToken, err := m.readIDToken(metadata.Aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
+	if err != nil {
+		return TokenResponse{}, err
+	}
+
+	account, err = m.readAccount(metadata.Aliases, userAssertionHash, idToken.HomeAccountID)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 	return TokenResponse{
 		AccessToken:  accessToken,
-		RefreshToken: accesstokens.RefreshToken{},
+		RefreshToken: refreshToken,
 		IDToken:      idToken,
 		Account:      account,
 	}, nil
 }
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
-func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse, partitionKey string) (shared.Account, error) {
+func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
 	authParameters.HomeaccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeaccountID
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
-
+	userAssertionHash := authParameters.AssertionHash()
 	cachedAt := time.Now()
 
 	var account shared.Account
@@ -90,9 +99,9 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	if len(tokenResponse.RefreshToken) > 0 {
 		refreshToken := accesstokens.NewRefreshToken(homeAccountID, environment, clientID, tokenResponse.RefreshToken, tokenResponse.FamilyID)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
-			refreshToken.UserAssertionHash = authParameters.AssertionHash()
+			refreshToken.UserAssertionHash = userAssertionHash
 		}
-		if err := m.writeRefreshToken(refreshToken, partitionKey); err != nil {
+		if err := m.writeRefreshToken(refreshToken, getPartitionKeyRefreshToken(refreshToken)); err != nil {
 			return account, err
 		}
 	}
@@ -110,12 +119,12 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			tokenResponse.AccessToken,
 		)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
-			accessToken.UserAssertionHash = authParameters.AssertionHash() // get Hash method on this
+			accessToken.UserAssertionHash = userAssertionHash // get Hash method on this
 		}
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
-			if err := m.writeAccessToken(accessToken, partitionKey); err != nil {
+			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)); err != nil {
 				return account, err
 			}
 		}
@@ -125,9 +134,9 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	if !idTokenJwt.IsZero() {
 		idToken := NewIDToken(homeAccountID, environment, realm, clientID, idTokenJwt.RawToken)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
-			idToken.UserAssertionHash = authParameters.AssertionHash() // get Hash method on this
+			idToken.UserAssertionHash = userAssertionHash
 		}
-		if err := m.writeIDToken(idToken, partitionKey); err != nil {
+		if err := m.writeIDToken(idToken, getPartitionKeyIDToken(idToken)); err != nil {
 			return shared.Account{}, err
 		}
 
@@ -142,7 +151,10 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			authorityType,
 			idTokenJwt.PreferredUsername,
 		)
-		if err := m.writeAccount(account, partitionKey); err != nil {
+		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
+			account.UserAssertionHash = userAssertionHash
+		}
+		if err := m.writeAccount(account, getPartitionKeyAccount(account)); err != nil {
 			return shared.Account{}, err
 		}
 	}
@@ -196,7 +208,7 @@ func (m *PartitionedManager) aadMetadata(ctx context.Context, authorityInfo auth
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *PartitionedManager) readApplicationAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, partitionKey string) (AccessToken, error) {
+func (m *PartitionedManager) readAccessToken(homeID string, envAliases []string, realm, clientID, userAssertionHash string, scopes []string, partitionKey string) (AccessToken, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 	if accessTokens, ok := m.contract.AccessTokensPartition[partitionKey]; ok {
@@ -204,7 +216,7 @@ func (m *PartitionedManager) readApplicationAccessToken(homeID string, envAliase
 		// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
 		// an issue, however if it does become a problem then we know where to look.
 		for _, at := range accessTokens {
-			if at.Realm == realm && at.ClientID == clientID {
+			if at.Realm == realm && at.ClientID == clientID && at.UserAssertionHash == userAssertionHash {
 				if checkAlias(at.Environment, envAliases) {
 					if isMatchingScopes(scopes, at.Scopes) {
 						return at, nil
@@ -279,11 +291,11 @@ func (m *PartitionedManager) writeRefreshToken(refreshToken accesstokens.Refresh
 	return nil
 }
 
-func (m *PartitionedManager) readIDToken(envAliases []string, realm, clientID, partitionKey string) (IDToken, error) {
+func (m *PartitionedManager) readIDToken(envAliases []string, realm, clientID, userAssertionHash, partitionKey string) (IDToken, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 	for _, idt := range m.contract.IDTokensPartition[partitionKey] {
-		if idt.Realm == realm && idt.ClientID == clientID {
+		if idt.Realm == realm && idt.ClientID == clientID && idt.UserAssertionHash == userAssertionHash {
 			if checkAlias(idt.Environment, envAliases) {
 				return idt, nil
 			}
@@ -316,20 +328,7 @@ func (m *PartitionedManager) AllAccounts() []shared.Account {
 	return accounts
 }
 
-func (m *PartitionedManager) Account(homeAccountID string) shared.Account {
-	m.contractMu.RLock()
-	defer m.contractMu.RUnlock()
-
-	// for _, v := range m.contract.Accounts {
-	// 	if v.HomeAccountID == homeAccountID {
-	// 		return v
-	// 	}
-	// }
-
-	return shared.Account{}
-}
-
-func (m *PartitionedManager) readAccount(homeAccountID string, envAliases []string, realm, partitionKey string) (shared.Account, error) {
+func (m *PartitionedManager) readAccount(envAliases []string, UserAssertionHash, partitionKey string) (shared.Account, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 
@@ -340,7 +339,7 @@ func (m *PartitionedManager) readAccount(homeAccountID string, envAliases []stri
 	// or just statically check.  Since the design is to have a storage.Manager per user, the amount of keys stored
 	// is really low (say 2).  Each hash is more expensive than the entire iteration.
 	for _, acc := range m.contract.AccountsPartition[partitionKey] {
-		if checkAlias(acc.Environment, envAliases) && acc.Realm == realm {
+		if checkAlias(acc.Environment, envAliases) && acc.UserAssertionHash == UserAssertionHash {
 			return acc, nil
 		}
 	}
@@ -379,74 +378,6 @@ func (m *PartitionedManager) writeAppMetaData(AppMetaData AppMetaData) error {
 	return nil
 }
 
-// RemoveAccount removes all the associated ATs, RTs and IDTs from the cache associated with this account.
-func (m *PartitionedManager) RemoveAccount(account shared.Account, clientID string) {
-	m.removeRefreshTokens(account.HomeAccountID, account.Environment, clientID)
-	m.removeAccessTokens(account.HomeAccountID, account.Environment)
-	m.removeIDTokens(account.HomeAccountID, account.Environment)
-	m.removeAccounts(account.HomeAccountID, account.Environment)
-}
-
-func (m *PartitionedManager) removeRefreshTokens(homeID string, env string, clientID string) {
-	m.contractMu.Lock()
-	defer m.contractMu.Unlock()
-	// for key, rt := range m.contract.RefreshTokens {
-	// 	// Check for RTs associated with the account.
-	// 	if rt.HomeAccountID == homeID && rt.Environment == env {
-	// 		// Do RT's app ownership check as a precaution, in case family apps
-	// 		// and 3rd-party apps share same token cache, although they should not.
-	// 		if rt.ClientID == clientID || rt.FamilyID != "" {
-	// 			delete(m.contract.RefreshTokens, key)
-	// 		}
-	// 	}
-	// }
-}
-
-func (m *PartitionedManager) removeAccessTokens(homeID string, env string) {
-	m.contractMu.Lock()
-	defer m.contractMu.Unlock()
-	// for key, at := range m.contract.AccessTokens {
-	// 	// Remove AT's associated with the account
-	// 	if at.HomeAccountID == homeID && at.Environment == env {
-	// 		// # To avoid the complexity of locating sibling family app's AT, we skip AT's app ownership check.
-	// 		// It means ATs for other apps will also be removed, it is OK because:
-	// 		// non-family apps are not supposed to share token cache to begin with;
-	// 		// Even if it happens, we keep other app's RT already, so SSO still works.
-	// 		delete(m.contract.AccessTokens, key)
-	// 	}
-	// }
-}
-
-func (m *PartitionedManager) removeIDTokens(homeID string, env string) {
-	m.contractMu.Lock()
-	defer m.contractMu.Unlock()
-	// for key, idt := range m.contract.IDTokens {
-	// 	// Remove ID tokens associated with the account.
-	// 	if idt.HomeAccountID == homeID && idt.Environment == env {
-	// 		delete(m.contract.IDTokens, key)
-	// 	}
-	// }
-}
-
-func (m *PartitionedManager) removeAccounts(homeID string, env string) {
-	m.contractMu.Lock()
-	defer m.contractMu.Unlock()
-	// for key, acc := range m.contract.Accounts {
-	// 	// Remove the specified account.
-	// 	if acc.HomeAccountID == homeID && acc.Environment == env {
-	// 		delete(m.contract.Accounts, key)
-	// 	}
-	// }
-}
-
-// update updates the internal cache object. This is for use in tests, other uses are not
-// supported.
-func (m *PartitionedManager) update(cache *InMemoryContract) {
-	m.contractMu.Lock()
-	defer m.contractMu.Unlock()
-	m.contract = cache
-}
-
 // Marshal implements cache.Marshaler.
 func (m *PartitionedManager) Marshal() ([]byte, error) {
 	return json.Marshal(m.contract)
@@ -469,24 +400,32 @@ func (m *PartitionedManager) Unmarshal(b []byte) error {
 	return nil
 }
 
-// func getKeyAccessToken(item AccessToken) string {
-// 	if item.UserAssertionHash != "" {
-// 		return item.UserAssertionHash
-// 	}
-// 	return item.HomeAccountID
-// }
+func getPartitionKeyAccessToken(item AccessToken) string {
+	if item.UserAssertionHash != "" {
+		return item.UserAssertionHash
+	}
+	return item.HomeAccountID
+}
 
-// func getKeyFromRefresh(item accesstokens.RefreshToken) string {
-// 	if item.UserAssertionHash != "" {
-// 		return item.UserAssertionHash
-// 	}
-// 	return item.HomeAccountID
-// }
+func getPartitionKeyRefreshToken(item accesstokens.RefreshToken) string {
+	if item.UserAssertionHash != "" {
+		return item.UserAssertionHash
+	}
+	return item.HomeAccountID
+}
 
-// func getKeyFromIDToken(item IDToken) string {
-// 	return item.HomeAccountID
-// }
+func getPartitionKeyIDToken(item IDToken) string {
+	return item.HomeAccountID
+}
 
-// func getKeyFromAccount(item shared.Account) string {
-// 	return item.HomeAccountID
-// }
+func getPartitionKeyAccount(item shared.Account) string {
+	return item.HomeAccountID
+}
+
+func getPartitionKeyIDTokenRead(item AccessToken) string {
+	return item.HomeAccountID
+}
+
+func getPartitionKeyAccountRead(item AccessToken) string {
+	return item.HomeAccountID
+}
