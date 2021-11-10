@@ -9,7 +9,6 @@ import (
 	"math/rand"
 	"os"
 	"testing"
-	"text/template"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
@@ -20,13 +19,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/montanaflynn/stats"
 )
-
-var statsTemplTxt = `
-Test Results:
-[{{.Tenants}} tenants][{{.Count}} tokens] [population: total {{.PopDur}}, avg {{.PopAvg}}] [retrieval: total {{.RetDur}}, avg {{.RetAvg}}]
-==========================================================================
-`
-var statsTemplate = template.Must(template.New("stats").Parse(statsTemplTxt))
 
 func fakeClient() (base.Client, error) {
 	// we use a base.Client so we can provide a fake OAuth client
