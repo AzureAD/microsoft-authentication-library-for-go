@@ -18,9 +18,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
-// Manager is an in-memory cache of access tokens, accounts and meta data. This data is
-// updated on read/write calls. Unmarshal() replaces all data stored here with whatever
-// was given to it on each call.
+// PartitionedManager is a partitioned in-memory cache of access tokens, accounts and meta data.
 type PartitionedManager struct {
 	contract   *InMemoryContract
 	contractMu sync.RWMutex
@@ -30,7 +28,7 @@ type PartitionedManager struct {
 	aadCache   map[string]authority.InstanceDiscoveryMetadata
 }
 
-// New is the constructor for Manager.
+// NewPartitionedManager is the constructor for PartitionedManager.
 func NewPartitionedManager(requests *oauth.Client) *PartitionedManager {
 	m := &PartitionedManager{requests: requests, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract = NewInMemoryContract()
@@ -313,7 +311,6 @@ func (m *PartitionedManager) readIDToken(envAliases []string, realm, clientID, u
 
 func (m *PartitionedManager) writeIDToken(idToken IDToken, partitionKey string) error {
 	key := idToken.Key()
-	// partitionKey := getKeyFromIDToken(idToken)
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	if m.contract.IDTokensPartition[partitionKey] == nil {
@@ -321,18 +318,6 @@ func (m *PartitionedManager) writeIDToken(idToken IDToken, partitionKey string) 
 	}
 	m.contract.IDTokensPartition[partitionKey][key] = idToken
 	return nil
-}
-
-func (m *PartitionedManager) AllAccounts() []shared.Account {
-	m.contractMu.RLock()
-	defer m.contractMu.RUnlock()
-
-	var accounts []shared.Account
-	// for _, v := range m.contract.Accounts {
-	// 	accounts = append(accounts, v)
-	// }
-
-	return accounts
 }
 
 func (m *PartitionedManager) readAccount(envAliases []string, realm, UserAssertionHash, partitionKey string) (shared.Account, error) {

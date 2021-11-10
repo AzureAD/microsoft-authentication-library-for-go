@@ -153,11 +153,11 @@ func TestOnBehalfOfCacheTests(t *testing.T) {
 		Users  int
 		Tokens int
 	}{
-		{1, 5},
-		// {1, 100000},
-		// {100, 10000},
-		// {1000, 10000},
-		// {10000, 100},
+		{1, 10000},
+		{1, 100000},
+		{100, 10000},
+		{1000, 10000},
+		{10000, 100},
 	}
 
 	for _, test := range tests {
