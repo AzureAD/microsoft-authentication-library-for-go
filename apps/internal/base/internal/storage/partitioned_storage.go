@@ -125,6 +125,8 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)); err != nil {
 				return account, err
 			}
+		} else {
+			return shared.Account{}, err
 		}
 	}
 
@@ -185,12 +187,13 @@ func (m *PartitionedManager) aadMetadataFromCache(ctx context.Context, authority
 }
 
 func (m *PartitionedManager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
-	m.aadCacheMu.Lock()
-	defer m.aadCacheMu.Unlock()
 	discoveryResponse, err := m.requests.AADInstanceDiscovery(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err
 	}
+
+	m.aadCacheMu.Lock()
+	defer m.aadCacheMu.Unlock()
 
 	for _, metadataEntry := range discoveryResponse.Metadata {
 		for _, aliasedAuthority := range metadataEntry.Aliases {
@@ -244,6 +247,7 @@ func matchFamilyRefreshTokenObo(rt accesstokens.RefreshToken, userAssertionHash 
 func matchClientIDRefreshTokenObo(rt accesstokens.RefreshToken, userAssertionHash string, envAliases []string, clientID string) bool {
 	return rt.UserAssertionHash == userAssertionHash && checkAlias(rt.Environment, envAliases) && rt.ClientID == clientID
 }
+
 func (m *PartitionedManager) readRefreshToken(envAliases []string, familyID, clientID, userAssertionHash, partitionKey string) (accesstokens.RefreshToken, error) {
 	byFamily := func(rt accesstokens.RefreshToken) bool {
 		return matchFamilyRefreshTokenObo(rt, userAssertionHash, envAliases)
