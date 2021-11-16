@@ -372,16 +372,12 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 // Refer https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-on-behalf-of-flow.
 func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string) (AuthResult, error) {
-	authParams := cca.base.AuthParams
-	authParams.Scopes = scopes
-	authParams.AuthorizationType = authority.ATOnBehalfOf
-	authParams.UserAssertion = userAssertion
-
-	token, err := cca.base.Token.OnBehalfOf(ctx, authParams, cca.cred)
-	if err != nil {
-		return AuthResult{}, err
+	params := base.AcquireTokenOnBehalfOfParameters{
+		Scopes:        scopes,
+		UserAssertion: userAssertion,
+		Credential:    cca.cred,
 	}
-	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
+	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
 
 // Account gets the account in the token cache with the specified homeAccountID.

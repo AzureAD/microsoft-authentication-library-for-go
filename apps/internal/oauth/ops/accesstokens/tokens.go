@@ -259,14 +259,15 @@ func decodeJWT(data string) ([]byte, error) {
 
 // RefreshToken is the JSON representation of a MSAL refresh token for encoding to storage.
 type RefreshToken struct {
-	HomeAccountID  string `json:"home_account_id,omitempty"`
-	Environment    string `json:"environment,omitempty"`
-	CredentialType string `json:"credential_type,omitempty"`
-	ClientID       string `json:"client_id,omitempty"`
-	FamilyID       string `json:"family_id,omitempty"`
-	Secret         string `json:"secret,omitempty"`
-	Realm          string `json:"realm,omitempty"`
-	Target         string `json:"target,omitempty"`
+	HomeAccountID     string `json:"home_account_id,omitempty"`
+	Environment       string `json:"environment,omitempty"`
+	CredentialType    string `json:"credential_type,omitempty"`
+	ClientID          string `json:"client_id,omitempty"`
+	FamilyID          string `json:"family_id,omitempty"`
+	Secret            string `json:"secret,omitempty"`
+	Realm             string `json:"realm,omitempty"`
+	Target            string `json:"target,omitempty"`
+	UserAssertionHash string `json:"user_assertion_hash,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
