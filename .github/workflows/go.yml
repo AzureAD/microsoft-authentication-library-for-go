@@ -46,3 +46,7 @@ jobs:
         env :
           clientId: ${{ secrets.LAB_APP_CLIENT_ID }}
           clientSecret: ${{ secrets.LAB_APP_CLIENT_SECRET }}
+          oboConfidentialClientId: ${{ secrets.OBO_CONFIDENTIAL_APP_CLIENT_ID }}
+          oboConfidentialClientSecret: ${{ secrets.OBO_CONFIDENTIAL_APP_CLIENT_SECRET }}
+          oboPublicClientId: ${{ secrets.OBO_PUBLIC_APP_CLIENT_ID }}
+          CI: ${{secrets.ENABLECI}}

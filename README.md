@@ -43,7 +43,7 @@ Acquiring tokens with MSAL Go follows this general three step pattern. There mig
    * Initializing a public client:
 
     ```go
-    publicClientapp, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
+    publicClientApp, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
     ```
 
    * Initializing a confidential client:

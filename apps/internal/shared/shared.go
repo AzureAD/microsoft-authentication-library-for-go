@@ -27,6 +27,7 @@ type Account struct {
 	Name              string `json:"name,omitempty"`
 	AlternativeID     string `json:"alternative_account_id,omitempty"`
 	RawClientInfo     string `json:"client_info,omitempty"`
+	UserAssertionHash string `json:"user_assertion_hash,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
