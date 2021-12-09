@@ -362,6 +362,7 @@ func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params
 		return interactiveAuthResult{}, err
 	}
 	defer srv.Shutdown()
+	params.Scopes = accesstokens.AppendDefaultScopes(params)
 	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, srv.Addr, params.Scopes, params)
 	if err != nil {
 		return interactiveAuthResult{}, err
