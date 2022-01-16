@@ -84,6 +84,7 @@ type AuthResult struct {
 	Account        shared.Account
 	IDToken        accesstokens.IDToken
 	AccessToken    string
+	RefreshToken   string
 	ExpiresOn      time.Time
 	GrantedScopes  []string
 	DeclinedScopes []string
@@ -97,6 +98,7 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 
 	account := storageTokenResponse.Account
 	accessToken := storageTokenResponse.AccessToken.Secret
+	refreshToken := storageTokenResponse.RefreshToken.Secret
 	grantedScopes := strings.Split(storageTokenResponse.AccessToken.Scopes, scopeSeparator)
 
 	// Checking if there was an ID token in the cache; this will throw an error in the case of confidential client applications.
@@ -107,7 +109,7 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 			return AuthResult{}, fmt.Errorf("problem decoding JWT token: %w", err)
 		}
 	}
-	return AuthResult{account, idToken, accessToken, storageTokenResponse.AccessToken.ExpiresOn.T, grantedScopes, nil}, nil
+	return AuthResult{account, idToken, accessToken, refreshToken, storageTokenResponse.AccessToken.ExpiresOn.T, grantedScopes, nil}, nil
 }
 
 // NewAuthResult creates an AuthResult.
@@ -119,6 +121,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
+		RefreshToken:  tokenResponse.RefreshToken,
 		ExpiresOn:     tokenResponse.ExpiresOn.T,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 	}, nil
