@@ -264,7 +264,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			cc = silent.Credential
 		}
 
-		token, err := b.Token.Refresh(ctx, silent.RequestType, b.AuthParams, cc, storageTokenResponse.RefreshToken)
+		token, err := b.Token.Refresh(ctx, silent.RequestType, authParams, cc, storageTokenResponse.RefreshToken)
 		if err != nil {
 			return AuthResult{}, err
 		}

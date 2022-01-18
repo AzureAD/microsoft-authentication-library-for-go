@@ -96,7 +96,16 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 
 	accessToken, err := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 	if err != nil {
-		return TokenResponse{}, err
+		appMeta, err := m.readAppMetaData(metadata.Aliases, clientID)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+
+		refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, appMeta.FamilyID, clientID)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+		return TokenResponse{RefreshToken: refreshToken}, err
 	}
 
 	if account.IsZero() {
