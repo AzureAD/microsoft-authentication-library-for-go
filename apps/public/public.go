@@ -312,19 +312,16 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	if err != nil {
 		return AuthResult{}, err
 	}
-	authParams.Redirecturi = res.redirectURI
 
-	req, err := accesstokens.NewCodeChallengeRequest(authParams, accesstokens.ATPublic, nil, res.authCode, cv)
-	if err != nil {
-		return AuthResult{}, err
+	params := base.AcquireTokenAuthCodeParameters{
+		AppType:     accesstokens.ATPublic,
+		Challenge:   cv,
+		Code:        res.authCode,
+		RedirectURI: res.redirectURI,
+		Scopes:      scopes,
 	}
 
-	token, err := pca.base.Token.AuthCode(ctx, req)
-	if err != nil {
-		return AuthResult{}, err
-	}
-
-	return pca.base.AuthResultFromToken(ctx, authParams, token, true)
+	return pca.base.AcquireTokenByAuthCode(ctx, params)
 }
 
 type interactiveAuthResult struct {
