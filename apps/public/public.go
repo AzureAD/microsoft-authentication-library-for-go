@@ -104,6 +104,11 @@ type Client struct {
 
 // New is the constructor for Client.
 func New(clientID string, options ...Option) (Client, error) {
+	return NewClient(clientID, true, options...)
+}
+
+// New is the constructor for Client.
+func NewClient(clientID string, validateAuthority bool, options ...Option) (Client, error) {
 	opts := Options{
 		Authority:  base.AuthorityPublicCloud,
 		HTTPClient: shared.DefaultClient,
@@ -116,7 +121,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.NewClient(clientID, opts.Authority, validateAuthority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}

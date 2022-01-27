@@ -249,6 +249,10 @@ func WithX5C() Option {
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
 func New(clientID string, cred Credential, options ...Option) (Client, error) {
+	return NewClient(clientID, true, cred, options...)
+}
+
+func NewClient(clientID string, validateAuthority bool, cred Credential, options ...Option) (Client, error) {
 	opts := Options{
 		Authority:  base.AuthorityPublicCloud,
 		HTTPClient: shared.DefaultClient,
@@ -261,7 +265,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.NewClient(clientID, opts.Authority, validateAuthority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
 	if err != nil {
 		return Client{}, err
 	}

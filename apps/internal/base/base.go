@@ -156,7 +156,12 @@ func WithX5C(sendX5C bool) Option {
 
 // New is the constructor for Base.
 func New(clientID string, authorityURI string, token *oauth.Client, options ...Option) (Client, error) {
-	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)
+	return NewClient(clientID, authorityURI, true, token, options...)
+}
+
+// New is the constructor for Base.
+func NewClient(clientID string, authorityURI string, validateAuthority bool, token *oauth.Client, options ...Option) (Client, error) {
+	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, validateAuthority)
 	if err != nil {
 		return Client{}, err
 	}
