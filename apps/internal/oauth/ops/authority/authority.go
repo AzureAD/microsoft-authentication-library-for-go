@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 
 	"github.com/google/uuid"
@@ -167,6 +168,7 @@ type Info struct {
 	UserRealmURIPrefix    string
 	ValidateAuthority     bool
 	Tenant                string
+	Region                string
 }
 
 func firstPathSegment(u *url.URL) (string, error) {
@@ -314,6 +316,47 @@ func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurat
 }
 
 func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
+	providedRegion := authorityInfo.Region
+	regionToUse := ""
+	detectedRegion := ""
+	if providedRegion != "" {
+		detectedRegion = c.detectRegion()
+		regionToUse = providedRegion
+	} else if true { // autodetect region value
+		detectedRegion = c.detectRegion()
+		if detectedRegion != "" {
+			regionToUse = detectedRegion
+		}
+	}
+	if regionToUse != "" {
+		// TODO: verify
+		qv := url.Values{}
+		qv.Set("api-version", "1.1")
+		qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
+
+		endpoint := "" // getInstanceDeiscoveryEndoointwithRegion
+		resp := InstanceDiscoveryResponse{}
+		err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
+		if err != nil { //fallback to global endpoint
+			if detectedRegion == "" && providedRegion == "" {
+				qv := url.Values{}
+				qv.Set("api-version", "1.1")
+				qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
+
+				discoveryHost := defaultHost
+				if TrustedHost(authorityInfo.Host) {
+					discoveryHost = authorityInfo.Host
+				}
+
+				endpoint := fmt.Sprintf(instanceDiscoveryEndpoint, discoveryHost)
+
+				resp := InstanceDiscoveryResponse{}
+				err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
+				return resp, err
+			}
+		}
+		return resp, err
+	}
 	qv := url.Values{}
 	qv.Set("api-version", "1.1")
 	qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
@@ -328,6 +371,16 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	resp := InstanceDiscoveryResponse{}
 	err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
 	return resp, err
+}
+
+func (c Client) detectRegion() string {
+	region := os.Getenv("REGION_NAME")
+	if region != "" {
+		return region
+	}
+	// TODO: IMDS discovery
+
+	return ""
 }
 
 func (a *AuthParams) CacheKey(isAppCache bool) string {

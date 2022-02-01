@@ -154,6 +154,12 @@ func WithX5C(sendX5C bool) Option {
 	}
 }
 
+func withRegionDetection(region string) Option {
+	return func(c *Client) {
+		c.AuthParams.AuthorityInfo.Region = region
+	}
+}
+
 // New is the constructor for Base.
 func New(clientID string, authorityURI string, token *oauth.Client, options ...Option) (Client, error) {
 	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)

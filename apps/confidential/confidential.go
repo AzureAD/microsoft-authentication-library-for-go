@@ -200,6 +200,9 @@ type Options struct {
 
 	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
 	SendX5C bool
+
+	// TODO: write region detection info
+	autoDetectRegion bool
 }
 
 func (o Options) validate() error {
@@ -242,6 +245,12 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 func WithX5C() Option {
 	return func(o *Options) {
 		o.SendX5C = true
+	}
+}
+
+func withRegionDetection() Option {
+	return func(o *Options) {
+		o.autoDetectRegion = true
 	}
 }
 
