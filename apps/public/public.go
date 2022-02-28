@@ -254,13 +254,13 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 
 // Accounts gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
-func (pca Client) Accounts() []Account {
-	return pca.base.AllAccounts()
+func (pca Client) Accounts(ctx context.Context) []Account {
+	return pca.base.AllAccounts(ctx)
 }
 
 // RemoveAccount signs the account out and forgets account from token cache.
-func (pca Client) RemoveAccount(account Account) error {
-	pca.base.RemoveAccount(account)
+func (pca Client) RemoveAccount(ctx context.Context, account Account) error {
+	pca.base.RemoveAccount(ctx, account)
 	return nil
 }
 

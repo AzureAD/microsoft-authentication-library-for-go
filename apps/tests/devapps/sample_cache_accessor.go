@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"io/ioutil"
 	"log"
 	"os"
@@ -15,7 +16,7 @@ type TokenCache struct {
 	file string
 }
 
-func (t *TokenCache) Replace(cache cache.Unmarshaler, key string) {
+func (t *TokenCache) Replace(ctx context.Context, cache cache.Unmarshaler, key string) {
 	jsonFile, err := os.Open(t.file)
 	if err != nil {
 		log.Println(err)
@@ -31,7 +32,7 @@ func (t *TokenCache) Replace(cache cache.Unmarshaler, key string) {
 	}
 }
 
-func (t *TokenCache) Export(cache cache.Marshaler, key string) {
+func (t *TokenCache) Export(ctx context.Context, cache cache.Marshaler, key string) {
 	data, err := cache.Marshal()
 	if err != nil {
 		log.Println(err)

@@ -11,6 +11,8 @@ implementers on the format being passed.
 */
 package cache
 
+import "context"
+
 // Marshaler marshals data from an internal cache to bytes that can be stored.
 type Marshaler interface {
 	Marshal() ([]byte, error)
@@ -31,9 +33,9 @@ type Serializer interface {
 type ExportReplace interface {
 	// Replace replaces the cache with what is in external storage.
 	// key is the suggested key which can be used for partioning the cache
-	Replace(cache Unmarshaler, key string)
+	Replace(ctx context.Context, cache Unmarshaler, key string)
 	// Export writes the binary representation of the cache (cache.Marshal()) to
 	// external storage. This is considered opaque.
 	// key is the suggested key which can be used for partioning the cache
-	Export(cache Marshaler, key string)
+	Export(ctx context.Context, cache Marshaler, key string)
 }
