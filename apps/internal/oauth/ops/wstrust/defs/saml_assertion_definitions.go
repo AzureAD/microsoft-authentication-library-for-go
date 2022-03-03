@@ -108,6 +108,7 @@ type Assertion struct {
 	Issuer                  string                  `xml:"Issuer,attr"`
 	IssueInstant            string                  `xml:"IssueInstant,attr"`
 	Saml                    string                  `xml:"saml,attr"`
+	Saml1                   string                  `xml:"saml1,attr"`
 	Conditions              Conditions              `xml:"Conditions"`
 	AttributeStatement      AttributeStatement      `xml:"AttributeStatement"`
 	AuthenticationStatement AuthenticationStatement `xml:"AuthenticationStatement"`

@@ -232,7 +232,8 @@ func TestSAMLTokenInfo(t *testing.T) {
 										XMLName: xml.Name{
 											Local: "Assertion",
 										},
-										Saml: samlv1Assertion,
+										Saml:         samlv1Assertion,
+										MajorVersion: samlv1MajorVersion,
 									},
 								},
 							},
@@ -259,7 +260,8 @@ func TestSAMLTokenInfo(t *testing.T) {
 										XMLName: xml.Name{
 											Local: "Assertion",
 										},
-										Saml: samlv1Assertion,
+										Saml:         samlv1Assertion,
+										MajorVersion: samlv1MajorVersion,
 									},
 								},
 							},
@@ -285,7 +287,8 @@ func TestSAMLTokenInfo(t *testing.T) {
 										XMLName: xml.Name{
 											Local: "Assertion",
 										},
-										Saml: samlv1Assertion,
+										Saml:         samlv1Assertion,
+										MajorVersion: samlv1MajorVersion,
 									},
 								},
 							},
@@ -311,7 +314,8 @@ func TestSAMLTokenInfo(t *testing.T) {
 										XMLName: xml.Name{
 											Local: "Assertion",
 										},
-										Saml: samlv2Assertion,
+										Saml:         samlv2Assertion,
+										MajorVersion: samlv2MajorVersion,
 									},
 								},
 							},

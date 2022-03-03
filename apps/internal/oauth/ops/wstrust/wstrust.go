@@ -112,8 +112,10 @@ func (c Client) SAMLTokenInfo(ctx context.Context, authParameters authority.Auth
 }
 
 const (
-	samlv1Assertion = "urn:oasis:names:tc:SAML:1.0:assertion"
-	samlv2Assertion = "urn:oasis:names:tc:SAML:2.0:assertion"
+	samlv2MajorVersion = "2"
+	samlv1MajorVersion = "1"
+	samlv1Assertion    = "urn:oasis:names:tc:SAML:1.0:assertion"
+	samlv2Assertion    = "urn:oasis:names:tc:SAML:2.0:assertion"
 )
 
 func (c Client) samlAssertion(def defs.SAMLDefinitions) (SamlTokenInfo, error) {
@@ -121,15 +123,13 @@ func (c Client) samlAssertion(def defs.SAMLDefinitions) (SamlTokenInfo, error) {
 		token := tokenResponse.RequestedSecurityToken
 		if token.Assertion.XMLName.Local != "" {
 			assertion := token.AssertionRawXML
-
-			samlVersion := token.Assertion.Saml
-			switch samlVersion {
-			case samlv1Assertion:
+			switch token.Assertion.MajorVersion {
+			case samlv1MajorVersion:
 				return SamlTokenInfo{AssertionType: grant.SAMLV1, Assertion: assertion}, nil
-			case samlv2Assertion:
+			case samlv2MajorVersion:
 				return SamlTokenInfo{AssertionType: grant.SAMLV2, Assertion: assertion}, nil
 			}
-			return SamlTokenInfo{}, fmt.Errorf("couldn't parse SAML assertion, version unknown: %q", samlVersion)
+			return SamlTokenInfo{}, fmt.Errorf("couldn't parse SAML assertion, version unknown: %q", token.Assertion.MajorVersion)
 		}
 	}
 	return SamlTokenInfo{}, errors.New("unknown WS-Trust version")
