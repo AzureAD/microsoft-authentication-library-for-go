@@ -235,21 +235,6 @@ func TestAADInstanceDiscovery(t *testing.T) {
 			},
 			resp: &InstanceDiscoveryResponse{},
 		},
-		{
-			desc:     "Success with region = eastus returns successfully",
-			endpoint: fmt.Sprintf(instanceDiscoveryEndpointWithRegion, "eastus", defaultHost),
-			authInfo: Info{
-				Host:   "host",
-				Tenant: "tenant",
-				Region: "eastus",
-			},
-
-			qv: url.Values{
-				"api-version":            []string{"1.1"},
-				"authorization_endpoint": []string{fmt.Sprintf(authorizationEndpoint, "host", "tenant")},
-			},
-			resp: &InstanceDiscoveryResponse{},
-		},
 	}
 
 	for _, test := range tests {
@@ -277,6 +262,32 @@ func TestAADInstanceDiscovery(t *testing.T) {
 	}
 }
 
+func TestAADInstanceDiscoveryWithRegion(t *testing.T) {
+	fake := &fakeJSONCaller{}
+	client := Client{fake}
+	authInfo := Info{
+		Host:   "host",
+		Tenant: "tenant",
+		Region: "eastus",
+	}
+	resp, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+	if err != nil {
+		t.Errorf("AADInstanceDiscoveryWithRegion failing with %s", err)
+	}
+	expectedTenantDiscoveryEndpoint := fmt.Sprintf(TenantDiscoveryEndpointWithRegion, "eastus", "host", "tenant")
+	expectedPreferredNetwork := fmt.Sprintf("%v.%v", "region", "host")
+	expectedPreferredCache := "host"
+	if resp.TenantDiscoveryEndpoint != expectedTenantDiscoveryEndpoint {
+		t.Errorf("AADInstanceDiscoveryWithRegion incorrect TenantDiscoveryEndpoint: got: %s , want: %s", resp.TenantDiscoveryEndpoint, expectedTenantDiscoveryEndpoint)
+	}
+	if resp.Metadata[0].PreferredNetwork != expectedPreferredNetwork {
+		t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Network got: %s , want: %s", resp.Metadata[0].PreferredNetwork, expectedPreferredNetwork)
+	}
+	if resp.Metadata[0].PreferredCache != expectedPreferredCache {
+		t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Cache got: %s , want: %s", resp.Metadata[0].PreferredCache, expectedPreferredCache)
+
+	}
+}
 func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 	const authorityURI = "https://login.microsoftonline.com/common/"
 

@@ -21,6 +21,7 @@ const (
 	authorizationEndpoint               = "https://%v/%v/oauth2/v2.0/authorize"
 	instanceDiscoveryEndpoint           = "https://%v/common/discovery/instance"
 	instanceDiscoveryEndpointWithRegion = "https://%v.%v/common/discovery/instance"
+	TenantDiscoveryEndpointWithRegion   = "https://%v.r.%v/%v/v2.0/.well-known/openid-configuration"
 	regionName                          = "REGION_NAME"
 	defaultAPIVersion                   = "2020-06-01"
 	imdsEndpoint                        = "http://169.254.169.254/metadata/instance/compute/location"
@@ -328,22 +329,19 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	resp := InstanceDiscoveryResponse{}
 	if authorityInfo.Region != "" && authorityInfo.Region != autoDetectRegion {
 		region = authorityInfo.Region
-	} else {
+	} else if authorityInfo.Region == autoDetectRegion {
 		region = c.detectRegion(ctx)
 	}
 	if region != "" {
-		qv := url.Values{}
-		qv.Set("api-version", "1.1")
-		qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
-
-		discoveryHost := defaultHost
-		if TrustedHost(authorityInfo.Host) {
-			discoveryHost = authorityInfo.Host
+		resp.TenantDiscoveryEndpoint = fmt.Sprintf(TenantDiscoveryEndpointWithRegion, region, authorityInfo.Host, authorityInfo.Tenant)
+		metadata := InstanceDiscoveryMetadata{
+			PreferredNetwork: fmt.Sprintf("%v.%v", region, authorityInfo.Host),
+			PreferredCache:   authorityInfo.Host,
+			Aliases:          []string{fmt.Sprintf("%v.%v", region, authorityInfo.Host), authorityInfo.Host},
 		}
-		instanceDiscoveryEndpointWithRegion := fmt.Sprintf(instanceDiscoveryEndpointWithRegion, region, discoveryHost)
-		err = c.Comm.JSONCall(ctx, instanceDiscoveryEndpointWithRegion, http.Header{}, qv, nil, &resp)
+		resp.Metadata = []InstanceDiscoveryMetadata{metadata}
 	}
-	if region == "" || err != nil {
+	if region == "" {
 		qv := url.Values{}
 		qv.Set("api-version", "1.1")
 		qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
@@ -364,14 +362,12 @@ func (c Client) detectRegion(ctx context.Context) string {
 	if region != "" {
 		return region
 	}
-	headers := http.Header{}
-	headers.Add("Metadata", "true")
 	qv := url.Values{}
 	qv.Set("api-version", defaultAPIVersion)
 	qv.Set("format", "text")
 
 	resp := ""
-	err := c.Comm.JSONCall(ctx, imdsEndpoint, headers, nil, nil, &resp)
+	err := c.Comm.JSONCall(ctx, imdsEndpoint, http.Header{}, nil, nil, &resp)
 	if err != nil {
 		return ""
 	}
