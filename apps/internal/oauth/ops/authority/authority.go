@@ -22,7 +22,7 @@ const (
 	instanceDiscoveryEndpoint         = "https://%v/common/discovery/instance"
 	TenantDiscoveryEndpointWithRegion = "https://%v.r.%v/%v/v2.0/.well-known/openid-configuration"
 	regionName                        = "REGION_NAME"
-	defaultAPIVersion                 = "2020-06-01"
+	defaultAPIVersion                 = "2021-10-01"
 	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute/location"
 	defaultHost                       = "login.microsoftonline.com"
 	autoDetectRegion                  = "TryAutoDetect"
@@ -339,8 +339,7 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 			Aliases:          []string{fmt.Sprintf("%v.%v", region, authorityInfo.Host), authorityInfo.Host},
 		}
 		resp.Metadata = []InstanceDiscoveryMetadata{metadata}
-	}
-	if region == "" {
+	} else {
 		qv := url.Values{}
 		qv.Set("api-version", "1.1")
 		qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
@@ -362,11 +361,13 @@ func (c Client) detectRegion(ctx context.Context) string {
 		region = strings.ReplaceAll(region, " ", "")
 		return strings.ToLower(region)
 	}
+	header := http.Header{}
+	header.Add("Metadata", "true")
 	qv := url.Values{}
 	qv.Set("api-version", defaultAPIVersion)
 	qv.Set("format", "text")
 	resp := ""
-	err := c.Comm.JSONCall(ctx, imdsEndpoint, http.Header{}, qv, nil, &resp)
+	err := c.Comm.JSONCall(ctx, imdsEndpoint, header, qv, nil, &resp)
 	if err != nil {
 		return ""
 	}
