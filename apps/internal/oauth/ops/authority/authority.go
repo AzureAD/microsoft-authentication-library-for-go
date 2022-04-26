@@ -23,7 +23,7 @@ const (
 	instanceDiscoveryEndpointWithRegion = "https://%v.%v/common/discovery/instance"
 	regionName                          = "REGION_NAME"
 	defaultAPIVersion                   = "2020-06-01"
-	imdsEndpoint                        = "https://169.254.169.254/metadata/instance/compute/location"
+	imdsEndpoint                        = "http://169.254.169.254/metadata/instance/compute/location"
 	defaultHost                         = "login.microsoftonline.com"
 	autoDetectRegion                    = "TryAutoDetect"
 )
