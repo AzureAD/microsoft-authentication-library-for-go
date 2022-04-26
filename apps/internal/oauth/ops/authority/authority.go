@@ -365,9 +365,8 @@ func (c Client) detectRegion(ctx context.Context) string {
 	qv := url.Values{}
 	qv.Set("api-version", defaultAPIVersion)
 	qv.Set("format", "text")
-
 	resp := ""
-	err := c.Comm.JSONCall(ctx, imdsEndpoint, http.Header{}, nil, nil, &resp)
+	err := c.Comm.JSONCall(ctx, imdsEndpoint, http.Header{}, qv, nil, &resp)
 	if err != nil {
 		return ""
 	}
