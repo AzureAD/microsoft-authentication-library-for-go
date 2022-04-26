@@ -275,7 +275,7 @@ func TestAADInstanceDiscoveryWithRegion(t *testing.T) {
 		t.Errorf("AADInstanceDiscoveryWithRegion failing with %s", err)
 	}
 	expectedTenantDiscoveryEndpoint := fmt.Sprintf(TenantDiscoveryEndpointWithRegion, "eastus", "host", "tenant")
-	expectedPreferredNetwork := fmt.Sprintf("%v.%v", "region", "host")
+	expectedPreferredNetwork := fmt.Sprintf("%v.%v", "eastus", "host")
 	expectedPreferredCache := "host"
 	if resp.TenantDiscoveryEndpoint != expectedTenantDiscoveryEndpoint {
 		t.Errorf("AADInstanceDiscoveryWithRegion incorrect TenantDiscoveryEndpoint: got: %s , want: %s", resp.TenantDiscoveryEndpoint, expectedTenantDiscoveryEndpoint)
