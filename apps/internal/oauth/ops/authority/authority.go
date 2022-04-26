@@ -360,7 +360,8 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 func (c Client) detectRegion(ctx context.Context) string {
 	region := os.Getenv(regionName)
 	if region != "" {
-		return region
+		region = strings.ReplaceAll(region, " ", "")
+		return strings.ToLower(region)
 	}
 	qv := url.Values{}
 	qv.Set("api-version", defaultAPIVersion)

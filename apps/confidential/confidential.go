@@ -253,7 +253,7 @@ func WithX5C() Option {
 	}
 }
 
-// WithAzureRegionsets the region(preferred) or Confidential.AutoDetectRegion() for auto detecting region.
+// WithAzureRegion sets the region(preferred) or Confidential.AutoDetectRegion() for auto detecting region.
 // Region names as per https://azure.microsoft.com/en-ca/global-infrastructure/geographies/.
 // See https://aka.ms/region-map for more details on region names.
 // The region value should be short region name for the region where the service is deployed.
