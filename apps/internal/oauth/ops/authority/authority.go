@@ -18,15 +18,14 @@ import (
 )
 
 const (
-	authorizationEndpoint               = "https://%v/%v/oauth2/v2.0/authorize"
-	instanceDiscoveryEndpoint           = "https://%v/common/discovery/instance"
-	instanceDiscoveryEndpointWithRegion = "https://%v.%v/common/discovery/instance"
-	TenantDiscoveryEndpointWithRegion   = "https://%v.r.%v/%v/v2.0/.well-known/openid-configuration"
-	regionName                          = "REGION_NAME"
-	defaultAPIVersion                   = "2020-06-01"
-	imdsEndpoint                        = "http://169.254.169.254/metadata/instance/compute/location"
-	defaultHost                         = "login.microsoftonline.com"
-	autoDetectRegion                    = "TryAutoDetect"
+	authorizationEndpoint             = "https://%v/%v/oauth2/v2.0/authorize"
+	instanceDiscoveryEndpoint         = "https://%v/common/discovery/instance"
+	TenantDiscoveryEndpointWithRegion = "https://%v.r.%v/%v/v2.0/.well-known/openid-configuration"
+	regionName                        = "REGION_NAME"
+	defaultAPIVersion                 = "2020-06-01"
+	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute/location"
+	defaultHost                       = "login.microsoftonline.com"
+	autoDetectRegion                  = "TryAutoDetect"
 )
 
 type jsonCaller interface {
