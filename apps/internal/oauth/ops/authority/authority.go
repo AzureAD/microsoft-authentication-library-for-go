@@ -18,9 +18,14 @@ import (
 )
 
 const (
-	authorizationEndpoint     = "https://%v/%v/oauth2/v2.0/authorize"
-	instanceDiscoveryEndpoint = "https://%v/common/discovery/instance"
-	defaultHost               = "login.microsoftonline.com"
+	authorizationEndpoint               = "https://%v/%v/oauth2/v2.0/authorize"
+	instanceDiscoveryEndpoint           = "https://%v/common/discovery/instance"
+	instanceDiscoveryEndpointWithRegion = "https://%v.%v/common/discovery/instance"
+	regionName                          = "REGION_NAME"
+	defaultAPIVersion                   = "2020-06-01"
+	imdsEndpoint                        = "https://169.254.169.254/metadata/instance/compute/location"
+	defaultHost                         = "login.microsoftonline.com"
+	autoDetectRegion                    = "TryAutoDetect"
 )
 
 type jsonCaller interface {
@@ -149,6 +154,8 @@ type AuthParams struct {
 	SendX5C bool
 	// UserAssertion is the access token used to acquire token on behalf of user
 	UserAssertion string
+	// Region is the azure region specified by user
+	Region string
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -316,71 +323,59 @@ func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurat
 }
 
 func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
-	providedRegion := authorityInfo.Region
-	regionToUse := ""
-	detectedRegion := ""
-	if providedRegion != "" {
-		detectedRegion = c.detectRegion()
-		regionToUse = providedRegion
-	} else if true { // autodetect region value
-		detectedRegion = c.detectRegion()
-		if detectedRegion != "" {
-			regionToUse = detectedRegion
-		}
+	region := ""
+	var err error
+	resp := InstanceDiscoveryResponse{}
+	if authorityInfo.Region != "" && authorityInfo.Region != autoDetectRegion {
+		region = authorityInfo.Region
+	} else {
+		region = c.detectRegion(ctx)
 	}
-	if regionToUse != "" {
-		// TODO: verify
+	if region != "" {
 		qv := url.Values{}
 		qv.Set("api-version", "1.1")
 		qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
 
-		endpoint := "" // getInstanceDeiscoveryEndoointwithRegion
-		resp := InstanceDiscoveryResponse{}
-		err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
-		if err != nil { //fallback to global endpoint
-			if detectedRegion == "" && providedRegion == "" {
-				qv := url.Values{}
-				qv.Set("api-version", "1.1")
-				qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
-
-				discoveryHost := defaultHost
-				if TrustedHost(authorityInfo.Host) {
-					discoveryHost = authorityInfo.Host
-				}
-
-				endpoint := fmt.Sprintf(instanceDiscoveryEndpoint, discoveryHost)
-
-				resp := InstanceDiscoveryResponse{}
-				err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
-				return resp, err
-			}
+		discoveryHost := defaultHost
+		if TrustedHost(authorityInfo.Host) {
+			discoveryHost = authorityInfo.Host
 		}
-		return resp, err
+		instanceDiscoveryEndpointWithRegion := fmt.Sprintf(instanceDiscoveryEndpointWithRegion, region, discoveryHost)
+		err = c.Comm.JSONCall(ctx, instanceDiscoveryEndpointWithRegion, http.Header{}, qv, nil, &resp)
 	}
-	qv := url.Values{}
-	qv.Set("api-version", "1.1")
-	qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
+	if region == "" || err != nil {
+		qv := url.Values{}
+		qv.Set("api-version", "1.1")
+		qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
 
-	discoveryHost := defaultHost
-	if TrustedHost(authorityInfo.Host) {
-		discoveryHost = authorityInfo.Host
+		discoveryHost := defaultHost
+		if TrustedHost(authorityInfo.Host) {
+			discoveryHost = authorityInfo.Host
+		}
+
+		endpoint := fmt.Sprintf(instanceDiscoveryEndpoint, discoveryHost)
+		err = c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
 	}
-
-	endpoint := fmt.Sprintf(instanceDiscoveryEndpoint, discoveryHost)
-
-	resp := InstanceDiscoveryResponse{}
-	err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
 	return resp, err
 }
 
-func (c Client) detectRegion() string {
-	region := os.Getenv("REGION_NAME")
+func (c Client) detectRegion(ctx context.Context) string {
+	region := os.Getenv(regionName)
 	if region != "" {
 		return region
 	}
-	// TODO: IMDS discovery
+	headers := http.Header{}
+	headers.Add("Metadata", "true")
+	qv := url.Values{}
+	qv.Set("api-version", defaultAPIVersion)
+	qv.Set("format", "text")
 
-	return ""
+	resp := ""
+	err := c.Comm.JSONCall(ctx, imdsEndpoint, headers, nil, nil, &resp)
+	if err != nil {
+		return ""
+	}
+	return resp
 }
 
 func (a *AuthParams) CacheKey(isAppCache bool) string {

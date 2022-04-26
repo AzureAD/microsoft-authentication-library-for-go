@@ -235,6 +235,21 @@ func TestAADInstanceDiscovery(t *testing.T) {
 			},
 			resp: &InstanceDiscoveryResponse{},
 		},
+		{
+			desc:     "Success with region = eastus returns successfully",
+			endpoint: fmt.Sprintf(instanceDiscoveryEndpointWithRegion, "eastus", defaultHost),
+			authInfo: Info{
+				Host:   "host",
+				Tenant: "tenant",
+				Region: "eastus",
+			},
+
+			qv: url.Values{
+				"api-version":            []string{"1.1"},
+				"authorization_endpoint": []string{fmt.Sprintf(authorizationEndpoint, "host", "tenant")},
+			},
+			resp: &InstanceDiscoveryResponse{},
+		},
 	}
 
 	for _, test := range tests {

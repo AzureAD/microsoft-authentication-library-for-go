@@ -154,7 +154,7 @@ func WithX5C(sendX5C bool) Option {
 	}
 }
 
-func withRegionDetection(region string) Option {
+func WithRegionDetection(region string) Option {
 	return func(c *Client) {
 		c.AuthParams.AuthorityInfo.Region = region
 	}
