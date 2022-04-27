@@ -14,6 +14,7 @@ import (
 	"net/url"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -363,17 +364,19 @@ func detectRegion(ctx context.Context) string {
 		return strings.ToLower(region)
 	}
 	// HTTP call to IMDS endpoint to get region
-	client := http.Client{}
+	client := http.Client{
+		Timeout: time.Duration(2 * time.Second),
+	}
 	req, _ := http.NewRequest("GET", imdsEndpoint, nil)
 	req.Header.Set("Metadata", "true")
 	resp, err := client.Do(req)
-	if err != nil {
-		return ""
+	if err != nil || resp.StatusCode != 200 {
+		resp, err = client.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			return ""
+		}
 	}
 	defer resp.Body.Close()
-	if resp.StatusCode != 200 {
-		return ""
-	}
 	response, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return ""
