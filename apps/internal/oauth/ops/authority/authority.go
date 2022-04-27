@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -23,7 +24,7 @@ const (
 	TenantDiscoveryEndpointWithRegion = "https://%v.r.%v/%v/v2.0/.well-known/openid-configuration"
 	regionName                        = "REGION_NAME"
 	defaultAPIVersion                 = "2021-10-01"
-	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute/location"
+	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute/location?format=text&api-version=" + defaultAPIVersion
 	defaultHost                       = "login.microsoftonline.com"
 	autoDetectRegion                  = "TryAutoDetect"
 )
@@ -329,7 +330,7 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	if authorityInfo.Region != "" && authorityInfo.Region != autoDetectRegion {
 		region = authorityInfo.Region
 	} else if authorityInfo.Region == autoDetectRegion {
-		region = c.detectRegion(ctx)
+		region = detectRegion(ctx)
 	}
 	if region != "" {
 		resp.TenantDiscoveryEndpoint = fmt.Sprintf(TenantDiscoveryEndpointWithRegion, region, authorityInfo.Host, authorityInfo.Tenant)
@@ -355,23 +356,26 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	return resp, err
 }
 
-func (c Client) detectRegion(ctx context.Context) string {
+func detectRegion(ctx context.Context) string {
 	region := os.Getenv(regionName)
 	if region != "" {
 		region = strings.ReplaceAll(region, " ", "")
 		return strings.ToLower(region)
 	}
-	header := http.Header{}
-	header.Add("Metadata", "true")
-	qv := url.Values{}
-	qv.Set("api-version", defaultAPIVersion)
-	qv.Set("format", "text")
-	resp := ""
-	err := c.Comm.JSONCall(ctx, imdsEndpoint, header, qv, nil, &resp)
+	// HTTP call to IMDS endpoint to get region
+	client := http.Client{}
+	req, _ := http.NewRequest("GET", imdsEndpoint, nil)
+	req.Header.Set("Metadata", "true")
+	resp, err := client.Do(req)
 	if err != nil {
 		return ""
 	}
-	return resp
+	defer resp.Body.Close()
+	response, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+	return string(response)
 }
 
 func (a *AuthParams) CacheKey(isAppCache bool) string {
