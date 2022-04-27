@@ -371,6 +371,9 @@ func detectRegion(ctx context.Context) string {
 		return ""
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return ""
+	}
 	response, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return ""
