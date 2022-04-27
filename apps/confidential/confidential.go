@@ -169,6 +169,11 @@ func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
 	return Credential{cert: cert, key: key}
 }
 
+// AutoDetectRegion instructs MSAL Go to auto detect region for Azure regional token service.
+func AutoDetectRegion() string {
+	return "TryAutoDetect"
+}
+
 // Client is a representation of authentication client for confidential applications as defined in the
 // package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
@@ -200,6 +205,9 @@ type Options struct {
 
 	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
 	SendX5C bool
+
+	// Instructs MSAL Go to use an Azure regional token service with sepcified AzureRegion.
+	AzureRegion string
 }
 
 func (o Options) validate() error {
@@ -245,6 +253,23 @@ func WithX5C() Option {
 	}
 }
 
+// WithAzureRegion sets the region(preferred) or Confidential.AutoDetectRegion() for auto detecting region.
+// Region names as per https://azure.microsoft.com/en-ca/global-infrastructure/geographies/.
+// See https://aka.ms/region-map for more details on region names.
+// The region value should be short region name for the region where the service is deployed.
+// For example "centralus" is short name for region Central US.
+// Not all auth flows can use the regional token service.
+// Service To Service (client credential flow) tokens can be obtained from the regional service.
+// Requires configuration at the tenant level.
+// Auto-detection works on a limited number of Azure artifacts (VMs, Azure functions).
+// If auto-detection fails, the non-regional endpoint will be used.
+// If an invalid region name is provided, the non-regional endpoint MIGHT be used or the token request MIGHT fail.
+func WithAzureRegion(val string) Option {
+	return func(o *Options) {
+		o.AzureRegion = val
+	}
+}
+
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
@@ -261,7 +286,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor), base.WithRegionDetection(opts.AzureRegion))
 	if err != nil {
 		return Client{}, err
 	}

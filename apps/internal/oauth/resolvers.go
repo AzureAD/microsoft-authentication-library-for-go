@@ -131,6 +131,13 @@ func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, aut
 			return "", err
 		}
 		return resp.TenantDiscoveryEndpoint, nil
+	} else if authorityInfo.Region != "" {
+		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
+		if err != nil {
+			return "", err
+		}
+		return resp.TenantDiscoveryEndpoint, nil
+
 	}
 
 	return authorityInfo.CanonicalAuthorityURI + "v2.0/.well-known/openid-configuration", nil
