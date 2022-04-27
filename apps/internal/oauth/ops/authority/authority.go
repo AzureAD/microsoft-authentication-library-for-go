@@ -364,12 +364,15 @@ func detectRegion(ctx context.Context) string {
 		return strings.ToLower(region)
 	}
 	// HTTP call to IMDS endpoint to get region
+	// Refer : https://identitydivision.visualstudio.com/DevEx/_git/AuthLibrariesApiReview?path=%2FPinAuthToRegion%2FAAD%20SDK%20Proposal%20to%20Pin%20Auth%20to%20region.md&_a=preview&version=GBdev
+	// Set a 2 second timeout for this http client which only does calls to IMDS endpoint
 	client := http.Client{
 		Timeout: time.Duration(2 * time.Second),
 	}
 	req, _ := http.NewRequest("GET", imdsEndpoint, nil)
 	req.Header.Set("Metadata", "true")
 	resp, err := client.Do(req)
+	// If the request times out or there is an error, it is retried once
 	if err != nil || resp.StatusCode != 200 {
 		resp, err = client.Do(req)
 		if err != nil || resp.StatusCode != 200 {
