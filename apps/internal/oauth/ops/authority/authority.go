@@ -9,17 +9,25 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 )
 
 const (
-	authorizationEndpoint     = "https://%v/%v/oauth2/v2.0/authorize"
-	instanceDiscoveryEndpoint = "https://%v/common/discovery/instance"
-	defaultHost               = "login.microsoftonline.com"
+	authorizationEndpoint             = "https://%v/%v/oauth2/v2.0/authorize"
+	instanceDiscoveryEndpoint         = "https://%v/common/discovery/instance"
+	TenantDiscoveryEndpointWithRegion = "https://%v.r.%v/%v/v2.0/.well-known/openid-configuration"
+	regionName                        = "REGION_NAME"
+	defaultAPIVersion                 = "2021-10-01"
+	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute/location?format=text&api-version=" + defaultAPIVersion
+	defaultHost                       = "login.microsoftonline.com"
+	autoDetectRegion                  = "TryAutoDetect"
 )
 
 type jsonCaller interface {
@@ -167,6 +175,7 @@ type Info struct {
 	UserRealmURIPrefix    string
 	ValidateAuthority     bool
 	Tenant                string
+	Region                string
 }
 
 func firstPathSegment(u *url.URL) (string, error) {
@@ -314,20 +323,66 @@ func (c Client) GetTenantDiscoveryResponse(ctx context.Context, openIDConfigurat
 }
 
 func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (InstanceDiscoveryResponse, error) {
-	qv := url.Values{}
-	qv.Set("api-version", "1.1")
-	qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
-
-	discoveryHost := defaultHost
-	if TrustedHost(authorityInfo.Host) {
-		discoveryHost = authorityInfo.Host
-	}
-
-	endpoint := fmt.Sprintf(instanceDiscoveryEndpoint, discoveryHost)
-
+	region := ""
+	var err error
 	resp := InstanceDiscoveryResponse{}
-	err := c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
+	if authorityInfo.Region != "" && authorityInfo.Region != autoDetectRegion {
+		region = authorityInfo.Region
+	} else if authorityInfo.Region == autoDetectRegion {
+		region = detectRegion(ctx)
+	}
+	if region != "" {
+		resp.TenantDiscoveryEndpoint = fmt.Sprintf(TenantDiscoveryEndpointWithRegion, region, authorityInfo.Host, authorityInfo.Tenant)
+		metadata := InstanceDiscoveryMetadata{
+			PreferredNetwork: fmt.Sprintf("%v.%v", region, authorityInfo.Host),
+			PreferredCache:   authorityInfo.Host,
+			Aliases:          []string{fmt.Sprintf("%v.%v", region, authorityInfo.Host), authorityInfo.Host},
+		}
+		resp.Metadata = []InstanceDiscoveryMetadata{metadata}
+	} else {
+		qv := url.Values{}
+		qv.Set("api-version", "1.1")
+		qv.Set("authorization_endpoint", fmt.Sprintf(authorizationEndpoint, authorityInfo.Host, authorityInfo.Tenant))
+
+		discoveryHost := defaultHost
+		if TrustedHost(authorityInfo.Host) {
+			discoveryHost = authorityInfo.Host
+		}
+
+		endpoint := fmt.Sprintf(instanceDiscoveryEndpoint, discoveryHost)
+		err = c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
+	}
 	return resp, err
+}
+
+func detectRegion(ctx context.Context) string {
+	region := os.Getenv(regionName)
+	if region != "" {
+		region = strings.ReplaceAll(region, " ", "")
+		return strings.ToLower(region)
+	}
+	// HTTP call to IMDS endpoint to get region
+	// Refer : https://identitydivision.visualstudio.com/DevEx/_git/AuthLibrariesApiReview?path=%2FPinAuthToRegion%2FAAD%20SDK%20Proposal%20to%20Pin%20Auth%20to%20region.md&_a=preview&version=GBdev
+	// Set a 2 second timeout for this http client which only does calls to IMDS endpoint
+	client := http.Client{
+		Timeout: time.Duration(2 * time.Second),
+	}
+	req, _ := http.NewRequest("GET", imdsEndpoint, nil)
+	req.Header.Set("Metadata", "true")
+	resp, err := client.Do(req)
+	// If the request times out or there is an error, it is retried once
+	if err != nil || resp.StatusCode != 200 {
+		resp, err = client.Do(req)
+		if err != nil || resp.StatusCode != 200 {
+			return ""
+		}
+	}
+	defer resp.Body.Close()
+	response, err := ioutil.ReadAll(resp.Body)
+	if err != nil {
+		return ""
+	}
+	return string(response)
 }
 
 func (a *AuthParams) CacheKey(isAppCache bool) string {

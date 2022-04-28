@@ -394,7 +394,7 @@ var detectDefaultScopes = map[string]bool{
 
 var defaultScopes = []string{"openid", "offline_access", "profile"}
 
-func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthParams) {
+func AppendDefaultScopes(authParameters authority.AuthParams) []string {
 	scopes := make([]string, 0, len(authParameters.Scopes)+len(defaultScopes))
 	for _, scope := range authParameters.Scopes {
 		s := strings.TrimSpace(scope)
@@ -407,6 +407,10 @@ func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthPar
 		scopes = append(scopes, scope)
 	}
 	scopes = append(scopes, defaultScopes...)
+	return scopes
+}
 
+func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthParams) {
+	scopes := AppendDefaultScopes(authParameters)
 	queryParams.Set("scope", strings.Join(scopes, " "))
 }
