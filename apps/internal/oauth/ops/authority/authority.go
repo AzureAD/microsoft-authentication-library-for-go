@@ -156,8 +156,6 @@ type AuthParams struct {
 	SendX5C bool
 	// UserAssertion is the access token used to acquire token on behalf of user
 	UserAssertion string
-	// Region is the azure region specified by user
-	Region string
 }
 
 // NewAuthParams creates an authorization parameters object.
