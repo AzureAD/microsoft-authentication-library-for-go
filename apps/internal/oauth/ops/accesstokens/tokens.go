@@ -76,6 +76,22 @@ func (i *IDToken) UnmarshalJSON(b []byte) error {
 	token.RawToken = jwt
 
 	*i = IDToken(token)
+	
+	err = json.Unmarshal(jwtDecoded, &i.AdditionalFields)
+	if err != nil {
+		return fmt.Errorf("unable to unmarshal additional fields in IDToken: %w", err)
+	}
+
+	reflectedTokenObject := reflect.ValueOf(i).Elem()
+	for k := 0; k != reflectedTokenObject.NumField(); k++ {
+		tag := reflectedTokenObject.Type().Field(k).Tag.Get("json")
+		if tag == "" {
+			continue
+		}
+		fieldName := strings.Split(tag, ",")[0]
+		delete(i.AdditionalFields, fieldName)
+	}
+	
 	return nil
 }
 
