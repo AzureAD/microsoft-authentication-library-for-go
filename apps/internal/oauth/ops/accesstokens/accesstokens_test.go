@@ -5,10 +5,14 @@ package accesstokens
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/base64"
+	"encoding/pem"
 	"errors"
 	"fmt"
 	"net/url"
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -450,6 +454,51 @@ func TestAccessTokenWithAssertion(t *testing.T) {
 	}
 }
 
+func TestCertAssertionExpiration(t *testing.T) {
+	pemData, err := os.ReadFile(filepath.Clean("../../../../testdata/test-cert.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	certBlock, rest := pem.Decode(pemData)
+	keyBlock, _ := pem.Decode(rest)
+	cert, err := x509.ParseCertificate(certBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	key, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, shouldRegen := range []bool{true, false} {
+		name := "expiredJWT"
+		if !shouldRegen {
+			name = "validJWT"
+		}
+		t.Run(name, func(t *testing.T) {
+			if shouldRegen {
+				defaultLifetime := assertionLifetime
+				defer func() { assertionLifetime = defaultLifetime }()
+				assertionLifetime = time.Nanosecond
+			}
+			cred := Credential{Cert: cert, Key: key}
+			authParams := authority.NewAuthParams("clientID", authority.Info{Host: "host", Tenant: "tenant"})
+			jwt, err := cred.JWT(authParams)
+			if err != nil {
+				t.Fatal(err)
+			}
+			newJWT, err := cred.JWT(authParams)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if shouldRegen && newJWT == jwt {
+				t.Fatal("expected a new JWT")
+			} else if !shouldRegen && newJWT != jwt {
+				t.Fatal("expected the same JWT")
+			}
+		})
+	}
+}
+
 func TestDeviceCodeResult(t *testing.T) {
 	authParams := authority.AuthParams{
 		Endpoints:   testAuthorityEndpoints,
@@ -747,8 +796,8 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			desc: "Error: decodeJWT is going to error",
 			payload: `
 				{
-					"access_token": "secret", 
-					"expires_in": 86399, 
+					"access_token": "secret",
+					"expires_in": 86399,
 					"ext_expires_in": 86399,
 					"client_info": error,
 					"scope": "openid profile"
@@ -760,8 +809,8 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			desc: "Success",
 			payload: `
 				{
-					"access_token": "secret", 
-					"expires_in": 86399, 
+					"access_token": "secret",
+					"expires_in": 86399,
 					"ext_expires_in": 86399,
 					"client_info": {"uid":  "uid","utid": "utid"},
 					"scope": "openid profile"
