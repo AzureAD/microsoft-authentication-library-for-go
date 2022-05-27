@@ -5,6 +5,7 @@ package confidential
 
 import (
 	"context"
+	"io/ioutil"
 	"os"
 	"path/filepath"
 	"testing"
@@ -17,7 +18,12 @@ import (
 )
 
 func TestCertFromPEM(t *testing.T) {
-	pemData, err := os.ReadFile(filepath.Clean("../testdata/test-cert.pem"))
+	f, err := os.Open(filepath.Clean("../testdata/test-cert.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	pemData, err := ioutil.ReadAll(f)
 	if err != nil {
 		t.Fatal(err)
 	}

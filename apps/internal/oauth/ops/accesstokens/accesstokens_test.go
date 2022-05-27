@@ -10,6 +10,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -455,7 +456,12 @@ func TestAccessTokenWithAssertion(t *testing.T) {
 }
 
 func TestCertAssertionExpiration(t *testing.T) {
-	pemData, err := os.ReadFile(filepath.Clean("../../../../testdata/test-cert.pem"))
+	f, err := os.Open(filepath.Clean("../../../../testdata/test-cert.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	pemData, err := ioutil.ReadAll(f)
 	if err != nil {
 		t.Fatal(err)
 	}
