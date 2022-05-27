@@ -99,11 +99,8 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 	if cred.Secret != "" {
 		return t.AccessTokens.FromClientSecret(ctx, authParams, cred.Secret)
 	}
-	var jwt string
-	var err error
-	if cred.Assertion != "" {
-		jwt = cred.Assertion
-	} else if jwt, err = cred.JWT(authParams); err != nil {
+	jwt, err := cred.JWT(authParams)
+	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 	return t.AccessTokens.FromAssertion(ctx, authParams, jwt)
@@ -119,11 +116,8 @@ func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams
 		return t.AccessTokens.FromUserAssertionClientSecret(ctx, authParams, authParams.UserAssertion, cred.Secret)
 
 	}
-	var jwt string
-	var err error
-	if cred.Assertion != "" {
-		jwt = cred.Assertion
-	} else if jwt, err = cred.JWT(authParams); err != nil {
+	jwt, err := cred.JWT(authParams)
+	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 	return t.AccessTokens.FromUserAssertionClientCertificate(ctx, authParams, authParams.UserAssertion, jwt)
