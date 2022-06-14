@@ -136,10 +136,10 @@ func TestAcquireTokenByCredential(t *testing.T) {
 
 func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
-	type key string
-	ctx := context.WithValue(context.Background(), key("test"), true)
+	key := struct{}{}
+	ctx := context.WithValue(context.Background(), key, true)
 	getAssertion := func(c context.Context) (string, error) {
-		if !c.Value(key("test")).(bool) {
+		if v := c.Value(key); v == nil || !v.(bool) {
 			t.Fatal("callback received unexpected context")
 		}
 		calls++
