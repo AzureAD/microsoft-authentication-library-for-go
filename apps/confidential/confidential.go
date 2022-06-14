@@ -167,7 +167,7 @@ func NewCredFromAssertion(assertion string) (Credential, error) {
 }
 
 // NewCredFromAssertionCallback creates a Credential that invokes a callback to get assertions
-// authenticating the application.
+// authenticating the application. The callback must be thread safe.
 func NewCredFromAssertionCallback(callback func(context.Context) (string, error)) Credential {
 	return Credential{assertionCallback: callback}
 }
