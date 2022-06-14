@@ -42,9 +42,6 @@ const (
 	password      = "password"
 )
 
-// assertionLifetime allows tests to control the expiration time of JWT assertions created by Credential.
-var assertionLifetime = 10 * time.Minute
-
 //go:generate stringer -type=AppType
 
 // AppType is whether the authorization code flow is for a public or confidential client.
