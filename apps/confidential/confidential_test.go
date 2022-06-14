@@ -136,9 +136,10 @@ func TestAcquireTokenByCredential(t *testing.T) {
 
 func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
-	ctx := context.WithValue(context.Background(), "test", true)
+	type key string
+	ctx := context.WithValue(context.Background(), key("test"), true)
 	getAssertion := func(c context.Context) (string, error) {
-		if !c.Value("test").(bool) {
+		if !c.Value(key("test")).(bool) {
 			t.Fatal("callback received unexpected context")
 		}
 		calls++
@@ -149,6 +150,9 @@ func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	}
 	cred := NewCredFromAssertionCallback(getAssertion)
 	client, err := fakeClient(accesstokens.TokenResponse{}, cred)
+	if err != nil {
+		t.Fatal(err)
+	}
 	for i := 0; i < 3; i++ {
 		if calls != i {
 			t.Fatalf("expected %d calls, got %d", i, calls)
