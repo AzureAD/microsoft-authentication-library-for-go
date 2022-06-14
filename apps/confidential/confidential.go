@@ -136,7 +136,7 @@ type Credential struct {
 	cert *x509.Certificate
 	key  crypto.PrivateKey
 
-	assertion string
+	assertionCallback func(context.Context) (string, error)
 }
 
 // toInternal returns the accesstokens.Credential that is used internally. The current structure of the
@@ -144,7 +144,7 @@ type Credential struct {
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
 func (c Credential) toInternal() *accesstokens.Credential {
-	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, Assertion: c.assertion}
+	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, AssertionCallback: c.assertionCallback}
 }
 
 // NewCredFromSecret creates a Credential from a secret.
@@ -156,11 +156,20 @@ func NewCredFromSecret(secret string) (Credential, error) {
 }
 
 // NewCredFromAssertion creates a Credential from a signed assertion.
+//
+// Deprecated: a Credential created by this function can't refresh the
+// assertion when it expires. Use NewCredFromAssertionCallback instead.
 func NewCredFromAssertion(assertion string) (Credential, error) {
 	if assertion == "" {
 		return Credential{}, errors.New("assertion can't be empty string")
 	}
-	return Credential{assertion: assertion}, nil
+	return NewCredFromAssertionCallback(func(context.Context) (string, error) { return assertion, nil }), nil
+}
+
+// NewCredFromAssertionCallback creates a Credential that invokes a callback to get assertions
+// authenticating the application.
+func NewCredFromAssertionCallback(callback func(context.Context) (string, error)) Credential {
+	return Credential{assertionCallback: callback}
 }
 
 // NewCredFromCert creates a Credential from an x509.Certificate and a PKCS8 DER encoded private key.

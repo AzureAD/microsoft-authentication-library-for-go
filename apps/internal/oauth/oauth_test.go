@@ -66,6 +66,9 @@ func TestAuthCode(t *testing.T) {
 }
 
 func TestCredential(t *testing.T) {
+	callback := func(context.Context) (string, error) {
+		return "assertion", nil
+	}
 	tests := []struct {
 		desc       string
 		re         fake.ResolveEndpoints
@@ -79,8 +82,7 @@ func TestCredential(t *testing.T) {
 			re:   fake.ResolveEndpoints{Err: true},
 			at:   &fake.AccessTokens{},
 			cred: &accesstokens.Credential{
-				Assertion: "assertion",
-				Expires:   time.Now().Add(-5 * time.Minute),
+				AssertionCallback: callback,
 			},
 			err: true,
 		},
@@ -89,8 +91,7 @@ func TestCredential(t *testing.T) {
 			re:   fake.ResolveEndpoints{},
 			at:   &fake.AccessTokens{Err: true},
 			cred: &accesstokens.Credential{
-				Assertion: "assertion",
-				Expires:   time.Now().Add(-5 * time.Minute),
+				AssertionCallback: callback,
 			},
 			err: true,
 		},
@@ -99,9 +100,8 @@ func TestCredential(t *testing.T) {
 			re:   fake.ResolveEndpoints{},
 			at:   &fake.AccessTokens{Err: true},
 			cred: &accesstokens.Credential{
-				Assertion: "assertion",
-				Expires:   time.Now().Add(5 * time.Minute),
-				Cert:      &x509.Certificate{},
+				AssertionCallback: callback,
+				Cert:              &x509.Certificate{},
 				// Key is nil and causes token.SignedString(c.Key) to fail in Credential.JWT()
 			},
 			err: true,
@@ -111,8 +111,7 @@ func TestCredential(t *testing.T) {
 			re:   fake.ResolveEndpoints{},
 			at:   &fake.AccessTokens{Err: true},
 			cred: &accesstokens.Credential{
-				Assertion: "assertion",
-				Expires:   time.Now().Add(-5 * time.Minute),
+				AssertionCallback: callback,
 			},
 			err: true,
 		},
@@ -129,8 +128,7 @@ func TestCredential(t *testing.T) {
 			re:   fake.ResolveEndpoints{},
 			at:   &fake.AccessTokens{},
 			cred: &accesstokens.Credential{
-				Assertion: "assertion",
-				Expires:   time.Now().Add(-5 * time.Minute),
+				AssertionCallback: callback,
 			},
 		},
 	}

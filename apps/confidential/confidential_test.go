@@ -5,6 +5,7 @@ package confidential
 
 import (
 	"context"
+	"errors"
 	"io/ioutil"
 	"os"
 	"path/filepath"
@@ -46,12 +47,8 @@ const (
 
 var tokenScope = []string{"the_scope"}
 
-func fakeClient(tk accesstokens.TokenResponse, credential string) (Client, error) {
-	cred, err := NewCredFromSecret(credential)
-	if err != nil {
-		return Client{}, err
-	}
-	client, err := New("fake_client_id", cred, WithAuthority("https://fake_authority/fake"))
+func fakeClient(tk accesstokens.TokenResponse, credential Credential) (Client, error) {
+	client, err := New("fake_client_id", credential, WithAuthority("https://fake_authority/fake"))
 	if err != nil {
 		return Client{}, err
 	}
@@ -101,12 +98,16 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		cred, err := NewCredFromSecret(test.cred)
+		if err != nil {
+			t.Fatal(err)
+		}
 		client, err := fakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-		}, test.cred)
+		}, cred)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +134,41 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenByAssertionCallback(t *testing.T) {
+	calls := 0
+	ctx := context.WithValue(context.Background(), "test", true)
+	getAssertion := func(c context.Context) (string, error) {
+		if !c.Value("test").(bool) {
+			t.Fatal("callback received unexpected context")
+		}
+		calls++
+		if calls < 4 {
+			return "assertion", nil
+		}
+		return "", errors.New("expected error")
+	}
+	cred := NewCredFromAssertionCallback(getAssertion)
+	client, err := fakeClient(accesstokens.TokenResponse{}, cred)
+	for i := 0; i < 3; i++ {
+		if calls != i {
+			t.Fatalf("expected %d calls, got %d", i, calls)
+		}
+		_, err = client.AcquireTokenByCredential(ctx, tokenScope)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = client.AcquireTokenByCredential(ctx, tokenScope)
+	if err == nil || err.Error() != "expected error" {
+		t.Fatalf("expected an error from the callback, got %v", err)
+	}
+}
+
 func TestAcquireTokenByAuthCode(t *testing.T) {
+	cred, err := NewCredFromSecret("fake_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
 	client, err := fakeClient(accesstokens.TokenResponse{
 		AccessToken:   token,
 		RefreshToken:  refresh,
@@ -159,7 +194,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 			UID:  "123-456",
 			UTID: "fake",
 		},
-	}, "fake_secret")
+	}, cred)
 	if err != nil {
 		t.Fatal(err)
 	}
