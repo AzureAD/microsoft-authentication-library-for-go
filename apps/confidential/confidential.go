@@ -20,6 +20,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -129,6 +130,9 @@ func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
 	return key, nil
 }
 
+// AssertionRequestOptions has required information for client assertion claims
+type AssertionRequestOptions = exported.AssertionRequestOptions
+
 // Credential represents the credential used in confidential client flows.
 type Credential struct {
 	secret string
@@ -136,7 +140,7 @@ type Credential struct {
 	cert *x509.Certificate
 	key  crypto.PrivateKey
 
-	assertionCallback func(context.Context) (string, error)
+	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
 }
 
 // toInternal returns the accesstokens.Credential that is used internally. The current structure of the
@@ -163,12 +167,12 @@ func NewCredFromAssertion(assertion string) (Credential, error) {
 	if assertion == "" {
 		return Credential{}, errors.New("assertion can't be empty string")
 	}
-	return NewCredFromAssertionCallback(func(context.Context) (string, error) { return assertion, nil }), nil
+	return NewCredFromAssertionCallback(func(context.Context, AssertionRequestOptions) (string, error) { return assertion, nil }), nil
 }
 
 // NewCredFromAssertionCallback creates a Credential that invokes a callback to get assertions
 // authenticating the application. The callback must be thread safe.
-func NewCredFromAssertionCallback(callback func(context.Context) (string, error)) Credential {
+func NewCredFromAssertionCallback(callback func(context.Context, AssertionRequestOptions) (string, error)) Credential {
 	return Credential{assertionCallback: callback}
 }
 

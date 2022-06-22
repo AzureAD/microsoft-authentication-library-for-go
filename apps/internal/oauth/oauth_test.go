@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -66,7 +67,7 @@ func TestAuthCode(t *testing.T) {
 }
 
 func TestCredential(t *testing.T) {
-	callback := func(context.Context) (string, error) {
+	callback := func(context.Context, exported.AssertionRequestOptions) (string, error) {
 		return "assertion", nil
 	}
 	tests := []struct {

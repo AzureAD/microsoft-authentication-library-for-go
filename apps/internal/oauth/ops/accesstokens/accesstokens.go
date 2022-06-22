@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
@@ -92,13 +93,17 @@ type Credential struct {
 	Key crypto.PrivateKey
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
-	AssertionCallback func(context.Context) (string, error)
+	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
 }
 
 // JWT gets the jwt assertion when the credential is not using a secret.
 func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (string, error) {
 	if c.AssertionCallback != nil {
-		return c.AssertionCallback(ctx)
+		options := exported.AssertionRequestOptions{
+			ClientID:      authParams.ClientID,
+			TokenEndpoint: authParams.Endpoints.TokenEndpoint,
+		}
+		return c.AssertionCallback(ctx, options)
 	}
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{

@@ -41,14 +41,16 @@ func TestCertFromPEM(t *testing.T) {
 }
 
 const (
-	token   = "fake_token"
-	refresh = "fake_refresh"
+	fakeClientID      = "fake_client_id"
+	fakeTokenEndpoint = "https://fake_authority/fake/token"
+	token             = "fake_token"
+	refresh           = "fake_refresh"
 )
 
 var tokenScope = []string{"the_scope"}
 
 func fakeClient(tk accesstokens.TokenResponse, credential Credential) (Client, error) {
-	client, err := New("fake_client_id", credential, WithAuthority("https://fake_authority/fake"))
+	client, err := New(fakeClientID, credential, WithAuthority("https://fake_authority/fake"))
 	if err != nil {
 		return Client{}, err
 	}
@@ -76,7 +78,7 @@ func fakeClient(tk accesstokens.TokenResponse, credential Credential) (Client, e
 	}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{
 		Endpoints: authority.NewEndpoints("https://fake_authority/fake/auth",
-			"https://fake_authority/fake/token", "https://fake_authority/fake/jwt", "fake_authority"),
+			fakeTokenEndpoint, "https://fake_authority/fake/jwt", "fake_authority"),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
 	return client, nil
@@ -138,9 +140,15 @@ func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
 	key := struct{}{}
 	ctx := context.WithValue(context.Background(), key, true)
-	getAssertion := func(c context.Context) (string, error) {
+	getAssertion := func(c context.Context, o AssertionRequestOptions) (string, error) {
 		if v := c.Value(key); v == nil || !v.(bool) {
 			t.Fatal("callback received unexpected context")
+		}
+		if o.ClientID != fakeClientID {
+			t.Fatalf(`unexpected client ID "%s"`, o.ClientID)
+		}
+		if o.TokenEndpoint != fakeTokenEndpoint {
+			t.Fatalf(`unexpected token endpoint "%s"`, o.TokenEndpoint)
 		}
 		calls++
 		if calls < 4 {
