@@ -263,31 +263,40 @@ func TestAADInstanceDiscovery(t *testing.T) {
 }
 
 func TestAADInstanceDiscoveryWithRegion(t *testing.T) {
-	fake := &fakeJSONCaller{}
-	client := Client{fake}
-	authInfo := Info{
-		Host:   "host",
-		Tenant: "tenant",
-		Region: "eastus",
-	}
-	resp, err := client.AADInstanceDiscovery(context.Background(), authInfo)
-	if err != nil {
-		t.Errorf("AADInstanceDiscoveryWithRegion failing with %s", err)
-	}
-	expectedTenantDiscoveryEndpoint := fmt.Sprintf(TenantDiscoveryEndpointWithRegion, "eastus", "host", "tenant")
-	expectedPreferredNetwork := fmt.Sprintf("%v.%v", "eastus", "host")
-	expectedPreferredCache := "host"
-	if resp.TenantDiscoveryEndpoint != expectedTenantDiscoveryEndpoint {
-		t.Errorf("AADInstanceDiscoveryWithRegion incorrect TenantDiscoveryEndpoint: got: %s , want: %s", resp.TenantDiscoveryEndpoint, expectedTenantDiscoveryEndpoint)
-	}
-	if resp.Metadata[0].PreferredNetwork != expectedPreferredNetwork {
-		t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Network got: %s , want: %s", resp.Metadata[0].PreferredNetwork, expectedPreferredNetwork)
-	}
-	if resp.Metadata[0].PreferredCache != expectedPreferredCache {
-		t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Cache got: %s , want: %s", resp.Metadata[0].PreferredCache, expectedPreferredCache)
+	client := Client{&fakeJSONCaller{}}
+	region := "region"
+	discoveryPath := "tenant/v2.0/.well-known/openid-configuration"
+	publicCloudEndpoint := fmt.Sprintf("https://%s.r.login.microsoftonline.com/%s", region, discoveryPath)
+	for _, test := range []struct{ host, expectedEndpoint string }{
+		{"login.chinacloudapi.cn", fmt.Sprintf("https://%s.login.chinacloudapi.cn/%s", region, discoveryPath)},
+		{"login.microsoft.com", publicCloudEndpoint},
+		{"login.microsoftonline.com", publicCloudEndpoint},
+		{"login.windows.net", publicCloudEndpoint},
+		{"login.windows-ppe.net", fmt.Sprintf("https://%s.login.windows-ppe.net/%s", region, discoveryPath)},
+		{"sts.windows.net", publicCloudEndpoint},
+	} {
+		t.Run(test.host, func(t *testing.T) {
+			authInfo := Info{Host: test.host, Tenant: "tenant", Region: region}
+			resp, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+			if err != nil {
+				t.Errorf("AADInstanceDiscoveryWithRegion failing with %s", err)
+			}
+			expectedPreferredNetwork := fmt.Sprintf("%v.%v", region, test.host)
+			expectedPreferredCache := test.host
+			if resp.TenantDiscoveryEndpoint != test.expectedEndpoint {
+				t.Errorf("AADInstanceDiscoveryWithRegion incorrect TenantDiscoveryEndpoint: got: %s, want: %s", resp.TenantDiscoveryEndpoint, test.expectedEndpoint)
+			}
+			if resp.Metadata[0].PreferredNetwork != expectedPreferredNetwork {
+				t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Network got: %s, want: %s", resp.Metadata[0].PreferredNetwork, expectedPreferredNetwork)
+			}
+			if resp.Metadata[0].PreferredCache != expectedPreferredCache {
+				t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Cache got: %s, want: %s", resp.Metadata[0].PreferredCache, expectedPreferredCache)
 
+			}
+		})
 	}
 }
+
 func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 	const authorityURI = "https://login.microsoftonline.com/common/"
 
