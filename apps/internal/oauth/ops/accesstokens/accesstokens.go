@@ -19,6 +19,7 @@ import (
 	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -110,10 +111,10 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
-		"exp": strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10),
+		"exp": json.Number(strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)),
 		"iss": authParams.ClientID,
 		"jti": uuid.New().String(),
-		"nbf": strconv.FormatInt(time.Now().Unix(), 10),
+		"nbf": json.Number(strconv.FormatInt(time.Now().Unix(), 10)),
 		"sub": authParams.ClientID,
 	})
 	token.Header = map[string]interface{}{
