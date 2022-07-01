@@ -127,8 +127,7 @@ object.
 We wrote the thumbprint creator for the internals. 
 
 Since we also require the private key and it is not straightforward to get, we added a CertFromPEM()
-function that will extract the x509.Certificate and private key as long as PEM is PKCS8 encoded. We
-probably could add PKCS1 support, but didn't.  We did support encrypted PEM.
+function that will extract the x509.Certificate and private key. We did support encrypted PEM.
 
 It should be noted that Keyvault stores things in PKCS12 and PEM. Keyvault is not straight forward
 in how it works. Frankly, I'm in serious doubt that a regular Go user can get certs out of

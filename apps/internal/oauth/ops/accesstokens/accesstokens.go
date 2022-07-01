@@ -91,6 +91,8 @@ type Credential struct {
 	Cert *x509.Certificate
 	// Key is the private key for signing, if we're authenticating by certificate.
 	Key crypto.PrivateKey
+	// X5c is the JWT assertion's x5c header value, required for SN/I authentication.
+	X5c []string
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
 	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
@@ -121,7 +123,7 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 	}
 
 	if authParams.SendX5C {
-		token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(c.Cert.Raw)}
+		token.Header["x5c"] = c.X5c
 	}
 
 	assertion, err := token.SignedString(c.Key)

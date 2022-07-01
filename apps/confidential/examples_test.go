@@ -1,12 +1,14 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package confidential
+package confidential_test
 
 import (
 	"fmt"
 	"io/ioutil"
 	"log"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
 func ExampleNewCredFromCert_pem() {
@@ -18,7 +20,7 @@ func ExampleNewCredFromCert_pem() {
 	// This extracts our public certificates and private key from the PEM file.
 	// The private key must be in PKCS8 format. If it is encrypted, the second argument
 	// must be password to decode.
-	certs, priv, err := CertFromPEM(b, "")
+	certs, priv, err := confidential.CertFromPEM(b, "")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -29,6 +31,26 @@ func ExampleNewCredFromCert_pem() {
 		log.Fatal("too many certificates in PEM file")
 	}
 
-	cred := NewCredFromCert(certs[0], priv)
+	cred := confidential.NewCredFromCert(certs[0], priv)
 	fmt.Println(cred) // Simply here so cred is used, otherwise won't compile.
+}
+
+func ExampleNewCredFromCertChain() {
+	b, err := ioutil.ReadFile("key.pem")
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// CertFromPEM loads certificates and a private key from the PEM content. If
+	// the content is encrypted, the second argument must be the password.
+	certs, priv, err := confidential.CertFromPEM(b, "")
+	if err != nil {
+		// TODO: handle error
+	}
+
+	cred, err := confidential.NewCredFromCertChain(certs, priv)
+	if err != nil {
+		// TODO: handle error
+	}
+	_ = cred
 }

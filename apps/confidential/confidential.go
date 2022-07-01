@@ -12,7 +12,9 @@ package confidential
 import (
 	"context"
 	"crypto"
+	"crypto/rsa"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/pem"
 	"errors"
 	"fmt"
@@ -139,6 +141,7 @@ type Credential struct {
 
 	cert *x509.Certificate
 	key  crypto.PrivateKey
+	x5c  []string
 
 	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
 }
@@ -148,7 +151,7 @@ type Credential struct {
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
 func (c Credential) toInternal() *accesstokens.Credential {
-	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, AssertionCallback: c.assertionCallback}
+	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, AssertionCallback: c.assertionCallback, X5c: c.x5c}
 }
 
 // NewCredFromSecret creates a Credential from a secret.
@@ -176,10 +179,36 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 	return Credential{assertionCallback: callback}
 }
 
-// NewCredFromCert creates a Credential from an x509.Certificate and a PKCS8 DER encoded private key.
-// CertFromPEM() can be used to get these values from a PEM file storing a PKCS8 private key.
+// NewCredFromCert creates a Credential from an x509.Certificate and an RSA private key.
+// CertFromPEM() can be used to get these values from a PEM file.
 func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
-	return Credential{cert: cert, key: key}
+	cred, _ := NewCredFromCertChain([]*x509.Certificate{cert}, key)
+	return cred
+}
+
+// NewCredFromCertChain creates a Credential from a chain of x509.Certificates and an RSA private key
+// as returned by CertFromPEM().
+func NewCredFromCertChain(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
+	cred := Credential{key: key}
+	k, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return cred, errors.New("key must be an RSA key")
+	}
+	for _, cert := range certs {
+		certKey, ok := cert.PublicKey.(*rsa.PublicKey)
+		if ok && k.E == certKey.E && k.N.Cmp(certKey.N) == 0 {
+			// We know this is the signing cert because its public key matches the given private key.
+			// This cert must be first in x5c.
+			cred.cert = cert
+			cred.x5c = append([]string{base64.StdEncoding.EncodeToString(cert.Raw)}, cred.x5c...)
+		} else {
+			cred.x5c = append(cred.x5c, base64.StdEncoding.EncodeToString(cert.Raw))
+		}
+	}
+	if cred.cert == nil {
+		return cred, errors.New("key doesn't match any certificate")
+	}
+	return cred, nil
 }
 
 // AutoDetectRegion instructs MSAL Go to auto detect region for Azure regional token service.
