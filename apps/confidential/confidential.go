@@ -63,12 +63,9 @@ type AuthResult = base.AuthResult
 type Account = shared.Account
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
-// must have the public certificate and the private key encoded. The private key must be encoded
-// in PKCS8 (not PKCS1). This is usually denoted by the section "PRIVATE KEY" (instead of PKCS1's
-// "RSA PRIVATE KEY"). If a PEM block is encoded and password is not an empty string, it attempts
-// to decrypt the PEM blocks using the password. This will return multiple x509 certificates,
-// though this use case should have a single cert. Multiple certs are due to certificate
-// chaining for use cases like TLS that sign from root to leaf.
+// must contain the public certificate and the private key. If a PEM block is encrypted and
+// password is not an empty string, it attempts to decrypt the PEM blocks using the password.
+// Multiple certs are due to certificate chaining for use cases like TLS that sign from root to leaf.
 func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.PrivateKey, error) {
 	var certs []*x509.Certificate
 	var priv crypto.PrivateKey
@@ -94,16 +91,25 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 		case "CERTIFICATE":
 			cert, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
-				return nil, nil, fmt.Errorf("block labelled 'CERTIFICATE' could not be pared by x509: %w", err)
+				return nil, nil, fmt.Errorf("block labelled 'CERTIFICATE' could not be parsed by x509: %w", err)
 			}
 			certs = append(certs, cert)
 		case "PRIVATE KEY":
 			if priv != nil {
-				return nil, nil, fmt.Errorf("found multiple blocks labelled 'PRIVATE KEY'")
+				return nil, nil, errors.New("found multiple private key blocks")
 			}
 
 			var err error
 			priv, err = parsePrivateKey(block.Bytes)
+			if err != nil {
+				return nil, nil, fmt.Errorf("could not decode private key: %w", err)
+			}
+		case "RSA PRIVATE KEY":
+			if priv != nil {
+				return nil, nil, errors.New("found multiple private key blocks")
+			}
+			var err error
+			priv, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 			if err != nil {
 				return nil, nil, fmt.Errorf("could not decode private key: %w", err)
 			}
