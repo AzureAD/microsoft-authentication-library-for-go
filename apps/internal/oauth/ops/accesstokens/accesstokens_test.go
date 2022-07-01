@@ -5,15 +5,10 @@ package accesstokens
 
 import (
 	"context"
-	"crypto/x509"
 	"encoding/base64"
-	"encoding/pem"
 	"errors"
 	"fmt"
-	"io/ioutil"
 	"net/url"
-	"os"
-	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -452,56 +447,6 @@ func TestAccessTokenWithAssertion(t *testing.T) {
 		if err := fake.compare(authParams.Endpoints.TokenEndpoint, test.qv); err != nil {
 			t.Errorf("TestAccessTokenWithAssertion(%s): %s", test.desc, err)
 		}
-	}
-}
-
-func TestCertAssertionExpiration(t *testing.T) {
-	f, err := os.Open(filepath.Clean("../../../../testdata/test-cert.pem"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer f.Close()
-	pemData, err := ioutil.ReadAll(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	certBlock, rest := pem.Decode(pemData)
-	keyBlock, _ := pem.Decode(rest)
-	cert, err := x509.ParseCertificate(certBlock.Bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	key, err := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
-	if err != nil {
-		t.Fatal(err)
-	}
-	for _, shouldRegen := range []bool{true, false} {
-		name := "expiredJWT"
-		if !shouldRegen {
-			name = "validJWT"
-		}
-		t.Run(name, func(t *testing.T) {
-			if shouldRegen {
-				defaultLifetime := assertionLifetime
-				defer func() { assertionLifetime = defaultLifetime }()
-				assertionLifetime = time.Nanosecond
-			}
-			cred := Credential{Cert: cert, Key: key}
-			authParams := authority.NewAuthParams("clientID", authority.Info{Host: "host", Tenant: "tenant"})
-			jwt, err := cred.JWT(authParams)
-			if err != nil {
-				t.Fatal(err)
-			}
-			newJWT, err := cred.JWT(authParams)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if shouldRegen && newJWT == jwt {
-				t.Fatal("expected a new JWT")
-			} else if !shouldRegen && newJWT != jwt {
-				t.Fatal("expected the same JWT")
-			}
-		})
 	}
 }
 
