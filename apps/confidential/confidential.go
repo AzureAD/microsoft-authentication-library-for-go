@@ -100,7 +100,7 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			}
 
 			var err error
-			priv, err = parsePrivateKey(block.Bytes)
+			priv, err = x509.ParsePKCS8PrivateKey(block.Bytes)
 			if err != nil {
 				return nil, nil, fmt.Errorf("could not decode private key: %w", err)
 			}
@@ -126,16 +126,6 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 	}
 
 	return certs, priv, nil
-}
-
-// parsePrivateKey is based on https://gist.github.com/ukautz/cd118e298bbd8f0a88fc . I don't *think*
-// we need to do the extra decoding in the example, but *maybe*?
-func parsePrivateKey(der []byte) (crypto.PrivateKey, error) {
-	key, err := x509.ParsePKCS8PrivateKey(der)
-	if err != nil {
-		return nil, fmt.Errorf("problems decoding private key using PKCS8: %w", err)
-	}
-	return key, nil
 }
 
 // AssertionRequestOptions has required information for client assertion claims
