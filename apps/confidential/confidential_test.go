@@ -10,7 +10,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -29,7 +29,7 @@ func TestCertFromPEM(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	pemData, err := ioutil.ReadAll(f)
+	pemData, err := io.ReadAll(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -253,7 +253,7 @@ func TestNewCredFromCertChain(t *testing.T) {
 			t.Fatal(err)
 		}
 		defer f.Close()
-		pemData, err := ioutil.ReadAll(f)
+		pemData, err := io.ReadAll(f)
 		if err != nil {
 			t.Fatal(err)
 		}
