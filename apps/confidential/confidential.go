@@ -79,7 +79,7 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 		if x509.IsEncryptedPEMBlock(block) {
 			b, err := x509.DecryptPEMBlock(block, []byte(password))
 			if err != nil {
-				return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %w", err)
+				return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %v", err)
 			}
 			block, _ = pem.Decode(b)
 			if block == nil {
@@ -91,7 +91,7 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 		case "CERTIFICATE":
 			cert, err := x509.ParseCertificate(block.Bytes)
 			if err != nil {
-				return nil, nil, fmt.Errorf("block labelled 'CERTIFICATE' could not be parsed by x509: %w", err)
+				return nil, nil, fmt.Errorf("block labelled 'CERTIFICATE' could not be parsed by x509: %v", err)
 			}
 			certs = append(certs, cert)
 		case "PRIVATE KEY":
@@ -102,7 +102,7 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			var err error
 			priv, err = x509.ParsePKCS8PrivateKey(block.Bytes)
 			if err != nil {
-				return nil, nil, fmt.Errorf("could not decode private key: %w", err)
+				return nil, nil, fmt.Errorf("could not decode private key: %v", err)
 			}
 		case "RSA PRIVATE KEY":
 			if priv != nil {
@@ -111,7 +111,7 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			var err error
 			priv, err = x509.ParsePKCS1PrivateKey(block.Bytes)
 			if err != nil {
-				return nil, nil, fmt.Errorf("could not decode private key: %w", err)
+				return nil, nil, fmt.Errorf("could not decode private key: %v", err)
 			}
 		}
 		pemData = rest
