@@ -4,16 +4,151 @@
 package base
 
 import (
+	"context"
+	"fmt"
+	"reflect"
 	"testing"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-
 	"github.com/kylelemons/godebug/pretty"
 )
+
+const (
+	fakeAccessToken  = "fake-access-token"
+	fakeAuthority    = "fake_authority"
+	fakeClientID     = "fake-client-id"
+	fakeRefreshToken = "fake-refresh-token"
+	fakeTenantID     = "fake-tenant-id"
+	fakeUsername     = "fake-username"
+)
+
+var (
+	fakeIDToken = accesstokens.IDToken{
+		Oid:               "oid",
+		PreferredUsername: fakeUsername,
+		TenantID:          fakeTenantID,
+		UPN:               fakeUsername,
+	}
+	testScopes = []string{"scope"}
+)
+
+func fakeClient(t *testing.T) Client {
+	client, err := New(fakeClientID, fmt.Sprintf("https://%s/%s", fakeAuthority, fakeTenantID), &oauth.Client{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.Token.AccessTokens = &fake.AccessTokens{
+		AccessToken: accesstokens.TokenResponse{
+			AccessToken:   fakeAccessToken,
+			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			FamilyID:      "family-id",
+			GrantedScopes: accesstokens.Scopes{Slice: testScopes},
+			IDToken:       fakeIDToken,
+			RefreshToken:  fakeRefreshToken,
+		},
+	}
+	client.Token.Authority = &fake.Authority{
+		InstanceResp: authority.InstanceDiscoveryResponse{
+			Metadata: []authority.InstanceDiscoveryMetadata{
+				{Aliases: []string{fakeAuthority}, PreferredNetwork: fakeAuthority},
+			},
+			TenantDiscoveryEndpoint: fmt.Sprintf("https://%s/fake/discovery/endpoint", fakeAuthority),
+		},
+	}
+	client.Token.Resolver = &fake.ResolveEndpoints{
+		Endpoints: authority.NewEndpoints(
+			fmt.Sprintf("https://%s/fake/auth", fakeAuthority),
+			fmt.Sprintf("https://%s/fake/token", fakeAuthority),
+			fmt.Sprintf("https://%s/fake/jwt", fakeAuthority),
+			fakeAuthority,
+		),
+	}
+	return client
+}
+
+func TestAcquireTokenSilentEmptyCache(t *testing.T) {
+	client := fakeClient(t)
+	_, err := client.AcquireTokenSilent(context.Background(), AcquireTokenSilentParameters{
+		Account: shared.NewAccount("homeAccountID", "env", "realm", "localAccountID", authority.AAD, "username"),
+		Scopes:  testScopes,
+	})
+	if err == nil {
+		t.Fatal("expected an error because the cache is empty")
+	}
+}
+
+func TestAcquireTokenSilentScopes(t *testing.T) {
+	for _, test := range []struct {
+		desc              string
+		cachedTokenScopes []string
+	}{
+		{"expired access token", testScopes},
+		{"no access token", []string{"other-" + testScopes[0]}},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			client := fakeClient(t)
+			validated := false
+			client.Token.AccessTokens.(*fake.AccessTokens).FromRefreshTokenCallback = func(at accesstokens.AppType, ap authority.AuthParams, cc *accesstokens.Credential, rt string) {
+				validated = true
+				if !reflect.DeepEqual(ap.Scopes, testScopes) {
+					t.Fatalf("unexpected scopes: %v", ap.Scopes)
+				}
+				if cc != nil {
+					t.Fatal("client shouldn't have a credential")
+				}
+				if rt != fakeRefreshToken {
+					t.Fatal("unexpected refresh token")
+				}
+			}
+
+			// cache a refresh token and an expired access token for the given scopes
+			// (testing only the public client code path)
+			storage.FakeValidate = func(storage.AccessToken) error { return nil }
+			account, err := client.manager.Write(
+				authority.AuthParams{
+					AuthorityInfo: authority.Info{
+						AuthorityType: authority.AAD,
+						Host:          fakeAuthority,
+						Tenant:        fakeIDToken.TenantID,
+					},
+					ClientID: fakeClientID,
+					Scopes:   test.cachedTokenScopes,
+					Username: fakeIDToken.PreferredUsername,
+				},
+				accesstokens.TokenResponse{
+					AccessToken:   fakeAccessToken,
+					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+					GrantedScopes: accesstokens.Scopes{Slice: test.cachedTokenScopes},
+					IDToken:       fakeIDToken,
+					RefreshToken:  fakeRefreshToken,
+				},
+			)
+			storage.FakeValidate = nil
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// AcquireTokenSilent should redeem the refresh token for a new access token
+			ar, err := client.AcquireTokenSilent(context.Background(), AcquireTokenSilentParameters{Account: account, Scopes: testScopes})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ar.AccessToken != fakeAccessToken {
+				t.Fatal("unexpected access token")
+			}
+			if !validated {
+				t.Fatal("FromRefreshTokenCallback wasn't called")
+			}
+		})
+	}
+}
 
 func TestCreateAuthenticationResult(t *testing.T) {
 	future := time.Now().Add(400 * time.Second)
