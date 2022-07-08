@@ -262,7 +262,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	result, err := AuthResultFromStorage(storageTokenResponse)
 	if err != nil {
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsZero() {
-			return AuthResult{}, errors.New("no refresh token found")
+			return AuthResult{}, errors.New("no token found")
 		}
 
 		var cc *accesstokens.Credential
