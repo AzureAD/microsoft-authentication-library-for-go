@@ -33,6 +33,7 @@ var (
 	fakeIDToken = accesstokens.IDToken{
 		Oid:               "oid",
 		PreferredUsername: fakeUsername,
+		RawToken:          "x.e30",
 		TenantID:          fakeTenantID,
 		UPN:               fakeUsername,
 	}
@@ -85,6 +86,12 @@ func TestAcquireTokenSilentEmptyCache(t *testing.T) {
 }
 
 func TestAcquireTokenSilentScopes(t *testing.T) {
+	// ensure fakeIDToken.RawToken unmarshals (doesn't matter to what) because an unmarshalling
+	// error can conceal a test bug by making an "err != nil" check true for the wrong reason
+	var idToken accesstokens.IDToken
+	if err := idToken.UnmarshalJSON([]byte(fakeIDToken.RawToken)); err != nil {
+		t.Fatal(err)
+	}
 	for _, test := range []struct {
 		desc              string
 		cachedTokenScopes []string
@@ -124,7 +131,7 @@ func TestAcquireTokenSilentScopes(t *testing.T) {
 				},
 				accesstokens.TokenResponse{
 					AccessToken:   fakeAccessToken,
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(-time.Hour)},
 					GrantedScopes: accesstokens.Scopes{Slice: test.cachedTokenScopes},
 					IDToken:       fakeIDToken,
 					RefreshToken:  fakeRefreshToken,
