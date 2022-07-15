@@ -157,6 +157,41 @@ func TestAcquireTokenSilentScopes(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
+	client := fakeClient(t)
+	grantedScopes := []string{"scope1", "scope2"}
+	expectedToken := "not-" + fakeAccessToken
+	account, err := client.manager.Write(
+		authority.AuthParams{
+			AuthorityInfo: authority.Info{
+				AuthorityType: authority.AAD,
+				Host:          fakeAuthority,
+				Tenant:        fakeIDToken.TenantID,
+			},
+			ClientID: fakeClientID,
+			Scopes:   grantedScopes[1:],
+		},
+		accesstokens.TokenResponse{
+			AccessToken:   expectedToken,
+			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			GrantedScopes: accesstokens.Scopes{Slice: grantedScopes},
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, scope := range grantedScopes {
+		ar, err := client.AcquireTokenSilent(context.Background(), AcquireTokenSilentParameters{Account: account, Scopes: []string{scope}})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ar.AccessToken != expectedToken {
+			t.Fatal("unexpected access token")
+		}
+	}
+}
+
 func TestCreateAuthenticationResult(t *testing.T) {
 	future := time.Now().Add(400 * time.Second)
 
