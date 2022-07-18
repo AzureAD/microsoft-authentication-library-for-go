@@ -47,6 +47,9 @@ type AccessTokens struct {
 
 	// fake result to return
 	DeviceCode accesstokens.DeviceCodeResult
+
+	// FromRefreshTokenCallback is an optional callback invoked by FromRefreshToken
+	FromRefreshTokenCallback func(appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string)
 }
 
 func (f *AccessTokens) FromUsernamePassword(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error) {
@@ -62,6 +65,9 @@ func (f *AccessTokens) FromAuthCode(ctx context.Context, req accesstokens.AuthCo
 	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
+	if f.FromRefreshTokenCallback != nil {
+		f.FromRefreshTokenCallback(appType, authParams, cc, refreshToken)
+	}
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
