@@ -136,28 +136,25 @@ func TestReadAccessToken(t *testing.T) {
 	storageManager := newForTest(nil)
 	storageManager.update(cache)
 
-	retAccessToken, err := storageManager.readAccessToken(
+	retAccessToken := storageManager.readAccessToken(
 		"hid",
 		[]string{"hello", "env", "test"},
 		"realm",
 		"cid",
 		[]string{"user.read", "openid"},
 	)
-	if err != nil {
-		t.Errorf("readAccessToken(): got err == %s, want err == nil", err)
-	}
 	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
-	_, err = storageManager.readAccessToken(
+	retAccessToken = storageManager.readAccessToken(
 		"this_should_break_it",
 		[]string{"hello", "env", "test"},
 		"realm",
 		"cid",
 		[]string{"user.read", "openid"},
 	)
-	if err == nil {
-		t.Errorf("readAccessToken(): got err == nil, want err != nil")
+	if !reflect.ValueOf(retAccessToken).IsZero() {
+		t.Fatal("expected to find no access token")
 	}
 }
 

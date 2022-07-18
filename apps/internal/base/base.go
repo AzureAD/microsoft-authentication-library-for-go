@@ -262,7 +262,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	result, err := AuthResultFromStorage(storageTokenResponse)
 	if err != nil {
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsZero() {
-			return AuthResult{}, errors.New("no refresh token found")
+			return AuthResult{}, errors.New("no token found")
 		}
 
 		var cc *accesstokens.Credential
@@ -270,7 +270,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			cc = silent.Credential
 		}
 
-		token, err := b.Token.Refresh(ctx, silent.RequestType, b.AuthParams, cc, storageTokenResponse.RefreshToken)
+		token, err := b.Token.Refresh(ctx, silent.RequestType, authParams, cc, storageTokenResponse.RefreshToken)
 		if err != nil {
 			return AuthResult{}, err
 		}

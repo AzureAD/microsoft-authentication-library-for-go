@@ -94,10 +94,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 		return TokenResponse{}, err
 	}
 
-	accessToken, err := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
-	if err != nil {
-		return TokenResponse{}, err
-	}
+	accessToken := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
 
 	if account.IsZero() {
 		return TokenResponse{
@@ -249,7 +246,7 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) (AccessToken, error) {
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) AccessToken {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
@@ -259,12 +256,12 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
 			if checkAlias(at.Environment, envAliases) {
 				if isMatchingScopes(scopes, at.Scopes) {
-					return at, nil
+					return at
 				}
 			}
 		}
 	}
-	return AccessToken{}, fmt.Errorf("access token not found")
+	return AccessToken{}
 }
 
 func (m *Manager) writeAccessToken(accessToken AccessToken) error {
