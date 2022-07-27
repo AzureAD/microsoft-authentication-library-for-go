@@ -43,7 +43,7 @@ Acquiring tokens with MSAL Go follows this general three step pattern. There mig
    * Initializing a public client:
 
     ```go
-    publicClientApp, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
+    publicClientApp, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"), confidential.WithX5C())
     ```
 
    * Initializing a confidential client:
@@ -54,7 +54,7 @@ Acquiring tokens with MSAL Go follows this general three step pattern. There mig
     if err != nil {
         return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
     }
-    confidentialClientApp, err := confidential.New("client_id", cred, confidential.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"))
+    confidentialClientApp, err := confidential.New("client_id", cred, confidential.WithAuthority("https://login.microsoftonline.com/Enter_The_Tenant_Name_Here"), confidential.WithX5C())
     ```
 
 1. MSAL comes packaged with an in-memory cache. Utilizing the cache is optional, but we would highly recommend it.
