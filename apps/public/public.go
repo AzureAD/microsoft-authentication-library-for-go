@@ -162,6 +162,12 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 	return pca.base.AcquireTokenSilent(ctx, silentParameters)
 }
 
+// AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
+// NOTE: this flow is NOT recommended.
+func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
+	return pca.base.AcquireTokenByUsernamePassword(ctx, scopes, username, password)
+}
+
 type DeviceCodeResult = accesstokens.DeviceCodeResult
 
 // DeviceCode provides the results of the device code flows first stage (containing the code)

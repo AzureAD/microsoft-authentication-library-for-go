@@ -428,3 +428,9 @@ func (cca Client) RemoveAccount(account Account) error {
 	cca.base.RemoveAccount(account)
 	return nil
 }
+
+// AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
+// NOTE: this flow is NOT recommended.
+func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
+	return cca.base.AcquireTokenByUsernamePassword(ctx, scopes, username, password)
+}
