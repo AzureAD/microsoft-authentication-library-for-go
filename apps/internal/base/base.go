@@ -331,6 +331,22 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 	return token, err
 }
 
+// AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
+// NOTE: this flow is NOT recommended.
+func (b Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
+	authParams := b.AuthParams
+	authParams.Scopes = scopes
+	authParams.AuthorizationType = authority.ATUsernamePassword
+	authParams.Username = username
+	authParams.Password = password
+
+	token, err := b.Token.UsernamePassword(ctx, authParams)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	return b.AuthResultFromToken(ctx, authParams, token, true)
+}
+
 func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthResult, error) {
 	if !cacheWrite {
 		return NewAuthResult(token, shared.Account{})

@@ -418,22 +418,6 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
 
-// AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
-// NOTE: this flow is NOT recommended.
-func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
-	authParams := cca.base.AuthParams
-	authParams.Scopes = scopes
-	authParams.AuthorizationType = authority.ATUsernamePassword
-	authParams.Username = username
-	authParams.Password = password
-
-	token, err := cca.base.Token.UsernamePassword(ctx, authParams)
-	if err != nil {
-		return AuthResult{}, err
-	}
-	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
-}
-
 // Account gets the account in the token cache with the specified homeAccountID.
 func (cca Client) Account(homeAccountID string) Account {
 	return cca.base.Account(homeAccountID)
