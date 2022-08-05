@@ -97,6 +97,10 @@ type Credential struct {
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
 	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
+
+	// TokenProvider is a function provided by the application that implements custom authentication
+	// logic for a confidential client
+	TokenProvider func(context.Context, exported.TokenProviderParameters) (exported.TokenProviderResult, error)
 }
 
 // JWT gets the jwt assertion when the credential is not using a secret.

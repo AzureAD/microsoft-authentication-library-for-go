@@ -140,6 +140,8 @@ type Credential struct {
 	x5c  []string
 
 	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
+
+	tokenProvider func(context.Context, TokenProviderParameters) (TokenProviderResult, error)
 }
 
 // toInternal returns the accesstokens.Credential that is used internally. The current structure of the
@@ -161,6 +163,9 @@ func (c Credential) toInternal() (*accesstokens.Credential, error) {
 	}
 	if c.assertionCallback != nil {
 		return &accesstokens.Credential{AssertionCallback: c.assertionCallback}, nil
+	}
+	if c.tokenProvider != nil {
+		return &accesstokens.Credential{TokenProvider: c.tokenProvider}, nil
 	}
 	return nil, errors.New("invalid credential")
 }
@@ -224,6 +229,19 @@ func NewCredFromCertChain(certs []*x509.Certificate, key crypto.PrivateKey) (Cre
 		return cred, errors.New("key doesn't match any certificate")
 	}
 	return cred, nil
+}
+
+// TokenProviderParameters is the authentication parameters passed to token providers
+type TokenProviderParameters = exported.TokenProviderParameters
+
+// TokenProviderResult is the authentication result returned by custom token providers
+type TokenProviderResult = exported.TokenProviderResult
+
+// NewCredFromTokenProvider creates a Credential from a function that provides access tokens. This
+// is for advanced scenarios in applications that need custom authentication logic and want to use
+// MSAL only for token caching. The token provider function must be concurrency safe.
+func NewCredFromTokenProvider(provider func(context.Context, TokenProviderParameters) (TokenProviderResult, error)) Credential {
+	return Credential{tokenProvider: provider}
 }
 
 // AutoDetectRegion instructs MSAL Go to auto detect region for Azure regional token service.
