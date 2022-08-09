@@ -20,9 +20,8 @@ func acquireTokenClientCertificate() {
 		log.Fatal(err)
 	}
 
-	// This extracts our public certificates and private key from the PEM file.
-	// The private key must be in PKCS8 format. If it is encrypted, the second argument
-	// must be password to decode.
+	// This extracts our public certificates and private key from the PEM file. If it is
+	// encrypted, the second argument must be password to decode.
 	certs, privateKey, err := confidential.CertFromPEM(pemData, "")
 	if err != nil {
 		log.Fatal(err)

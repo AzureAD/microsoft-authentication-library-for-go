@@ -19,6 +19,7 @@ import (
 	"crypto/sha1"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -91,6 +92,8 @@ type Credential struct {
 	Cert *x509.Certificate
 	// Key is the private key for signing, if we're authenticating by certificate.
 	Key crypto.PrivateKey
+	// X5c is the JWT assertion's x5c header value, required for SN/I authentication.
+	X5c []string
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
 	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
@@ -108,10 +111,10 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 
 	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
-		"exp": strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10),
+		"exp": json.Number(strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)),
 		"iss": authParams.ClientID,
 		"jti": uuid.New().String(),
-		"nbf": strconv.FormatInt(time.Now().Unix(), 10),
+		"nbf": json.Number(strconv.FormatInt(time.Now().Unix(), 10)),
 		"sub": authParams.ClientID,
 	})
 	token.Header = map[string]interface{}{
@@ -121,7 +124,7 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 	}
 
 	if authParams.SendX5C {
-		token.Header["x5c"] = []string{base64.StdEncoding.EncodeToString(c.Cert.Raw)}
+		token.Header["x5c"] = c.X5c
 	}
 
 	assertion, err := token.SignedString(c.Key)
