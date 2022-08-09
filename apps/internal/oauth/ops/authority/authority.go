@@ -243,7 +243,7 @@ const (
 	Managed   UserRealmAccountType = "Managed"
 )
 
-//UserRealm is used for the username password request to determine user type
+// UserRealm is used for the username password request to determine user type
 type UserRealm struct {
 	AccountType       UserRealmAccountType `json:"account_type"`
 	DomainName        string               `json:"domain_name"`
