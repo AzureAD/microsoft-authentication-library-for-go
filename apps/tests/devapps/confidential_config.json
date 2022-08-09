@@ -3,8 +3,8 @@
     "client_id": "your_client_id",
     "scopes": ["requested_scope- usually of the format - {ResourceId}+/.default"],
     "redirect_uri": "redirect uri registered on the portal",
-    "code_challenge": "transformed code verifier from PKCE",  
+    "code_challenge": "transformed code verifier from PKCE",
     "state": "state parameter for authorization code flow",
     "client_secret": "client secret you generated for your app",
-    "pem_file": "the file path of pem containing public cert and private key encoded in PKCS8"
+    "pem_file": "the file path of pem containing public cert and private key"
 }

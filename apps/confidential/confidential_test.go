@@ -5,7 +5,12 @@ package confidential
 
 import (
 	"context"
-	"io/ioutil"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/base64"
+	"errors"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"testing"
@@ -15,6 +20,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/golang-jwt/jwt/v4"
 )
 
 func TestCertFromPEM(t *testing.T) {
@@ -23,7 +29,7 @@ func TestCertFromPEM(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer f.Close()
-	pemData, err := ioutil.ReadAll(f)
+	pemData, err := io.ReadAll(f)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -40,18 +46,17 @@ func TestCertFromPEM(t *testing.T) {
 }
 
 const (
-	token   = "fake_token"
-	refresh = "fake_refresh"
+	fakeClientID      = "fake_client_id"
+	fakeTokenEndpoint = "https://fake_authority/fake/token"
+	token             = "fake_token"
+	refresh           = "fake_refresh"
 )
 
 var tokenScope = []string{"the_scope"}
 
-func fakeClient(tk accesstokens.TokenResponse, credential string) (Client, error) {
-	cred, err := NewCredFromSecret(credential)
-	if err != nil {
-		return Client{}, err
-	}
-	client, err := New("fake_client_id", cred, WithAuthority("https://fake_authority/fake"))
+func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ...Option) (Client, error) {
+	options = append(options, WithAuthority("https://fake_authority/fake"))
+	client, err := New("fake_client_id", credential, options...)
 	if err != nil {
 		return Client{}, err
 	}
@@ -79,7 +84,7 @@ func fakeClient(tk accesstokens.TokenResponse, credential string) (Client, error
 	}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{
 		Endpoints: authority.NewEndpoints("https://fake_authority/fake/auth",
-			"https://fake_authority/fake/token", "https://fake_authority/fake/jwt", "fake_authority"),
+			fakeTokenEndpoint, "https://fake_authority/fake/jwt", "fake_authority"),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
 	return client, nil
@@ -101,12 +106,16 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		cred, err := NewCredFromSecret(test.cred)
+		if err != nil {
+			t.Fatal(err)
+		}
 		client, err := fakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-		}, test.cred)
+		}, cred)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -133,7 +142,51 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenByAssertionCallback(t *testing.T) {
+	calls := 0
+	key := struct{}{}
+	ctx := context.WithValue(context.Background(), key, true)
+	getAssertion := func(c context.Context, o AssertionRequestOptions) (string, error) {
+		if v := c.Value(key); v == nil || !v.(bool) {
+			t.Fatal("callback received unexpected context")
+		}
+		if o.ClientID != fakeClientID {
+			t.Fatalf(`unexpected client ID "%s"`, o.ClientID)
+		}
+		if o.TokenEndpoint != fakeTokenEndpoint {
+			t.Fatalf(`unexpected token endpoint "%s"`, o.TokenEndpoint)
+		}
+		calls++
+		if calls < 4 {
+			return "assertion", nil
+		}
+		return "", errors.New("expected error")
+	}
+	cred := NewCredFromAssertionCallback(getAssertion)
+	client, err := fakeClient(accesstokens.TokenResponse{}, cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i := 0; i < 3; i++ {
+		if calls != i {
+			t.Fatalf("expected %d calls, got %d", i, calls)
+		}
+		_, err = client.AcquireTokenByCredential(ctx, tokenScope)
+		if err != nil {
+			t.Fatal(err)
+		}
+	}
+	_, err = client.AcquireTokenByCredential(ctx, tokenScope)
+	if err == nil || err.Error() != "expected error" {
+		t.Fatalf("expected an error from the callback, got %v", err)
+	}
+}
+
 func TestAcquireTokenByAuthCode(t *testing.T) {
+	cred, err := NewCredFromSecret("fake_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
 	client, err := fakeClient(accesstokens.TokenResponse{
 		AccessToken:   token,
 		RefreshToken:  refresh,
@@ -159,7 +212,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 			UID:  "123-456",
 			UTID: "fake",
 		},
-	}, "fake_secret")
+	}, cred)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -183,5 +236,122 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	}
 	if tk.AccessToken != token {
 		t.Fatalf("unexpected access token %s", tk.AccessToken)
+	}
+}
+
+func TestNewCredFromCertChain(t *testing.T) {
+	for _, file := range []struct {
+		path     string
+		numCerts int
+	}{
+		{"../testdata/test-cert.pem", 1},
+		{"../testdata/test-cert-chain.pem", 2},
+		{"../testdata/test-cert-chain-reverse.pem", 2},
+	} {
+		f, err := os.Open(filepath.Clean(file.path))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		pemData, err := io.ReadAll(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		certs, key, err := CertFromPEM(pemData, "")
+		if err != nil {
+			t.Fatal(err)
+		}
+		if len(certs) != file.numCerts {
+			t.Fatalf("expected %d certs, got %d", file.numCerts, len(certs))
+		}
+		expectedCerts := make(map[string]struct{}, len(certs))
+		for _, cert := range certs {
+			expectedCerts[base64.StdEncoding.EncodeToString(cert.Raw)] = struct{}{}
+		}
+		k, ok := key.(*rsa.PrivateKey)
+		if !ok {
+			t.Fatal("expected an RSA private key")
+		}
+		verifyingKey := &k.PublicKey
+		cred, err := NewCredFromCertChain(certs, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		for _, sendX5c := range []bool{false, true} {
+			opts := []Option{}
+			if sendX5c {
+				opts = append(opts, WithX5C())
+			}
+			t.Run(fmt.Sprintf("%s/%v", filepath.Base(file.path), sendX5c), func(t *testing.T) {
+				client, err := fakeClient(accesstokens.TokenResponse{
+					AccessToken:   token,
+					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+				}, cred, opts...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				// the test fake passes assertions generated by the credential to this function
+				validated := false
+				client.base.Token.AccessTokens.(*fake.AccessTokens).ValidateAssertion = func(s string) {
+					validated = true
+					tk, err := jwt.Parse(s, func(tk *jwt.Token) (interface{}, error) {
+						if signingMethod, ok := tk.Method.(*jwt.SigningMethodRSA); !ok {
+							t.Fatalf("unexpected signing method %T", signingMethod)
+						}
+						return verifyingKey, nil
+					})
+					if err != nil {
+						t.Fatal(err)
+					}
+					if err = tk.Claims.Valid(); err != nil {
+						t.Fatal(err)
+					}
+					// x5c header should be set iff the sendX5c is true
+					if x5c, ok := tk.Header["x5c"]; ok != sendX5c {
+						t.Fatal("x5c should be set only when application passed WithX5C option")
+					} else if ok {
+						if x := len(x5c.([]interface{})); x > file.numCerts {
+							t.Fatalf("x5c contains %d certs; expected %d", x, file.numCerts)
+						}
+						// x5c must contain all the file's certs, signing cert first
+						for i, cert := range x5c.([]interface{}) {
+							s := cert.(string)
+							if _, ok := expectedCerts[s]; ok {
+								delete(expectedCerts, s)
+							} else {
+								t.Fatal("x5c contains an unexpected cert")
+							}
+							if i == 0 {
+								decoded, err := base64.StdEncoding.DecodeString(s)
+								if err != nil {
+									t.Fatal(err)
+								}
+								parsed, err := x509.ParseCertificate(decoded)
+								if err != nil {
+									t.Fatal(err)
+								}
+								if !verifyingKey.Equal(parsed.PublicKey) {
+									t.Fatal("signing cert must appear first in x5c")
+								}
+							}
+						}
+						if len(expectedCerts) > 0 {
+							t.Fatal("x5c header is missing a cert")
+						}
+					}
+				}
+				tk, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if tk.AccessToken != token {
+					t.Fatalf("unexpected access token %s", tk.AccessToken)
+				}
+				if !validated {
+					t.Fatal("assertion validation function wasn't called")
+				}
+			})
+		}
 	}
 }

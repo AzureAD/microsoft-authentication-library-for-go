@@ -36,7 +36,7 @@ func NewPartitionedManager(requests *oauth.Client) *PartitionedManager {
 }
 
 // Read reads a storage token from the cache if it exists.
-func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
+func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
@@ -69,7 +69,7 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 		return TokenResponse{}, err
 	}
 
-	account, err = m.readAccount(metadata.Aliases, realm, userAssertionHash, idToken.HomeAccountID)
+	account, err := m.readAccount(metadata.Aliases, realm, userAssertionHash, idToken.HomeAccountID)
 	if err != nil {
 		return TokenResponse{}, err
 	}
