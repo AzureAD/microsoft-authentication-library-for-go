@@ -37,9 +37,9 @@ type manager interface {
 }
 
 // partitionedManager provides an internal cache. It is defined to allow faking the cache in tests.
-// In all production use it is a *storage.Manager.
+// In all production use it is a *storage.PartitionedManager.
 type partitionedManager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
+	Read(ctx context.Context, authParameters authority.AuthParams) (storage.TokenResponse, error)
 	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 }
 
@@ -242,7 +242,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			b.cacheAccessor.Replace(s, suggestedCacheKey)
 			defer b.cacheAccessor.Export(s, suggestedCacheKey)
 		}
-		storageTokenResponse, err = b.pmanager.Read(ctx, authParams, silent.Account)
+		storageTokenResponse, err = b.pmanager.Read(ctx, authParams)
 		if err != nil {
 			return AuthResult{}, err
 		}
@@ -262,7 +262,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	result, err := AuthResultFromStorage(storageTokenResponse)
 	if err != nil {
 		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsZero() {
-			return AuthResult{}, errors.New("no refresh token found")
+			return AuthResult{}, errors.New("no token found")
 		}
 
 		var cc *accesstokens.Credential
@@ -270,7 +270,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			cc = silent.Credential
 		}
 
-		token, err := b.Token.Refresh(ctx, silent.RequestType, b.AuthParams, cc, storageTokenResponse.RefreshToken)
+		token, err := b.Token.Refresh(ctx, silent.RequestType, authParams, cc, storageTokenResponse.RefreshToken)
 		if err != nil {
 			return AuthResult{}, err
 		}

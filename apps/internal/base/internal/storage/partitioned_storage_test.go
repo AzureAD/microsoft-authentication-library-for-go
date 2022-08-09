@@ -4,10 +4,13 @@
 package storage
 
 import (
+	"context"
+	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
@@ -18,6 +21,124 @@ func newPartitionedManagerForTest(authorityClient aadInstanceDiscoveryer) *Parti
 	m := &PartitionedManager{requests: authorityClient, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	m.contract = NewInMemoryContract()
 	return m
+}
+
+func TestOBOAccessTokenScopes(t *testing.T) {
+	fakeAuthority := "fakeauthority"
+	mgr := newPartitionedManagerForTest(&fakeDiscoveryResponser{
+		ret: authority.InstanceDiscoveryResponse{
+			Metadata: []authority.InstanceDiscoveryMetadata{
+				{Aliases: []string{fakeAuthority}},
+			},
+		},
+	})
+	upn := "upn"
+	idt := accesstokens.IDToken{
+		Oid:               upn + "-oid",
+		PreferredUsername: upn,
+		TenantID:          "tenant",
+		UPN:               upn,
+	}
+	authParams := []authority.AuthParams{}
+	for _, scope := range [][]string{{"scopeA"}, {"scopeB"}} {
+		ap := authority.AuthParams{
+			AuthorityInfo: authority.Info{
+				AuthorityType: authority.AAD,
+				Host:          fakeAuthority,
+				Tenant:        idt.TenantID,
+			},
+			AuthorizationType: authority.ATOnBehalfOf,
+			ClientID:          "client-id",
+			Scopes:            scope,
+			UserAssertion:     upn + "-assertion",
+			Username:          idt.PreferredUsername,
+		}
+		_, err := mgr.Write(
+			ap,
+			accesstokens.TokenResponse{
+				AccessToken:   scope[0] + "-at",
+				ClientInfo:    accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+				GrantedScopes: accesstokens.Scopes{Slice: scope},
+				IDToken:       idt,
+				RefreshToken:  upn + "-rt",
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		authParams = append(authParams, ap)
+	}
+
+	for _, ap := range authParams {
+		tr, err := mgr.Read(context.Background(), ap)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tr.AccessToken.Secret != ap.Scopes[0]+"-at" {
+			t.Fatalf(`unexpected access token "%s"`, tr.AccessToken.Secret)
+		}
+	}
+}
+
+func TestOBOPartitioning(t *testing.T) {
+	fakeAuthority := "fakeauthority"
+	mgr := newPartitionedManagerForTest(&fakeDiscoveryResponser{
+		ret: authority.InstanceDiscoveryResponse{
+			Metadata: []authority.InstanceDiscoveryMetadata{
+				{Aliases: []string{fakeAuthority}},
+			},
+		},
+	})
+	scopes := []string{"scope"}
+	accounts := make([]shared.Account, 2)
+	authParams := make([]authority.AuthParams, len(accounts))
+	for i := 0; i < len(accounts); i++ {
+		upn := fmt.Sprintf("%d", i)
+		idt := accesstokens.IDToken{
+			Oid:               upn + "-oid",
+			PreferredUsername: upn,
+			TenantID:          "tenant",
+			UPN:               upn,
+		}
+		authParams[i] = authority.AuthParams{
+			AuthorityInfo: authority.Info{
+				AuthorityType: authority.AAD,
+				Host:          fakeAuthority,
+				Tenant:        idt.TenantID,
+			},
+			AuthorizationType: authority.ATOnBehalfOf,
+			ClientID:          "client-id",
+			Scopes:            scopes,
+			UserAssertion:     upn + "-assertion",
+			Username:          idt.PreferredUsername,
+		}
+		account, err := mgr.Write(
+			authParams[i],
+			accesstokens.TokenResponse{
+				AccessToken:   upn + "-at",
+				ClientInfo:    accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+				GrantedScopes: accesstokens.Scopes{Slice: scopes},
+				IDToken:       idt,
+				RefreshToken:  upn + "-rt",
+			},
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		accounts[i] = account
+	}
+
+	for i, ap := range authParams {
+		tr, err := mgr.Read(context.Background(), ap)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if tr.AccessToken.Secret != accounts[i].PreferredUsername+"-at" {
+			t.Fatalf(`unexpected access token "%s"`, tr.AccessToken.Secret)
+		}
+	}
 }
 
 func TestReadPartitionedAccessToken(t *testing.T) {
