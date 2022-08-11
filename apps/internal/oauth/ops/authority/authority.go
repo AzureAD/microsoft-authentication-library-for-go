@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -383,7 +383,7 @@ func detectRegion(ctx context.Context) string {
 		}
 	}
 	defer resp.Body.Close()
-	response, err := ioutil.ReadAll(resp.Body)
+	response, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return ""
 	}

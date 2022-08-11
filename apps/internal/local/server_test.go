@@ -5,7 +5,7 @@ package local
 
 import (
 	"context"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -112,7 +112,7 @@ func TestServer(t *testing.T) {
 			continue
 		}
 
-		content, err := ioutil.ReadAll(resp.Body)
+		content, err := io.ReadAll(resp.Body)
 		if err != nil {
 			panic(err)
 		}
