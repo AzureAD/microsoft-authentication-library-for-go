@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -53,7 +53,7 @@ func httpRequest(ctx context.Context, url string, query url.Values, accessToken 
 		return nil, fmt.Errorf("http.Get(%s) failed: %w", req.URL.String(), err)
 	}
 	defer resp.Body.Close()
-	body, err := ioutil.ReadAll(resp.Body)
+	body, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return nil, fmt.Errorf("http.Get(%s): could not read body: %w", req.URL.String(), err)
 	}

@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"encoding/xml"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,7 +46,7 @@ func (rec *recorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	rec.gotMethod = r.Method
 	rec.gotQV = r.URL.Query()
-	b, err := ioutil.ReadAll(r.Body)
+	b, err := io.ReadAll(r.Body)
 	if err != nil {
 		panic(err)
 	}

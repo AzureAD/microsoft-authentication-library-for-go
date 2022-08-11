@@ -13,7 +13,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/x509"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"testing"
 	"time"
@@ -292,19 +292,19 @@ func TestDeviceCode(t *testing.T) {
 						errors.CallErr{
 							Resp: &http.Response{
 								StatusCode: 400,
-								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "authorization_pending"}`))),
+								Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "authorization_pending"}`))),
 							},
 						},
 						errors.CallErr{
 							Resp: &http.Response{
 								StatusCode: 400,
-								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "slow_down"}`))),
+								Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "slow_down"}`))),
 							},
 						},
 						errors.CallErr{
 							Resp: &http.Response{
 								StatusCode: 400,
-								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "bad_error"}`))),
+								Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "bad_error"}`))),
 							},
 						},
 						nil,
@@ -324,13 +324,13 @@ func TestDeviceCode(t *testing.T) {
 						errors.CallErr{
 							Resp: &http.Response{
 								StatusCode: 400,
-								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "authorization_pending"}`))),
+								Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "authorization_pending"}`))),
 							},
 						},
 						errors.CallErr{
 							Resp: &http.Response{
 								StatusCode: 400,
-								Body:       ioutil.NopCloser(bytes.NewReader([]byte(`{"error": "slow_down"}`))),
+								Body:       io.NopCloser(bytes.NewReader([]byte(`{"error": "slow_down"}`))),
 							},
 						},
 						nil,

@@ -5,14 +5,14 @@ package confidential_test
 
 import (
 	"fmt"
-	"io/ioutil"
 	"log"
+	"os"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
 func ExampleNewCredFromCert_pem() {
-	b, err := ioutil.ReadFile("key.pem")
+	b, err := os.ReadFile("key.pem")
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func ExampleNewCredFromCert_pem() {
 }
 
 func ExampleNewCredFromCertChain() {
-	b, err := ioutil.ReadFile("key.pem")
+	b, err := os.ReadFile("key.pem")
 	if err != nil {
 		// TODO: handle error
 	}

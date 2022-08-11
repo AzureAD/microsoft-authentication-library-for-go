@@ -7,7 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -233,7 +233,7 @@ func isWaitDeviceCodeErr(err error) bool {
 	}
 	var dCErr deviceCodeError
 	defer c.Resp.Body.Close()
-	body, err := ioutil.ReadAll(c.Resp.Body)
+	body, err := io.ReadAll(c.Resp.Body)
 	if err != nil {
 		return false
 	}

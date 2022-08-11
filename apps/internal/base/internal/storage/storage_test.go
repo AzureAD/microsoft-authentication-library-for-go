@@ -6,7 +6,7 @@ package storage
 import (
 	"context"
 	"errors"
-	"io/ioutil"
+	"os"
 	"reflect"
 	"sort"
 	"testing"
@@ -635,7 +635,7 @@ func TestStorageManagerSerialize(t *testing.T) {
 
 func TestUnmarshal(t *testing.T) {
 	manager := newForTest(nil)
-	b, err := ioutil.ReadFile(testFile)
+	b, err := os.ReadFile(testFile)
 	if err != nil {
 		panic(err)
 	}
