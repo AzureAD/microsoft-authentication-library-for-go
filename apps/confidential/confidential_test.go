@@ -252,6 +252,90 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenWithTenantID(t *testing.T) {
+	uuid1 := "00000000-0000-0000-0000-000000000000"
+	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
+	host := "https://fake_authority/"
+	for _, test := range []struct {
+		authority, expectedAuthority, tenant string
+		expectError                          bool
+	}{
+		{authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + "consumers", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
+		{authority: host + uuid1, tenant: "common", expectError: true},
+		{authority: host + uuid1, tenant: "organizations", expectError: true},
+	} {
+		for _, flow := range []string{"authcode", "credential", "obo"} {
+			t.Run(flow, func(t *testing.T) {
+				cred, err := NewCredFromSecret("secret")
+				if err != nil {
+					t.Fatal(err)
+				}
+				tr := accesstokens.TokenResponse{
+					AccessToken:   token,
+					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+				}
+				if flow == "obo" {
+					tr.IDToken = accesstokens.IDToken{
+						Oid:               "uid",
+						PreferredUsername: "username",
+						RawToken:          "x.e30",
+						TenantID:          "utid",
+					}
+					tr.RefreshToken = "refresh-token"
+				}
+				client, err := fakeClient(tr, cred, WithAuthority(test.authority))
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				validated := false
+				client.base.Token.AccessTokens.(*fake.AccessTokens).ValidateAuthParams = func(p authority.AuthParams) {
+					if validated {
+						// e.g. AcquireTokenSilent should return a cached token
+						t.Fatal("unexpected second authentication")
+					}
+					validated = true
+					if actual := strings.TrimSuffix(p.AuthorityInfo.CanonicalAuthorityURI, "/"); actual != test.expectedAuthority {
+						t.Fatalf(`unexpected authority "%s"`, actual)
+					}
+				}
+
+				ctx := context.Background()
+				switch flow {
+				case "authcode":
+					_, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
+				case "credential":
+					_, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant))
+				case "obo":
+					_, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant))
+				default:
+					t.Fatalf("no test for " + flow)
+				}
+				if err != nil {
+					if test.expectError {
+						return
+					}
+					t.Fatal(err)
+				}
+				if !validated {
+					t.Fatal("AuthParams validation function wasn't called")
+				}
+				if flow == "obo" {
+					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant)); err != nil {
+						t.Fatal(err)
+					}
+				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
+					t.Fatal(err)
+				}
+			})
+		}
+	}
+}
+
 func TestInvalidCredential(t *testing.T) {
 	data, err := os.ReadFile("../testdata/test-cert.pem")
 	if err != nil {
