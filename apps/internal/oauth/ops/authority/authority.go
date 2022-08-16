@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strings"
 	"time"
 
@@ -168,6 +169,32 @@ func NewAuthParams(clientID string, authorityInfo Info) AuthParams {
 		AuthorityInfo: authorityInfo,
 		CorrelationID: uuid.New().String(),
 	}
+}
+
+// WithTenant returns a copy of the AuthParams having the specified tenant ID. If the given
+// ID is empty, the copy is identical to the original. This function returns an error when
+// the ID is non-empty and the authority doesn't support tenants, the ID isn't specific
+// (for example, it's "common"), or the resulting authority URL is invalid.
+func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
+	switch ID {
+	case "", p.AuthorityInfo.Tenant:
+		// keep the default tenant because the caller didn't override it
+		return p, nil
+	case "common", "organizations":
+		if p.AuthorityInfo.AuthorityType == AAD {
+			return p, fmt.Errorf(`tenant ID must be a specific tenant, not "%s"`, ID)
+		}
+		// else we'll return a better error below
+	}
+	if p.AuthorityInfo.AuthorityType != AAD {
+		return p, errors.New("the authority doesn't support tenants")
+	}
+	authority := "https://" + path.Join(p.AuthorityInfo.Host, ID)
+	info, err := NewInfoFromAuthorityURI(authority, p.AuthorityInfo.ValidateAuthority)
+	if err == nil {
+		p.AuthorityInfo = info
+	}
+	return p, err
 }
 
 // Info consists of information about the authority.
