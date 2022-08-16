@@ -5,6 +5,7 @@ package confidential
 
 import (
 	"context"
+	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
@@ -239,6 +240,31 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	}
 }
 
+func TestInvalidCredential(t *testing.T) {
+	data, err := os.ReadFile("../testdata/test-cert.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, key, err := CertFromPEM(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, cred := range []Credential{
+		{},
+		NewCredFromAssertionCallback(nil),
+		NewCredFromCert(nil, nil),
+		NewCredFromCert(certs[0], nil),
+		NewCredFromCert(nil, key),
+	} {
+		t.Run("", func(t *testing.T) {
+			_, err := New("client-id", cred)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
 func TestNewCredFromCertChain(t *testing.T) {
 	for _, file := range []struct {
 		path     string
@@ -353,5 +379,35 @@ func TestNewCredFromCertChain(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestNewCredFromCertChainError(t *testing.T) {
+	data, err := os.ReadFile("../testdata/test-cert.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, key, err := CertFromPEM(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		certs []*x509.Certificate
+		key   crypto.PrivateKey
+	}{
+		{nil, nil},
+		{certs, nil},
+		{nil, key},
+		{[]*x509.Certificate{}, nil},
+		{[]*x509.Certificate{}, key},
+		{[]*x509.Certificate{nil}, nil},
+		{[]*x509.Certificate{nil}, key},
+	} {
+		t.Run("", func(t *testing.T) {
+			_, err := NewCredFromCertChain(test.certs, test.key)
+			if err == nil {
+				t.Fatal("expected an error")
+			}
+		})
 	}
 }
