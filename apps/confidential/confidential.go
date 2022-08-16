@@ -400,15 +400,59 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.base.AuthParams)
 }
 
+// WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
+func WithTenantID(tenantID string) interface {
+	acquireTokenByAuthCodeOption
+	acquireTokenByCredentialOption
+	acquireTokenOBOOption
+	acquireTokenSilentOption
+	shared.CallOption
+} {
+	return struct {
+		acquireTokenByAuthCodeOption
+		acquireTokenByCredentialOption
+		acquireTokenOBOOption
+		acquireTokenSilentOption
+		shared.CallOption
+	}{
+		CallOption: shared.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenByAuthCodeOptions:
+					t.tenantID = tenantID
+				case *acquireTokenByCredentialOptions:
+					t.tenantID = tenantID
+				case *acquireTokenOnBehalfOfOptions:
+					t.tenantID = tenantID
+				case *AcquireTokenSilentOptions:
+					t.tenantID = tenantID
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
 // These are set by using various AcquireTokenSilentOption functions.
 type AcquireTokenSilentOptions struct {
 	// Account represents the account to use. To set, use the WithSilentAccount() option.
 	Account Account
+
+	tenantID string
+}
+
+// acquireTokenSilentOption is implemented by options for AcquireTokenSilent
+type acquireTokenSilentOption interface {
+	acquireSilentOption()
 }
 
 // AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
 type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
+
+func (AcquireTokenSilentOption) acquireSilentOption() {}
 
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
 func WithSilentAccount(account Account) AcquireTokenSilentOption {
@@ -418,10 +462,23 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
-func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthResult, error) {
+//
+// Options:
+//   - [WithSilentAccount]
+//   - [WithTenantID]
+func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...acquireTokenSilentOption) (AuthResult, error) {
 	opts := AcquireTokenSilentOptions{}
 	for _, o := range options {
-		o(&opts)
+		switch t := o.(type) {
+		case AcquireTokenSilentOption:
+			t(&opts)
+		case shared.CallOption:
+			if err := t.Do(&opts); err != nil {
+				return AuthResult{}, err
+			}
+		default:
+			return AuthResult{}, fmt.Errorf("unexpected option type %T", o)
+		}
 	}
 	var isAppCache bool
 	if opts.Account.IsZero() {
@@ -434,6 +491,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
 		IsAppCache:  isAppCache,
+		TenantID:    opts.tenantID,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -442,10 +500,19 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, optio
 // AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
 type AcquireTokenByAuthCodeOptions struct {
 	Challenge string
+
+	tenantID string
+}
+
+// acquireTokenByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
+type acquireTokenByAuthCodeOption interface {
+	acquireByAuthCodeOption()
 }
 
 // AcquireTokenByAuthCodeOption changes options inside AcquireTokenByAuthCodeOptions used in .AcquireTokenByAuthCode().
 type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
+
+func (AcquireTokenByAuthCodeOption) acquireByAuthCodeOption() {}
 
 // WithChallenge allows you to provide a challenge for the .AcquireTokenByAuthCode() call.
 func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
@@ -456,10 +523,23 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
+//
+// Options:
+//   - [WithChallenge]
+//   - [WithTenantID]
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...acquireTokenByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
-		o(&opts)
+		switch t := o.(type) {
+		case AcquireTokenByAuthCodeOption:
+			t(&opts)
+		case shared.CallOption:
+			if err := t.Do(&opts); err != nil {
+				return AuthResult{}, err
+			}
+		default:
+			return AuthResult{}, fmt.Errorf("unexpected option type %T", o)
+		}
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
@@ -469,14 +549,36 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 		AppType:     accesstokens.ATConfidential,
 		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 		RedirectURI: redirectURI,
+		TenantID:    opts.tenantID,
 	}
 
 	return cca.base.AcquireTokenByAuthCode(ctx, params)
 }
 
+// acquireTokenByCredentialOptions contains optional configuration for AcquireTokenByCredential
+type acquireTokenByCredentialOptions struct {
+	tenantID string
+}
+
+// acquireTokenByCredentialOption is implemented by options for AcquireTokenByCredential
+type acquireTokenByCredentialOption interface {
+	acquireByCredOption()
+}
+
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
-func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string) (AuthResult, error) {
-	authParams := cca.base.AuthParams
+//
+// Options:
+//   - [WithTenantID]
+func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, options ...acquireTokenByCredentialOption) (AuthResult, error) {
+	opts := acquireTokenByCredentialOptions{}
+	err := shared.ApplyOptions(&opts, options)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	authParams, err := cca.base.AuthParams.WithTenant(opts.tenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATClientCredentials
 
@@ -487,13 +589,32 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string)
 	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
+// acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf
+type acquireTokenOnBehalfOfOptions struct {
+	tenantID string
+}
+
+// acquireTokenOBOOption is implemented by options for AcquireTokenOnBehalfOf
+type acquireTokenOBOOption interface {
+	acquireOBOOption()
+}
+
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 // Refer https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-on-behalf-of-flow.
-func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string) (AuthResult, error) {
+//
+// Options:
+//   - [WithTenantID]
+func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, options ...acquireTokenOBOOption) (AuthResult, error) {
+	opts := acquireTokenOnBehalfOfOptions{}
+	err := shared.ApplyOptions(&opts, options)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	params := base.AcquireTokenOnBehalfOfParameters{
 		Scopes:        scopes,
 		UserAssertion: userAssertion,
 		Credential:    cca.cred,
+		TenantID:      opts.tenantID,
 	}
 	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
