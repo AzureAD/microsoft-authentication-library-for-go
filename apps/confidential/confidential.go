@@ -146,8 +146,23 @@ type Credential struct {
 // code requires that client.go, requests.go and confidential.go share a credential type without
 // having import recursion. That requires the type used between is in a shared package. Therefore
 // we have this.
-func (c Credential) toInternal() *accesstokens.Credential {
-	return &accesstokens.Credential{Secret: c.secret, Cert: c.cert, Key: c.key, AssertionCallback: c.assertionCallback, X5c: c.x5c}
+func (c Credential) toInternal() (*accesstokens.Credential, error) {
+	if c.secret != "" {
+		return &accesstokens.Credential{Secret: c.secret}, nil
+	}
+	if c.cert != nil {
+		if c.key == nil {
+			return nil, errors.New("missing private key for certificate")
+		}
+		return &accesstokens.Credential{Cert: c.cert, Key: c.key, X5c: c.x5c}, nil
+	}
+	if c.key != nil {
+		return nil, errors.New("missing certificate for private key")
+	}
+	if c.assertionCallback != nil {
+		return &accesstokens.Credential{AssertionCallback: c.assertionCallback}, nil
+	}
+	return nil, errors.New("invalid credential")
 }
 
 // NewCredFromSecret creates a Credential from a secret.
@@ -191,6 +206,10 @@ func NewCredFromCertChain(certs []*x509.Certificate, key crypto.PrivateKey) (Cre
 		return cred, errors.New("key must be an RSA key")
 	}
 	for _, cert := range certs {
+		if cert == nil {
+			// not returning an error here because certs may still contain a sufficient cert/key pair
+			continue
+		}
 		certKey, ok := cert.PublicKey.(*rsa.PublicKey)
 		if ok && k.E == certKey.E && k.N.Cmp(certKey.N) == 0 {
 			// We know this is the signing cert because its public key matches the given private key.
@@ -312,6 +331,11 @@ func WithAzureRegion(val string) Option {
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
 func New(clientID string, cred Credential, options ...Option) (Client, error) {
+	internalCred, err := cred.toInternal()
+	if err != nil {
+		return Client{}, err
+	}
+
 	opts := Options{
 		Authority:  base.AuthorityPublicCloud,
 		HTTPClient: shared.DefaultClient,
@@ -329,10 +353,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	return Client{
-		base: base,
-		cred: cred.toInternal(),
-	}, nil
+	return Client{base: base, cred: internalCred}, nil
 }
 
 // UserID is the unique user identifier this client if for.
