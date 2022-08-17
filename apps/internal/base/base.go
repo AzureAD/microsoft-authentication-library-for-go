@@ -147,6 +147,15 @@ func WithCacheAccessor(ca cache.ExportReplace) Option {
 	}
 }
 
+// WithKnownAuthorityHosts specifies hosts Client shouldn't validate or request metadata for because they're known to the user
+func WithKnownAuthorityHosts(hosts []string) Option {
+	return func(c *Client) {
+		cp := make([]string, len(hosts))
+		copy(cp, hosts)
+		c.AuthParams.KnownAuthorityHosts = cp
+	}
+}
+
 // WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
 func WithX5C(sendX5C bool) Option {
 	return func(c *Client) {

@@ -366,7 +366,23 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor), base.WithRegionDetection(opts.AzureRegion))
+	baseOpts := []base.Option{
+		base.WithCacheAccessor(opts.Accessor),
+		base.WithRegionDetection(opts.AzureRegion),
+		base.WithX5C(opts.SendX5C),
+	}
+	if cred.tokenProvider != nil {
+		// The caller will handle all details of authentication, using Client only as a token cache.
+		// Declaring the authority host known prevents unnecessary metadata discovery requests. (The
+		// authority is irrelevant to Client and friends because the token provider is responsible
+		// for authentication.)
+		parsed, err := url.Parse(opts.Authority)
+		if err != nil {
+			return Client{}, errors.New("invalid authority")
+		}
+		baseOpts = append(baseOpts, base.WithKnownAuthorityHosts([]string{parsed.Hostname()}))
+	}
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), baseOpts...)
 	if err != nil {
 		return Client{}, err
 	}

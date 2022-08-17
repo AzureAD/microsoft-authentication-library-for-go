@@ -156,6 +156,9 @@ type AuthParams struct {
 	SendX5C bool
 	// UserAssertion is the access token used to acquire token on behalf of user
 	UserAssertion string
+
+	// KnownAuthorityHosts don't require metadata discovery because they're known to the user
+	KnownAuthorityHosts []string
 }
 
 // NewAuthParams creates an authorization parameters object.
