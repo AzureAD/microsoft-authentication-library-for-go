@@ -333,7 +333,6 @@ func TestAuthParamsWithTenant(t *testing.T) {
 		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
 		{authority: host + uuid1, tenant: "common", expectError: true},
 		{authority: host + uuid1, tenant: "organizations", expectError: true},
-		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
 		{authority: host + "adfs", tenant: uuid1, expectError: true},
 	} {
 		t.Run("", func(t *testing.T) {
