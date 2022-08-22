@@ -237,9 +237,9 @@ type TokenProviderParameters = exported.TokenProviderParameters
 // TokenProviderResult is the authentication result returned by custom token providers
 type TokenProviderResult = exported.TokenProviderResult
 
-// NewCredFromTokenProvider creates a Credential from a function that provides access tokens. This
-// is for advanced scenarios in applications that need custom authentication logic and want to use
-// MSAL only for token caching. The token provider function must be concurrency safe.
+// NewCredFromTokenProvider creates a Credential from a function that provides access tokens. The function
+// must be concurrency safe. This is intended only to allow the Azure SDK to cache MSI tokens. It isn't
+// useful to applications in general because the token provider must implement all authentication logic.
 func NewCredFromTokenProvider(provider func(context.Context, TokenProviderParameters) (TokenProviderResult, error)) Credential {
 	return Credential{tokenProvider: provider}
 }
