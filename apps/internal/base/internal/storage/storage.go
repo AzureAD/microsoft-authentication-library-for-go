@@ -89,7 +89,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 
-	// fetch metadata iff the authority isn't explicitly trusted
+	// fetch metadata if and only if the authority isn't explicitly trusted
 	aliases := authParameters.KnownAuthorityHosts
 	if len(aliases) == 0 {
 		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
