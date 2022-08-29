@@ -140,6 +140,8 @@ type Credential struct {
 	x5c  []string
 
 	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
+
+	tokenProvider func(context.Context, TokenProviderParameters) (TokenProviderResult, error)
 }
 
 // toInternal returns the accesstokens.Credential that is used internally. The current structure of the
@@ -161,6 +163,9 @@ func (c Credential) toInternal() (*accesstokens.Credential, error) {
 	}
 	if c.assertionCallback != nil {
 		return &accesstokens.Credential{AssertionCallback: c.assertionCallback}, nil
+	}
+	if c.tokenProvider != nil {
+		return &accesstokens.Credential{TokenProvider: c.tokenProvider}, nil
 	}
 	return nil, errors.New("invalid credential")
 }
@@ -224,6 +229,19 @@ func NewCredFromCertChain(certs []*x509.Certificate, key crypto.PrivateKey) (Cre
 		return cred, errors.New("key doesn't match any certificate")
 	}
 	return cred, nil
+}
+
+// TokenProviderParameters is the authentication parameters passed to token providers
+type TokenProviderParameters = exported.TokenProviderParameters
+
+// TokenProviderResult is the authentication result returned by custom token providers
+type TokenProviderResult = exported.TokenProviderResult
+
+// NewCredFromTokenProvider creates a Credential from a function that provides access tokens. The function
+// must be concurrency safe. This is intended only to allow the Azure SDK to cache MSI tokens. It isn't
+// useful to applications in general because the token provider must implement all authentication logic.
+func NewCredFromTokenProvider(provider func(context.Context, TokenProviderParameters) (TokenProviderResult, error)) Credential {
+	return Credential{tokenProvider: provider}
 }
 
 // AutoDetectRegion instructs MSAL Go to auto detect region for Azure regional token service.
@@ -348,7 +366,23 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithX5C(opts.SendX5C), base.WithCacheAccessor(opts.Accessor), base.WithRegionDetection(opts.AzureRegion))
+	baseOpts := []base.Option{
+		base.WithCacheAccessor(opts.Accessor),
+		base.WithRegionDetection(opts.AzureRegion),
+		base.WithX5C(opts.SendX5C),
+	}
+	if cred.tokenProvider != nil {
+		// The caller will handle all details of authentication, using Client only as a token cache.
+		// Declaring the authority host known prevents unnecessary metadata discovery requests. (The
+		// authority is irrelevant to Client and friends because the token provider is responsible
+		// for authentication.)
+		parsed, err := url.Parse(opts.Authority)
+		if err != nil {
+			return Client{}, errors.New("invalid authority")
+		}
+		baseOpts = append(baseOpts, base.WithKnownAuthorityHosts([]string{parsed.Hostname()}))
+	}
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), baseOpts...)
 	if err != nil {
 		return Client{}, err
 	}

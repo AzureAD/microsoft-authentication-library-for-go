@@ -12,17 +12,29 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/golang-jwt/jwt/v4"
 )
+
+// errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
+type errorClient struct{}
+
+func (*errorClient) Do(req *http.Request) (*http.Response, error) {
+	return nil, fmt.Errorf("expected no requests but received one for %s", req.URL.String())
+}
+
+func (*errorClient) CloseIdleConnections() {}
 
 func TestCertFromPEM(t *testing.T) {
 	f, err := os.Open(filepath.Clean("../testdata/test-cert.pem"))
@@ -409,5 +421,71 @@ func TestNewCredFromCertChainError(t *testing.T) {
 				t.Fatal("expected an error")
 			}
 		})
+	}
+}
+
+func TestNewCredFromTokenProvider(t *testing.T) {
+	expectedToken := "expected token"
+	called := false
+	expiresIn := 4200
+	key := struct{}{}
+	ctx := context.WithValue(context.Background(), key, true)
+	cred := NewCredFromTokenProvider(func(c context.Context, tp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
+		if called {
+			t.Fatal("expected exactly one token provider invocation")
+		}
+		called = true
+		if v := c.Value(key); v == nil || !v.(bool) {
+			t.Fatal("callback received unexpected context")
+		}
+		if tp.CorrelationID == "" {
+			t.Fatal("expected CorrelationID")
+		}
+		if v := fmt.Sprint(tp.Scopes); v != fmt.Sprint(tokenScope) {
+			t.Fatalf(`unexpected scopes "%v"`, v)
+		}
+		return exported.TokenProviderResult{
+			AccessToken:      expectedToken,
+			ExpiresInSeconds: expiresIn,
+		}, nil
+	})
+	client, err := New("client-id", cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !called {
+		t.Fatal("token provider wasn't invoked")
+	}
+	if v := int(time.Until(ar.ExpiresOn).Seconds()); v < expiresIn-2 || v > expiresIn {
+		t.Fatalf("expected ExpiresOn ~= %d seconds, got %d", expiresIn, v)
+	}
+	if ar.AccessToken != expectedToken {
+		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
+	}
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != expectedToken {
+		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
+	}
+}
+
+func TestNewCredFromTokenProviderError(t *testing.T) {
+	expectedError := "something went wrong"
+	cred := NewCredFromTokenProvider(func(ctx context.Context, tpp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
+		return exported.TokenProviderResult{}, errors.New(expectedError)
+	})
+	client, err := New("client-id", cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireTokenByCredential(context.Background(), tokenScope)
+	if err == nil || !strings.Contains(err.Error(), expectedError) {
+		t.Fatalf(`unexpected error "%v"`, err)
 	}
 }
