@@ -130,17 +130,17 @@ func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
 func WithTenantID(tenantID string) interface {
-	acquireTokenByAuthCodeOption
-	acquireTokenByDeviceCodeOption
-	acquireTokenByUsernamePasswordOption
-	acquireTokenSilentOption
+	AcquireByAuthCodeOption
+	AcquireByDeviceCodeOption
+	AcquireByUsernamePasswordOption
+	AcquireSilentOption
 	shared.CallOption
 } {
 	return struct {
-		acquireTokenByAuthCodeOption
-		acquireTokenByDeviceCodeOption
-		acquireTokenByUsernamePasswordOption
-		acquireTokenSilentOption
+		AcquireByAuthCodeOption
+		AcquireByDeviceCodeOption
+		AcquireByUsernamePasswordOption
+		AcquireSilentOption
 		shared.CallOption
 	}{
 		CallOption: shared.NewCallOption(
@@ -172,8 +172,8 @@ type AcquireTokenSilentOptions struct {
 	tenantID string
 }
 
-// acquireTokenSilentOption is implemented by options for AcquireTokenSilent
-type acquireTokenSilentOption interface {
+// AcquireSilentOption is implemented by options for AcquireTokenSilent
+type AcquireSilentOption interface {
 	acquireSilentOption()
 }
 
@@ -194,7 +194,7 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 // Options:
 //   - [WithSilentAccount]
 //   - [WithTenantID]
-func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...acquireTokenSilentOption) (AuthResult, error) {
+func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireSilentOption) (AuthResult, error) {
 	opts := AcquireTokenSilentOptions{}
 	for _, o := range options {
 		switch t := o.(type) {
@@ -225,8 +225,8 @@ type acquireTokenByUsernamePasswordOptions struct {
 	tenantID string
 }
 
-// acquireTokenByUsernamePasswordOption is implemented by options for AcquireTokenByUsernamePassword
-type acquireTokenByUsernamePasswordOption interface {
+// AcquireByUsernamePasswordOption is implemented by options for AcquireTokenByUsernamePassword
+type AcquireByUsernamePasswordOption interface {
 	acquireByUsernamePasswordOption()
 }
 
@@ -235,7 +235,7 @@ type acquireTokenByUsernamePasswordOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, options ...acquireTokenByUsernamePasswordOption) (AuthResult, error) {
+func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, options ...AcquireByUsernamePasswordOption) (AuthResult, error) {
 	opts := acquireTokenByUsernamePasswordOptions{}
 	if err := shared.ApplyOptions(&opts, options); err != nil {
 		return AuthResult{}, err
@@ -286,8 +286,8 @@ type acquireTokenByDeviceCodeOptions struct {
 	tenantID string
 }
 
-// acquireTokenByDeviceCodeOption is implemented by options for AcquireTokenByDeviceCode
-type acquireTokenByDeviceCodeOption interface {
+// AcquireByDeviceCodeOption is implemented by options for AcquireTokenByDeviceCode
+type AcquireByDeviceCodeOption interface {
 	acquireByDeviceCodeOptions()
 }
 
@@ -296,7 +296,7 @@ type acquireTokenByDeviceCodeOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string, options ...acquireTokenByDeviceCodeOption) (DeviceCode, error) {
+func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string, options ...AcquireByDeviceCodeOption) (DeviceCode, error) {
 	opts := acquireTokenByDeviceCodeOptions{}
 	if err := shared.ApplyOptions(&opts, options); err != nil {
 		return DeviceCode{}, err
@@ -323,8 +323,8 @@ type AcquireTokenByAuthCodeOptions struct {
 	tenantID string
 }
 
-// acquireTokenByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
-type acquireTokenByAuthCodeOption interface {
+// AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
+type AcquireByAuthCodeOption interface {
 	acquireByAuthCodeOption()
 }
 
@@ -346,7 +346,7 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 // Options:
 //   - [WithChallenge]
 //   - [WithTenantID]
-func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...acquireTokenByAuthCodeOption) (AuthResult, error) {
+func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		switch t := o.(type) {
@@ -394,8 +394,8 @@ type InteractiveAuthOptions struct {
 	tenantID string
 }
 
-// acquireTokenInteractiveOption is implemented by options for AcquireTokenInteractive
-type acquireTokenInteractiveOption interface {
+// AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
+type AcquireInteractiveOption interface {
 	acquireInteractiveOption()
 }
 
@@ -417,7 +417,7 @@ func WithRedirectURI(redirectURI string) InteractiveAuthOption {
 // Options:
 //   - [WithRedirectURI]
 //   - [WithTenantID]
-func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, options ...acquireTokenInteractiveOption) (AuthResult, error) {
+func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, options ...AcquireInteractiveOption) (AuthResult, error) {
 	opts := InteractiveAuthOptions{}
 	for _, o := range options {
 		switch t := o.(type) {

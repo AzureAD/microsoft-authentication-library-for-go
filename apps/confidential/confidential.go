@@ -402,17 +402,17 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
 func WithTenantID(tenantID string) interface {
-	acquireTokenByAuthCodeOption
-	acquireTokenByCredentialOption
-	acquireTokenOBOOption
-	acquireTokenSilentOption
+	AcquireByAuthCodeOption
+	AcquireByCredentialOption
+	AcquireOnBehalfOfOption
+	AcquireSilentOption
 	shared.CallOption
 } {
 	return struct {
-		acquireTokenByAuthCodeOption
-		acquireTokenByCredentialOption
-		acquireTokenOBOOption
-		acquireTokenSilentOption
+		AcquireByAuthCodeOption
+		AcquireByCredentialOption
+		AcquireOnBehalfOfOption
+		AcquireSilentOption
 		shared.CallOption
 	}{
 		CallOption: shared.NewCallOption(
@@ -444,8 +444,8 @@ type AcquireTokenSilentOptions struct {
 	tenantID string
 }
 
-// acquireTokenSilentOption is implemented by options for AcquireTokenSilent
-type acquireTokenSilentOption interface {
+// AcquireSilentOption is implemented by options for AcquireTokenSilent
+type AcquireSilentOption interface {
 	acquireSilentOption()
 }
 
@@ -466,7 +466,7 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 // Options:
 //   - [WithSilentAccount]
 //   - [WithTenantID]
-func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...acquireTokenSilentOption) (AuthResult, error) {
+func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireSilentOption) (AuthResult, error) {
 	opts := AcquireTokenSilentOptions{}
 	for _, o := range options {
 		switch t := o.(type) {
@@ -504,8 +504,8 @@ type AcquireTokenByAuthCodeOptions struct {
 	tenantID string
 }
 
-// acquireTokenByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
-type acquireTokenByAuthCodeOption interface {
+// AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
+type AcquireByAuthCodeOption interface {
 	acquireByAuthCodeOption()
 }
 
@@ -527,7 +527,7 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 // Options:
 //   - [WithChallenge]
 //   - [WithTenantID]
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...acquireTokenByAuthCodeOption) (AuthResult, error) {
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireByAuthCodeOption) (AuthResult, error) {
 	opts := AcquireTokenByAuthCodeOptions{}
 	for _, o := range options {
 		switch t := o.(type) {
@@ -560,8 +560,8 @@ type acquireTokenByCredentialOptions struct {
 	tenantID string
 }
 
-// acquireTokenByCredentialOption is implemented by options for AcquireTokenByCredential
-type acquireTokenByCredentialOption interface {
+// AcquireByCredentialOption is implemented by options for AcquireTokenByCredential
+type AcquireByCredentialOption interface {
 	acquireByCredOption()
 }
 
@@ -569,7 +569,7 @@ type acquireTokenByCredentialOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, options ...acquireTokenByCredentialOption) (AuthResult, error) {
+func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, options ...AcquireByCredentialOption) (AuthResult, error) {
 	opts := acquireTokenByCredentialOptions{}
 	err := shared.ApplyOptions(&opts, options)
 	if err != nil {
@@ -594,8 +594,8 @@ type acquireTokenOnBehalfOfOptions struct {
 	tenantID string
 }
 
-// acquireTokenOBOOption is implemented by options for AcquireTokenOnBehalfOf
-type acquireTokenOBOOption interface {
+// AcquireOnBehalfOfOption is implemented by options for AcquireTokenOnBehalfOf
+type AcquireOnBehalfOfOption interface {
 	acquireOBOOption()
 }
 
@@ -604,7 +604,7 @@ type acquireTokenOBOOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, options ...acquireTokenOBOOption) (AuthResult, error) {
+func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, options ...AcquireOnBehalfOfOption) (AuthResult, error) {
 	opts := acquireTokenOnBehalfOfOptions{}
 	err := shared.ApplyOptions(&opts, options)
 	if err != nil {
