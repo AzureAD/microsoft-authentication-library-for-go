@@ -219,6 +219,9 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	if authParams.CodeChallengeMethod != "" {
 		v.Add("code_challenge_method", authParams.CodeChallengeMethod)
 	}
+	if authParams.LoginHint != "" {
+		v.Add("login_hint", authParams.LoginHint)
+	}
 	if authParams.Prompt != "" {
 		v.Add("prompt", authParams.Prompt)
 	}
@@ -227,9 +230,6 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	/*
 		if p.ResponseMode != "" {
 			urlParams.Add("response_mode", p.ResponseMode)
-		}
-		if p.LoginHint != "" {
-			urlParams.Add("login_hint", p.LoginHint)
 		}
 		if p.DomainHint != "" {
 			urlParams.Add("domain_hint", p.DomainHint)

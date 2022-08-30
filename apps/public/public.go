@@ -436,7 +436,7 @@ type InteractiveAuthOptions struct {
 	// All other URI components are ignored.
 	RedirectURI string
 
-	tenantID string
+	loginHint, tenantID string
 }
 
 // AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
@@ -448,6 +448,29 @@ type AcquireInteractiveOption interface {
 type InteractiveAuthOption func(*InteractiveAuthOptions)
 
 func (InteractiveAuthOption) acquireInteractiveOption() {}
+
+// WithLoginHint pre-populates the login prompt with a username.
+func WithLoginHint(username string) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *InteractiveAuthOptions:
+					t.loginHint = username
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
 
 // WithRedirectURI uses the specified redirect URI for interactive auth.
 func WithRedirectURI(redirectURI string) interface {
@@ -476,6 +499,7 @@ func WithRedirectURI(redirectURI string) interface {
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
 // Options:
+//   - [WithLoginHint]
 //   - [WithRedirectURI]
 //   - [WithTenantID]
 func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
@@ -504,6 +528,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.AuthorizationType = authority.ATInteractive
 	authParams.CodeChallenge = challenge
 	authParams.CodeChallengeMethod = "S256"
+	authParams.LoginHint = o.loginHint
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
 	res, err := pca.browserLogin(ctx, redirectURL, authParams)

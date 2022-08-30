@@ -56,6 +56,8 @@ func fakeBrowserOpenURL(authURL string) error {
 }
 
 func TestAcquireTokenInteractive(t *testing.T) {
+	realBrowserOpenURL := browserOpenURL
+	defer func() { browserOpenURL = realBrowserOpenURL }()
 	browserOpenURL = fakeBrowserOpenURL
 	client, err := New("some_client_id")
 	if err != nil {
@@ -68,6 +70,57 @@ func TestAcquireTokenInteractive(t *testing.T) {
 	_, err = client.AcquireTokenInteractive(context.Background(), []string{"the_scope"})
 	if err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestAcquireTokenInteractiveWithLoginHint(t *testing.T) {
+	realBrowserOpenURL := browserOpenURL
+	defer func() { browserOpenURL = realBrowserOpenURL }()
+	upn := "user@localhost"
+	client, err := New("client-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectHint := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
+			// replace the browser launching function with a fake that validates login_hint is set as expected
+			called := false
+			browserOpenURL = func(authURL string) error {
+				called = true
+				parsed, err := url.Parse(authURL)
+				if err != nil {
+					return err
+				}
+				query, err := url.ParseQuery(parsed.RawQuery)
+				if err != nil {
+					return err
+				}
+				v, ok := query["login_hint"]
+				if ok != expectHint || expectHint && (len(v) != 1 || v[0] != upn) {
+					err = fmt.Errorf(`unexpected login_hint "%v"`, v)
+				}
+				if err != nil {
+					t.Fatal(err)
+					return err
+				}
+				// this helper validates the other params and completes the redirect
+				return fakeBrowserOpenURL(authURL)
+			}
+			options := []AcquireInteractiveOption{}
+			if expectHint {
+				options = append(options, WithLoginHint(upn))
+			}
+			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, options...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("browserOpenURL wasn't called")
+			}
+		})
 	}
 }
 
