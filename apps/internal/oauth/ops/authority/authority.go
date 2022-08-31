@@ -133,7 +133,7 @@ type AuthParams struct {
 	ClientID      string
 	// Redirecturi is used for auth flows that specify a redirect URI (e.g. local server for interactive auth flow).
 	Redirecturi   string
-	HomeaccountID string
+	HomeAccountID string
 	// Username is the user-name portion for username/password auth flow.
 	Username string
 	// Password is the password portion for username/password auth flow.
@@ -401,7 +401,7 @@ func (a *AuthParams) CacheKey(isAppCache bool) string {
 		return a.AppKey()
 	}
 	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
-		return a.HomeaccountID
+		return a.HomeAccountID
 	}
 	return ""
 }

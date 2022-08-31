@@ -84,7 +84,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 
 // Read reads a storage token from the cache if it exists.
 func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
-	homeAccountID := authParameters.HomeaccountID
+	homeAccountID := authParameters.HomeAccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
@@ -140,8 +140,8 @@ const scopeSeparator = " "
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
 func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
-	authParameters.HomeaccountID = tokenResponse.ClientInfo.HomeAccountID()
-	homeAccountID := authParameters.HomeaccountID
+	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
+	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID

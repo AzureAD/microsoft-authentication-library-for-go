@@ -747,7 +747,7 @@ func TestRead(t *testing.T) {
 		Tenant: "realm",
 	}
 	authParameters := authority.AuthParams{
-		HomeaccountID: "hid",
+		HomeAccountID: "hid",
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
 		Scopes:        []string{"openid", "profile"},
