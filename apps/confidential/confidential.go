@@ -456,9 +456,25 @@ type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
 func (AcquireTokenSilentOption) acquireSilentOption() {}
 
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
-func WithSilentAccount(account Account) AcquireTokenSilentOption {
-	return func(a *AcquireTokenSilentOptions) {
-		a.Account = account
+func WithSilentAccount(account Account) interface {
+	AcquireSilentOption
+	options.CallOption
+} {
+	return struct {
+		AcquireSilentOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenSilentOptions:
+					t.Account = account
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
@@ -467,32 +483,19 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 // Options:
 //   - [WithSilentAccount]
 //   - [WithTenantID]
-func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireSilentOption) (AuthResult, error) {
-	opts := AcquireTokenSilentOptions{}
-	for _, o := range options {
-		switch t := o.(type) {
-		case AcquireTokenSilentOption:
-			t(&opts)
-		case shared.CallOption:
-			if err := t.Do(&opts); err != nil {
-				return AuthResult{}, err
-			}
-		default:
-			return AuthResult{}, fmt.Errorf("unexpected option type %T", o)
-		}
-	}
-	var isAppCache bool
-	if opts.Account.IsZero() {
-		isAppCache = true
+func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
+	o := AcquireTokenSilentOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
-		Account:     opts.Account,
+		Account:     o.Account,
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
-		IsAppCache:  isAppCache,
-		TenantID:    opts.tenantID,
+		IsAppCache:  o.Account.IsZero(),
+		TenantID:    o.tenantID,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -516,9 +519,25 @@ type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
 func (AcquireTokenByAuthCodeOption) acquireByAuthCodeOption() {}
 
 // WithChallenge allows you to provide a challenge for the .AcquireTokenByAuthCode() call.
-func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
-	return func(a *AcquireTokenByAuthCodeOptions) {
-		a.Challenge = challenge
+func WithChallenge(challenge string) interface {
+	AcquireByAuthCodeOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByAuthCodeOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenByAuthCodeOptions:
+					t.Challenge = challenge
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
@@ -528,29 +547,20 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 // Options:
 //   - [WithChallenge]
 //   - [WithTenantID]
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireByAuthCodeOption) (AuthResult, error) {
-	opts := AcquireTokenByAuthCodeOptions{}
-	for _, o := range options {
-		switch t := o.(type) {
-		case AcquireTokenByAuthCodeOption:
-			t(&opts)
-		case shared.CallOption:
-			if err := t.Do(&opts); err != nil {
-				return AuthResult{}, err
-			}
-		default:
-			return AuthResult{}, fmt.Errorf("unexpected option type %T", o)
-		}
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
+	o := AcquireTokenByAuthCodeOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:      scopes,
 		Code:        code,
-		Challenge:   opts.Challenge,
+		Challenge:   o.Challenge,
 		AppType:     accesstokens.ATConfidential,
 		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 		RedirectURI: redirectURI,
-		TenantID:    opts.tenantID,
+		TenantID:    o.tenantID,
 	}
 
 	return cca.base.AcquireTokenByAuthCode(ctx, params)

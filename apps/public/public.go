@@ -184,9 +184,25 @@ type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
 func (AcquireTokenSilentOption) acquireSilentOption() {}
 
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
-func WithSilentAccount(account Account) AcquireTokenSilentOption {
-	return func(a *AcquireTokenSilentOptions) {
-		a.Account = account
+func WithSilentAccount(account Account) interface {
+	AcquireSilentOption
+	options.CallOption
+} {
+	return struct {
+		AcquireSilentOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenSilentOptions:
+					t.Account = account
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
@@ -195,27 +211,18 @@ func WithSilentAccount(account Account) AcquireTokenSilentOption {
 // Options:
 //   - [WithSilentAccount]
 //   - [WithTenantID]
-func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireSilentOption) (AuthResult, error) {
-	opts := AcquireTokenSilentOptions{}
-	for _, o := range options {
-		switch t := o.(type) {
-		case AcquireTokenSilentOption:
-			t(&opts)
-		case shared.CallOption:
-			if err := t.Do(&opts); err != nil {
-				return AuthResult{}, err
-			}
-		default:
-			return AuthResult{}, fmt.Errorf("unexpected option type %T", o)
-		}
+func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
+	o := AcquireTokenSilentOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
-		Account:     opts.Account,
+		Account:     o.Account,
 		RequestType: accesstokens.ATPublic,
 		IsAppCache:  false,
-		TenantID:    opts.tenantID,
+		TenantID:    o.tenantID,
 	}
 
 	return pca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -335,9 +342,25 @@ type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
 func (AcquireTokenByAuthCodeOption) acquireByAuthCodeOption() {}
 
 // WithChallenge allows you to provide a code for the .AcquireTokenByAuthCode() call.
-func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
-	return func(a *AcquireTokenByAuthCodeOptions) {
-		a.Challenge = challenge
+func WithChallenge(challenge string) interface {
+	AcquireByAuthCodeOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByAuthCodeOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenByAuthCodeOptions:
+					t.Challenge = challenge
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
@@ -347,28 +370,19 @@ func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
 // Options:
 //   - [WithChallenge]
 //   - [WithTenantID]
-func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireByAuthCodeOption) (AuthResult, error) {
-	opts := AcquireTokenByAuthCodeOptions{}
-	for _, o := range options {
-		switch t := o.(type) {
-		case AcquireTokenByAuthCodeOption:
-			t(&opts)
-		case shared.CallOption:
-			if err := t.Do(&opts); err != nil {
-				return AuthResult{}, err
-			}
-		default:
-			return AuthResult{}, fmt.Errorf("unexpected option type %T", o)
-		}
+func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
+	o := AcquireTokenByAuthCodeOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:      scopes,
 		Code:        code,
-		Challenge:   opts.Challenge,
+		Challenge:   o.Challenge,
 		AppType:     accesstokens.ATPublic,
 		RedirectURI: redirectURI,
-		TenantID:    opts.tenantID,
+		TenantID:    o.tenantID,
 	}
 
 	return pca.base.AcquireTokenByAuthCode(ctx, params)
@@ -406,9 +420,25 @@ type InteractiveAuthOption func(*InteractiveAuthOptions)
 func (InteractiveAuthOption) acquireInteractiveOption() {}
 
 // WithRedirectURI uses the specified redirect URI for interactive auth.
-func WithRedirectURI(redirectURI string) InteractiveAuthOption {
-	return func(o *InteractiveAuthOptions) {
-		o.RedirectURI = redirectURI
+func WithRedirectURI(redirectURI string) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *InteractiveAuthOptions:
+					t.RedirectURI = redirectURI
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
@@ -418,19 +448,10 @@ func WithRedirectURI(redirectURI string) InteractiveAuthOption {
 // Options:
 //   - [WithRedirectURI]
 //   - [WithTenantID]
-func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, options ...AcquireInteractiveOption) (AuthResult, error) {
-	opts := InteractiveAuthOptions{}
-	for _, o := range options {
-		switch t := o.(type) {
-		case InteractiveAuthOption:
-			t(&opts)
-		case shared.CallOption:
-			if err := t.Do(&opts); err != nil {
-				return AuthResult{}, err
-			}
-		default:
-			return AuthResult{}, fmt.Errorf("unexpected option type %T", o)
-		}
+func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
+	o := InteractiveAuthOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
@@ -439,13 +460,13 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 		return AuthResult{}, err
 	}
 	var redirectURL *url.URL
-	if opts.RedirectURI != "" {
-		redirectURL, err = url.Parse(opts.RedirectURI)
+	if o.RedirectURI != "" {
+		redirectURL, err = url.Parse(o.RedirectURI)
 		if err != nil {
 			return AuthResult{}, err
 		}
 	}
-	authParams, err := pca.base.AuthParams.WithTenant(opts.tenantID)
+	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
 		return AuthResult{}, err
 	}
