@@ -1,14 +1,16 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-package shared
+package options
 
 import (
 	"errors"
 	"fmt"
 )
 
-// CallOption implements an optional argument to a method call.
+// CallOption implements an optional argument to a method call. See
+// https://blog.devgenius.io/go-call-option-that-can-be-used-with-multiple-methods-6c81734f3dbe
+// for an explanation of the usage pattern.
 type CallOption interface {
 	Do(any) error
 	callOption()

@@ -35,6 +35,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/google/uuid"
 	"github.com/pkg/browser"
@@ -134,16 +135,16 @@ func WithTenantID(tenantID string) interface {
 	AcquireByDeviceCodeOption
 	AcquireByUsernamePasswordOption
 	AcquireSilentOption
-	shared.CallOption
+	options.CallOption
 } {
 	return struct {
 		AcquireByAuthCodeOption
 		AcquireByDeviceCodeOption
 		AcquireByUsernamePasswordOption
 		AcquireSilentOption
-		shared.CallOption
+		options.CallOption
 	}{
-		CallOption: shared.NewCallOption(
+		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
 				case *AcquireTokenByAuthCodeOptions:
@@ -235,12 +236,12 @@ type AcquireByUsernamePasswordOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, options ...AcquireByUsernamePasswordOption) (AuthResult, error) {
-	opts := acquireTokenByUsernamePasswordOptions{}
-	if err := shared.ApplyOptions(&opts, options); err != nil {
+func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
+	o := acquireTokenByUsernamePasswordOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
-	authParams, err := pca.base.AuthParams.WithTenant(opts.tenantID)
+	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -296,12 +297,12 @@ type AcquireByDeviceCodeOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string, options ...AcquireByDeviceCodeOption) (DeviceCode, error) {
-	opts := acquireTokenByDeviceCodeOptions{}
-	if err := shared.ApplyOptions(&opts, options); err != nil {
+func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string, opts ...AcquireByDeviceCodeOption) (DeviceCode, error) {
+	o := acquireTokenByDeviceCodeOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
 		return DeviceCode{}, err
 	}
-	authParams, err := pca.base.AuthParams.WithTenant(opts.tenantID)
+	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
 		return DeviceCode{}, err
 	}

@@ -27,6 +27,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -406,16 +407,16 @@ func WithTenantID(tenantID string) interface {
 	AcquireByCredentialOption
 	AcquireOnBehalfOfOption
 	AcquireSilentOption
-	shared.CallOption
+	options.CallOption
 } {
 	return struct {
 		AcquireByAuthCodeOption
 		AcquireByCredentialOption
 		AcquireOnBehalfOfOption
 		AcquireSilentOption
-		shared.CallOption
+		options.CallOption
 	}{
-		CallOption: shared.NewCallOption(
+		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
 				case *AcquireTokenByAuthCodeOptions:
@@ -569,13 +570,13 @@ type AcquireByCredentialOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, options ...AcquireByCredentialOption) (AuthResult, error) {
-	opts := acquireTokenByCredentialOptions{}
-	err := shared.ApplyOptions(&opts, options)
+func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
+	o := acquireTokenByCredentialOptions{}
+	err := options.ApplyOptions(&o, opts)
 	if err != nil {
 		return AuthResult{}, err
 	}
-	authParams, err := cca.base.AuthParams.WithTenant(opts.tenantID)
+	authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -604,17 +605,16 @@ type AcquireOnBehalfOfOption interface {
 //
 // Options:
 //   - [WithTenantID]
-func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, options ...AcquireOnBehalfOfOption) (AuthResult, error) {
-	opts := acquireTokenOnBehalfOfOptions{}
-	err := shared.ApplyOptions(&opts, options)
-	if err != nil {
+func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, opts ...AcquireOnBehalfOfOption) (AuthResult, error) {
+	o := acquireTokenOnBehalfOfOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
 	params := base.AcquireTokenOnBehalfOfParameters{
 		Scopes:        scopes,
 		UserAssertion: userAssertion,
 		Credential:    cca.cred,
-		TenantID:      opts.tenantID,
+		TenantID:      o.tenantID,
 	}
 	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
