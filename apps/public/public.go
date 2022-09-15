@@ -130,6 +130,7 @@ func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 }
 
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
+// This option is valid for any token acquisition method.
 func WithTenantID(tenantID string) interface {
 	AcquireByAuthCodeOption
 	AcquireByDeviceCodeOption

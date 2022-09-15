@@ -402,6 +402,7 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 }
 
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
+// This option is valid for any token acquisition method.
 func WithTenantID(tenantID string) interface {
 	AcquireByAuthCodeOption
 	AcquireByCredentialOption
