@@ -120,6 +120,11 @@ func TestAcquireTokenInteractive(t *testing.T) {
 }
 
 func TestAcquireTokenWithTenantID(t *testing.T) {
+	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
+	realBrowserOpenURL := browserOpenURL
+	defer func() { browserOpenURL = realBrowserOpenURL }()
+	browserOpenURL = fakeBrowserOpenURL
+
 	uuid1 := "00000000-0000-0000-0000-000000000000"
 	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
 	host := "https://localhost/"
@@ -134,7 +139,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 		{authority: host + uuid1, tenant: "common", expectError: true},
 		{authority: host + uuid1, tenant: "organizations", expectError: true},
 	} {
-		for _, flow := range []string{"authcode", "devicecode", "password"} {
+		for _, flow := range []string{"authcode", "devicecode", "interactive", "password"} {
 			t.Run(flow, func(t *testing.T) {
 				client, err := fakeClient(accesstokens.TokenResponse{
 					AccessToken:   "***",
@@ -165,6 +170,8 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					_, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithTenantID(test.tenant))
+				case "interactive":
+					_, err = client.AcquireTokenInteractive(ctx, tokenScope, WithTenantID(test.tenant))
 				case "password":
 					_, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(test.tenant))
 				default:

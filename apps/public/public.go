@@ -134,6 +134,7 @@ func WithTenantID(tenantID string) interface {
 	AcquireByAuthCodeOption
 	AcquireByDeviceCodeOption
 	AcquireByUsernamePasswordOption
+	AcquireInteractiveOption
 	AcquireSilentOption
 	options.CallOption
 } {
@@ -141,6 +142,7 @@ func WithTenantID(tenantID string) interface {
 		AcquireByAuthCodeOption
 		AcquireByDeviceCodeOption
 		AcquireByUsernamePasswordOption
+		AcquireInteractiveOption
 		AcquireSilentOption
 		options.CallOption
 	}{
@@ -154,6 +156,8 @@ func WithTenantID(tenantID string) interface {
 				case *acquireTokenByUsernamePasswordOptions:
 					t.tenantID = tenantID
 				case *AcquireTokenSilentOptions:
+					t.tenantID = tenantID
+				case *InteractiveAuthOptions:
 					t.tenantID = tenantID
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
