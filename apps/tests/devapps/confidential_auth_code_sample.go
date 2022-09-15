@@ -59,13 +59,7 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 // thumbprint directly.
 /*
 func acquireByAuthorizationCodeConfidential() {
-	file, err := os.Open(confidentialConfig.KeyFile)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer file.Close()
-
-	key, err := ioutil.ReadAll(file)
+	key, err := os.ReadFile(confidentialConfig.KeyFile)
 	if err != nil {
 		log.Fatal(err)
 	}

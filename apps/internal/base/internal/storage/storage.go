@@ -84,17 +84,22 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 
 // Read reads a storage token from the cache if it exists.
 func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
-	homeAccountID := authParameters.HomeaccountID
+	homeAccountID := authParameters.HomeAccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 
-	metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
-	if err != nil {
-		return TokenResponse{}, err
+	// fetch metadata if and only if the authority isn't explicitly trusted
+	aliases := authParameters.KnownAuthorityHosts
+	if len(aliases) == 0 {
+		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+		aliases = metadata.Aliases
 	}
 
-	accessToken := m.readAccessToken(homeAccountID, metadata.Aliases, realm, clientID, scopes)
+	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes)
 
 	if account.IsZero() {
 		return TokenResponse{
@@ -104,22 +109,22 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 			Account:      shared.Account{},
 		}, nil
 	}
-	idToken, err := m.readIDToken(homeAccountID, metadata.Aliases, realm, clientID)
+	idToken, err := m.readIDToken(homeAccountID, aliases, realm, clientID)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 
-	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
+	AppMetaData, err := m.readAppMetaData(aliases, clientID)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 	familyID := AppMetaData.FamilyID
 
-	refreshToken, err := m.readRefreshToken(homeAccountID, metadata.Aliases, familyID, clientID)
+	refreshToken, err := m.readRefreshToken(homeAccountID, aliases, familyID, clientID)
 	if err != nil {
 		return TokenResponse{}, err
 	}
-	account, err = m.readAccount(homeAccountID, metadata.Aliases, realm)
+	account, err = m.readAccount(homeAccountID, aliases, realm)
 	if err != nil {
 		return TokenResponse{}, err
 	}
@@ -135,8 +140,8 @@ const scopeSeparator = " "
 
 // Write writes a token response to the cache and returns the account information the token is stored with.
 func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error) {
-	authParameters.HomeaccountID = tokenResponse.ClientInfo.HomeAccountID()
-	homeAccountID := authParameters.HomeaccountID
+	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
+	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID

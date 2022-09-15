@@ -5,7 +5,6 @@ package main
 
 import (
 	"encoding/json"
-	"io/ioutil"
 	"log"
 	"os"
 )
@@ -28,12 +27,7 @@ type Config struct {
 
 // CreateConfig creates the Config struct from a json file.
 func CreateConfig(fileName string) *Config {
-	jsonFile, err := os.Open(fileName)
-	if err != nil {
-		log.Fatal(err)
-	}
-	defer jsonFile.Close()
-	data, err := ioutil.ReadAll(jsonFile)
+	data, err := os.ReadFile(fileName)
 	if err != nil {
 		log.Fatal(err)
 	}

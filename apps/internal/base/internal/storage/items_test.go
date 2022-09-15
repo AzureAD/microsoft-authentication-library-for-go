@@ -5,7 +5,6 @@ package storage
 
 import (
 	stdJSON "encoding/json"
-	"io/ioutil"
 	"os"
 	"testing"
 	"time"
@@ -204,13 +203,7 @@ func TestAppMetaDataMarshal(t *testing.T) {
 }
 
 func TestContractUnmarshalJSON(t *testing.T) {
-	jsonFile, err := os.Open(testFile)
-	if err != nil {
-		panic(err)
-	}
-	defer jsonFile.Close()
-
-	testCache, err := ioutil.ReadAll(jsonFile)
+	testCache, err := os.ReadFile(testFile)
 	if err != nil {
 		panic(err)
 	}

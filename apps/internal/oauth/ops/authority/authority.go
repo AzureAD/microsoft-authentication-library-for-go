@@ -9,7 +9,7 @@ import (
 	"encoding/base64"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -133,7 +133,7 @@ type AuthParams struct {
 	ClientID      string
 	// Redirecturi is used for auth flows that specify a redirect URI (e.g. local server for interactive auth flow).
 	Redirecturi   string
-	HomeaccountID string
+	HomeAccountID string
 	// Username is the user-name portion for username/password auth flow.
 	Username string
 	// Password is the password portion for username/password auth flow.
@@ -156,6 +156,9 @@ type AuthParams struct {
 	SendX5C bool
 	// UserAssertion is the access token used to acquire token on behalf of user
 	UserAssertion string
+
+	// KnownAuthorityHosts don't require metadata discovery because they're known to the user
+	KnownAuthorityHosts []string
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -383,7 +386,7 @@ func detectRegion(ctx context.Context) string {
 		}
 	}
 	defer resp.Body.Close()
-	response, err := ioutil.ReadAll(resp.Body)
+	response, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return ""
 	}
@@ -398,7 +401,7 @@ func (a *AuthParams) CacheKey(isAppCache bool) string {
 		return a.AppKey()
 	}
 	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
-		return a.HomeaccountID
+		return a.HomeAccountID
 	}
 	return ""
 }
