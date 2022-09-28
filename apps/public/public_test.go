@@ -11,61 +11,12 @@ import (
 	"net/url"
 	"strings"
 	"testing"
-	"time"
 
-	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 var tokenScope = []string{"the_scope"}
-
-func fakeClient(tk accesstokens.TokenResponse, options ...Option) (Client, error) {
-	options = append(options, WithAuthority("https://localhost/tenant"))
-	client, err := New("client-id", options...)
-	if err != nil {
-		return Client{}, err
-	}
-	client.base.Token.AccessTokens = &fake.AccessTokens{
-		AccessToken: tk,
-		DeviceCode: accesstokens.NewDeviceCodeResult(
-			"user code",
-			"device code",
-			"https://localhost",
-			time.Now().Add(time.Minute),
-			1,
-			"message",
-			"client-id",
-			tokenScope,
-		),
-		Result: []error{nil},
-	}
-	client.base.Token.Authority = &fake.Authority{
-		InstanceResp: authority.InstanceDiscoveryResponse{
-			TenantDiscoveryEndpoint: "https://localhost/fake/discovery/endpoint",
-			Metadata: []authority.InstanceDiscoveryMetadata{
-				{
-					PreferredNetwork: "localhost",
-					PreferredCache:   "localhost_cache",
-					Aliases:          []string{"localhost"},
-				},
-			},
-			AdditionalFields: map[string]interface{}{"api-version": "2020-02-02"},
-		},
-		Realm: authority.UserRealm{AccountType: authority.Managed},
-	}
-	client.base.Token.Resolver = &fake.ResolveEndpoints{
-		Endpoints: authority.NewEndpoints(
-			"https://localhost/tenant/auth",
-			"https://localhost/tenant/token",
-			"https://localhost/tenant/jwt",
-			"localhost",
-		),
-	}
-	client.base.Token.WSTrust = &fake.WSTrust{}
-	return client, nil
-}
 
 func fakeBrowserOpenURL(authURL string) error {
 	// we will get called with the URL for requesting an auth code
@@ -127,7 +78,8 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 
 	uuid1 := "00000000-0000-0000-0000-000000000000"
 	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
-	host := "https://localhost/"
+	lmo := "login.microsoftonline.com"
+	host := fmt.Sprintf("https://%s/", lmo)
 	for _, test := range []struct {
 		authority, expectedAuthority, tenant string
 		expectError                          bool
@@ -141,30 +93,42 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 	} {
 		for _, flow := range []string{"authcode", "devicecode", "interactive", "password"} {
 			t.Run(flow, func(t *testing.T) {
-				client, err := fakeClient(accesstokens.TokenResponse{
-					AccessToken:   "***",
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-					RefreshToken:  "refresh-token",
-				}, WithAuthority(test.authority))
+				idToken, refreshToken := "", ""
+				mockClient := mock.Client{}
+				if flow == "obo" {
+					idToken = "x.e30"
+					refreshToken = "refresh-token"
+					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
+					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
+				}
+				validated := false
+				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
+				if flow == "devicecode" {
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
+				} else if flow == "password" {
+					// user realm metadata
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
+				}
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody("*", idToken, refreshToken, 3600)),
+					mock.WithCallback(func(r *http.Request) {
+						validated = true
+						if u := r.URL.String(); !(strings.HasPrefix(u, test.expectedAuthority) && strings.HasSuffix(u, "/token")) {
+							t.Fatalf(`unexpected token request URL "%s"`, u)
+						}
+					}),
+				)
+				client, err := New("client-id", WithAuthority(test.authority), WithHTTPClient(&mockClient))
 				if err != nil {
 					t.Fatal(err)
 				}
-
-				validated := false
-				client.base.Token.AccessTokens.(*fake.AccessTokens).ValidateAuthParams = func(p authority.AuthParams) {
-					if validated {
-						// e.g. AcquireTokenSilent should return a cached token
-						t.Fatal("unexpected second authentication")
-					}
-					validated = true
-					if actual := strings.TrimSuffix(p.AuthorityInfo.CanonicalAuthorityURI, "/"); actual != test.expectedAuthority {
-						t.Fatalf(`unexpected authority "%s"`, actual)
-					}
+				ctx := context.Background()
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err == nil {
+					t.Fatal("silent auth should fail because the cache is empty")
 				}
 
 				var dc DeviceCode
-				ctx := context.Background()
 				switch flow {
 				case "authcode":
 					_, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
@@ -189,7 +153,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					}
 				}
 				if !validated {
-					t.Fatal("AuthParams validation function wasn't called")
+					t.Fatal("token request validation function wasn't called")
 				}
 				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
 					t.Fatal(err)

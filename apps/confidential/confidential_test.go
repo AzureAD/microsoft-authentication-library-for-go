@@ -21,6 +21,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -255,7 +256,8 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 func TestAcquireTokenWithTenantID(t *testing.T) {
 	uuid1 := "00000000-0000-0000-0000-000000000000"
 	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
-	host := "https://fake_authority/"
+	lmo := "login.microsoftonline.com"
+	host := fmt.Sprintf("https://%s/", lmo)
 	for _, test := range []struct {
 		authority, expectedAuthority, tenant string
 		expectError                          bool
@@ -273,38 +275,34 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				if err != nil {
 					t.Fatal(err)
 				}
-				tr := accesstokens.TokenResponse{
-					AccessToken:   token,
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-				}
+				idToken, refreshToken := "", ""
+				mockClient := mock.Client{}
 				if flow == "obo" {
-					tr.IDToken = accesstokens.IDToken{
-						Oid:               "uid",
-						PreferredUsername: "username",
-						RawToken:          "x.e30",
-						TenantID:          "utid",
-					}
-					tr.RefreshToken = "refresh-token"
+					idToken = "x.e30"
+					refreshToken = "refresh-token"
+					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
+					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				}
-				client, err := fakeClient(tr, cred, WithAuthority(test.authority))
+				validated := false
+				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody("*", idToken, refreshToken, 3600)),
+					mock.WithCallback(func(r *http.Request) {
+						validated = true
+						if u := r.URL.String(); !(strings.HasPrefix(u, test.expectedAuthority) && strings.HasSuffix(u, "/token")) {
+							t.Fatalf(`unexpected token request URL "%s"`, u)
+						}
+					}),
+				)
+				client, err := New("client-id", cred, WithAuthority(test.authority), WithHTTPClient(&mockClient))
 				if err != nil {
 					t.Fatal(err)
 				}
-
-				validated := false
-				client.base.Token.AccessTokens.(*fake.AccessTokens).ValidateAuthParams = func(p authority.AuthParams) {
-					if validated {
-						// e.g. AcquireTokenSilent should return a cached token
-						t.Fatal("unexpected second authentication")
-					}
-					validated = true
-					if actual := strings.TrimSuffix(p.AuthorityInfo.CanonicalAuthorityURI, "/"); actual != test.expectedAuthority {
-						t.Fatalf(`unexpected authority "%s"`, actual)
-					}
-				}
-
 				ctx := context.Background()
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err == nil {
+					t.Fatal("silent auth should fail because the cache is empty")
+				}
 				switch flow {
 				case "authcode":
 					_, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
@@ -320,9 +318,8 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 						return
 					}
 					t.Fatal(err)
-				}
-				if !validated {
-					t.Fatal("AuthParams validation function wasn't called")
+				} else if !validated {
+					t.Fatal("token request validation function wasn't called")
 				}
 				if flow == "obo" {
 					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant)); err != nil {
