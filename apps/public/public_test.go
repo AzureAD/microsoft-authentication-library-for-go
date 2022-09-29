@@ -5,6 +5,7 @@ package public
 
 import (
 	"context"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"net/http"
@@ -70,12 +71,68 @@ func TestAcquireTokenInteractive(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenSilentTenants(t *testing.T) {
+	tenants := []string{"a", "b"}
+	lmo := "login.microsoftonline.com"
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenants[0])))
+	client, err := New("client-id", WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+	ctx := context.Background()
+	accounts := make([]Account, len(tenants))
+	// cache an access token for each tenant. To simplify determining their provenance below, the value of each token is the ID of the tenant that provided it.
+	for i, tenant := range tenants {
+		if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant)); err == nil {
+			t.Fatal("silent auth should fail because the cache is empty")
+		}
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
+		mockClient.AppendResponse(mock.WithBody(
+			mock.GetAccessTokenBody(tenant, mock.GetIDToken(tenant, fmt.Sprintf("https://%s/%s", lmo, tenant)), "rt-"+tenant, clientInfo, 3600)),
+		)
+		ar, err := client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(tenant))
+		if err != nil {
+			t.Fatal(err)
+		}
+		accounts[i] = ar.Account
+	}
+	// cache should return the correct access token for each tenant
+	for i, account := range accounts {
+		if account.Realm != tenants[i] {
+			t.Fatalf(`unexpected realm "%s"`, account.Realm)
+		}
+		otherTenant := tenants[(i+1)%len(tenants)]
+		for _, test := range []struct {
+			desc, expected string
+			opts           []AcquireSilentOption
+		}{
+			{"account only", account.Realm, []AcquireSilentOption{WithSilentAccount(account)}},
+			{"matching account and tenant", account.Realm, []AcquireSilentOption{WithSilentAccount(account), WithTenantID(account.Realm)}},
+			{"tenant overriding account", otherTenant, []AcquireSilentOption{WithSilentAccount(account), WithTenantID(otherTenant)}},
+		} {
+			t.Run(test.desc, func(t *testing.T) {
+				ar, err := client.AcquireTokenSilent(ctx, tokenScope, test.opts...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ar.AccessToken != test.expected {
+					t.Fatalf(`expected "%s", got "%s"`, test.expected, ar.AccessToken)
+				}
+			})
+		}
+	}
+}
+
 func TestAcquireTokenWithTenantID(t *testing.T) {
 	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
 	realBrowserOpenURL := browserOpenURL
 	defer func() { browserOpenURL = realBrowserOpenURL }()
 	browserOpenURL = fakeBrowserOpenURL
 
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	uuid1 := "00000000-0000-0000-0000-000000000000"
 	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
 	lmo := "login.microsoftonline.com"
@@ -93,11 +150,8 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 	} {
 		for _, flow := range []string{"authcode", "devicecode", "interactive", "password"} {
 			t.Run(flow, func(t *testing.T) {
-				idToken, refreshToken := "", ""
 				mockClient := mock.Client{}
 				if flow == "obo" {
-					idToken = "x.e30"
-					refreshToken = "refresh-token"
 					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				}
@@ -110,8 +164,9 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					// user realm metadata
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
 				}
+
 				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody("*", idToken, refreshToken, 3600)),
+					mock.WithBody(mock.GetAccessTokenBody("*", mock.GetIDToken(test.tenant, test.authority), "rt", clientInfo, 3600)),
 					mock.WithCallback(func(r *http.Request) {
 						validated = true
 						if u := r.URL.String(); !(strings.HasPrefix(u, test.expectedAuthority) && strings.HasSuffix(u, "/token")) {
@@ -128,16 +183,17 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					t.Fatal("silent auth should fail because the cache is empty")
 				}
 
+				var ar AuthResult
 				var dc DeviceCode
 				switch flow {
 				case "authcode":
-					_, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
+					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithTenantID(test.tenant))
 				case "interactive":
-					_, err = client.AcquireTokenInteractive(ctx, tokenScope, WithTenantID(test.tenant))
+					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithTenantID(test.tenant))
 				case "password":
-					_, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(test.tenant))
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(test.tenant))
 				default:
 					t.Fatalf("no test for " + flow)
 				}
@@ -148,15 +204,22 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					t.Fatal(err)
 				}
 				if flow == "devicecode" {
-					if _, err = dc.AuthenticationResult(ctx); err != nil {
+					if ar, err = dc.AuthenticationResult(ctx); err != nil {
 						t.Fatal(err)
 					}
 				}
 				if !validated {
 					t.Fatal("token request validation function wasn't called")
 				}
-				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
+				// silent authentication should succeed for the given tenant
+				if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID(test.tenant)); err != nil {
 					t.Fatal(err)
+				} else if ar.AccessToken != "*" {
+					t.Fatalf(`unexpected cached token "%s"`, ar.AccessToken)
+				}
+				// ... but fail for another tenant
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID("not-"+test.tenant)); err == nil {
+					t.Fatal("expected an error")
 				}
 			})
 		}

@@ -5,6 +5,7 @@ package mock
 
 import (
 	"bytes"
+	"encoding/base64"
 	"fmt"
 	"io"
 	"net/http"
@@ -73,17 +74,28 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // CloseIdleConnections implements the comm.HTTPClient interface
 func (*Client) CloseIdleConnections() {}
 
-func GetAccessTokenBody(accessToken, idToken, refreshToken string, expiresIn int) []byte {
-	body := fmt.Sprintf(`{"access_token": "%s","expires_in": %d,"expires_on": %d`,
-		accessToken, expiresIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix())
-	if refreshToken != "" {
-		body += fmt.Sprintf(`, "refresh_token": "%s"`, refreshToken)
+func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, expiresIn int) []byte {
+	body := fmt.Sprintf(
+		`{"access_token": "%s","expires_in": %d,"expires_on": %d`,
+		accessToken, expiresIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix(),
+	)
+	if clientInfo != "" {
+		body += fmt.Sprintf(`, "client_info": "%s"`, clientInfo)
 	}
 	if idToken != "" {
 		body += fmt.Sprintf(`, "id_token": "%s"`, idToken)
 	}
+	if refreshToken != "" {
+		body += fmt.Sprintf(`, "refresh_token": "%s"`, refreshToken)
+	}
 	body += "}"
 	return []byte(body)
+}
+
+func GetIDToken(tenant, issuer string) string {
+	now := time.Now().Unix()
+	payload := []byte(fmt.Sprintf(`{"aud": "%s","exp": %d,"iat": %d,"iss": "%s"}`, tenant, now+3600, now, issuer))
+	return fmt.Sprintf("header.%s.signature", base64.RawStdEncoding.EncodeToString(payload))
 }
 
 func GetInstanceDiscoveryBody(host, tenant string) []byte {

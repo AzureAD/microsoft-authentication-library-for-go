@@ -253,6 +253,43 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenSilentTenants(t *testing.T) {
+	cred, err := NewCredFromSecret("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenants := []string{"a", "b"}
+	lmo := "login.microsoftonline.com"
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenants[0])))
+	client, err := New("client-id", cred, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// cache an access token for each tenant. To simplify determining their provenance below, the value of each token is the ID of the tenant that provided it.
+	for _, tenant := range tenants {
+		if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant)); err == nil {
+			t.Fatal("silent auth should fail because the cache is empty")
+		}
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(tenant, "", "", "", 3600)))
+		if _, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant)); err != nil {
+			t.Fatal(err)
+		}
+	}
+	// cache should return the correct access token for each tenant
+	for _, tenant := range tenants {
+		ar, err := client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ar.AccessToken != tenant {
+			t.Fatalf(`expected "%s", got "%s"`, tenant, ar.AccessToken)
+		}
+	}
+}
+
 func TestAcquireTokenWithTenantID(t *testing.T) {
 	uuid1 := "00000000-0000-0000-0000-000000000000"
 	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
@@ -287,7 +324,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
 				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody("*", idToken, refreshToken, 3600)),
+					mock.WithBody(mock.GetAccessTokenBody("*", idToken, refreshToken, "", 3600)),
 					mock.WithCallback(func(r *http.Request) {
 						validated = true
 						if u := r.URL.String(); !(strings.HasPrefix(u, test.expectedAuthority) && strings.HasSuffix(u, "/token")) {
@@ -321,12 +358,23 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				} else if !validated {
 					t.Fatal("token request validation function wasn't called")
 				}
+				// silent authentication should succeed for the given tenant
 				if flow == "obo" {
 					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant)); err != nil {
 						t.Fatal(err)
 					}
 				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
 					t.Fatal(err)
+				}
+				// ...but fail for another tenant
+				if flow == "obo" {
+					// OBO sends a token request after silent auth fails
+					mockClient.AppendResponse()
+					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
+						t.Fatal("expected an error")
+					}
+				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
+					t.Fatal("expected an error")
 				}
 			})
 		}
