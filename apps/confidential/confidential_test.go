@@ -315,7 +315,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				idToken, refreshToken := "", ""
 				mockClient := mock.Client{}
 				if flow == "obo" {
-					idToken = "x.e30"
+					idToken = mock.GetIDToken(test.tenant, test.authority)
 					refreshToken = "refresh-token"
 					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
