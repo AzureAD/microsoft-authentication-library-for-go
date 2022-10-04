@@ -132,6 +132,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 	defer func() { browserOpenURL = realBrowserOpenURL }()
 	browserOpenURL = fakeBrowserOpenURL
 
+	accessToken := "*"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	uuid1 := "00000000-0000-0000-0000-000000000000"
 	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
@@ -166,7 +167,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				}
 
 				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody("*", mock.GetIDToken(test.tenant, test.authority), "rt", clientInfo, 3600)),
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(test.tenant, test.authority), "rt", clientInfo, 3600)),
 					mock.WithCallback(func(r *http.Request) {
 						validated = true
 						if u := r.URL.String(); !(strings.HasPrefix(u, test.expectedAuthority) && strings.HasSuffix(u, "/token")) {
@@ -202,6 +203,8 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 						return
 					}
 					t.Fatal(err)
+				} else if test.expectError {
+					t.Fatal("expected an error")
 				}
 				if flow == "devicecode" {
 					if ar, err = dc.AuthenticationResult(ctx); err != nil {
@@ -211,13 +214,16 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				if !validated {
 					t.Fatal("token request validation function wasn't called")
 				}
-				// silent authentication should succeed for the given tenant
+				if ar.AccessToken != accessToken {
+					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+				}
+				// silent authentication should succeed for the given tenant...
 				if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID(test.tenant)); err != nil {
 					t.Fatal(err)
-				} else if ar.AccessToken != "*" {
-					t.Fatalf(`unexpected cached token "%s"`, ar.AccessToken)
+				} else if ar.AccessToken != accessToken {
+					t.Fatal("cached access token should match the one returned by AcquireToken...")
 				}
-				// ... but fail for another tenant
+				// ...but fail for another tenant
 				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID("not-"+test.tenant)); err == nil {
 					t.Fatal("expected an error")
 				}

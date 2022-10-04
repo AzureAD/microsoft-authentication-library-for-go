@@ -396,9 +396,30 @@ func (cca Client) UserID() string {
 	return cca.userID
 }
 
+// authCodeURLOptions contains options for AuthCodeURL
+type authCodeURLOptions struct {
+	tenantID string
+}
+
+// AuthCodeURLOption is implemented by options for AuthCodeURL
+type AuthCodeURLOption interface {
+	authCodeURLOption()
+}
+
 // AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
-func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, cca.base.AuthParams)
+//
+// Options:
+// - [WithTenantID]
+func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
+	o := authCodeURLOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return "", err
+	}
+	ap, err := cca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return "", err
+	}
+	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
@@ -408,6 +429,7 @@ func WithTenantID(tenantID string) interface {
 	AcquireByCredentialOption
 	AcquireOnBehalfOfOption
 	AcquireSilentOption
+	AuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
@@ -415,6 +437,7 @@ func WithTenantID(tenantID string) interface {
 		AcquireByCredentialOption
 		AcquireOnBehalfOfOption
 		AcquireSilentOption
+		AuthCodeURLOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -427,6 +450,8 @@ func WithTenantID(tenantID string) interface {
 				case *acquireTokenOnBehalfOfOptions:
 					t.tenantID = tenantID
 				case *AcquireTokenSilentOptions:
+					t.tenantID = tenantID
+				case *authCodeURLOptions:
 					t.tenantID = tenantID
 				default:
 					return fmt.Errorf("unexpected options type %T", a)

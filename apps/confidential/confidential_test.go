@@ -290,97 +290,6 @@ func TestAcquireTokenSilentTenants(t *testing.T) {
 	}
 }
 
-func TestAcquireTokenWithTenantID(t *testing.T) {
-	uuid1 := "00000000-0000-0000-0000-000000000000"
-	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
-	lmo := "login.microsoftonline.com"
-	host := fmt.Sprintf("https://%s/", lmo)
-	for _, test := range []struct {
-		authority, expectedAuthority, tenant string
-		expectError                          bool
-	}{
-		{authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + "consumers", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
-		{authority: host + uuid1, tenant: "common", expectError: true},
-		{authority: host + uuid1, tenant: "organizations", expectError: true},
-	} {
-		for _, flow := range []string{"authcode", "credential", "obo"} {
-			t.Run(flow, func(t *testing.T) {
-				cred, err := NewCredFromSecret("secret")
-				if err != nil {
-					t.Fatal(err)
-				}
-				idToken, refreshToken := "", ""
-				mockClient := mock.Client{}
-				if flow == "obo" {
-					idToken = mock.GetIDToken(test.tenant, test.authority)
-					refreshToken = "refresh-token"
-					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
-					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
-				}
-				validated := false
-				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
-				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
-				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody("*", idToken, refreshToken, "", 3600)),
-					mock.WithCallback(func(r *http.Request) {
-						validated = true
-						if u := r.URL.String(); !(strings.HasPrefix(u, test.expectedAuthority) && strings.HasSuffix(u, "/token")) {
-							t.Fatalf(`unexpected token request URL "%s"`, u)
-						}
-					}),
-				)
-				client, err := New("client-id", cred, WithAuthority(test.authority), WithHTTPClient(&mockClient))
-				if err != nil {
-					t.Fatal(err)
-				}
-				ctx := context.Background()
-				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err == nil {
-					t.Fatal("silent auth should fail because the cache is empty")
-				}
-				switch flow {
-				case "authcode":
-					_, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
-				case "credential":
-					_, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant))
-				case "obo":
-					_, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant))
-				default:
-					t.Fatalf("no test for " + flow)
-				}
-				if err != nil {
-					if test.expectError {
-						return
-					}
-					t.Fatal(err)
-				} else if !validated {
-					t.Fatal("token request validation function wasn't called")
-				}
-				// silent authentication should succeed for the given tenant
-				if flow == "obo" {
-					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant)); err != nil {
-						t.Fatal(err)
-					}
-				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
-					t.Fatal(err)
-				}
-				// ...but fail for another tenant
-				if flow == "obo" {
-					// OBO sends a token request after silent auth fails
-					mockClient.AppendResponse()
-					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
-						t.Fatal("expected an error")
-					}
-				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
-					t.Fatal("expected an error")
-				}
-			})
-		}
-	}
-}
-
 func TestInvalidCredential(t *testing.T) {
 	data, err := os.ReadFile("../testdata/test-cert.pem")
 	if err != nil {
@@ -616,5 +525,107 @@ func TestNewCredFromTokenProviderError(t *testing.T) {
 	_, err = client.AcquireTokenByCredential(context.Background(), tokenScope)
 	if err == nil || !strings.Contains(err.Error(), expectedError) {
 		t.Fatalf(`unexpected error "%v"`, err)
+	}
+}
+
+func TestWithTenantID(t *testing.T) {
+	accessToken := "*"
+	uuid1 := "00000000-0000-0000-0000-000000000000"
+	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
+	lmo := "login.microsoftonline.com"
+	host := fmt.Sprintf("https://%s/", lmo)
+	for _, test := range []struct {
+		authority, expectedAuthority, tenant string
+		expectError                          bool
+	}{
+		{authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + "consumers", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
+		{authority: host + uuid1, tenant: "common", expectError: true},
+		{authority: host + uuid1, tenant: "organizations", expectError: true},
+	} {
+		for _, method := range []string{"authcode", "authcodeURL", "credential", "obo"} {
+			t.Run(method, func(t *testing.T) {
+				cred, err := NewCredFromSecret("secret")
+				if err != nil {
+					t.Fatal(err)
+				}
+				idToken, refreshToken, URL := "", "", ""
+				mockClient := mock.Client{}
+				if method == "obo" {
+					idToken = mock.GetIDToken(test.tenant, test.authority)
+					refreshToken = "refresh-token"
+					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
+					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
+				}
+				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+					mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
+				)
+				client, err := New("client-id", cred, WithAuthority(test.authority), WithHTTPClient(&mockClient))
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx := context.Background()
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err == nil {
+					t.Fatal("silent auth should fail because the cache is empty")
+				}
+				var ar AuthResult
+				switch method {
+				case "authcode":
+					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
+				case "authcodeURL":
+					URL, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithTenantID(test.tenant))
+				case "credential":
+					ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant))
+				case "obo":
+					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant))
+				default:
+					t.Fatalf("no test for " + method)
+				}
+				if err != nil {
+					if test.expectError {
+						return
+					}
+					t.Fatal(err)
+				} else if test.expectError {
+					t.Fatal("expected an error")
+				}
+				if !strings.HasPrefix(URL, test.expectedAuthority) {
+					t.Fatalf(`expected "%s", got "%s"`, test.expectedAuthority, URL)
+				}
+				if method == "authcodeURL" {
+					// didn't acquire a token, no need to test silent auth
+					return
+				}
+				if ar.AccessToken != accessToken {
+					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+				}
+				// silent authentication should now succeed for the given tenant...
+				if method == "obo" {
+					if ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant)); err != nil {
+						t.Fatal(err)
+					}
+				} else if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
+					t.Fatal(err)
+				}
+				if ar.AccessToken != accessToken {
+					t.Fatal("cached access token should match the one returned by AcquireToken...")
+				}
+				// ...but fail for another tenant
+				if method == "obo" {
+					// OBO sends a token request after silent auth fails
+					mockClient.AppendResponse()
+					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
+						t.Fatal("expected an error")
+					}
+				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
+					t.Fatal("expected an error")
+				}
+			})
+		}
 	}
 }
