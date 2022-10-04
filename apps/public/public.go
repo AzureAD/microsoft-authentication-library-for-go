@@ -124,9 +124,30 @@ func New(clientID string, options ...Option) (Client, error) {
 	return Client{base}, nil
 }
 
+// createAuthCodeURLOptions contains options for CreateAuthCodeURL
+type createAuthCodeURLOptions struct {
+	tenantID string
+}
+
+// CreateAuthCodeURLOption is implemented by options for CreateAuthCodeURL
+type CreateAuthCodeURLOption interface {
+	createAuthCodeURLOption()
+}
+
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
-func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, pca.base.AuthParams)
+//
+// Options:
+// - [WithTenantID]
+func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...CreateAuthCodeURLOption) (string, error) {
+	o := createAuthCodeURLOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return "", err
+	}
+	ap, err := pca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return "", err
+	}
+	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
@@ -137,6 +158,7 @@ func WithTenantID(tenantID string) interface {
 	AcquireByUsernamePasswordOption
 	AcquireInteractiveOption
 	AcquireSilentOption
+	CreateAuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
@@ -145,6 +167,7 @@ func WithTenantID(tenantID string) interface {
 		AcquireByUsernamePasswordOption
 		AcquireInteractiveOption
 		AcquireSilentOption
+		CreateAuthCodeURLOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -157,6 +180,8 @@ func WithTenantID(tenantID string) interface {
 				case *acquireTokenByUsernamePasswordOptions:
 					t.tenantID = tenantID
 				case *AcquireTokenSilentOptions:
+					t.tenantID = tenantID
+				case *createAuthCodeURLOptions:
 					t.tenantID = tenantID
 				case *InteractiveAuthOptions:
 					t.tenantID = tenantID

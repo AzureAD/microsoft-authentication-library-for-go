@@ -149,31 +149,25 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 		{authority: host + uuid1, tenant: "common", expectError: true},
 		{authority: host + uuid1, tenant: "organizations", expectError: true},
 	} {
-		for _, flow := range []string{"authcode", "devicecode", "interactive", "password"} {
-			t.Run(flow, func(t *testing.T) {
+		for _, method := range []string{"authcode", "authcodeURL", "devicecode", "interactive", "password"} {
+			t.Run(method, func(t *testing.T) {
+				URL := ""
 				mockClient := mock.Client{}
-				if flow == "obo" {
+				if method == "obo" {
 					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				}
-				validated := false
 				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
-				if flow == "devicecode" {
+				if method == "devicecode" {
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
-				} else if flow == "password" {
+				} else if method == "password" {
 					// user realm metadata
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
 				}
-
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(test.tenant, test.authority), "rt", clientInfo, 3600)),
-					mock.WithCallback(func(r *http.Request) {
-						validated = true
-						if u := r.URL.String(); !(strings.HasPrefix(u, test.expectedAuthority) && strings.HasSuffix(u, "/token")) {
-							t.Fatalf(`unexpected token request URL "%s"`, u)
-						}
-					}),
+					mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 				)
 				client, err := New("client-id", WithAuthority(test.authority), WithHTTPClient(&mockClient))
 				if err != nil {
@@ -186,9 +180,11 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 
 				var ar AuthResult
 				var dc DeviceCode
-				switch flow {
+				switch method {
 				case "authcode":
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
+				case "authcodeURL":
+					URL, err = client.CreateAuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithTenantID(test.tenant))
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithTenantID(test.tenant))
 				case "interactive":
@@ -196,7 +192,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				case "password":
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(test.tenant))
 				default:
-					t.Fatalf("no test for " + flow)
+					t.Fatalf("no test for " + method)
 				}
 				if err != nil {
 					if test.expectError {
@@ -206,13 +202,17 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				} else if test.expectError {
 					t.Fatal("expected an error")
 				}
-				if flow == "devicecode" {
+				if method == "devicecode" {
 					if ar, err = dc.AuthenticationResult(ctx); err != nil {
 						t.Fatal(err)
 					}
 				}
-				if !validated {
-					t.Fatal("token request validation function wasn't called")
+				if !strings.HasPrefix(URL, test.expectedAuthority) {
+					t.Fatalf(`expected "%s", got "%s"`, test.expectedAuthority, URL)
+				}
+				if method == "authcodeURL" {
+					// didn't acquire a token, no need to test silent auth
+					return
 				}
 				if ar.AccessToken != accessToken {
 					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
