@@ -358,3 +358,79 @@ func TestAuthParamsWithTenant(t *testing.T) {
 		})
 	}
 }
+
+func TestMergeCapabilitiesAndClaims(t *testing.T) {
+	for _, test := range []struct {
+		capabilities              []string
+		challenge, desc, expected string
+		err                       bool
+	}{
+		{
+			desc:     "no capabilities or challenge",
+			expected: "",
+		},
+		{
+			desc:         "encoded challenge",
+			capabilities: []string{"cp1"},
+			challenge:    "eyJpZF90b2tlbiI6eyJhdXRoX3RpbWUiOnsiZXNzZW50aWFsIjp0cnVlfX19",
+			err:          true,
+		},
+		{
+			desc:         "only capabilities",
+			capabilities: []string{"cp1"},
+			expected:     `{"access_token":{"xms_cc":{"values":["cp1"]}}}`,
+		},
+		{
+			desc:      "only challenge",
+			challenge: `{"id_token":{"auth_time":{"essential":true}}}`,
+			expected:  `{"id_token":{"auth_time":{"essential":true}}}`,
+		},
+		{
+			desc:         "overlapping claim", // i.e. capabilities and claims are siblings
+			capabilities: []string{"cp1", "cp2"},
+			challenge:    `{"access_token":{"nbf":{"essential":true, "value":"42"}}}`,
+			expected:     `{"access_token":{"nbf":{"essential":true, "value":"42"}, "xms_cc":{"values":["cp1","cp2"]}}}`,
+		},
+		{
+			desc:         "non-overlapping claim",
+			capabilities: []string{"cp1", "cp2"},
+			challenge:    `{"id_token":{"auth_time":{"essential":true}}}`,
+			expected:     `{"id_token":{"auth_time":{"essential":true}}, "access_token":{"xms_cc":{"values":["cp1","cp2"]}}}`,
+		},
+		{
+			desc:         "overlapping and non-overlapping claims",
+			capabilities: []string{"cp1", "cp2"},
+			challenge:    `{"id_token":{"auth_time":{"essential":true}},"access_token":{"nbf":{"essential":true, "value":"42"}}}`,
+			expected:     `{"id_token":{"auth_time":{"essential":true}},"access_token":{"nbf":{"essential":true, "value":"42"},"xms_cc":{"values":["cp1","cp2"]}}}`,
+		},
+	} {
+		cpb, err := NewClientCapabilities(test.capabilities)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ap := AuthParams{Capabilities: cpb, Claims: test.challenge}
+		t.Run(test.desc, func(t *testing.T) {
+			var expected map[string]any
+			if err := json.Unmarshal([]byte(test.expected), &expected); err != nil && test.expected != "" {
+				t.Fatal("test bug: the expected result must be JSON or an empty string")
+			}
+			merged, err := ap.MergeCapabilitiesAndClaims()
+			if err != nil {
+				if test.err {
+					return
+				}
+				t.Fatal(err)
+			}
+			if merged == test.expected {
+				return
+			}
+			var actual map[string]any
+			if err = json.Unmarshal([]byte(merged), &actual); err != nil {
+				t.Fatal(err)
+			}
+			if diff := pretty.Compare(expected, actual); diff != "" {
+				t.Fatal(diff)
+			}
+		})
+	}
+}

@@ -58,6 +58,7 @@ type AcquireTokenSilentParameters struct {
 	TenantID          string
 	UserAssertion     string
 	AuthorizationType authority.AuthorizeType
+	Claims            string
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -68,6 +69,7 @@ type AcquireTokenAuthCodeParameters struct {
 	Scopes      []string
 	Code        string
 	Challenge   string
+	Claims      string
 	RedirectURI string
 	AppType     accesstokens.AppType
 	Credential  *accesstokens.Credential
@@ -76,6 +78,7 @@ type AcquireTokenAuthCodeParameters struct {
 
 type AcquireTokenOnBehalfOfParameters struct {
 	Scopes        []string
+	Claims        string
 	Credential    *accesstokens.Credential
 	TenantID      string
 	UserAssertion string
@@ -151,6 +154,20 @@ func WithCacheAccessor(ca cache.ExportReplace) Option {
 	}
 }
 
+// WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
+func WithClientCapabilities(capabilities []string) Option {
+	return func(c *Client) error {
+		var err error
+		if len(capabilities) > 0 {
+			cc, err := authority.NewClientCapabilities(capabilities)
+			if err == nil {
+				c.AuthParams.Capabilities = cc
+			}
+		}
+		return err
+	}
+}
+
 // WithKnownAuthorityHosts specifies hosts Client shouldn't validate or request metadata for because they're known to the user
 func WithKnownAuthorityHosts(hosts []string) Option {
 	return func(c *Client) error {
@@ -211,6 +228,11 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 		return "", err
 	}
 
+	claims, err := authParams.MergeCapabilitiesAndClaims()
+	if err != nil {
+		return "", err
+	}
+
 	v := url.Values{}
 	v.Add("client_id", clientID)
 	v.Add("response_type", "code")
@@ -218,6 +240,9 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	v.Add("scope", strings.Join(scopes, scopeSeparator))
 	if authParams.State != "" {
 		v.Add("state", authParams.State)
+	}
+	if claims != "" {
+		v.Add("claims", claims)
 	}
 	if authParams.CodeChallenge != "" {
 		v.Add("code_challenge", authParams.CodeChallenge)
@@ -257,6 +282,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.Scopes = silent.Scopes
 	authParams.HomeAccountID = silent.Account.HomeAccountID
 	authParams.AuthorizationType = silent.AuthorizationType
+	authParams.Claims = silent.Claims
 	authParams.UserAssertion = silent.UserAssertion
 
 	var storageTokenResponse storage.TokenResponse
@@ -283,25 +309,29 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		}
 	}
 
-	result, err := AuthResultFromStorage(storageTokenResponse)
-	if err != nil {
-		if reflect.ValueOf(storageTokenResponse.RefreshToken).IsZero() {
-			return AuthResult{}, errors.New("no token found")
+	// ignore cached access tokens when given claims
+	if silent.Claims == "" {
+		result, err := AuthResultFromStorage(storageTokenResponse)
+		if err == nil {
+			return result, nil
 		}
-
-		var cc *accesstokens.Credential
-		if silent.RequestType == accesstokens.ATConfidential {
-			cc = silent.Credential
-		}
-
-		token, err := b.Token.Refresh(ctx, silent.RequestType, authParams, cc, storageTokenResponse.RefreshToken)
-		if err != nil {
-			return AuthResult{}, err
-		}
-
-		return b.AuthResultFromToken(ctx, authParams, token, true)
 	}
-	return result, nil
+
+	// redeem a cached refresh token, if available
+	if reflect.ValueOf(storageTokenResponse.RefreshToken).IsZero() {
+		return AuthResult{}, errors.New("no token found")
+	}
+	var cc *accesstokens.Credential
+	if silent.RequestType == accesstokens.ATConfidential {
+		cc = silent.Credential
+	}
+
+	token, err := b.Token.Refresh(ctx, silent.RequestType, authParams, cc, storageTokenResponse.RefreshToken)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
@@ -309,6 +339,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	if err != nil {
 		return AuthResult{}, err
 	}
+	authParams.Claims = authCodeParams.Claims
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = authCodeParams.RedirectURI
 	authParams.AuthorizationType = authority.ATAuthCode
@@ -334,14 +365,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams AcquireTokenOnBehalfOfParameters) (AuthResult, error) {
-	authParams, err := b.AuthParams.WithTenant(onBehalfOfParams.TenantID)
-	if err != nil {
-		return AuthResult{}, err
-	}
-	authParams.Scopes = onBehalfOfParams.Scopes
-	authParams.AuthorizationType = authority.ATOnBehalfOf
-	authParams.UserAssertion = onBehalfOfParams.UserAssertion
-
+	var ar AuthResult
 	silentParameters := AcquireTokenSilentParameters{
 		Scopes:            onBehalfOfParams.Scopes,
 		RequestType:       accesstokens.ATConfidential,
@@ -349,17 +373,25 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 		UserAssertion:     onBehalfOfParams.UserAssertion,
 		AuthorizationType: authority.ATOnBehalfOf,
 		TenantID:          onBehalfOfParams.TenantID,
+		Claims:            onBehalfOfParams.Claims,
 	}
-	token, err := b.AcquireTokenSilent(ctx, silentParameters)
+	ar, err := b.AcquireTokenSilent(ctx, silentParameters)
+	if err == nil {
+		return ar, err
+	}
+	authParams, err := b.AuthParams.WithTenant(onBehalfOfParams.TenantID)
 	if err != nil {
-		fmt.Println("Acquire Token Silent failed ")
-		token, err := b.Token.OnBehalfOf(ctx, authParams, onBehalfOfParams.Credential)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		return b.AuthResultFromToken(ctx, authParams, token, true)
+		return AuthResult{}, err
 	}
-	return token, err
+	authParams.AuthorizationType = authority.ATOnBehalfOf
+	authParams.Claims = onBehalfOfParams.Claims
+	authParams.Scopes = onBehalfOfParams.Scopes
+	authParams.UserAssertion = onBehalfOfParams.UserAssertion
+	token, err := b.Token.OnBehalfOf(ctx, authParams, onBehalfOfParams.Credential)
+	if err == nil {
+		ar, err = b.AuthResultFromToken(ctx, authParams, token, true)
+	}
+	return ar, err
 }
 
 func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthResult, error) {
