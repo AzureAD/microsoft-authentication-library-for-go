@@ -539,11 +539,11 @@ func TestWithTenantID(t *testing.T) {
 		expectError                          bool
 	}{
 		{authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + "consumers", tenant: uuid1, expectedAuthority: host + uuid1},
 		{authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
 		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
 		{authority: host + uuid1, tenant: "common", expectError: true},
 		{authority: host + uuid1, tenant: "organizations", expectError: true},
+		{authority: host + "consumers", tenant: uuid1, expectError: true},
 	} {
 		for _, method := range []string{"authcode", "authcodeURL", "credential", "obo"} {
 			t.Run(method, func(t *testing.T) {

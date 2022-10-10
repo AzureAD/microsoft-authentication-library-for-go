@@ -172,15 +172,18 @@ func NewAuthParams(clientID string, authorityInfo Info) AuthParams {
 }
 
 // WithTenant returns a copy of the AuthParams having the specified tenant ID. If the given
-// ID is empty, the copy is identical to the original. This function returns an error when
-// the ID is non-empty and the authority doesn't support tenants, the ID isn't specific
-// (for example, it's "common"), or the resulting authority URL is invalid.
+// ID is empty, the copy is identical to the original. This function returns an error in
+// several cases:
+//   - ID isn't specific (for example, it's "common")
+//   - ID is non-empty and the authority doesn't support tenants (for example, it's an ADFS authority)
+//   - the client is configured to authenticate only Microsoft accounts via the "consumers" endpoint
+//   - the resulting authority URL is invalid
 func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 	switch ID {
 	case "", p.AuthorityInfo.Tenant:
 		// keep the default tenant because the caller didn't override it
 		return p, nil
-	case "common", "organizations":
+	case "common", "consumers", "organizations":
 		if p.AuthorityInfo.AuthorityType == AAD {
 			return p, fmt.Errorf(`tenant ID must be a specific tenant, not "%s"`, ID)
 		}
@@ -188,6 +191,9 @@ func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 	}
 	if p.AuthorityInfo.AuthorityType != AAD {
 		return p, errors.New("the authority doesn't support tenants")
+	}
+	if p.AuthorityInfo.Tenant == "consumers" {
+		return p, errors.New(`client is configured to authenticate only personal Microsoft accounts, via the "consumers" endpoint`)
 	}
 	authority := "https://" + path.Join(p.AuthorityInfo.Host, ID)
 	info, err := NewInfoFromAuthorityURI(authority, p.AuthorityInfo.ValidateAuthority)
