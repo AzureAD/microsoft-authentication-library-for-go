@@ -332,7 +332,8 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 }
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
-// NOTE: this flow is NOT recommended.
+// The ROPC flow is not recommended, because it will block conditional access and multi-factor authentication, as these protection measures involve user interaction through a browser.
+// It can still be used in special cases, such as for testing purposes and in scenarios where the resource does not allow application tokens - client_credentials."
 func (b Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
 	authParams := b.AuthParams
 	authParams.Scopes = scopes
