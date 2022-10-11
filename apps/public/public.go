@@ -35,6 +35,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/google/uuid"
 	"github.com/pkg/browser"
@@ -123,9 +124,74 @@ func New(clientID string, options ...Option) (Client, error) {
 	return Client{base}, nil
 }
 
+// createAuthCodeURLOptions contains options for CreateAuthCodeURL
+type createAuthCodeURLOptions struct {
+	tenantID string
+}
+
+// CreateAuthCodeURLOption is implemented by options for CreateAuthCodeURL
+type CreateAuthCodeURLOption interface {
+	createAuthCodeURLOption()
+}
+
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
-func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string) (string, error) {
-	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, pca.base.AuthParams)
+//
+// Options:
+// - [WithTenantID]
+func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...CreateAuthCodeURLOption) (string, error) {
+	o := createAuthCodeURLOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return "", err
+	}
+	ap, err := pca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return "", err
+	}
+	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
+}
+
+// WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
+// This option is valid for any token acquisition method.
+func WithTenantID(tenantID string) interface {
+	AcquireByAuthCodeOption
+	AcquireByDeviceCodeOption
+	AcquireByUsernamePasswordOption
+	AcquireInteractiveOption
+	AcquireSilentOption
+	CreateAuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByAuthCodeOption
+		AcquireByDeviceCodeOption
+		AcquireByUsernamePasswordOption
+		AcquireInteractiveOption
+		AcquireSilentOption
+		CreateAuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenByAuthCodeOptions:
+					t.tenantID = tenantID
+				case *acquireTokenByDeviceCodeOptions:
+					t.tenantID = tenantID
+				case *acquireTokenByUsernamePasswordOptions:
+					t.tenantID = tenantID
+				case *AcquireTokenSilentOptions:
+					t.tenantID = tenantID
+				case *createAuthCodeURLOptions:
+					t.tenantID = tenantID
+				case *InteractiveAuthOptions:
+					t.tenantID = tenantID
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }
 
 // AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
@@ -133,39 +199,89 @@ func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 type AcquireTokenSilentOptions struct {
 	// Account represents the account to use. To set, use the WithSilentAccount() option.
 	Account Account
+
+	tenantID string
+}
+
+// AcquireSilentOption is implemented by options for AcquireTokenSilent
+type AcquireSilentOption interface {
+	acquireSilentOption()
 }
 
 // AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
 type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
 
+func (AcquireTokenSilentOption) acquireSilentOption() {}
+
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
-func WithSilentAccount(account Account) AcquireTokenSilentOption {
-	return func(a *AcquireTokenSilentOptions) {
-		a.Account = account
+func WithSilentAccount(account Account) interface {
+	AcquireSilentOption
+	options.CallOption
+} {
+	return struct {
+		AcquireSilentOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenSilentOptions:
+					t.Account = account
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
-func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, options ...AcquireTokenSilentOption) (AuthResult, error) {
-	opts := AcquireTokenSilentOptions{}
-	for _, o := range options {
-		o(&opts)
+//
+// Options:
+//   - [WithSilentAccount]
+//   - [WithTenantID]
+func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
+	o := AcquireTokenSilentOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
-		Account:     opts.Account,
+		Account:     o.Account,
 		RequestType: accesstokens.ATPublic,
 		IsAppCache:  false,
+		TenantID:    o.tenantID,
 	}
 
 	return pca.base.AcquireTokenSilent(ctx, silentParameters)
 }
 
+// acquireTokenByUsernamePasswordOptions contains optional configuration for AcquireTokenByUsernamePassword
+type acquireTokenByUsernamePasswordOptions struct {
+	tenantID string
+}
+
+// AcquireByUsernamePasswordOption is implemented by options for AcquireTokenByUsernamePassword
+type AcquireByUsernamePasswordOption interface {
+	acquireByUsernamePasswordOption()
+}
+
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // NOTE: this flow is NOT recommended.
-func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
-	authParams := pca.base.AuthParams
+//
+// Options:
+//   - [WithTenantID]
+func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
+	o := acquireTokenByUsernamePasswordOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
+	}
+	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATUsernamePassword
 	authParams.Username = username
@@ -203,10 +319,30 @@ func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error
 	return d.client.base.AuthResultFromToken(ctx, d.authParams, token, true)
 }
 
+// acquireTokenByDeviceCodeOptions contains optional configuration for AcquireTokenByDeviceCode
+type acquireTokenByDeviceCodeOptions struct {
+	tenantID string
+}
+
+// AcquireByDeviceCodeOption is implemented by options for AcquireTokenByDeviceCode
+type AcquireByDeviceCodeOption interface {
+	acquireByDeviceCodeOptions()
+}
+
 // AcquireTokenByDeviceCode acquires a security token from the authority, by acquiring a device code and using that to acquire the token.
 // Users need to create an AcquireTokenDeviceCodeParameters instance and pass it in.
-func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (DeviceCode, error) {
-	authParams := pca.base.AuthParams
+//
+// Options:
+//   - [WithTenantID]
+func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string, opts ...AcquireByDeviceCodeOption) (DeviceCode, error) {
+	o := acquireTokenByDeviceCodeOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return DeviceCode{}, err
+	}
+	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return DeviceCode{}, err
+	}
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATDeviceCode
 
@@ -221,32 +357,62 @@ func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string)
 // AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
 type AcquireTokenByAuthCodeOptions struct {
 	Challenge string
+
+	tenantID string
+}
+
+// AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
+type AcquireByAuthCodeOption interface {
+	acquireByAuthCodeOption()
 }
 
 // AcquireTokenByAuthCodeOption changes options inside AcquireTokenByAuthCodeOptions used in .AcquireTokenByAuthCode().
 type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
 
+func (AcquireTokenByAuthCodeOption) acquireByAuthCodeOption() {}
+
 // WithChallenge allows you to provide a code for the .AcquireTokenByAuthCode() call.
-func WithChallenge(challenge string) AcquireTokenByAuthCodeOption {
-	return func(a *AcquireTokenByAuthCodeOptions) {
-		a.Challenge = challenge
+func WithChallenge(challenge string) interface {
+	AcquireByAuthCodeOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByAuthCodeOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenByAuthCodeOptions:
+					t.Challenge = challenge
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
-func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, options ...AcquireTokenByAuthCodeOption) (AuthResult, error) {
-	opts := AcquireTokenByAuthCodeOptions{}
-	for _, o := range options {
-		o(&opts)
+//
+// Options:
+//   - [WithChallenge]
+//   - [WithTenantID]
+func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
+	o := AcquireTokenByAuthCodeOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:      scopes,
 		Code:        code,
-		Challenge:   opts.Challenge,
+		Challenge:   o.Challenge,
 		AppType:     accesstokens.ATPublic,
 		RedirectURI: redirectURI,
+		TenantID:    o.tenantID,
 	}
 
 	return pca.base.AcquireTokenByAuthCode(ctx, params)
@@ -269,24 +435,53 @@ type InteractiveAuthOptions struct {
 	// Used to specify a custom port for the local server.  http://localhost:portnumber
 	// All other URI components are ignored.
 	RedirectURI string
+
+	tenantID string
+}
+
+// AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
+type AcquireInteractiveOption interface {
+	acquireInteractiveOption()
 }
 
 // InteractiveAuthOption changes options inside InteractiveAuthOptions used in .AcquireTokenInteractive().
 type InteractiveAuthOption func(*InteractiveAuthOptions)
 
+func (InteractiveAuthOption) acquireInteractiveOption() {}
+
 // WithRedirectURI uses the specified redirect URI for interactive auth.
-func WithRedirectURI(redirectURI string) InteractiveAuthOption {
-	return func(o *InteractiveAuthOptions) {
-		o.RedirectURI = redirectURI
+func WithRedirectURI(redirectURI string) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *InteractiveAuthOptions:
+					t.RedirectURI = redirectURI
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
 	}
 }
 
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
-func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, options ...InteractiveAuthOption) (AuthResult, error) {
-	opts := InteractiveAuthOptions{}
-	for _, opt := range options {
-		opt(&opts)
+//
+// Options:
+//   - [WithRedirectURI]
+//   - [WithTenantID]
+func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
+	o := InteractiveAuthOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
 	}
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
@@ -295,13 +490,16 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 		return AuthResult{}, err
 	}
 	var redirectURL *url.URL
-	if opts.RedirectURI != "" {
-		redirectURL, err = url.Parse(opts.RedirectURI)
+	if o.RedirectURI != "" {
+		redirectURL, err = url.Parse(o.RedirectURI)
 		if err != nil {
 			return AuthResult{}, err
 		}
 	}
-	authParams := pca.base.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATInteractive
 	authParams.CodeChallenge = challenge

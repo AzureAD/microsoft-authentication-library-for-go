@@ -55,6 +55,7 @@ type AcquireTokenSilentParameters struct {
 	RequestType       accesstokens.AppType
 	Credential        *accesstokens.Credential
 	IsAppCache        bool
+	TenantID          string
 	UserAssertion     string
 	AuthorizationType authority.AuthorizeType
 }
@@ -70,11 +71,13 @@ type AcquireTokenAuthCodeParameters struct {
 	RedirectURI string
 	AppType     accesstokens.AppType
 	Credential  *accesstokens.Credential
+	TenantID    string
 }
 
 type AcquireTokenOnBehalfOfParameters struct {
 	Scopes        []string
 	Credential    *accesstokens.Credential
+	TenantID      string
 	UserAssertion string
 }
 
@@ -237,14 +240,20 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 }
 
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
-	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and authParams is not a pointer.
+	tenant := silent.TenantID
+	if tenant == "" {
+		tenant = silent.Account.Realm
+	}
+	authParams, err := b.AuthParams.WithTenant(tenant)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	authParams.Scopes = silent.Scopes
 	authParams.HomeAccountID = silent.Account.HomeAccountID
 	authParams.AuthorizationType = silent.AuthorizationType
 	authParams.UserAssertion = silent.UserAssertion
 
 	var storageTokenResponse storage.TokenResponse
-	var err error
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
@@ -290,7 +299,10 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 }
 
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
-	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams, err := b.AuthParams.WithTenant(authCodeParams.TenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = authCodeParams.RedirectURI
 	authParams.AuthorizationType = authority.ATAuthCode
@@ -316,7 +328,10 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams AcquireTokenOnBehalfOfParameters) (AuthResult, error) {
-	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
+	authParams, err := b.AuthParams.WithTenant(onBehalfOfParams.TenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
 	authParams.Scopes = onBehalfOfParams.Scopes
 	authParams.AuthorizationType = authority.ATOnBehalfOf
 	authParams.UserAssertion = onBehalfOfParams.UserAssertion
@@ -327,6 +342,7 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 		Credential:        onBehalfOfParams.Credential,
 		UserAssertion:     onBehalfOfParams.UserAssertion,
 		AuthorizationType: authority.ATOnBehalfOf,
+		TenantID:          onBehalfOfParams.TenantID,
 	}
 	token, err := b.AcquireTokenSilent(ctx, silentParameters)
 	if err != nil {
