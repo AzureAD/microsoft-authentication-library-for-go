@@ -430,7 +430,7 @@ func (cca Client) RemoveAccount(account Account) error {
 }
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
-// NOTE: this flow is NOT recommended.
+// Note: The ROPC flow is not recommended, because it will block conditional access and multi-factor authentication, as these protection measures involve user interaction through a browser. It can still be used in special cases, such as for testing purposes and in scenarios where the resource does not allow application tokens - client_credentials.
 func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username string, password string) (AuthResult, error) {
 	return cca.base.AcquireTokenByUsernamePassword(ctx, scopes, username, password)
 }
