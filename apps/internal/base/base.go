@@ -139,36 +139,40 @@ type Client struct {
 }
 
 // Option is an optional argument to the New constructor.
-type Option func(c *Client)
+type Option func(c *Client) error
 
 // WithCacheAccessor allows you to set some type of cache for storing authentication tokens.
 func WithCacheAccessor(ca cache.ExportReplace) Option {
-	return func(c *Client) {
+	return func(c *Client) error {
 		if ca != nil {
 			c.cacheAccessor = ca
 		}
+		return nil
 	}
 }
 
 // WithKnownAuthorityHosts specifies hosts Client shouldn't validate or request metadata for because they're known to the user
 func WithKnownAuthorityHosts(hosts []string) Option {
-	return func(c *Client) {
+	return func(c *Client) error {
 		cp := make([]string, len(hosts))
 		copy(cp, hosts)
 		c.AuthParams.KnownAuthorityHosts = cp
+		return nil
 	}
 }
 
 // WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
 func WithX5C(sendX5C bool) Option {
-	return func(c *Client) {
+	return func(c *Client) error {
 		c.AuthParams.SendX5C = sendX5C
+		return nil
 	}
 }
 
 func WithRegionDetection(region string) Option {
-	return func(c *Client) {
+	return func(c *Client) error {
 		c.AuthParams.AuthorityInfo.Region = region
+		return nil
 	}
 }
 
@@ -187,9 +191,11 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		pmanager:      storage.NewPartitionedManager(token),
 	}
 	for _, o := range options {
-		o(&client)
+		if err = o(&client); err != nil {
+			break
+		}
 	}
-	return client, nil
+	return client, err
 
 }
 
