@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -627,5 +628,45 @@ func TestWithTenantID(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestWithLoginHint(t *testing.T) {
+	upn := "user@localhost"
+	cred, err := NewCredFromSecret("...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New("client-id", cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectHint := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
+			opts := []AuthCodeURLOption{}
+			if expectHint {
+				opts = append(opts, WithLoginHint(upn))
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := url.Parse(u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !parsed.Query().Has("login_hint") {
+				if !expectHint {
+					return
+				}
+				t.Fatal("expected a login hint")
+			} else if !expectHint {
+				t.Fatal("expected no login hint")
+			}
+			if actual := parsed.Query()["login_hint"]; len(actual) != 1 || actual[0] != upn {
+				t.Fatalf(`unexpected login_hint "%v"`, actual)
+			}
+		})
 	}
 }

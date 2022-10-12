@@ -73,57 +73,6 @@ func TestAcquireTokenInteractive(t *testing.T) {
 	}
 }
 
-func TestAcquireTokenInteractiveWithLoginHint(t *testing.T) {
-	realBrowserOpenURL := browserOpenURL
-	defer func() { browserOpenURL = realBrowserOpenURL }()
-	upn := "user@localhost"
-	client, err := New("client-id")
-	if err != nil {
-		t.Fatal(err)
-	}
-	client.base.Token.AccessTokens = &fake.AccessTokens{}
-	client.base.Token.Authority = &fake.Authority{}
-	client.base.Token.Resolver = &fake.ResolveEndpoints{}
-	for _, expectHint := range []bool{true, false} {
-		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
-			// replace the browser launching function with a fake that validates login_hint is set as expected
-			called := false
-			browserOpenURL = func(authURL string) error {
-				called = true
-				parsed, err := url.Parse(authURL)
-				if err != nil {
-					return err
-				}
-				query, err := url.ParseQuery(parsed.RawQuery)
-				if err != nil {
-					return err
-				}
-				v, ok := query["login_hint"]
-				if ok != expectHint || expectHint && (len(v) != 1 || v[0] != upn) {
-					err = fmt.Errorf(`unexpected login_hint "%v"`, v)
-				}
-				if err != nil {
-					t.Fatal(err)
-					return err
-				}
-				// this helper validates the other params and completes the redirect
-				return fakeBrowserOpenURL(authURL)
-			}
-			options := []AcquireInteractiveOption{}
-			if expectHint {
-				options = append(options, WithLoginHint(upn))
-			}
-			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, options...)
-			if err != nil {
-				t.Fatal(err)
-			}
-			if !called {
-				t.Fatal("browserOpenURL wasn't called")
-			}
-		})
-	}
-}
-
 func TestAcquireTokenSilentTenants(t *testing.T) {
 	tenants := []string{"a", "b"}
 	lmo := "login.microsoftonline.com"
@@ -282,5 +231,79 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestWithLoginHint(t *testing.T) {
+	realBrowserOpenURL := browserOpenURL
+	defer func() { browserOpenURL = realBrowserOpenURL }()
+	upn := "user@localhost"
+	client, err := New("client-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectHint := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
+			// replace the browser launching function with a fake that validates login_hint is set as expected
+			called := false
+			validate := func(v url.Values) error {
+				if !v.Has("login_hint") {
+					if !expectHint {
+						return nil
+					}
+					return errors.New("expected a login hint")
+				} else if !expectHint {
+					return errors.New("expected no login hint")
+				}
+				if actual := v["login_hint"]; len(actual) != 1 || actual[0] != upn {
+					err = fmt.Errorf(`unexpected login_hint "%v"`, actual)
+				}
+				return err
+			}
+			browserOpenURL = func(authURL string) error {
+				called = true
+				parsed, err := url.Parse(authURL)
+				if err != nil {
+					return err
+				}
+				query, err := url.ParseQuery(parsed.RawQuery)
+				if err != nil {
+					return err
+				}
+				if err = validate(query); err != nil {
+					t.Fatal(err)
+					return err
+				}
+				// this helper validates the other params and completes the redirect
+				return fakeBrowserOpenURL(authURL)
+			}
+			acquireOpts := []AcquireInteractiveOption{}
+			urlOpts := []CreateAuthCodeURLOption{}
+			if expectHint {
+				acquireOpts = append(acquireOpts, WithLoginHint(upn))
+				urlOpts = append(urlOpts, WithLoginHint(upn))
+			}
+			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, acquireOpts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("browserOpenURL wasn't called")
+			}
+			u, err := client.CreateAuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			if err == nil {
+				var parsed *url.URL
+				parsed, err = url.Parse(u)
+				if err == nil {
+					err = validate(parsed.Query())
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
 	}
 }

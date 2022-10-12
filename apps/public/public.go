@@ -126,7 +126,7 @@ func New(clientID string, options ...Option) (Client, error) {
 
 // createAuthCodeURLOptions contains options for CreateAuthCodeURL
 type createAuthCodeURLOptions struct {
-	tenantID string
+	loginHint, tenantID string
 }
 
 // CreateAuthCodeURLOption is implemented by options for CreateAuthCodeURL
@@ -137,6 +137,7 @@ type CreateAuthCodeURLOption interface {
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
 //
 // Options:
+// - [WithLoginHint]
 // - [WithTenantID]
 func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...CreateAuthCodeURLOption) (string, error) {
 	o := createAuthCodeURLOptions{}
@@ -147,6 +148,7 @@ func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 	if err != nil {
 		return "", err
 	}
+	ap.LoginHint = o.loginHint
 	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
@@ -452,15 +454,19 @@ func (InteractiveAuthOption) acquireInteractiveOption() {}
 // WithLoginHint pre-populates the login prompt with a username.
 func WithLoginHint(username string) interface {
 	AcquireInteractiveOption
+	CreateAuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
 		AcquireInteractiveOption
+		CreateAuthCodeURLOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
+				case *createAuthCodeURLOptions:
+					t.loginHint = username
 				case *InteractiveAuthOptions:
 					t.loginHint = username
 				default:
