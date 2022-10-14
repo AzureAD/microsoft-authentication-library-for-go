@@ -531,6 +531,30 @@ func TestNewCredFromTokenProviderError(t *testing.T) {
 	}
 }
 
+func TestTokenProviderOptions(t *testing.T) {
+	accessToken, claims, tenant := "at", "claims", "tenant"
+	cred := NewCredFromTokenProvider(func(ctx context.Context, tpp TokenProviderParameters) (TokenProviderResult, error) {
+		if tpp.Claims != claims {
+			t.Fatalf(`unexpected claims "%s"`, tpp.Claims)
+		}
+		if tpp.TenantID != tenant {
+			t.Fatalf(`unexpected tenant "%s"`, tpp.TenantID)
+		}
+		return TokenProviderResult{AccessToken: accessToken, ExpiresInSeconds: 3600}, nil
+	})
+	client, err := New("id", cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithClaims(claims), WithTenantID(tenant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+}
+
 func TestWithClaims(t *testing.T) {
 	cred, err := NewCredFromSecret("secret")
 	if err != nil {
