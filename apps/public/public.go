@@ -147,10 +147,7 @@ type CreateAuthCodeURLOption interface {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
 //
-// Options:
-// - [WithClaims]
-// - [WithLoginHint]
-// - [WithTenantID]
+// Options: [WithClaims], [WithLoginHint], [WithTenantID]
 func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...CreateAuthCodeURLOption) (string, error) {
 	o := createAuthCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -298,10 +295,7 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options:
-//   - [WithClaims]
-//   - [WithSilentAccount]
-//   - [WithTenantID]
+// Options: [WithClaims], [WithSilentAccount], [WithTenantID]
 func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := AcquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -333,9 +327,7 @@ type AcquireByUsernamePasswordOption interface {
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // NOTE: this flow is NOT recommended.
 //
-// Options:
-//   - [WithClaims]
-//   - [WithTenantID]
+// Options: [WithClaims], [WithTenantID]
 func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
 	o := acquireTokenByUsernamePasswordOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -396,9 +388,7 @@ type AcquireByDeviceCodeOption interface {
 // AcquireTokenByDeviceCode acquires a security token from the authority, by acquiring a device code and using that to acquire the token.
 // Users need to create an AcquireTokenDeviceCodeParameters instance and pass it in.
 //
-// Options:
-//   - [WithClaims]
-//   - [WithTenantID]
+// Options: [WithClaims], [WithTenantID]
 func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string, opts ...AcquireByDeviceCodeOption) (DeviceCode, error) {
 	o := acquireTokenByDeviceCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -463,10 +453,7 @@ func WithChallenge(challenge string) interface {
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
-// Options:
-//   - [WithChallenge]
-//   - [WithClaims]
-//   - [WithTenantID]
+// Options: [WithChallenge], [WithClaims], [WithTenantID]
 func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
 	o := AcquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -570,10 +557,7 @@ func WithRedirectURI(redirectURI string) interface {
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
-// Options:
-//   - [WithLoginHint]
-//   - [WithRedirectURI]
-//   - [WithTenantID]
+// Options: [WithLoginHint], [WithRedirectURI], [WithTenantID]
 func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
 	o := InteractiveAuthOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
