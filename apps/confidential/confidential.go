@@ -398,7 +398,7 @@ func (cca Client) UserID() string {
 
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
-	tenantID string
+	loginHint, tenantID string
 }
 
 // AuthCodeURLOption is implemented by options for AuthCodeURL
@@ -409,6 +409,7 @@ type AuthCodeURLOption interface {
 // AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 //
 // Options:
+// - [WithLoginHint]
 // - [WithTenantID]
 func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
 	o := authCodeURLOptions{}
@@ -419,7 +420,31 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	if err != nil {
 		return "", err
 	}
+	ap.LoginHint = o.loginHint
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
+}
+
+// WithLoginHint pre-populates the login prompt with a username.
+func WithLoginHint(username string) interface {
+	AuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *authCodeURLOptions:
+					t.loginHint = username
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }
 
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
