@@ -66,7 +66,7 @@ func TestServer(t *testing.T) {
 	}
 
 	for _, test := range tests {
-		serv, err := New(test.reqState, test.port)
+		serv, err := New(test.reqState, test.port, nil)
 		if err != nil {
 			panic(err)
 		}

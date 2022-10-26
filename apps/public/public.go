@@ -437,6 +437,8 @@ type InteractiveAuthOptions struct {
 	// Used to specify a custom port for the local server.  http://localhost:portnumber
 	// All other URI components are ignored.
 	RedirectURI string
+	// Will override the default auth server success page if populated
+	okHtml []byte
 
 	loginHint, tenantID string
 }
@@ -501,6 +503,29 @@ func WithRedirectURI(redirectURI string) interface {
 	}
 }
 
+// WithCustomSuccessHtml replaces the default auth success page served by the local server.
+func WithCustomSuccessHtml(okHtml []byte) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *InteractiveAuthOptions:
+					t.okHtml = okHtml
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
@@ -537,7 +562,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.LoginHint = o.loginHint
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
-	res, err := pca.browserLogin(ctx, redirectURL, authParams)
+	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.okHtml)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -580,13 +605,13 @@ func parsePort(u *url.URL) (int, error) {
 }
 
 // browserLogin launches the system browser for interactive login
-func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams) (interactiveAuthResult, error) {
+func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams, okHtml []byte) (interactiveAuthResult, error) {
 	// start local redirect server so login can call us back
 	port, err := parsePort(redirectURI)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}
-	srv, err := local.New(params.State, port)
+	srv, err := local.New(params.State, port, okHtml)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}

@@ -59,7 +59,7 @@ type Server struct {
 }
 
 // New creates a local HTTP server and starts it.
-func New(reqState string, port int) (*Server, error) {
+func New(reqState string, port int, okHtml []byte) (*Server, error) {
 	var l net.Listener
 	var err error
 	var portStr string
@@ -81,6 +81,10 @@ func New(reqState string, port int) (*Server, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if okHtml != nil {
+		okPage = okHtml
 	}
 
 	serv := &Server{
