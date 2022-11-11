@@ -247,8 +247,15 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 		return Info{}, err
 	}
 
+	port := u.Port()
+	hostname := u.Hostname()
+
+	if port != "" {
+		hostname = fmt.Sprintf("%v:%v", hostname, port)
+	}
+
 	return Info{
-		Host:                  u.Hostname(),
+		Host:                  hostname,
 		CanonicalAuthorityURI: fmt.Sprintf("https://%v/%v/", u.Hostname(), tenant),
 		AuthorityType:         authorityType,
 		UserRealmURIPrefix:    fmt.Sprintf("https://%v/common/userrealm/", u.Hostname()),
