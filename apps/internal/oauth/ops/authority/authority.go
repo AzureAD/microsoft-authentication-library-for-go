@@ -254,6 +254,14 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 		hostname = fmt.Sprintf("%v:%v", hostname, port)
 	}
 
+	// Note: temporary workaround to support private cloud scenarios while the following GitHub issues are addressed
+	// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/301
+	// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/289
+	disableAuthorityValidation, ok := os.LookupEnv("DISABLE_AUTHORITY_VALIDATION")
+	if ok {
+		validateAuthority = !(disableAuthorityValidation == "1")
+	}
+
 	return Info{
 		Host:                  hostname,
 		CanonicalAuthorityURI: fmt.Sprintf("https://%v/%v/", u.Hostname(), tenant),
