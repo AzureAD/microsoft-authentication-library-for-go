@@ -194,6 +194,7 @@ func firstPathSegment(u *url.URL) (string, error) {
 func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info, error) {
 	authorityURI = strings.ToLower(authorityURI)
 	var authorityType string
+	var cannonicalAuthorityURI string
 	u, err := url.Parse(authorityURI)
 	if err != nil {
 		return Info{}, fmt.Errorf("authorityURI passed could not be parsed: %w", err)
@@ -213,9 +214,23 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 		return Info{}, err
 	}
 
+	port := u.Port()
+	hostname := u.Hostname()
+	cannonicalAuthorityURI = fmt.Sprintf("https://%v/%v/", u.Hostname(), tenant)
+	if port != "" {
+		hostname = fmt.Sprintf("%v:%v", hostname, port)
+		cannonicalAuthorityURI = fmt.Sprintf("https://%v/%v/", hostname, tenant)
+	}
+	// Note: temporary workaround to support private cloud scenarios while the following GitHub issues are addressed
+	// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/301
+	// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/289
+	disableAuthorityValidation, ok := os.LookupEnv("DISABLE_AUTHORITY_VALIDATION")
+	if ok {
+		validateAuthority = !(disableAuthorityValidation == "1")
+	}
 	return Info{
-		Host:                  u.Hostname(),
-		CanonicalAuthorityURI: fmt.Sprintf("https://%v/%v/", u.Hostname(), tenant),
+		Host:                  hostname,
+		CanonicalAuthorityURI: cannonicalAuthorityURI,
 		AuthorityType:         authorityType,
 		UserRealmURIPrefix:    fmt.Sprintf("https://%v/common/userrealm/", u.Hostname()),
 		ValidateAuthority:     validateAuthority,
