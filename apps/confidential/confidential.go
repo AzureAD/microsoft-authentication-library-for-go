@@ -283,8 +283,9 @@ type Options struct {
 
 	// Instructs MSAL Go to use an Azure regional token service with sepcified AzureRegion.
 	AzureRegion string
-	//Validate Authority
-	ValidateAuthority bool
+
+	// Disable instance discovery
+	IsInstanceDiscoveryEnabled bool
 }
 
 func (o Options) validate() error {
@@ -333,7 +334,7 @@ func WithX5C() Option {
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(instanceDiscovery bool) Option {
 	return func(o *Options) {
-		o.ValidateAuthority = instanceDiscovery
+		o.IsInstanceDiscoveryEnabled = instanceDiscovery
 	}
 }
 
@@ -379,7 +380,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		base.WithCacheAccessor(opts.Accessor),
 		base.WithRegionDetection(opts.AzureRegion),
 		base.WithX5C(opts.SendX5C),
-		base.WithInstanceDiscovery(opts.ValidateAuthority),
+		base.WithInstanceDiscovery(opts.IsInstanceDiscoveryEnabled),
 	}
 	if cred.tokenProvider != nil {
 		// The caller will handle all details of authentication, using Client only as a token cache.

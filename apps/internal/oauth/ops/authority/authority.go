@@ -217,17 +217,13 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 	port := u.Port()
 	hostname := u.Hostname()
 	cannonicalAuthorityURI = fmt.Sprintf("https://%v/%v/", u.Hostname(), tenant)
+
+	// In private cloud deployments, STS can be deployed and running on a non 443 port, e.g. https://login.azs:3001
 	if port != "" {
 		hostname = fmt.Sprintf("%v:%v", hostname, port)
 		cannonicalAuthorityURI = fmt.Sprintf("https://%v/%v/", hostname, tenant)
 	}
-	// Note: temporary workaround to support private cloud scenarios while the following GitHub issues are addressed
-	// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/301
-	// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/289
-	disableAuthorityValidation, ok := os.LookupEnv("DISABLE_AUTHORITY_VALIDATION")
-	if ok {
-		validateAuthority = !(disableAuthorityValidation == "1")
-	}
+
 	return Info{
 		Host:                  hostname,
 		CanonicalAuthorityURI: cannonicalAuthorityURI,
