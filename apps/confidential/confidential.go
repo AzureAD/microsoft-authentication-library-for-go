@@ -284,6 +284,8 @@ type Options struct {
 
 	// Instructs MSAL Go to use an Azure regional token service with sepcified AzureRegion.
 	AzureRegion string
+
+	capabilities []string
 }
 
 func (o Options) validate() error {
@@ -312,6 +314,15 @@ func WithAuthority(authority string) Option {
 func WithAccessor(accessor cache.ExportReplace) Option {
 	return func(o *Options) {
 		o.Accessor = accessor
+	}
+}
+
+// WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
+func WithClientCapabilities(capabilities []string) Option {
+	return func(o *Options) {
+		// there's no danger of sharing the slice's underlying memory with the application because
+		// this slice is simply passed to base.WithClientCapabilities, which copies its data
+		o.capabilities = capabilities
 	}
 }
 
@@ -369,6 +380,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 
 	baseOpts := []base.Option{
 		base.WithCacheAccessor(opts.Accessor),
+		base.WithClientCapabilities(opts.capabilities),
 		base.WithRegionDetection(opts.AzureRegion),
 		base.WithX5C(opts.SendX5C),
 	}
@@ -398,7 +410,7 @@ func (cca Client) UserID() string {
 
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
-	loginHint, tenantID string
+	claims, loginHint, tenantID string
 }
 
 // AuthCodeURLOption is implemented by options for AuthCodeURL
@@ -408,9 +420,7 @@ type AuthCodeURLOption interface {
 
 // AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 //
-// Options:
-// - [WithLoginHint]
-// - [WithTenantID]
+// Options: [WithClaims], [WithLoginHint], [WithTenantID]
 func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
 	o := authCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -420,6 +430,7 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	if err != nil {
 		return "", err
 	}
+	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
@@ -438,6 +449,47 @@ func WithLoginHint(username string) interface {
 				switch t := a.(type) {
 				case *authCodeURLOptions:
 					t.loginHint = username
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
+// Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
+// This option is valid for any token acquisition method.
+func WithClaims(claims string) interface {
+	AcquireByAuthCodeOption
+	AcquireByCredentialOption
+	AcquireOnBehalfOfOption
+	AcquireSilentOption
+	AuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByAuthCodeOption
+		AcquireByCredentialOption
+		AcquireOnBehalfOfOption
+		AcquireSilentOption
+		AuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *AcquireTokenByAuthCodeOptions:
+					t.claims = claims
+				case *acquireTokenByCredentialOptions:
+					t.claims = claims
+				case *acquireTokenOnBehalfOfOptions:
+					t.claims = claims
+				case *AcquireTokenSilentOptions:
+					t.claims = claims
+				case *authCodeURLOptions:
+					t.claims = claims
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
@@ -493,7 +545,7 @@ type AcquireTokenSilentOptions struct {
 	// Account represents the account to use. To set, use the WithSilentAccount() option.
 	Account Account
 
-	tenantID string
+	claims, tenantID string
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -531,13 +583,15 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options:
-//   - [WithSilentAccount]
-//   - [WithTenantID]
+// Options: [WithClaims], [WithSilentAccount], [WithTenantID]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := AcquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
+	}
+
+	if o.claims != "" {
+		return AuthResult{}, errors.New("call another AcquireToken method to request a new token having these claims")
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
@@ -556,7 +610,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 type AcquireTokenByAuthCodeOptions struct {
 	Challenge string
 
-	tenantID string
+	claims, tenantID string
 }
 
 // AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
@@ -595,9 +649,7 @@ func WithChallenge(challenge string) interface {
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
-// Options:
-//   - [WithChallenge]
-//   - [WithTenantID]
+// Options: [WithChallenge], [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
 	o := AcquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -608,6 +660,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 		Scopes:      scopes,
 		Code:        code,
 		Challenge:   o.Challenge,
+		Claims:      o.claims,
 		AppType:     accesstokens.ATConfidential,
 		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
 		RedirectURI: redirectURI,
@@ -619,7 +672,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 
 // acquireTokenByCredentialOptions contains optional configuration for AcquireTokenByCredential
 type acquireTokenByCredentialOptions struct {
-	tenantID string
+	claims, tenantID string
 }
 
 // AcquireByCredentialOption is implemented by options for AcquireTokenByCredential
@@ -629,8 +682,7 @@ type AcquireByCredentialOption interface {
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options:
-//   - [WithTenantID]
+// Options: [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -643,6 +695,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	}
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATClientCredentials
+	authParams.Claims = o.claims
 
 	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
@@ -653,7 +706,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 
 // acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf
 type acquireTokenOnBehalfOfOptions struct {
-	tenantID string
+	claims, tenantID string
 }
 
 // AcquireOnBehalfOfOption is implemented by options for AcquireTokenOnBehalfOf
@@ -664,8 +717,7 @@ type AcquireOnBehalfOfOption interface {
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 // Refer https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-on-behalf-of-flow.
 //
-// Options:
-//   - [WithTenantID]
+// Options: [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, opts ...AcquireOnBehalfOfOption) (AuthResult, error) {
 	o := acquireTokenOnBehalfOfOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -674,6 +726,7 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 	params := base.AcquireTokenOnBehalfOfParameters{
 		Scopes:        scopes,
 		UserAssertion: userAssertion,
+		Claims:        o.claims,
 		Credential:    cca.cred,
 		TenantID:      o.tenantID,
 	}

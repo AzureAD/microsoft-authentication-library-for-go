@@ -9,6 +9,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/golang-jwt/jwt/v4"
+	"github.com/kylelemons/godebug/pretty"
 )
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
@@ -529,6 +531,185 @@ func TestNewCredFromTokenProviderError(t *testing.T) {
 	}
 }
 
+func TestTokenProviderOptions(t *testing.T) {
+	accessToken, claims, tenant := "at", "claims", "tenant"
+	cred := NewCredFromTokenProvider(func(ctx context.Context, tpp TokenProviderParameters) (TokenProviderResult, error) {
+		if tpp.Claims != claims {
+			t.Fatalf(`unexpected claims "%s"`, tpp.Claims)
+		}
+		if tpp.TenantID != tenant {
+			t.Fatalf(`unexpected tenant "%s"`, tpp.TenantID)
+		}
+		return TokenProviderResult{AccessToken: accessToken, ExpiresInSeconds: 3600}, nil
+	})
+	client, err := New("id", cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithClaims(claims), WithTenantID(tenant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+}
+
+func TestWithClaims(t *testing.T) {
+	cred, err := NewCredFromSecret("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	accessToken := "at"
+	lmo, tenant := "login.microsoftonline.com", "tenant"
+	authority := fmt.Sprintf("https://%s/%s", lmo, tenant)
+	for _, test := range []struct {
+		capabilities     []string
+		claims, expected string
+	}{
+		{},
+		{
+			capabilities: []string{"cp1"},
+			expected:     `{"access_token":{"xms_cc":{"values":["cp1"]}}}`,
+		},
+		{
+			claims:   `{"id_token":{"auth_time":{"essential":true}}}`,
+			expected: `{"id_token":{"auth_time":{"essential":true}}}`,
+		},
+		{
+			capabilities: []string{"cp1", "cp2"},
+			claims:       `{"access_token":{"nbf":{"essential":true, "value":"42"}}}`,
+			expected:     `{"access_token":{"nbf":{"essential":true, "value":"42"}, "xms_cc":{"values":["cp1","cp2"]}}}`,
+		},
+	} {
+		var expected map[string]any
+		if err := json.Unmarshal([]byte(test.expected), &expected); err != nil && test.expected != "" {
+			t.Fatal("test bug: the expected result must be JSON or an empty string")
+		}
+		validate := func(t *testing.T, v url.Values) {
+			if test.expected == "" {
+				if v.Has("claims") {
+					t.Fatal("claims shouldn't be set")
+				}
+				return
+			}
+			claims, ok := v["claims"]
+			if !ok {
+				t.Fatal("claims should be set")
+			}
+			if len(claims) != 1 {
+				t.Fatalf("expected 1 value for claims, got %d", len(claims))
+			}
+			var actual map[string]any
+			if err := json.Unmarshal([]byte(claims[0]), &actual); err != nil {
+				t.Fatal(err)
+			}
+			if diff := pretty.Compare(expected, actual); diff != "" {
+				t.Fatal(diff)
+			}
+		}
+		for _, method := range []string{"authcode", "authcodeURL", "credential", "obo"} {
+			t.Run(method, func(t *testing.T) {
+				mockClient := mock.Client{}
+				clientInfo, idToken, refreshToken := "", "", ""
+				if method == "obo" {
+					clientInfo = base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+					idToken = mock.GetIDToken(tenant, authority)
+					refreshToken = "rt"
+					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
+					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+				}
+				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600)),
+					mock.WithCallback(func(r *http.Request) {
+						if err := r.ParseForm(); err != nil {
+							t.Fatal(err)
+						}
+						validate(t, r.Form)
+					}),
+				)
+				client, err := New("client-id", cred, WithAuthority(authority), WithClientCapabilities(test.capabilities), WithHTTPClient(&mockClient))
+				if err != nil {
+					t.Fatal(err)
+				}
+				if _, err = client.AcquireTokenSilent(context.Background(), tokenScope); err == nil {
+					t.Fatal("silent authentication should fail because the cache is empty")
+				}
+				ctx := context.Background()
+				var ar AuthResult
+				switch method {
+				case "authcode":
+					ar, err = client.AcquireTokenByAuthCode(ctx, "code", "https://localhost", tokenScope, WithClaims(test.claims))
+				case "authcodeURL":
+					u := ""
+					if u, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithClaims(test.claims)); err == nil {
+						var parsed *url.URL
+						if parsed, err = url.Parse(u); err == nil {
+							validate(t, parsed.Query())
+							return // didn't acquire a token, no need for further validation
+						}
+					}
+				case "credential":
+					ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithClaims(test.claims))
+				case "obo":
+					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithClaims(test.claims))
+				default:
+					t.Fatalf("test bug: no test for " + method)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ar.AccessToken != accessToken {
+					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+				}
+				// silent auth should now succeed, provided no claims are requested, because the client has cached an access token
+				if method == "obo" {
+					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope)
+				} else {
+					ar, err = client.AcquireTokenSilent(ctx, tokenScope)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ar.AccessToken != accessToken {
+					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+				}
+				if test.claims != "" {
+					if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithClaims(test.claims)); err == nil {
+						t.Fatal("AcquireTokenSilent should fail when given claims")
+					}
+					if method == "obo" {
+						// client has cached access and refresh tokens. When given claims, it should redeem a refresh token for a new access token.
+						newToken := "new-access-token"
+						mockClient.AppendResponse(
+							mock.WithBody(mock.GetAccessTokenBody(newToken, idToken, "", clientInfo, 3600)),
+							mock.WithCallback(func(r *http.Request) {
+								if err := r.ParseForm(); err != nil {
+									t.Fatal(err)
+								}
+								// all token requests should include any specified claims
+								validate(t, r.Form)
+								if actual := r.Form.Get("refresh_token"); actual != refreshToken {
+									t.Fatalf(`unexpected refresh token "%s"`, actual)
+								}
+							}),
+						)
+						ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithClaims(test.claims))
+						if err != nil {
+							t.Fatal(err)
+						}
+						if ar.AccessToken != newToken {
+							t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+						}
+					}
+				}
+			})
+		}
+	}
+}
+
 func TestWithTenantID(t *testing.T) {
 	accessToken := "*"
 	uuid1 := "00000000-0000-0000-0000-000000000000"
@@ -585,7 +766,7 @@ func TestWithTenantID(t *testing.T) {
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant))
 				default:
-					t.Fatalf("no test for " + method)
+					t.Fatalf("test bug: no test for " + method)
 				}
 				if err != nil {
 					if test.expectError {
