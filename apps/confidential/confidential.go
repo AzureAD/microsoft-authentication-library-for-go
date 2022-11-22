@@ -332,9 +332,9 @@ func WithX5C() Option {
 }
 
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
-func WithInstanceDiscovery(instanceDiscovery bool) Option {
+func WithInstanceDiscovery(enabled bool) Option {
 	return func(o *Options) {
-		o.IsInstanceDiscoveryEnabled = instanceDiscovery
+		o.IsInstanceDiscoveryEnabled = enabled
 	}
 }
 
@@ -365,8 +365,9 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	}
 
 	opts := Options{
-		Authority:  base.AuthorityPublicCloud,
-		HTTPClient: shared.DefaultClient,
+		Authority:                  base.AuthorityPublicCloud,
+		HTTPClient:                 shared.DefaultClient,
+		IsInstanceDiscoveryEnabled: true,
 	}
 
 	for _, o := range options {
