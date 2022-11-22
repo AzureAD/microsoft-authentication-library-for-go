@@ -171,7 +171,7 @@ func WithRegionDetection(region string) Option {
 
 func WithInstanceDiscovery(enabled bool) Option {
 	return func(c *Client) {
-		c.AuthParams.AuthorityInfo.ValidateAuthority = enabled
+		c.AuthParams.AuthorityInfo.ValidateAuthority = !enabled
 	}
 }
 
