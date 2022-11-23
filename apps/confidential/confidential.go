@@ -287,8 +287,8 @@ type Options struct {
 
 	capabilities []string
 
-	// To enable/disable instance discovery for AzureStack support
-	IsInstanceDiscoveryEnabled bool
+	// Default is Instance discovery is enabled, unless disabled by setting DisableInstanceDiscovery = true
+	DisableInstanceDiscovery bool
 }
 
 func (o Options) validate() error {
@@ -346,7 +346,7 @@ func WithX5C() Option {
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(enabled bool) Option {
 	return func(o *Options) {
-		o.IsInstanceDiscoveryEnabled = !enabled
+		o.DisableInstanceDiscovery = !enabled
 	}
 }
 
@@ -393,7 +393,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		base.WithClientCapabilities(opts.capabilities),
 		base.WithRegionDetection(opts.AzureRegion),
 		base.WithX5C(opts.SendX5C),
-		base.WithInstanceDiscovery(opts.IsInstanceDiscoveryEnabled),
+		base.WithInstanceDiscovery(opts.DisableInstanceDiscovery),
 	}
 	if cred.tokenProvider != nil {
 		// The caller will handle all details of authentication, using Client only as a token cache.
