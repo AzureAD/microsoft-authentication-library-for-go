@@ -287,7 +287,7 @@ type Options struct {
 
 	capabilities []string
 
-	// Disable instance discovery
+	// To enable/disable instance discovery for AzureStack support
 	IsInstanceDiscoveryEnabled bool
 }
 
