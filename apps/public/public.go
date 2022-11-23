@@ -112,9 +112,9 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 }
 
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
-func WithInstanceDiscovery(instanceDiscoveryEnabled bool) Option {
+func WithInstanceDiscovery(enabled bool) Option {
 	return func(o *Options) {
-		o.IsInstanceDiscoveryDisabled = !instanceDiscoveryEnabled
+		o.IsInstanceDiscoveryDisabled = !enabled
 	}
 }
 
@@ -138,7 +138,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.IsInstanceDiscoveryDisabled))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(opts.IsInstanceDiscoveryDisabled))
 	if err != nil {
 		return Client{}, err
 	}
