@@ -312,7 +312,6 @@ func firstPathSegment(u *url.URL) (string, error) {
 func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info, error) {
 	authorityURI = strings.ToLower(authorityURI)
 	var authorityType string
-	var cannonicalAuthorityURI string
 	u, err := url.Parse(authorityURI)
 	if err != nil {
 		return Info{}, fmt.Errorf("authorityURI passed could not be parsed: %w", err)
@@ -332,19 +331,10 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 		return Info{}, err
 	}
 
-	port := u.Port()
-	hostname := u.Hostname()
-	cannonicalAuthorityURI = fmt.Sprintf("https://%v/%v/", u.Hostname(), tenant)
-
-	// In private cloud deployments, STS can be deployed and running on a non 443 port, e.g. https://login.azs:3001
-	if port != "" {
-		hostname = fmt.Sprintf("%v:%v", hostname, port)
-		cannonicalAuthorityURI = fmt.Sprintf("https://%v/%v/", hostname, tenant)
-	}
-
+	// u.Host includes the port, if any, which is required for private cloud deployments
 	return Info{
-		Host:                  hostname,
-		CanonicalAuthorityURI: cannonicalAuthorityURI,
+		Host:                  u.Host,
+		CanonicalAuthorityURI: fmt.Sprintf("https://%v/%v/", u.Host, tenant),
 		AuthorityType:         authorityType,
 		UserRealmURIPrefix:    fmt.Sprintf("https://%v/common/userrealm/", u.Hostname()),
 		ValidateAuthority:     validateAuthority,

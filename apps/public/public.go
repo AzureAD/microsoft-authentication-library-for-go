@@ -64,7 +64,7 @@ type Options struct {
 	capabilities []string
 
 	// Default is Instance discovery is enabled, unless disabled by setting DisableInstanceDiscovery = true
-	DisableInstanceDiscovery bool
+	disableInstanceDiscovery bool
 }
 
 func (p *Options) validate() error {
@@ -114,7 +114,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(enabled bool) Option {
 	return func(o *Options) {
-		o.DisableInstanceDiscovery = !enabled
+		o.disableInstanceDiscovery = !enabled
 	}
 }
 
@@ -138,7 +138,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(opts.DisableInstanceDiscovery))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(opts.disableInstanceDiscovery))
 	if err != nil {
 		return Client{}, err
 	}
