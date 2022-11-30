@@ -297,7 +297,7 @@ type Info struct {
 	ValidateAuthority     bool
 	Tenant                string
 	Region                string
-	InstanceDiscovery	  bool
+	InstanceDiscovery     bool
 }
 
 func firstPathSegment(u *url.URL) (string, error) {
