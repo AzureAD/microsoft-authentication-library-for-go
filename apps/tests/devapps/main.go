@@ -26,5 +26,9 @@ func main() {
 		acquireTokenClientSecret()
 	} else if exampleType == "6" {
 		acquireTokenClientCertificate()
+	} else if exampleType == "7" {
+		acquirePublicTokenWithoutInstanceDiscovery();
+	} else if exampleType == "8" {
+		acquireConfidentialTokenWithoutInstanceDiscovery();
 	}
 }
