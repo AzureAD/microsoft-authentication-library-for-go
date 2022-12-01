@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"strconv"
-	"io/ioutil"
+	"os"
 	"log"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
@@ -58,7 +58,7 @@ func acquireConfidentialTokenWithoutInstanceDiscovery() {
 
 	config := CreateConfig("confidential_config.json")
 
-	pemData, err := ioutil.ReadFile(config.PemData)
+	pemData, err := os.ReadFile(config.PemData)
 	if err != nil {
 		log.Fatal(err)
 	}
