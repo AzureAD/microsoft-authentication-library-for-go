@@ -3,11 +3,11 @@ package main
 import (
 	"context"
 	"fmt"
-	"strconv"
-	"os"
-	"log"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"log"
+	"os"
+	"strconv"
 )
 
 func acquirePublicTokenWithoutInstanceDiscovery() {
@@ -15,7 +15,7 @@ func acquirePublicTokenWithoutInstanceDiscovery() {
 	fmt.Printf("\nusing authority %s\n", config.Authority)
 
 	instanceDiscovery, err := strconv.ParseBool(config.InstanceDiscovery)
-	if err != nil{
+	if err != nil {
 		fmt.Println("Failed to parse boolean from config file: %w", err)
 	}
 	//Get public client token
@@ -49,7 +49,7 @@ func acquirePublicTokenWithoutInstanceDiscovery() {
 			fmt.Println("could not get token: %w", err)
 		}
 		fmt.Printf("cached access token %s\n\n", result.AccessToken)
-	}else {
+	} else {
 		fmt.Println("\nNo cached account found")
 	}
 }
@@ -66,9 +66,9 @@ func acquireConfidentialTokenWithoutInstanceDiscovery() {
 	fmt.Println("Enter certificate password if applicable")
 	var password string
 	_, err = fmt.Scanln(&password)
-    if err != nil {
-        log.Fatal(err)
-    }
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	certs, privateKey, err := confidential.CertFromPEM(pemData, password)
 	if err != nil {
@@ -82,7 +82,7 @@ func acquireConfidentialTokenWithoutInstanceDiscovery() {
 	}
 
 	instanceDiscovery, err := strconv.ParseBool(config.InstanceDiscovery)
-	if err != nil{
+	if err != nil {
 		fmt.Println("Failed to parse boolean from config file: %w", err)
 	}
 
@@ -94,13 +94,12 @@ func acquireConfidentialTokenWithoutInstanceDiscovery() {
 		fmt.Println("could not create app: %w", err)
 	}
 
-
 	result, err := confidentialClientApp.AcquireTokenByCredential(context.Background(), config.Scopes)
 
 	if err != nil {
 		fmt.Println("could not get token: %w", err)
 	}
-		
+
 	fmt.Printf("access token %s\n\n", result.AccessToken)
 
 }
