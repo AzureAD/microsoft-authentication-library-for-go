@@ -290,14 +290,14 @@ func NewClientCapabilities(capabilities []string) (ClientCapabilities, error) {
 
 // Info consists of information about the authority.
 type Info struct {
-	Host                  string
-	CanonicalAuthorityURI string
-	AuthorityType         string
-	UserRealmURIPrefix    string
-	ValidateAuthority     bool
-	Tenant                string
-	Region                string
-	InstanceDiscovery     bool
+	Host                      string
+	CanonicalAuthorityURI     string
+	AuthorityType             string
+	UserRealmURIPrefix        string
+	ValidateAuthority         bool
+	Tenant                    string
+	Region                    string
+	InstanceDiscoveryDisabled bool
 }
 
 func firstPathSegment(u *url.URL) (string, error) {

@@ -196,7 +196,7 @@ func WithRegionDetection(region string) Option {
 func WithInstanceDiscovery(instanceDiscoveryDisabled bool) Option {
 	return func(c *Client) error {
 		c.AuthParams.AuthorityInfo.ValidateAuthority = !instanceDiscoveryDisabled
-		c.AuthParams.AuthorityInfo.InstanceDiscovery = !instanceDiscoveryDisabled
+		c.AuthParams.AuthorityInfo.InstanceDiscoveryDisabled = instanceDiscoveryDisabled
 		return nil
 	}
 }
@@ -292,8 +292,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.AuthorizationType = silent.AuthorizationType
 	authParams.Claims = silent.Claims
 	authParams.UserAssertion = silent.UserAssertion
-	//if instance discovery is false, add authority to known hosts, so that Alias Lookup is not done
-	if !authParams.AuthorityInfo.InstanceDiscovery {
+	//if instance discovery is disabled, add authority to known hosts, so that Alias Lookup is not done
+	if authParams.AuthorityInfo.InstanceDiscoveryDisabled {
 		authParams.KnownAuthorityHosts = append(authParams.KnownAuthorityHosts, authParams.AuthorityInfo.Host)
 	}
 
