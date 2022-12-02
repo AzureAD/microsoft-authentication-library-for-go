@@ -473,3 +473,77 @@ func TestWithLoginHint(t *testing.T) {
 		})
 	}
 }
+
+func TestWithDomainHint(t *testing.T) {
+	realBrowserOpenURL := browserOpenURL
+	defer func() { browserOpenURL = realBrowserOpenURL }()
+	domain := "contoso.com"
+	client, err := New("client-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectHint := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
+			// replace the browser launching function with a fake that validates domain_hint is set as expected
+			called := false
+			validate := func(v url.Values) error {
+				if !v.Has("domain_hint") {
+					if !expectHint {
+						return nil
+					}
+					return errors.New("expected a domain hint")
+				} else if !expectHint {
+					return errors.New("expected no domain hint")
+				}
+				if actual := v["domain_hint"]; len(actual) != 1 || actual[0] != domain {
+					err = fmt.Errorf(`unexpected domain_hint "%v"`, actual)
+				}
+				return err
+			}
+			browserOpenURL = func(authURL string) error {
+				called = true
+				parsed, err := url.Parse(authURL)
+				if err != nil {
+					return err
+				}
+				query, err := url.ParseQuery(parsed.RawQuery)
+				if err != nil {
+					return err
+				}
+				if err = validate(query); err != nil {
+					t.Fatal(err)
+					return err
+				}
+				// this helper validates the other params and completes the redirect
+				return fakeBrowserOpenURL(authURL)
+			}
+			var acquireOpts []AcquireInteractiveOption
+			var urlOpts []CreateAuthCodeURLOption
+			if expectHint {
+				acquireOpts = append(acquireOpts, WithDomainHint(domain))
+				urlOpts = append(urlOpts, WithDomainHint(domain))
+			}
+			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, acquireOpts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("browserOpenURL wasn't called")
+			}
+			u, err := client.CreateAuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			if err == nil {
+				var parsed *url.URL
+				parsed, err = url.Parse(u)
+				if err == nil {
+					err = validate(parsed.Query())
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}

@@ -410,7 +410,7 @@ func (cca Client) UserID() string {
 
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
-	claims, loginHint, tenantID string
+	claims, loginHint, tenantID, domainHint string
 }
 
 // AuthCodeURLOption is implemented by options for AuthCodeURL
@@ -420,7 +420,7 @@ type AuthCodeURLOption interface {
 
 // AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 //
-// Options: [WithClaims], [WithLoginHint], [WithTenantID]
+// Options: [WithClaims], [WithLoginHint], [WithDomainHint], [WithTenantID]
 func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
 	o := authCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -432,6 +432,7 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	}
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
+	ap.DomainHint = o.domainHint
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
@@ -449,6 +450,29 @@ func WithLoginHint(username string) interface {
 				switch t := a.(type) {
 				case *authCodeURLOptions:
 					t.loginHint = username
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithDomainHint pre-populates the login prompt with the IdP domain.
+func WithDomainHint(domain string) interface {
+	AuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *authCodeURLOptions:
+					t.domainHint = domain
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
