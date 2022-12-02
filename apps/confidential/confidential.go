@@ -459,7 +459,7 @@ func WithLoginHint(username string) interface {
 	}
 }
 
-// WithDomainHint pre-populates the login prompt with the IdP domain.
+// WithDomainHint adds the IdP domain as domain_hint query parameter in the auth url.
 func WithDomainHint(domain string) interface {
 	AuthCodeURLOption
 	options.CallOption
