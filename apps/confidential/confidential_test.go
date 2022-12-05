@@ -117,8 +117,7 @@ func fakeClientNoInstanceDiscovery(tk accesstokens.TokenResponse, credential Cre
 	client.base.Token.AccessTokens = &fake.AccessTokens{
 		AccessToken: tk,
 	}
-	client.base.Token.Authority = &fake.Authority{
-	}
+	client.base.Token.Authority = &fake.Authority{}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{
 		Endpoints: authority.NewEndpoints("https://fake_authority/fake/auth",
 			fakeTokenEndpoint, "https://fake_authority/fake/jwt", "fake_authority"),
