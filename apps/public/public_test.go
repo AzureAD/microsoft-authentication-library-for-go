@@ -20,7 +20,6 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
-var token = "fake_token"
 var tokenScope = []string{"the_scope"}
 
 func fakeBrowserOpenURL(authURL string) error {
