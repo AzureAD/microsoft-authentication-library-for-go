@@ -203,7 +203,7 @@ func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 		return p, errors.New(`client is configured to authenticate only personal Microsoft accounts, via the "consumers" endpoint`)
 	}
 	authority := "https://" + path.Join(p.AuthorityInfo.Host, ID)
-	info, err := NewInfoFromAuthorityURI(authority, p.AuthorityInfo.ValidateAuthority)
+	info, err := NewInfoFromAuthorityURI(authority, p.AuthorityInfo.ValidateAuthority, p.AuthorityInfo.InstanceDiscoveryDisabled)
 	if err == nil {
 		p.AuthorityInfo = info
 	}
@@ -310,7 +310,7 @@ func firstPathSegment(u *url.URL) (string, error) {
 }
 
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
-func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info, error) {
+func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool, instanceDiscoveryDisabled bool) (Info, error) {
 	authorityURI = strings.ToLower(authorityURI)
 	var authorityType string
 	u, err := url.Parse(authorityURI)
@@ -334,12 +334,13 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool) (Info,
 
 	// u.Host includes the port, if any, which is required for private cloud deployments
 	return Info{
-		Host:                  u.Host,
-		CanonicalAuthorityURI: fmt.Sprintf("https://%v/%v/", u.Host, tenant),
-		AuthorityType:         authorityType,
-		UserRealmURIPrefix:    fmt.Sprintf("https://%v/common/userrealm/", u.Hostname()),
-		ValidateAuthority:     validateAuthority,
-		Tenant:                tenant,
+		Host:                      u.Host,
+		CanonicalAuthorityURI:     fmt.Sprintf("https://%v/%v/", u.Host, tenant),
+		AuthorityType:             authorityType,
+		UserRealmURIPrefix:        fmt.Sprintf("https://%v/common/userrealm/", u.Hostname()),
+		ValidateAuthority:         validateAuthority,
+		Tenant:                    tenant,
+		InstanceDiscoveryDisabled: instanceDiscoveryDisabled,
 	}, nil
 }
 

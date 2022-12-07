@@ -193,17 +193,18 @@ func WithRegionDetection(region string) Option {
 	}
 }
 
-func WithInstanceDiscovery(instanceDiscoveryDisabled bool) Option {
+func WithInstanceDiscovery(instanceDiscoveryEnabled bool) Option {
 	return func(c *Client) error {
-		c.AuthParams.AuthorityInfo.ValidateAuthority = !instanceDiscoveryDisabled
-		c.AuthParams.AuthorityInfo.InstanceDiscoveryDisabled = instanceDiscoveryDisabled
+		c.AuthParams.AuthorityInfo.ValidateAuthority = instanceDiscoveryEnabled
+		c.AuthParams.AuthorityInfo.InstanceDiscoveryDisabled = !instanceDiscoveryEnabled
 		return nil
 	}
 }
 
 // New is the constructor for Base.
 func New(clientID string, authorityURI string, token *oauth.Client, options ...Option) (Client, error) {
-	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)
+	//By default, validateAuthority is set to true and instanceDiscoveryDisabled is set to false
+	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true, false)
 	if err != nil {
 		return Client{}, err
 	}
@@ -392,6 +393,12 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 		return ar, err
 	}
 	authParams, err := b.AuthParams.WithTenant(onBehalfOfParams.TenantID)
+	//if instance discovery is disabled, add authority to known hosts, so that Alias Lookup is not done
+	//withTenant seems to reset the previous AuthParams, so have to add this knownAuthorityHosts field again
+	if authParams.AuthorityInfo.InstanceDiscoveryDisabled {
+		authParams.KnownAuthorityHosts = append(authParams.KnownAuthorityHosts, authParams.AuthorityInfo.Host)
+	}
+
 	if err != nil {
 		return AuthResult{}, err
 	}

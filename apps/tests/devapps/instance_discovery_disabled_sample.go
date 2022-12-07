@@ -1,13 +1,16 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 package main
 
 import (
 	"context"
 	"fmt"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"log"
 	"os"
 	"strconv"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
 func acquirePublicTokenWithoutInstanceDiscovery() {

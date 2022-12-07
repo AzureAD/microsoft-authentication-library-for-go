@@ -41,35 +41,40 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 
-	metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
-	if err != nil {
-		return TokenResponse{}, err
+	// fetch metadata if and only if the authority isn't explicitly trusted
+	aliases := authParameters.KnownAuthorityHosts
+	if len(aliases) == 0 {
+		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
+		if err != nil {
+			return TokenResponse{}, err
+		}
+		aliases = metadata.Aliases
 	}
 	userAssertionHash := authParameters.AssertionHash()
 	partitionKeyFromRequest := userAssertionHash
 
-	accessToken, err := m.readAccessToken(metadata.Aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest)
+	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 
-	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
+	AppMetaData, err := m.readAppMetaData(aliases, clientID)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 	familyID := AppMetaData.FamilyID
 
-	refreshToken, err := m.readRefreshToken(metadata.Aliases, familyID, clientID, userAssertionHash, partitionKeyFromRequest)
+	refreshToken, err := m.readRefreshToken(aliases, familyID, clientID, userAssertionHash, partitionKeyFromRequest)
 	if err != nil {
 		return TokenResponse{}, err
 	}
 
-	idToken, err := m.readIDToken(metadata.Aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
+	idToken, err := m.readIDToken(aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
 	if err != nil {
 		return TokenResponse{}, err
 	}
 
-	account, err := m.readAccount(metadata.Aliases, realm, userAssertionHash, idToken.HomeAccountID)
+	account, err := m.readAccount(aliases, realm, userAssertionHash, idToken.HomeAccountID)
 	if err != nil {
 		return TokenResponse{}, err
 	}

@@ -393,7 +393,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		base.WithClientCapabilities(opts.capabilities),
 		base.WithRegionDetection(opts.AzureRegion),
 		base.WithX5C(opts.SendX5C),
-		base.WithInstanceDiscovery(opts.disableInstanceDiscovery),
+		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
 	}
 	if cred.tokenProvider != nil {
 		// The caller will handle all details of authentication, using Client only as a token cache.

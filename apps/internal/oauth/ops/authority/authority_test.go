@@ -309,7 +309,7 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 		Tenant:                "common",
 		ValidateAuthority:     true,
 	}
-	got, err := NewInfoFromAuthorityURI(authorityURI, true)
+	got, err := NewInfoFromAuthorityURI(authorityURI, true, false)
 	if err != nil {
 		t.Fatalf("TestCreateAuthorityInfoFromAuthorityUri: got err == %s, want err == nil", err)
 	}
@@ -336,7 +336,7 @@ func TestAuthParamsWithTenant(t *testing.T) {
 		{authority: host + "consumers", tenant: uuid1, expectError: true},
 	} {
 		t.Run("", func(t *testing.T) {
-			info, err := NewInfoFromAuthorityURI(test.authority, false)
+			info, err := NewInfoFromAuthorityURI(test.authority, false, false)
 			if err != nil {
 				t.Fatal(err)
 			}

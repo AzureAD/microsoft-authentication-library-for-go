@@ -138,7 +138,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(opts.disableInstanceDiscovery))
+	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), base.WithCacheAccessor(opts.Accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.disableInstanceDiscovery))
 	if err != nil {
 		return Client{}, err
 	}
