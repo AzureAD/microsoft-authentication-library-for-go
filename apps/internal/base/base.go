@@ -393,11 +393,6 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 		return ar, err
 	}
 	authParams, err := b.AuthParams.WithTenant(onBehalfOfParams.TenantID)
-	//if instance discovery is disabled, add authority to known hosts, so that Alias Lookup is not done
-	//withTenant seems to reset the previous AuthParams, so have to add this knownAuthorityHosts field again
-	if authParams.AuthorityInfo.InstanceDiscoveryDisabled {
-		authParams.KnownAuthorityHosts = append(authParams.KnownAuthorityHosts, authParams.AuthorityInfo.Host)
-	}
 
 	if err != nil {
 		return AuthResult{}, err
