@@ -420,7 +420,7 @@ type AuthCodeURLOption interface {
 
 // AuthCodeURL creates a URL used to acquire an authorization code. Users need to call CreateAuthorizationCodeURLParameters and pass it in.
 //
-// Options: [WithClaims], [WithLoginHint], [WithDomainHint], [WithTenantID]
+// Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithTenantID]
 func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
 	o := authCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {

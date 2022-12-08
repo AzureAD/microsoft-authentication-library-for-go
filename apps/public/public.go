@@ -147,7 +147,7 @@ type CreateAuthCodeURLOption interface {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
 //
-// Options: [WithClaims], [WithLoginHint], [WithDomainHint], [WithTenantID]
+// Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithTenantID]
 func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...CreateAuthCodeURLOption) (string, error) {
 	o := createAuthCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -585,7 +585,7 @@ func WithRedirectURI(redirectURI string) interface {
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
-// Options: [WithLoginHint], [WithDomainHint], [WithRedirectURI], [WithTenantID]
+// Options: [WithDomainHint], [WithLoginHint], [WithRedirectURI], [WithTenantID]
 func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
 	o := InteractiveAuthOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
