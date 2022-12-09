@@ -357,6 +357,34 @@ func TestAuthParamsWithTenant(t *testing.T) {
 			}
 		})
 	}
+
+	// WithTenant shouldn't change AuthorityInfo fields unrelated to the tenant, such as Region
+	t.Run("AuthorityInfo", func(t *testing.T) {
+		a := "A"
+		b := "B"
+		before, err := NewInfoFromAuthorityURI("https://localhost/"+a, true)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before.Region = "region"
+		params := NewAuthParams("client-id", before)
+		p, err := params.WithTenant(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after := p.AuthorityInfo
+
+		// these values should be different because they contain the tenant (this is tested above)
+		after.CanonicalAuthorityURI = before.CanonicalAuthorityURI
+		after.Tenant = before.Tenant
+		// With those fields equal, we can compare the before and after Infos without enumerating
+		// their fields i.e., we can implicitly compare all the other fields at once. With this
+		// approach, when Info gets a new field, this test needs an update only if that field
+		// contains the tenant, in which case this test will break so maintainers don't overlook it.
+		if diff := pretty.Compare(before, after); diff != "" {
+			t.Fatal(diff)
+		}
+	})
 }
 
 func TestMergeCapabilitiesAndClaims(t *testing.T) {
