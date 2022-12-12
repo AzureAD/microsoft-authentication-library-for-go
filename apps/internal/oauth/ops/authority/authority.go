@@ -205,6 +205,7 @@ func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 	authority := "https://" + path.Join(p.AuthorityInfo.Host, ID)
 	info, err := NewInfoFromAuthorityURI(authority, p.AuthorityInfo.ValidateAuthority)
 	if err == nil {
+		info.Region = p.AuthorityInfo.Region
 		p.AuthorityInfo = info
 	}
 	return p, err
