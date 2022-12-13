@@ -237,7 +237,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 	}
 }
 
-func TestInstanceDiscovery(t *testing.T) {
+func TestWithInstanceDiscovery(t *testing.T) {
 	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
 	realBrowserOpenURL := browserOpenURL
 	defer func() { browserOpenURL = realBrowserOpenURL }()
@@ -245,29 +245,28 @@ func TestInstanceDiscovery(t *testing.T) {
 
 	accessToken := "*"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
-	lmo := "https://stack.local"
-	host := fmt.Sprintf("https://%s/", lmo)
+	stackurl := "stack.local"
+	host := fmt.Sprintf("https://%s/", stackurl)
 
-	for _, test := range []struct {
-		authority, tenant string
-	}{
-		{authority: host + "adfs", tenant: "adfs"},
-		{authority: host + "00000000-0000-0000-0000-000000000000", tenant: "00000000-0000-0000-0000-000000000000"},
+	for _, tenant := range []string{
+		"adfs",
+		"98b8267d-e97f-426e-8b3f-7956511fd63f",
 	} {
 		for _, method := range []string{"authcode", "devicecode", "interactive", "password"} {
 			t.Run(method, func(t *testing.T) {
+				authority := host + tenant
 				mockClient := mock.Client{}
-				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(stackurl, tenant)))
 				if method == "devicecode" {
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
-				} else if method == "password" {
-					// user realm metadata
+				} else if method == "password" && tenant != "adfs" {
+					// user realm metadata, which is not requested when AuthorityType is ADFS
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
 				}
 				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(test.tenant, test.authority), "rt", clientInfo, 3600)),
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "rt", clientInfo, 3600)),
 				)
-				client, err := New("client-id", WithAuthority(test.authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+				client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -288,7 +287,7 @@ func TestInstanceDiscovery(t *testing.T) {
 				case "password":
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password")
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatal("test bug: no test for " + method)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -301,7 +300,7 @@ func TestInstanceDiscovery(t *testing.T) {
 				if ar.AccessToken != accessToken {
 					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
 				}
-				// silent authentication should succeed for the given tenant...
+
 				if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account)); err != nil {
 					t.Fatal(err)
 				} else if ar.AccessToken != accessToken {

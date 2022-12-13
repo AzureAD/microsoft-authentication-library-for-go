@@ -814,27 +814,30 @@ func TestWithTenantID(t *testing.T) {
 
 func TestWithInstanceDiscovery(t *testing.T) {
 	accessToken := "*"
-	lmo := "https://stack.local"
-	host := fmt.Sprintf("https://%s/", lmo)
-	for _, test := range []struct {
-		authority, tenant string
-	}{
-		{authority: host + "adfs", tenant: "adfs"},
-		{authority: host + "98b8267d-e97f-426e-8b3f-7956511fd63f", tenant: "98b8267d-e97f-426e-8b3f-7956511fd63f"},
+	stackurl := "stack.local"
+	host := fmt.Sprintf("https://%s/", stackurl)
+	for _, tenant := range []string{
+		"adfs",
+		"98b8267d-e97f-426e-8b3f-7956511fd63f",
 	} {
-		for _, method := range []string{"authcode", "credential"} {
+		for _, method := range []string{"authcode", "credential", "obo"} {
 			t.Run(method, func(t *testing.T) {
+				authority := host + tenant
 				cred, err := NewCredFromSecret("secret")
 				if err != nil {
 					t.Fatal(err)
 				}
 				idToken, refreshToken := "", ""
 				mockClient := mock.Client{}
-				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
+				if method == "obo" {
+					idToken = mock.GetIDToken(tenant, authority)
+					refreshToken = "refresh-token"
+				}
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(stackurl, tenant)))
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
 				)
-				client, err := New("client-id", cred, WithAuthority(test.authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+				client, err := New("client-id", cred, WithAuthority(authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -848,8 +851,10 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
 				case "credential":
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
+				case "obo":
+					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope)
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatal("test bug: no test for " + method)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -857,7 +862,11 @@ func TestWithInstanceDiscovery(t *testing.T) {
 				if ar.AccessToken != accessToken {
 					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
 				}
-				if ar, err = client.AcquireTokenSilent(ctx, tokenScope); err != nil {
+				if method == "obo" {
+					if ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope); err != nil {
+						t.Fatal(err)
+					}
+				} else if ar, err = client.AcquireTokenSilent(ctx, tokenScope); err != nil {
 					t.Fatal(err)
 				}
 				if ar.AccessToken != accessToken {
