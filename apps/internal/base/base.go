@@ -393,7 +393,6 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 		return ar, err
 	}
 	authParams, err := b.AuthParams.WithTenant(onBehalfOfParams.TenantID)
-
 	if err != nil {
 		return AuthResult{}, err
 	}

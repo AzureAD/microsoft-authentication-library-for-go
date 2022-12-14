@@ -474,6 +474,50 @@ func TestWithClaims(t *testing.T) {
 	}
 }
 
+func TestWithPortAuthority(t *testing.T) {
+	accessToken := "*"
+	lmo := "stack.local"
+	port := ":3001"
+	host := lmo + port
+	tenant := "00000000-0000-0000-0000-000000000000"
+	authority := fmt.Sprintf("https://%s%s/%s", lmo, port, tenant)
+	idToken, refreshToken, URL := "", "", ""
+	mockClient := mock.Client{}
+	//2 calls to instance discovery are made because Host is not trusted
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+		mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
+	)
+	client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err = client.AcquireTokenSilent(ctx, tokenScope); err == nil {
+		t.Fatal("silent auth should fail because the cache is empty")
+	}
+	var ar AuthResult
+	ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(URL, authority) {
+		t.Fatalf(`expected "%s", got "%s"`, authority, URL)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	if ar, err = client.AcquireTokenSilent(ctx, tokenScope); err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatal("cached access token should match the one returned by AcquireToken...")
+	}
+}
+
 func TestWithLoginHint(t *testing.T) {
 	realBrowserOpenURL := browserOpenURL
 	defer func() { browserOpenURL = realBrowserOpenURL }()

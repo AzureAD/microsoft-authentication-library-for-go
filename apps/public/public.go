@@ -63,7 +63,6 @@ type Options struct {
 
 	capabilities []string
 
-	// Default is Instance discovery is enabled, unless disabled by setting DisableInstanceDiscovery = true
 	disableInstanceDiscovery bool
 }
 
