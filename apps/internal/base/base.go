@@ -271,11 +271,8 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 }
 
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
-	tenant := silent.TenantID
-	if tenant == "" {
-		tenant = silent.Account.Realm
-	}
-	authParams, err := b.AuthParams.WithTenant(tenant)
+	// when silent.TenantID == "", this is a no-op and we use the client application's configured tenant
+	authParams, err := b.AuthParams.WithTenant(silent.TenantID)
 	if err != nil {
 		return AuthResult{}, err
 	}
