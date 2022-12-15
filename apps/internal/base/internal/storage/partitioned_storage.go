@@ -37,48 +37,48 @@ func NewPartitionedManager(requests *oauth.Client) *PartitionedManager {
 
 // Read reads a storage token from the cache if it exists.
 func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+	tr := TokenResponse{}
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
-
-	metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
-	if err != nil {
-		return TokenResponse{}, err
-	}
 	userAssertionHash := authParameters.AssertionHash()
 	partitionKeyFromRequest := userAssertionHash
 
-	accessToken, err := m.readAccessToken(metadata.Aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest)
-	if err != nil {
-		return TokenResponse{}, err
+	// fetch metadata if and only if the authority isn't explicitly trusted
+	aliases := authParameters.KnownAuthorityHosts
+	if len(aliases) == 0 {
+		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
+		if err != nil {
+			return tr, err
+		}
+		aliases = metadata.Aliases
 	}
 
-	AppMetaData, err := m.readAppMetaData(metadata.Aliases, clientID)
-	if err != nil {
-		return TokenResponse{}, err
+	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
+	// TokenResponse fields so that e.g. lack of an ID token doesn't prevent the caller from receiving a refresh token.
+	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest)
+	if err == nil {
+		tr.AccessToken = accessToken
 	}
-	familyID := AppMetaData.FamilyID
-
-	refreshToken, err := m.readRefreshToken(metadata.Aliases, familyID, clientID, userAssertionHash, partitionKeyFromRequest)
-	if err != nil {
-		return TokenResponse{}, err
-	}
-
-	idToken, err := m.readIDToken(metadata.Aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
-	if err != nil {
-		return TokenResponse{}, err
+	idToken, err := m.readIDToken(aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
+	if err == nil {
+		tr.IDToken = idToken
 	}
 
-	account, err := m.readAccount(metadata.Aliases, realm, userAssertionHash, idToken.HomeAccountID)
-	if err != nil {
-		return TokenResponse{}, err
+	if appMetadata, err := m.readAppMetaData(aliases, clientID); err == nil {
+		// we need the family ID to identify the correct refresh token, if any
+		familyID := appMetadata.FamilyID
+		refreshToken, err := m.readRefreshToken(aliases, familyID, clientID, userAssertionHash, partitionKeyFromRequest)
+		if err == nil {
+			tr.RefreshToken = refreshToken
+		}
 	}
-	return TokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		IDToken:      idToken,
-		Account:      account,
-	}, nil
+
+	account, err := m.readAccount(aliases, realm, userAssertionHash, idToken.HomeAccountID)
+	if err == nil {
+		tr.Account = account
+	}
+	return tr, nil
 }
 
 // Write writes a token response to the cache and returns the account information the token is stored with.

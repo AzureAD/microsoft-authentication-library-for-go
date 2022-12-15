@@ -797,14 +797,15 @@ func TestWithTenantID(t *testing.T) {
 				if ar.AccessToken != accessToken {
 					t.Fatal("cached access token should match the one returned by AcquireToken...")
 				}
-				// ...but fail for another tenant
+				// ...but fail for another tenant unless we're authenticating OBO, in which case we have a refresh token
+				otherTenant := "not-" + test.tenant
 				if method == "obo" {
-					// OBO sends a token request after silent auth fails
-					mockClient.AppendResponse()
-					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
-						t.Fatal("expected an error")
+					mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
+					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)))
+					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(otherTenant)); err != nil {
+						t.Fatal(err)
 					}
-				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
+				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(otherTenant)); err == nil {
 					t.Fatal("expected an error")
 				}
 			})
