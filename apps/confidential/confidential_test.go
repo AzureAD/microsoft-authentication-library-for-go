@@ -851,3 +851,43 @@ func TestWithLoginHint(t *testing.T) {
 		})
 	}
 }
+
+func TestWithDomainHint(t *testing.T) {
+	domain := "contoso.com"
+	cred, err := NewCredFromSecret("...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New("client-id", cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectHint := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
+			var opts []AuthCodeURLOption
+			if expectHint {
+				opts = append(opts, WithDomainHint(domain))
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := url.Parse(u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !parsed.Query().Has("domain_hint") {
+				if !expectHint {
+					return
+				}
+				t.Fatal("expected a domain hint")
+			} else if !expectHint {
+				t.Fatal("expected no domain hint")
+			}
+			if actual := parsed.Query()["domain_hint"]; len(actual) != 1 || actual[0] != domain {
+				t.Fatalf(`unexpected domain_hint "%v"`, actual)
+			}
+		})
+	}
+}

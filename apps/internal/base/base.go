@@ -256,14 +256,14 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	if authParams.Prompt != "" {
 		v.Add("prompt", authParams.Prompt)
 	}
+	if authParams.DomainHint != "" {
+		v.Add("domain_hint", authParams.DomainHint)
+	}
 	// There were left over from an implementation that didn't use any of these.  We may
 	// need to add them later, but as of now aren't needed.
 	/*
 		if p.ResponseMode != "" {
 			urlParams.Add("response_mode", p.ResponseMode)
-		}
-		if p.DomainHint != "" {
-			urlParams.Add("domain_hint", p.DomainHint)
 		}
 	*/
 	baseURL.RawQuery = v.Encode()
