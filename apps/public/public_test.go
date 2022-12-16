@@ -245,8 +245,8 @@ func TestWithInstanceDiscovery(t *testing.T) {
 
 	accessToken := "*"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
-	stackurl := "stack.local"
-	host := fmt.Sprintf("https://%s/", stackurl)
+	host := "stack.local"
+	stackurl := fmt.Sprintf("https://%s/", host)
 
 	for _, tenant := range []string{
 		"adfs",
@@ -254,9 +254,9 @@ func TestWithInstanceDiscovery(t *testing.T) {
 	} {
 		for _, method := range []string{"authcode", "devicecode", "interactive", "password"} {
 			t.Run(method, func(t *testing.T) {
-				authority := host + tenant
+				authority := stackurl + tenant
 				mockClient := mock.Client{}
-				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(stackurl, tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
 				if method == "devicecode" {
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
 				} else if method == "password" && tenant != "adfs" {
@@ -476,11 +476,11 @@ func TestWithClaims(t *testing.T) {
 
 func TestWithPortAuthority(t *testing.T) {
 	accessToken := "*"
-	lmo := "stack.local"
+	sl := "stack.local"
 	port := ":3001"
-	host := lmo + port
+	host := sl + port
 	tenant := "00000000-0000-0000-0000-000000000000"
-	authority := fmt.Sprintf("https://%s%s/%s", lmo, port, tenant)
+	authority := fmt.Sprintf("https://%s%s/%s", sl, port, tenant)
 	idToken, refreshToken, URL := "", "", ""
 	mockClient := mock.Client{}
 	//2 calls to instance discovery are made because Host is not trusted

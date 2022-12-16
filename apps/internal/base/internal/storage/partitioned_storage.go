@@ -41,9 +41,20 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 
-	// fetch metadata if and only if the authority isn't explicitly trusted
+	// fetch metadata if authority isn't explicitly trusted or instanceDiscovery is false
 	aliases := authParameters.KnownAuthorityHosts
-	if len(aliases) == 0 {
+	//if instance discovery is disabled, add authority to aliases, as otherwise, entries that were cached are are not KnownAuthorityHosts, would not be found
+	if authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
+		aliases = append(aliases, authParameters.AuthorityInfo.Host)
+	}
+	var knownAuthority bool = false
+	for _, alias := range aliases {
+		if alias == authParameters.AuthorityInfo.Host {
+			knownAuthority = true
+			break
+		}
+	}
+	if !knownAuthority && !authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
 		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
 		if err != nil {
 			return TokenResponse{}, err
@@ -148,13 +159,20 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 		localAccountID := idTokenJwt.LocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
+		var preferredUsername string
+		if idTokenJwt.PreferredUsername != "" {
+			preferredUsername = idTokenJwt.PreferredUsername
+		} else {
+			preferredUsername = idTokenJwt.UPN
+		}
+
 		account = shared.NewAccount(
 			homeAccountID,
 			environment,
 			realm,
 			localAccountID,
 			authorityType,
-			idTokenJwt.PreferredUsername,
+			preferredUsername,
 		)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
 			account.UserAssertionHash = userAssertionHash
