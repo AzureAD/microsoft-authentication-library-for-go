@@ -293,10 +293,6 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.AuthorizationType = silent.AuthorizationType
 	authParams.Claims = silent.Claims
 	authParams.UserAssertion = silent.UserAssertion
-	//if instance discovery is disabled, add authority to known hosts, so that Alias Lookup is not done
-	// if authParams.AuthorityInfo.InstanceDiscoveryDisabled {
-	// 	authParams.KnownAuthorityHosts = append(authParams.KnownAuthorityHosts, authParams.AuthorityInfo.Host)
-	// }
 
 	var storageTokenResponse storage.TokenResponse
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
