@@ -27,4 +27,4 @@ jobs:
           version: v1.49
 
           # Optional: golangci-lint command line arguments.
-          # args: --issues-exit-code=0
+          args: -E gofmt
