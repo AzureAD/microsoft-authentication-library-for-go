@@ -59,7 +59,7 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 		return authority.Endpoints{}, err
 	}
 
-	resp, err := m.rest.Authority().GetTenantDiscoveryResponse(ctx, endpoint)
+	resp, err :=                  m.rest.Authority().GetTenantDiscoveryResponse(ctx, endpoint)
 	if err != nil {
 		return authority.Endpoints{}, err
 	}
