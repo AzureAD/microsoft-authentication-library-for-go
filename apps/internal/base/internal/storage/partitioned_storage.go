@@ -159,11 +159,9 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 		localAccountID := idTokenJwt.LocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
-		var preferredUsername string
+		preferredUsername := idTokenJwt.UPN
 		if idTokenJwt.PreferredUsername != "" {
 			preferredUsername = idTokenJwt.PreferredUsername
-		} else {
-			preferredUsername = idTokenJwt.UPN
 		}
 
 		account = shared.NewAccount(
