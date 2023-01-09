@@ -91,10 +91,6 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 
 	// fetch metadata if and only if the authority isn't explicitly trusted
 	aliases := authParameters.KnownAuthorityHosts
-	//if instance discovery is disabled, add authority to aliases, as otherwise, entries that were cached are are not KnownAuthorityHosts, would not be found
-	if authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
-		aliases = append(aliases, authParameters.AuthorityInfo.Host)
-	}
 	var knownAuthority bool = false
 	for _, alias := range aliases {
 		if alias == authParameters.AuthorityInfo.Host {
