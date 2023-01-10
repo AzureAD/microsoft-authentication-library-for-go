@@ -294,11 +294,6 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.Claims = silent.Claims
 	authParams.UserAssertion = silent.UserAssertion
 
-	//if instance discovery is disabled, add authority to aliases, as otherwise, entries that were cached are are not KnownAuthorityHosts, would not be found
-	if authParams.AuthorityInfo.InstanceDiscoveryDisabled {
-		authParams.KnownAuthorityHosts = append(authParams.KnownAuthorityHosts, authParams.AuthorityInfo.Host)
-	}
-
 	var storageTokenResponse storage.TokenResponse
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {

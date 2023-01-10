@@ -399,11 +399,11 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		// Declaring the authority host known prevents unnecessary metadata discovery requests. (The
 		// authority is irrelevant to Client and friends because the token provider is responsible
 		// for authentication.)
-		parsed, err := url.Parse(opts.Authority)
+		_, err := url.Parse(opts.Authority)
 		if err != nil {
 			return Client{}, errors.New("invalid authority")
 		}
-		baseOpts = append(baseOpts, base.WithKnownAuthorityHosts([]string{parsed.Hostname()}))
+		baseOpts = append(baseOpts, base.WithInstanceDiscovery(false))
 	}
 	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), baseOpts...)
 	if err != nil {

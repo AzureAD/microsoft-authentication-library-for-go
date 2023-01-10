@@ -41,22 +41,16 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 
-	// fetch metadata if authority isn't explicitly trusted or instanceDiscovery is false
-	aliases := authParameters.KnownAuthorityHosts
-	var knownAuthority bool = false
-	for _, alias := range aliases {
-		if alias == authParameters.AuthorityInfo.Host {
-			knownAuthority = true
-			break
-		}
-	}
-	if !knownAuthority && !authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
+	// fetch metadata if instanceDiscovery is enabled
+	aliases := []string{authParameters.AuthorityInfo.Host}
+	if !authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
 		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
 		if err != nil {
 			return TokenResponse{}, err
 		}
 		aliases = metadata.Aliases
 	}
+
 	userAssertionHash := authParameters.AssertionHash()
 	partitionKeyFromRequest := userAssertionHash
 

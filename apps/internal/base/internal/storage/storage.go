@@ -89,16 +89,9 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 
-	// fetch metadata if and only if the authority isn't explicitly trusted
-	aliases := authParameters.KnownAuthorityHosts
-	var knownAuthority bool = false
-	for _, alias := range aliases {
-		if alias == authParameters.AuthorityInfo.Host {
-			knownAuthority = true
-			break
-		}
-	}
-	if !knownAuthority && !authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
+	// fetch metadata if instanceDiscovery is enabled
+	aliases := []string{authParameters.AuthorityInfo.Host}
+	if !authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
 		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
 		if err != nil {
 			return TokenResponse{}, err
@@ -196,11 +189,9 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 		localAccountID := idTokenJwt.LocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
-		var preferredUsername string
+		preferredUsername := idTokenJwt.UPN
 		if idTokenJwt.PreferredUsername != "" {
 			preferredUsername = idTokenJwt.PreferredUsername
-		} else {
-			preferredUsername = idTokenJwt.UPN
 		}
 
 		account = shared.NewAccount(
