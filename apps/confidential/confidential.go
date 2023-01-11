@@ -396,13 +396,6 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	}
 	if cred.tokenProvider != nil {
 		// The caller will handle all details of authentication, using Client only as a token cache.
-		// Declaring the authority host known prevents unnecessary metadata discovery requests. (The
-		// authority is irrelevant to Client and friends because the token provider is responsible
-		// for authentication.)
-		_, err := url.Parse(opts.Authority)
-		if err != nil {
-			return Client{}, errors.New("invalid authority")
-		}
 		baseOpts = append(baseOpts, base.WithInstanceDiscovery(false))
 	}
 	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), baseOpts...)

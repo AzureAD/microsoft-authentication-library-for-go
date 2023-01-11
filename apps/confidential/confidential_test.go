@@ -204,63 +204,42 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, accesstoken := range []accesstokens.TokenResponse{
-		{
-			AccessToken:   token,
-			RefreshToken:  refresh,
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-			IDToken: accesstokens.IDToken{
-				PreferredUsername: "fakeuser@fakeplace.fake",
-				Name:              "fake person",
-				Oid:               "123-456",
-				TenantID:          "fake",
-				Subject:           "nothing",
-				Issuer:            "https://fake_authority/fake",
-				Audience:          "abc-123",
-				ExpirationTime:    time.Now().Add(time.Hour).Unix(),
-				IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
-				NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
-				// NOTE: this is an invalid JWT however this doesn't cause a failure.
-				// it simply falls back to calling Token.Refresh() which will obviously succeed.
-				RawToken: "fake.raw.token",
-			},
-			ClientInfo: accesstokens.ClientInfo{
-				UID:  "123-456",
-				UTID: "fake",
-			},
-		},
-		{
-			AccessToken:   token,
-			RefreshToken:  refresh,
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-			IDToken: accesstokens.IDToken{
-				PreferredUsername: "",
-				UPN:               "fakeuser@fakeplace.fake",
-				Name:              "fake person",
-				Oid:               "123-456",
-				TenantID:          "fake",
-				Subject:           "nothing",
-				Issuer:            "https://fake_authority/fake",
-				Audience:          "abc-123",
-				ExpirationTime:    time.Now().Add(time.Hour).Unix(),
-				IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
-				NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
-				// NOTE: this is an invalid JWT however this doesn't cause a failure.
-				// it simply falls back to calling Token.Refresh() which will obviously succeed.
-				RawToken: "fake.raw.token",
-			},
-			ClientInfo: accesstokens.ClientInfo{
-				//No UTID
-				UID: "123-456",
-			},
-		},
+	for _, params := range []struct {
+		upn, preferredUsername, utid string
+	}{
+		{"", "fakeuser@fakeplace.fake", "fake"},
+		{"fakeuser@fakeplace.fake", "", ""},
 	} {
 		t.Run("", func(t *testing.T) {
-			client, err := fakeClient(accesstoken, cred)
+			tr := accesstokens.TokenResponse{
+				AccessToken:   token,
+				RefreshToken:  refresh,
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+				IDToken: accesstokens.IDToken{
+					PreferredUsername: params.preferredUsername,
+					UPN:               params.upn,
+					Name:              "fake person",
+					Oid:               "123-456",
+					TenantID:          "fake",
+					Subject:           "nothing",
+					Issuer:            "https://fake_authority/fake",
+					Audience:          "abc-123",
+					ExpirationTime:    time.Now().Add(time.Hour).Unix(),
+					IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
+					NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
+					// NOTE: this is an invalid JWT however this doesn't cause a failure.
+					// it simply falls back to calling Token.Refresh() which will obviously succeed.
+					RawToken: "fake.raw.token",
+				},
+				ClientInfo: accesstokens.ClientInfo{
+					UID:  "123-456",
+					UTID: params.utid,
+				},
+			}
+
+			client, err := fakeClient(tr, cred)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -277,7 +256,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 				t.Fatalf("unexpected access token %s", tk.AccessToken)
 			}
 			account := client.Account(tk.Account.HomeAccountID)
-			if accesstoken.ClientInfo.UTID == "" {
+			if params.utid == "" {
 				if account.HomeAccountID != "123-456.123-456" {
 					t.Fatal("Unexpected Account.HomeAccountId")
 				}
