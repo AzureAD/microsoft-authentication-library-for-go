@@ -37,6 +37,7 @@ func NewPartitionedManager(requests *oauth.Client) *PartitionedManager {
 
 // Read reads a storage token from the cache if it exists.
 func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+	tr := TokenResponse{}
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
@@ -54,37 +55,31 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	userAssertionHash := authParameters.AssertionHash()
 	partitionKeyFromRequest := userAssertionHash
 
+	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
+	// TokenResponse fields so that e.g. lack of an ID token doesn't prevent the caller from receiving a refresh token.
 	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest)
-	if err != nil {
-		return TokenResponse{}, err
+	if err == nil {
+		tr.AccessToken = accessToken
 	}
-
-	AppMetaData, err := m.readAppMetaData(aliases, clientID)
-	if err != nil {
-		return TokenResponse{}, err
-	}
-	familyID := AppMetaData.FamilyID
-
-	refreshToken, err := m.readRefreshToken(aliases, familyID, clientID, userAssertionHash, partitionKeyFromRequest)
-	if err != nil {
-		return TokenResponse{}, err
-	}
-
 	idToken, err := m.readIDToken(aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
-	if err != nil {
-		return TokenResponse{}, err
+	if err == nil {
+		tr.IDToken = idToken
+	}
+
+	if appMetadata, err := m.readAppMetaData(aliases, clientID); err == nil {
+		// we need the family ID to identify the correct refresh token, if any
+		familyID := appMetadata.FamilyID
+		refreshToken, err := m.readRefreshToken(aliases, familyID, clientID, userAssertionHash, partitionKeyFromRequest)
+		if err == nil {
+			tr.RefreshToken = refreshToken
+		}
 	}
 
 	account, err := m.readAccount(aliases, realm, userAssertionHash, idToken.HomeAccountID)
-	if err != nil {
-		return TokenResponse{}, err
+	if err == nil {
+		tr.Account = account
 	}
-	return TokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		IDToken:      idToken,
-		Account:      account,
-	}, nil
+	return tr, nil
 }
 
 // Write writes a token response to the cache and returns the account information the token is stored with.

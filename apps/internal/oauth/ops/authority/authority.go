@@ -167,6 +167,8 @@ type AuthParams struct {
 	KnownAuthorityHosts []string
 	// LoginHint is a username with which to pre-populate account selection during interactive auth
 	LoginHint string
+	// DomainHint is a directive that can be used to accelerate the user to their federated IdP sign-in page
+	DomainHint string
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -205,6 +207,7 @@ func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 	authority := "https://" + path.Join(p.AuthorityInfo.Host, ID)
 	info, err := NewInfoFromAuthorityURI(authority, p.AuthorityInfo.ValidateAuthority, p.AuthorityInfo.InstanceDiscoveryDisabled)
 	if err == nil {
+		info.Region = p.AuthorityInfo.Region
 		p.AuthorityInfo = info
 	}
 	return p, err

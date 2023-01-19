@@ -821,14 +821,15 @@ func TestWithTenantID(t *testing.T) {
 				if ar.AccessToken != accessToken {
 					t.Fatal("cached access token should match the one returned by AcquireToken...")
 				}
-				// ...but fail for another tenant
+				// ...but fail for another tenant unless we're authenticating OBO, in which case we have a refresh token
+				otherTenant := "not-" + test.tenant
 				if method == "obo" {
-					// OBO sends a token request after silent auth fails
-					mockClient.AppendResponse()
-					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
-						t.Fatal("expected an error")
+					mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
+					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)))
+					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(otherTenant)); err != nil {
+						t.Fatal(err)
 					}
-				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID("not-"+test.tenant)); err == nil {
+				} else if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(otherTenant)); err == nil {
 					t.Fatal("expected an error")
 				}
 			})
@@ -984,6 +985,46 @@ func TestWithLoginHint(t *testing.T) {
 			}
 			if actual := parsed.Query()["login_hint"]; len(actual) != 1 || actual[0] != upn {
 				t.Fatalf(`unexpected login_hint "%v"`, actual)
+			}
+		})
+	}
+}
+
+func TestWithDomainHint(t *testing.T) {
+	domain := "contoso.com"
+	cred, err := NewCredFromSecret("...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New("client-id", cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectHint := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
+			var opts []AuthCodeURLOption
+			if expectHint {
+				opts = append(opts, WithDomainHint(domain))
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := url.Parse(u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !parsed.Query().Has("domain_hint") {
+				if !expectHint {
+					return
+				}
+				t.Fatal("expected a domain hint")
+			} else if !expectHint {
+				t.Fatal("expected no domain hint")
+			}
+			if actual := parsed.Query()["domain_hint"]; len(actual) != 1 || actual[0] != domain {
+				t.Fatalf(`unexpected domain_hint "%v"`, actual)
 			}
 		})
 	}

@@ -146,7 +146,7 @@ func New(clientID string, options ...Option) (Client, error) {
 
 // createAuthCodeURLOptions contains options for CreateAuthCodeURL
 type createAuthCodeURLOptions struct {
-	claims, loginHint, tenantID string
+	claims, loginHint, tenantID, domainHint string
 }
 
 // CreateAuthCodeURLOption is implemented by options for CreateAuthCodeURL
@@ -156,7 +156,7 @@ type CreateAuthCodeURLOption interface {
 
 // CreateAuthCodeURL creates a URL used to acquire an authorization code.
 //
-// Options: [WithClaims], [WithLoginHint], [WithTenantID]
+// Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithTenantID]
 func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...CreateAuthCodeURLOption) (string, error) {
 	o := createAuthCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -168,6 +168,7 @@ func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI s
 	}
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
+	ap.DomainHint = o.domainHint
 	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
@@ -500,7 +501,7 @@ type InteractiveAuthOptions struct {
 	// All other URI components are ignored.
 	RedirectURI string
 
-	claims, loginHint, tenantID string
+	claims, loginHint, tenantID, domainHint string
 }
 
 // AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
@@ -540,6 +541,33 @@ func WithLoginHint(username string) interface {
 	}
 }
 
+// WithDomainHint adds the IdP domain as domain_hint query parameter in the auth url.
+func WithDomainHint(domain string) interface {
+	AcquireInteractiveOption
+	CreateAuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		CreateAuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *createAuthCodeURLOptions:
+					t.domainHint = domain
+				case *InteractiveAuthOptions:
+					t.domainHint = domain
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
 // WithRedirectURI uses the specified redirect URI for interactive auth.
 func WithRedirectURI(redirectURI string) interface {
 	AcquireInteractiveOption
@@ -566,7 +594,7 @@ func WithRedirectURI(redirectURI string) interface {
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
-// Options: [WithLoginHint], [WithRedirectURI], [WithTenantID]
+// Options: [WithDomainHint], [WithLoginHint], [WithRedirectURI], [WithTenantID]
 func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
 	o := InteractiveAuthOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -595,6 +623,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.CodeChallenge = challenge
 	authParams.CodeChallengeMethod = "S256"
 	authParams.LoginHint = o.loginHint
+	authParams.DomainHint = o.domainHint
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
 	res, err := pca.browserLogin(ctx, redirectURL, authParams)

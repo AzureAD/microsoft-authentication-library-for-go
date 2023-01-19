@@ -265,14 +265,14 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	if authParams.Prompt != "" {
 		v.Add("prompt", authParams.Prompt)
 	}
+	if authParams.DomainHint != "" {
+		v.Add("domain_hint", authParams.DomainHint)
+	}
 	// There were left over from an implementation that didn't use any of these.  We may
 	// need to add them later, but as of now aren't needed.
 	/*
 		if p.ResponseMode != "" {
 			urlParams.Add("response_mode", p.ResponseMode)
-		}
-		if p.DomainHint != "" {
-			urlParams.Add("domain_hint", p.DomainHint)
 		}
 	*/
 	baseURL.RawQuery = v.Encode()
@@ -282,7 +282,23 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	tenant := silent.TenantID
 	if tenant == "" {
-		tenant = silent.Account.Realm
+		// the caller didn't specify a tenant, so we'll use the client's configured tenant or the given account's home tenant
+		switch tenant = b.AuthParams.AuthorityInfo.Tenant; tenant {
+		case "common", "organizations":
+			if _, homeTenant, found := strings.Cut(silent.Account.HomeAccountID, "."); found {
+				// note that both public and confidential clients allow specifying an account for silent auth
+				tenant = homeTenant
+			} else if !b.AuthParams.IsConfidentialClient {
+				// public client requires the caller to identify a specific user for silent authentication
+				return AuthResult{}, errors.New("use the WithSilentAccount option to specify an account")
+			}
+			// else we have a confidential client and no account specified. We can't return an error here because
+			// the caller may have configured the client with a custom token provider, in which case the client
+			// handles caching and the token provider is responsible for everything else, including determining
+			// the correct tenant.
+		default:
+			// use the client's configured tenant
+		}
 	}
 	authParams, err := b.AuthParams.WithTenant(tenant)
 	if err != nil {

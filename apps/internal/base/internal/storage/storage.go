@@ -84,6 +84,7 @@ func isMatchingScopes(scopesOne []string, scopesTwo string) bool {
 
 // Read reads a storage token from the cache if it exists.
 func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (TokenResponse, error) {
+	tr := TokenResponse{}
 	homeAccountID := authParameters.HomeAccountID
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
@@ -100,40 +101,32 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams,
 	}
 
 	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes)
+	tr.AccessToken = accessToken
 
 	if account.IsZero() {
-		return TokenResponse{
-			AccessToken:  accessToken,
-			RefreshToken: accesstokens.RefreshToken{},
-			IDToken:      IDToken{},
-			Account:      shared.Account{},
-		}, nil
+		return tr, nil
 	}
+	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
+	// TokenResponse fields so that e.g. lack of an ID token doesn't prevent the caller from receiving a refresh token.
 	idToken, err := m.readIDToken(homeAccountID, aliases, realm, clientID)
-	if err != nil {
-		return TokenResponse{}, err
+	if err == nil {
+		tr.IDToken = idToken
 	}
 
-	AppMetaData, err := m.readAppMetaData(aliases, clientID)
-	if err != nil {
-		return TokenResponse{}, err
+	if appMetadata, err := m.readAppMetaData(aliases, clientID); err == nil {
+		// we need the family ID to identify the correct refresh token, if any
+		familyID := appMetadata.FamilyID
+		refreshToken, err := m.readRefreshToken(homeAccountID, aliases, familyID, clientID)
+		if err == nil {
+			tr.RefreshToken = refreshToken
+		}
 	}
-	familyID := AppMetaData.FamilyID
 
-	refreshToken, err := m.readRefreshToken(homeAccountID, aliases, familyID, clientID)
-	if err != nil {
-		return TokenResponse{}, err
-	}
 	account, err = m.readAccount(homeAccountID, aliases, realm)
-	if err != nil {
-		return TokenResponse{}, err
+	if err == nil {
+		tr.Account = account
 	}
-	return TokenResponse{
-		AccessToken:  accessToken,
-		RefreshToken: refreshToken,
-		IDToken:      idToken,
-		Account:      account,
-	}, nil
+	return tr, nil
 }
 
 const scopeSeparator = " "
