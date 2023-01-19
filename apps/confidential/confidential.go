@@ -399,6 +399,7 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	if err != nil {
 		return Client{}, err
 	}
+	base.AuthParams.IsConfidentialClient = true
 
 	return Client{base: base, cred: internalCred}, nil
 }

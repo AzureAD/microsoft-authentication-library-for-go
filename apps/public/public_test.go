@@ -14,6 +14,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
@@ -77,19 +78,18 @@ func TestAcquireTokenInteractive(t *testing.T) {
 }
 
 func TestAcquireTokenSilentTenants(t *testing.T) {
-	tenants := []string{"a", "b"}
+	tenantA, tenantB := "a", "b"
 	lmo := "login.microsoftonline.com"
 	mockClient := mock.Client{}
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenants[0])))
-	client, err := New("client-id", WithHTTPClient(&mockClient))
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
+	client, err := New("client-id", WithAuthority(fmt.Sprintf("https://%s/%s", lmo, tenantA)), WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	ctx := context.Background()
-	accounts := make([]Account, len(tenants))
 	// cache an access token for each tenant. To simplify determining their provenance below, the value of each token is the ID of the tenant that provided it.
-	for i, tenant := range tenants {
+	for _, tenant := range []string{tenantA, tenantB} {
 		if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant)); err == nil {
 			t.Fatal("silent auth should fail because the cache is empty")
 		}
@@ -102,32 +102,39 @@ func TestAcquireTokenSilentTenants(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		accounts[i] = ar.Account
+		if ar.AccessToken != tenant {
+			t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
+		}
 	}
+
 	// cache should return the correct access token for each tenant
-	for i, account := range accounts {
-		if account.Realm != tenants[i] {
-			t.Fatalf(`unexpected realm "%s"`, account.Realm)
-		}
-		otherTenant := tenants[(i+1)%len(tenants)]
-		for _, test := range []struct {
-			desc, expected string
-			opts           []AcquireSilentOption
-		}{
-			{"account only", account.Realm, []AcquireSilentOption{WithSilentAccount(account)}},
-			{"matching account and tenant", account.Realm, []AcquireSilentOption{WithSilentAccount(account), WithTenantID(account.Realm)}},
-			{"tenant overriding account", otherTenant, []AcquireSilentOption{WithSilentAccount(account), WithTenantID(otherTenant)}},
-		} {
-			t.Run(test.desc, func(t *testing.T) {
-				ar, err := client.AcquireTokenSilent(ctx, tokenScope, test.opts...)
-				if err != nil {
-					t.Fatal(err)
-				}
-				if ar.AccessToken != test.expected {
-					t.Fatalf(`expected "%s", got "%s"`, test.expected, ar.AccessToken)
-				}
-			})
-		}
+	var account Account
+	if accounts := client.Accounts(); len(accounts) == 2 {
+		// expecting one account for each tenant we authenticated in above
+		account = accounts[0]
+	} else {
+		t.Fatalf("expected 2 accounts but got %d", len(accounts))
+	}
+	for _, test := range []struct {
+		desc, expected string
+		opts           []AcquireSilentOption
+	}{
+		// when no tenant is specified the client should return the cached token for its configured authority
+		{"no tenant specified", tenantA, []AcquireSilentOption{WithSilentAccount(account)}},
+
+		// when a tenant is specified the client should return the cached token for that tenant
+		{"redundant tenant specified", tenantA, []AcquireSilentOption{WithSilentAccount(account), WithTenantID(tenantA)}},
+		{"different tenant specified", tenantB, []AcquireSilentOption{WithSilentAccount(account), WithTenantID(tenantB)}},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			ar, err := client.AcquireTokenSilent(ctx, tokenScope, test.opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ar.AccessToken != test.expected {
+				t.Fatalf(`expected "%s", got "%s"`, test.expected, ar.AccessToken)
+			}
+		})
 	}
 }
 
@@ -222,18 +229,102 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				if ar.AccessToken != accessToken {
 					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
 				}
-				// silent authentication should succeed for the given tenant...
+				// silent authentication should succeed for the given tenant because the client has a cached
+				// access token, and for a different tenant because the client has a cached refresh token
 				if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID(test.tenant)); err != nil {
 					t.Fatal(err)
 				} else if ar.AccessToken != accessToken {
 					t.Fatal("cached access token should match the one returned by AcquireToken...")
 				}
-				// ...but fail for another tenant
-				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID("not-"+test.tenant)); err == nil {
-					t.Fatal("expected an error")
+				otherTenant := "not-" + test.tenant
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, otherTenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(otherTenant, test.authority), "rt", clientInfo, 3600)))
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID("not-"+test.tenant)); err != nil {
+					t.Fatal(err)
 				}
 			})
 		}
+	}
+}
+
+// testCache is a simple in-memory cache.ExportReplace implementation
+type testCache struct {
+	store map[string][]byte
+}
+
+func (c *testCache) Export(m cache.Marshaler, key string) {
+	if v, err := m.Marshal(); err == nil {
+		c.store[key] = v
+	}
+}
+
+func (c *testCache) Replace(u cache.Unmarshaler, key string) {
+	if v, has := c.store[key]; has {
+		_ = u.Unmarshal(v)
+	}
+}
+
+func TestWithCache(t *testing.T) {
+	cache := testCache{make(map[string][]byte)}
+	accessToken, refreshToken := "*", "rt"
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+	lmo := "login.microsoftonline.com"
+	tenantA, tenantB := "a", "b"
+	authorityA, authorityB := fmt.Sprintf("https://%s/%s", lmo, tenantA), fmt.Sprintf("https://%s/%s", lmo, tenantB)
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenantA, authorityA), refreshToken, clientInfo, 3600)))
+
+	client, err := New("client-id", WithAuthority(authorityA), WithCache(&cache), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The particular flow isn't important, we just need to populate the cache. Auth code is the simplest for this test
+	ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	account := ar.Account
+	if actual := account.Realm; actual != tenantA {
+		t.Fatalf(`unexpected realm "%s"`, actual)
+	}
+
+	// a client configured for a different tenant should be able to authenticate silently with the shared cache's data
+	client, err = New("client-id", WithAuthority(authorityB), WithCache(&cache), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	accounts := client.Accounts()
+	if actual := len(accounts); actual != 1 {
+		t.Fatalf("expected 1 account but cache contains %d", actual)
+	}
+	if diff := pretty.Compare(account, accounts[0]); diff != "" {
+		t.Fatal(diff)
+	}
+
+	// this should work because the cache contains an access token from tenantA
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account), WithTenantID(tenantA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+
+	// this should work because the cache contains a refresh token for the user
+	accessToken2 := accessToken + "2"
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantB)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken2, mock.GetIDToken(tenantB, authorityB), refreshToken, clientInfo, 3600)))
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken2 {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
 	}
 }
 
