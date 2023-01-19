@@ -257,12 +257,12 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 			}
 			account := client.Account(tk.Account.HomeAccountID)
 			if params.utid == "" {
-				if account.HomeAccountID != "123-456.123-456" {
-					t.Fatal("Unexpected Account.HomeAccountId")
+				if actual := account.HomeAccountID; actual != "123-456.123-456" {
+					t.Fatalf("expected %q, got %q", "123-456.123-456", actual)
 				}
 			} else {
-				if account.HomeAccountID != "123-456.fake" {
-					t.Fatal("Unexpected Account.HomeAccountId")
+				if actual := account.HomeAccountID; actual != "123-456.fake" {
+					t.Fatalf("expected %q, got %q", "123-456.fake", actual)
 				}
 			}
 			if account.PreferredUsername != "fakeuser@fakeplace.fake" {
