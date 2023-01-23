@@ -247,6 +247,80 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 	}
 }
 
+func TestWithInstanceDiscovery(t *testing.T) {
+	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
+	realBrowserOpenURL := browserOpenURL
+	defer func() { browserOpenURL = realBrowserOpenURL }()
+	browserOpenURL = fakeBrowserOpenURL
+
+	accessToken := "*"
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+	host := "stack.local"
+	stackurl := fmt.Sprintf("https://%s/", host)
+
+	for _, tenant := range []string{
+		"adfs",
+		"98b8267d-e97f-426e-8b3f-7956511fd63f",
+	} {
+		for _, method := range []string{"authcode", "devicecode", "interactive", "password"} {
+			t.Run(method, func(t *testing.T) {
+				authority := stackurl + tenant
+				mockClient := mock.Client{}
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
+				if method == "devicecode" {
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
+				} else if method == "password" && tenant != "adfs" {
+					// user realm metadata, which is not requested when AuthorityType is ADFS
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
+				}
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "rt", clientInfo, 3600)),
+				)
+				client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx := context.Background()
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope); err == nil {
+					t.Fatal("silent auth should fail because the cache is empty")
+				}
+
+				var ar AuthResult
+				var dc DeviceCode
+				switch method {
+				case "authcode":
+					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
+				case "devicecode":
+					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope)
+				case "interactive":
+					ar, err = client.AcquireTokenInteractive(ctx, tokenScope)
+				case "password":
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password")
+				default:
+					t.Fatal("test bug: no test for " + method)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if method == "devicecode" {
+					if ar, err = dc.AuthenticationResult(ctx); err != nil {
+						t.Fatal(err)
+					}
+				}
+				if ar.AccessToken != accessToken {
+					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+				}
+
+				if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account)); err != nil {
+					t.Fatal(err)
+				} else if ar.AccessToken != accessToken {
+					t.Fatal("cached access token should match the one returned by AcquireToken...")
+				}
+			})
+		}
+	}
+}
+
 // testCache is a simple in-memory cache.ExportReplace implementation
 type testCache struct {
 	store map[string][]byte
@@ -488,6 +562,50 @@ func TestWithClaims(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestWithPortAuthority(t *testing.T) {
+	accessToken := "*"
+	sl := "stack.local"
+	port := ":3001"
+	host := sl + port
+	tenant := "00000000-0000-0000-0000-000000000000"
+	authority := fmt.Sprintf("https://%s%s/%s", sl, port, tenant)
+	idToken, refreshToken, URL := "", "", ""
+	mockClient := mock.Client{}
+	//2 calls to instance discovery are made because Host is not trusted
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+		mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
+	)
+	client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err = client.AcquireTokenSilent(ctx, tokenScope); err == nil {
+		t.Fatal("silent auth should fail because the cache is empty")
+	}
+	var ar AuthResult
+	ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(URL, authority) {
+		t.Fatalf(`expected "%s", got "%s"`, authority, URL)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	if ar, err = client.AcquireTokenSilent(ctx, tokenScope); err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatal("cached access token should match the one returned by AcquireToken...")
 	}
 }
 

@@ -204,55 +204,79 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := fakeClient(accesstokens.TokenResponse{
-		AccessToken:   token,
-		RefreshToken:  refresh,
-		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-		IDToken: accesstokens.IDToken{
-			PreferredUsername: "fakeuser@fakeplace.fake",
-			Name:              "fake person",
-			Oid:               "123-456",
-			TenantID:          "fake",
-			Subject:           "nothing",
-			Issuer:            "https://fake_authority/fake",
-			Audience:          "abc-123",
-			ExpirationTime:    time.Now().Add(time.Hour).Unix(),
-			IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
-			NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
-			// NOTE: this is an invalid JWT however this doesn't cause a failure.
-			// it simply falls back to calling Token.Refresh() which will obviously succeed.
-			RawToken: "fake.raw.token",
-		},
-		ClientInfo: accesstokens.ClientInfo{
-			UID:  "123-456",
-			UTID: "fake",
-		},
-	}, cred)
-	if err != nil {
-		t.Fatal(err)
-	}
-	_, err = client.AcquireTokenSilent(context.Background(), tokenScope)
-	// first attempt should fail
-	if err == nil {
-		t.Fatal("unexpected nil error from AcquireTokenSilent")
-	}
-	tk, err := client.AcquireTokenByAuthCode(context.Background(), "fake_auth_code", "fake_redirect_uri", tokenScope)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tk.AccessToken != token {
-		t.Fatalf("unexpected access token %s", tk.AccessToken)
-	}
-	account := client.Account(tk.Account.HomeAccountID)
-	// second attempt should return the cached token
-	tk, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
-	if err != nil {
-		t.Fatal(err)
-	}
-	if tk.AccessToken != token {
-		t.Fatalf("unexpected access token %s", tk.AccessToken)
+	for _, params := range []struct {
+		upn, preferredUsername, utid string
+	}{
+		{"", "fakeuser@fakeplace.fake", "fake"},
+		{"fakeuser@fakeplace.fake", "", ""},
+	} {
+		t.Run("", func(t *testing.T) {
+			tr := accesstokens.TokenResponse{
+				AccessToken:   token,
+				RefreshToken:  refresh,
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+				IDToken: accesstokens.IDToken{
+					PreferredUsername: params.preferredUsername,
+					UPN:               params.upn,
+					Name:              "fake person",
+					Oid:               "123-456",
+					TenantID:          "fake",
+					Subject:           "nothing",
+					Issuer:            "https://fake_authority/fake",
+					Audience:          "abc-123",
+					ExpirationTime:    time.Now().Add(time.Hour).Unix(),
+					IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
+					NotBefore:         time.Now().Add(-5 * time.Minute).Unix(),
+					// NOTE: this is an invalid JWT however this doesn't cause a failure.
+					// it simply falls back to calling Token.Refresh() which will obviously succeed.
+					RawToken: "fake.raw.token",
+				},
+				ClientInfo: accesstokens.ClientInfo{
+					UID:  "123-456",
+					UTID: params.utid,
+				},
+			}
+
+			client, err := fakeClient(tr, cred)
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.AcquireTokenSilent(context.Background(), tokenScope)
+			// first attempt should fail
+			if err == nil {
+				t.Fatal("unexpected nil error from AcquireTokenSilent")
+			}
+			tk, err := client.AcquireTokenByAuthCode(context.Background(), "fake_auth_code", "fake_redirect_uri", tokenScope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tk.AccessToken != token {
+				t.Fatalf("unexpected access token %s", tk.AccessToken)
+			}
+			account := client.Account(tk.Account.HomeAccountID)
+			if params.utid == "" {
+				if actual := account.HomeAccountID; actual != "123-456.123-456" {
+					t.Fatalf("expected %q, got %q", "123-456.123-456", actual)
+				}
+			} else {
+				if actual := account.HomeAccountID; actual != "123-456.fake" {
+					t.Fatalf("expected %q, got %q", "123-456.fake", actual)
+				}
+			}
+			if account.PreferredUsername != "fakeuser@fakeplace.fake" {
+				t.Fatal("Unexpected Account.PreferredUsername")
+			}
+			// second attempt should return the cached token
+			tk, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tk.AccessToken != token {
+				t.Fatalf("unexpected access token %s", tk.AccessToken)
+			}
+		})
 	}
 }
 
@@ -810,6 +834,119 @@ func TestWithTenantID(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+func TestWithInstanceDiscovery(t *testing.T) {
+	accessToken := "*"
+	host := "stack.local"
+	stackurl := fmt.Sprintf("https://%s/", host)
+	for _, tenant := range []string{
+		"adfs",
+		"98b8267d-e97f-426e-8b3f-7956511fd63f",
+	} {
+		for _, method := range []string{"authcode", "credential", "obo"} {
+			t.Run(method, func(t *testing.T) {
+				authority := stackurl + tenant
+				cred, err := NewCredFromSecret("secret")
+				if err != nil {
+					t.Fatal(err)
+				}
+				idToken, refreshToken := "", ""
+				mockClient := mock.Client{}
+				if method == "obo" {
+					idToken = mock.GetIDToken(tenant, authority)
+					refreshToken = "refresh-token"
+				}
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(stackurl, tenant)))
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+				)
+				client, err := New("client-id", cred, WithAuthority(authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+				if err != nil {
+					t.Fatal(err)
+				}
+				ctx := context.Background()
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope); err == nil {
+					t.Fatal("silent auth should fail because the cache is empty")
+				}
+				var ar AuthResult
+				switch method {
+				case "authcode":
+					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
+				case "credential":
+					ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
+				case "obo":
+					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope)
+				default:
+					t.Fatal("test bug: no test for " + method)
+				}
+				if err != nil {
+					t.Fatal(err)
+				}
+				if ar.AccessToken != accessToken {
+					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+				}
+				if method == "obo" {
+					if ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope); err != nil {
+						t.Fatal(err)
+					}
+				} else if ar, err = client.AcquireTokenSilent(ctx, tokenScope); err != nil {
+					t.Fatal(err)
+				}
+				if ar.AccessToken != accessToken {
+					t.Fatal("cached access token should match the one returned by AcquireToken...")
+				}
+			})
+		}
+	}
+}
+
+func TestWithPortAuthority(t *testing.T) {
+	accessToken := "*"
+	sl := "stack.local"
+	port := ":3001"
+	host := sl + port
+	tenant := "00000000-0000-0000-0000-000000000000"
+	authority := fmt.Sprintf("https://%s%s/%s", sl, port, tenant)
+	cred, err := NewCredFromSecret("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	idToken, refreshToken, URL := "", "", ""
+	mockClient := mock.Client{}
+	//2 calls to instance discovery are made because Host is not trusted
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+		mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
+	)
+	client, err := New("client-id", cred, WithAuthority(authority), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err = client.AcquireTokenSilent(ctx, tokenScope); err == nil {
+		t.Fatal("silent auth should fail because the cache is empty")
+	}
+	var ar AuthResult
+	ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(URL, authority) {
+		t.Fatalf(`expected "%s", got "%s"`, authority, URL)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	if ar, err = client.AcquireTokenSilent(ctx, tokenScope); err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatal("cached access token should match the one returned by AcquireToken...")
 	}
 }
 

@@ -193,9 +193,18 @@ func WithRegionDetection(region string) Option {
 	}
 }
 
+func WithInstanceDiscovery(instanceDiscoveryEnabled bool) Option {
+	return func(c *Client) error {
+		c.AuthParams.AuthorityInfo.ValidateAuthority = instanceDiscoveryEnabled
+		c.AuthParams.AuthorityInfo.InstanceDiscoveryDisabled = !instanceDiscoveryEnabled
+		return nil
+	}
+}
+
 // New is the constructor for Base.
 func New(clientID string, authorityURI string, token *oauth.Client, options ...Option) (Client, error) {
-	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true)
+	//By default, validateAuthority is set to true and instanceDiscoveryDisabled is set to false
+	authInfo, err := authority.NewInfoFromAuthorityURI(authorityURI, true, false)
 	if err != nil {
 		return Client{}, err
 	}

@@ -140,7 +140,6 @@ func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams
 
 	if cred.Secret != "" {
 		return t.AccessTokens.FromUserAssertionClientSecret(ctx, authParams, authParams.UserAssertion, cred.Secret)
-
 	}
 	jwt, err := cred.JWT(ctx, authParams)
 	if err != nil {

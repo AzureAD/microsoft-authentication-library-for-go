@@ -953,6 +953,7 @@ func TestHomeAccountID(t *testing.T) {
 		{
 			desc: "UTID is not set",
 			ci:   ClientInfo{UID: "uid"},
+			want: "uid.uid",
 		},
 		{
 			desc: "UID and UTID are set",

@@ -41,18 +41,19 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
-	userAssertionHash := authParameters.AssertionHash()
-	partitionKeyFromRequest := userAssertionHash
 
-	// fetch metadata if and only if the authority isn't explicitly trusted
-	aliases := authParameters.KnownAuthorityHosts
-	if len(aliases) == 0 {
+	// fetch metadata if instanceDiscovery is enabled
+	aliases := []string{authParameters.AuthorityInfo.Host}
+	if !authParameters.AuthorityInfo.InstanceDiscoveryDisabled {
 		metadata, err := m.getMetadataEntry(ctx, authParameters.AuthorityInfo)
 		if err != nil {
-			return tr, err
+			return TokenResponse{}, err
 		}
 		aliases = metadata.Aliases
 	}
+
+	userAssertionHash := authParameters.AssertionHash()
+	partitionKeyFromRequest := userAssertionHash
 
 	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
 	// TokenResponse fields so that e.g. lack of an ID token doesn't prevent the caller from receiving a refresh token.
@@ -143,13 +144,18 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 		localAccountID := idTokenJwt.LocalAccountID()
 		authorityType := authParameters.AuthorityInfo.AuthorityType
 
+		preferredUsername := idTokenJwt.UPN
+		if idTokenJwt.PreferredUsername != "" {
+			preferredUsername = idTokenJwt.PreferredUsername
+		}
+
 		account = shared.NewAccount(
 			homeAccountID,
 			environment,
 			realm,
 			localAccountID,
 			authorityType,
-			idTokenJwt.PreferredUsername,
+			preferredUsername,
 		)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
 			account.UserAssertionHash = userAssertionHash
