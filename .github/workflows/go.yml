@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        go: ["1.18", "1.17"]
+        go: ["1.19", "1.18"]
 
     steps:
       - name: Set up Go 1.x

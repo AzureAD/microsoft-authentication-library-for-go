@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/url"
 	"reflect"
+	"strings"
 	"testing"
 
 	"github.com/kylelemons/godebug/pretty"
@@ -308,12 +309,156 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 		Tenant:                "common",
 		ValidateAuthority:     true,
 	}
-	got, err := NewInfoFromAuthorityURI(authorityURI, true)
+	got, err := NewInfoFromAuthorityURI(authorityURI, true, false)
 	if err != nil {
 		t.Fatalf("TestCreateAuthorityInfoFromAuthorityUri: got err == %s, want err == nil", err)
 	}
 
 	if diff := pretty.Compare(want, got); diff != "" {
 		t.Errorf("TestCreateAuthorityInfoFromAuthorityUri: -want/+got:\n%s", diff)
+	}
+}
+
+func TestAuthParamsWithTenant(t *testing.T) {
+	uuid1 := "00000000-0000-0000-0000-000000000000"
+	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
+	host := "https://localhost/"
+	for _, test := range []struct {
+		authority, expectedAuthority, tenant string
+		expectError                          bool
+	}{
+		{authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
+		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
+		{authority: host + uuid1, tenant: "common", expectError: true},
+		{authority: host + uuid1, tenant: "organizations", expectError: true},
+		{authority: host + "adfs", tenant: uuid1, expectError: true},
+		{authority: host + "consumers", tenant: uuid1, expectError: true},
+	} {
+		t.Run("", func(t *testing.T) {
+			info, err := NewInfoFromAuthorityURI(test.authority, false, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			params := NewAuthParams("client-id", info)
+			p, err := params.WithTenant(test.tenant)
+			if test.expectError {
+				if err == nil {
+					t.Fatal("expected an error")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if v := strings.TrimSuffix(p.AuthorityInfo.CanonicalAuthorityURI, "/"); v != test.expectedAuthority {
+				t.Fatalf(`unexpected tenant "%s"`, v)
+			}
+		})
+	}
+
+	// WithTenant shouldn't change AuthorityInfo fields unrelated to the tenant, such as Region
+	t.Run("AuthorityInfo", func(t *testing.T) {
+		a := "A"
+		b := "B"
+		before, err := NewInfoFromAuthorityURI("https://localhost/"+a, true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		before.Region = "region"
+		params := NewAuthParams("client-id", before)
+		p, err := params.WithTenant(b)
+		if err != nil {
+			t.Fatal(err)
+		}
+		after := p.AuthorityInfo
+
+		// these values should be different because they contain the tenant (this is tested above)
+		after.CanonicalAuthorityURI = before.CanonicalAuthorityURI
+		after.Tenant = before.Tenant
+		// With those fields equal, we can compare the before and after Infos without enumerating
+		// their fields i.e., we can implicitly compare all the other fields at once. With this
+		// approach, when Info gets a new field, this test needs an update only if that field
+		// contains the tenant, in which case this test will break so maintainers don't overlook it.
+		if diff := pretty.Compare(before, after); diff != "" {
+			t.Fatal(diff)
+		}
+	})
+}
+
+func TestMergeCapabilitiesAndClaims(t *testing.T) {
+	for _, test := range []struct {
+		capabilities              []string
+		challenge, desc, expected string
+		err                       bool
+	}{
+		{
+			desc:     "no capabilities or challenge",
+			expected: "",
+		},
+		{
+			desc:         "encoded challenge",
+			capabilities: []string{"cp1"},
+			challenge:    "eyJpZF90b2tlbiI6eyJhdXRoX3RpbWUiOnsiZXNzZW50aWFsIjp0cnVlfX19",
+			err:          true,
+		},
+		{
+			desc:         "only capabilities",
+			capabilities: []string{"cp1"},
+			expected:     `{"access_token":{"xms_cc":{"values":["cp1"]}}}`,
+		},
+		{
+			desc:      "only challenge",
+			challenge: `{"id_token":{"auth_time":{"essential":true}}}`,
+			expected:  `{"id_token":{"auth_time":{"essential":true}}}`,
+		},
+		{
+			desc:         "overlapping claim", // i.e. capabilities and claims are siblings
+			capabilities: []string{"cp1", "cp2"},
+			challenge:    `{"access_token":{"nbf":{"essential":true, "value":"42"}}}`,
+			expected:     `{"access_token":{"nbf":{"essential":true, "value":"42"}, "xms_cc":{"values":["cp1","cp2"]}}}`,
+		},
+		{
+			desc:         "non-overlapping claim",
+			capabilities: []string{"cp1", "cp2"},
+			challenge:    `{"id_token":{"auth_time":{"essential":true}}}`,
+			expected:     `{"id_token":{"auth_time":{"essential":true}}, "access_token":{"xms_cc":{"values":["cp1","cp2"]}}}`,
+		},
+		{
+			desc:         "overlapping and non-overlapping claims",
+			capabilities: []string{"cp1", "cp2"},
+			challenge:    `{"id_token":{"auth_time":{"essential":true}},"access_token":{"nbf":{"essential":true, "value":"42"}}}`,
+			expected:     `{"id_token":{"auth_time":{"essential":true}},"access_token":{"nbf":{"essential":true, "value":"42"},"xms_cc":{"values":["cp1","cp2"]}}}`,
+		},
+	} {
+		cpb, err := NewClientCapabilities(test.capabilities)
+		if err != nil {
+			t.Fatal(err)
+		}
+		ap := AuthParams{Capabilities: cpb, Claims: test.challenge}
+		t.Run(test.desc, func(t *testing.T) {
+			var expected map[string]any
+			if err := json.Unmarshal([]byte(test.expected), &expected); err != nil && test.expected != "" {
+				t.Fatal("test bug: the expected result must be JSON or an empty string")
+			}
+			merged, err := ap.MergeCapabilitiesAndClaims()
+			if err != nil {
+				if test.err {
+					return
+				}
+				t.Fatal(err)
+			}
+			if merged == test.expected {
+				return
+			}
+			var actual map[string]any
+			if err = json.Unmarshal([]byte(merged), &actual); err != nil {
+				t.Fatal(err)
+			}
+			if diff := pretty.Compare(expected, actual); diff != "" {
+				t.Fatal(diff)
+			}
+		})
 	}
 }
