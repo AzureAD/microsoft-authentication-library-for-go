@@ -159,6 +159,51 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenOnBehalfOf(t *testing.T) {
+	// this test is an offline version of TestOnBehalfOf in integration_test.go
+	cred, err := NewCredFromSecret("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lmo := "login.microsoftonline.com"
+	assertion := "assertion"
+	mockClient := mock.Client{}
+	// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token, "", "rt", "", 3600)))
+
+	client, err := New("clientID", cred, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, err := client.AcquireTokenOnBehalfOf(context.Background(), assertion, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, tk.AccessToken)
+	}
+	// should return the cached access token
+	tk, err = client.AcquireTokenOnBehalfOf(context.Background(), assertion, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, tk.AccessToken)
+	}
+	// new assertion should trigger new token request
+	token2 := token + "2"
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token2, "", "rt", "", 3600)))
+	tk, err = client.AcquireTokenOnBehalfOf(context.Background(), assertion+"2", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != token2 {
+		t.Fatal("expected a new token")
+	}
+}
+
 func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
 	key := struct{}{}
