@@ -31,7 +31,7 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
-const localhost = "https://localhost"
+const localhost = "http://localhost"
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
