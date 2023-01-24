@@ -87,11 +87,11 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
+	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	userAssertionHash := authParameters.AssertionHash()
 	cachedAt := time.Now()
-	realm := authParameters.AuthorityInfo.Tenant
 
 	var account shared.Account
 

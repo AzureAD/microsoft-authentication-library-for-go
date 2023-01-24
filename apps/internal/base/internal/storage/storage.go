@@ -136,9 +136,9 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
+	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
-	realm := authParameters.AuthorityInfo.Tenant
 	cachedAt := time.Now()
 
 	var account shared.Account
