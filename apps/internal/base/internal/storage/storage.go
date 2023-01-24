@@ -136,9 +136,13 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
-	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
+	realm := authParameters.AuthorityInfo.Tenant
+	if (realm == "common" || realm == "organizations") && tokenResponse.IDToken.TenantID != "" {
+		// "common" and "organizations" are aliases for the user's home tenant, indicated by the idt's "tid" claim, which issued these tokens
+		realm = tokenResponse.IDToken.TenantID
+	}
 
 	cachedAt := time.Now()
 

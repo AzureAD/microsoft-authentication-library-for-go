@@ -87,11 +87,15 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	authParameters.HomeAccountID = tokenResponse.ClientInfo.HomeAccountID()
 	homeAccountID := authParameters.HomeAccountID
 	environment := authParameters.AuthorityInfo.Host
-	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	userAssertionHash := authParameters.AssertionHash()
 	cachedAt := time.Now()
+	realm := authParameters.AuthorityInfo.Tenant
+	if (realm == "common" || realm == "organizations") && tokenResponse.IDToken.TenantID != "" {
+		// "common" and "organizations" are aliases for the user's home tenant, indicated by the idt's "tid" claim, which issued these tokens
+		realm = tokenResponse.IDToken.TenantID
+	}
 
 	var account shared.Account
 
