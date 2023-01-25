@@ -31,6 +31,8 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
+const localhost = "http://localhost"
+
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
 
@@ -156,6 +158,51 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		if tk.AccessToken != token {
 			t.Errorf("TestAcquireTokenByCredential(%s): unexpected access token %s", test.desc, tk.AccessToken)
 		}
+	}
+}
+
+func TestAcquireTokenOnBehalfOf(t *testing.T) {
+	// this test is an offline version of TestOnBehalfOf in integration_test.go
+	cred, err := NewCredFromSecret("secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	lmo := "login.microsoftonline.com"
+	assertion := "assertion"
+	mockClient := mock.Client{}
+	// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token, "", "rt", "", 3600)))
+
+	client, err := New("clientID", cred, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	tk, err := client.AcquireTokenOnBehalfOf(context.Background(), assertion, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, tk.AccessToken)
+	}
+	// should return the cached access token
+	tk, err = client.AcquireTokenOnBehalfOf(context.Background(), assertion, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, tk.AccessToken)
+	}
+	// new assertion should trigger new token request
+	token2 := token + "2"
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token2, "", "rt", "", 3600)))
+	tk, err = client.AcquireTokenOnBehalfOf(context.Background(), assertion+"2", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if tk.AccessToken != token2 {
+		t.Fatal("expected a new token")
 	}
 }
 
@@ -289,7 +336,7 @@ func TestAcquireTokenSilentTenants(t *testing.T) {
 	lmo := "login.microsoftonline.com"
 	mockClient := mock.Client{}
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenants[0])))
-	client, err := New("client-id", cred, WithHTTPClient(&mockClient))
+	client, err := New(fakeClientID, cred, WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -334,7 +381,7 @@ func TestInvalidCredential(t *testing.T) {
 		NewCredFromCert(nil, key),
 	} {
 		t.Run("", func(t *testing.T) {
-			_, err := New("client-id", cred)
+			_, err := New(fakeClientID, cred)
 			if err == nil {
 				t.Fatal("expected an error")
 			}
@@ -514,7 +561,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 			ExpiresInSeconds: expiresIn,
 		}, nil
 	})
-	client, err := New("client-id", cred, WithHTTPClient(&errorClient{}))
+	client, err := New(fakeClientID, cred, WithHTTPClient(&errorClient{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -545,7 +592,7 @@ func TestNewCredFromTokenProviderError(t *testing.T) {
 	cred := NewCredFromTokenProvider(func(ctx context.Context, tpp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
 		return exported.TokenProviderResult{}, errors.New(expectedError)
 	})
-	client, err := New("client-id", cred)
+	client, err := New(fakeClientID, cred)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -654,7 +701,7 @@ func TestWithClaims(t *testing.T) {
 						validate(t, r.Form)
 					}),
 				)
-				client, err := New("client-id", cred, WithAuthority(authority), WithClientCapabilities(test.capabilities), WithHTTPClient(&mockClient))
+				client, err := New(fakeClientID, cred, WithAuthority(authority), WithClientCapabilities(test.capabilities), WithHTTPClient(&mockClient))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -665,10 +712,10 @@ func TestWithClaims(t *testing.T) {
 				var ar AuthResult
 				switch method {
 				case "authcode":
-					ar, err = client.AcquireTokenByAuthCode(ctx, "code", "https://localhost", tokenScope, WithClaims(test.claims))
+					ar, err = client.AcquireTokenByAuthCode(ctx, "code", localhost, tokenScope, WithClaims(test.claims))
 				case "authcodeURL":
 					u := ""
-					if u, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithClaims(test.claims)); err == nil {
+					if u, err = client.AuthCodeURL(ctx, "client-id", localhost, tokenScope, WithClaims(test.claims)); err == nil {
 						var parsed *url.URL
 						if parsed, err = url.Parse(u); err == nil {
 							validate(t, parsed.Query())
@@ -771,7 +818,7 @@ func TestWithTenantID(t *testing.T) {
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
 					mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 				)
-				client, err := New("client-id", cred, WithAuthority(test.authority), WithHTTPClient(&mockClient))
+				client, err := New(fakeClientID, cred, WithAuthority(test.authority), WithHTTPClient(&mockClient))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -782,9 +829,9 @@ func TestWithTenantID(t *testing.T) {
 				var ar AuthResult
 				switch method {
 				case "authcode":
-					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
+					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", localhost, tokenScope, WithTenantID(test.tenant))
 				case "authcodeURL":
-					URL, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithTenantID(test.tenant))
+					URL, err = client.AuthCodeURL(ctx, "client-id", localhost, tokenScope, WithTenantID(test.tenant))
 				case "credential":
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant))
 				case "obo":
@@ -862,7 +909,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
 				)
-				client, err := New("client-id", cred, WithAuthority(authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+				client, err := New(fakeClientID, cred, WithAuthority(authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -873,7 +920,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 				var ar AuthResult
 				switch method {
 				case "authcode":
-					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
+					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", localhost, tokenScope)
 				case "credential":
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
 				case "obo":
@@ -923,7 +970,7 @@ func TestWithPortAuthority(t *testing.T) {
 		mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
 		mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 	)
-	client, err := New("client-id", cred, WithAuthority(authority), WithHTTPClient(&mockClient))
+	client, err := New(fakeClientID, cred, WithAuthority(authority), WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -932,7 +979,7 @@ func TestWithPortAuthority(t *testing.T) {
 		t.Fatal("silent auth should fail because the cache is empty")
 	}
 	var ar AuthResult
-	ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
+	ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", localhost, tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -956,7 +1003,7 @@ func TestWithLoginHint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := New("client-id", cred, WithHTTPClient(&errorClient{}))
+	client, err := New(fakeClientID, cred, WithHTTPClient(&errorClient{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -967,7 +1014,7 @@ func TestWithLoginHint(t *testing.T) {
 			if expectHint {
 				opts = append(opts, WithLoginHint(upn))
 			}
-			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, opts...)
+			u, err := client.AuthCodeURL(context.Background(), "id", localhost, tokenScope, opts...)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -996,7 +1043,7 @@ func TestWithDomainHint(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := New("client-id", cred, WithHTTPClient(&errorClient{}))
+	client, err := New(fakeClientID, cred, WithHTTPClient(&errorClient{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1007,7 +1054,7 @@ func TestWithDomainHint(t *testing.T) {
 			if expectHint {
 				opts = append(opts, WithDomainHint(domain))
 			}
-			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, opts...)
+			u, err := client.AuthCodeURL(context.Background(), "id", localhost, tokenScope, opts...)
 			if err != nil {
 				t.Fatal(err)
 			}

@@ -21,6 +21,8 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
+const authorityFmt = "https://%s/%s"
+
 var tokenScope = []string{"the_scope"}
 
 func fakeBrowserOpenURL(authURL string) error {
@@ -77,12 +79,47 @@ func TestAcquireTokenInteractive(t *testing.T) {
 	}
 }
 
-func TestAcquireTokenSilentTenants(t *testing.T) {
+func TestAcquireTokenSilentHomeTenantAliases(t *testing.T) {
+	accessToken := "*"
+	homeTenant := "home-tenant"
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
+		fmt.Sprintf(`{"uid":"uid","utid":"%s"}`, homeTenant),
+	))
+	lmo := "login.microsoftonline.com"
+	for _, alias := range []string{"common", "organizations"} {
+		mockClient := mock.Client{}
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, alias)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 3600)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, homeTenant)))
+		client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, alias)), WithHTTPClient(&mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// the auth flow isn't important, we just need to populate the cache
+		ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+		}
+		account := ar.Account
+		ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+		}
+	}
+}
+
+func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 	tenantA, tenantB := "a", "b"
 	lmo := "login.microsoftonline.com"
 	mockClient := mock.Client{}
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
-	client, err := New("client-id", WithAuthority(fmt.Sprintf("https://%s/%s", lmo, tenantA)), WithHTTPClient(&mockClient))
+	client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, tenantA)), WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +133,7 @@ func TestAcquireTokenSilentTenants(t *testing.T) {
 		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
 		mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
 		mockClient.AppendResponse(mock.WithBody(
-			mock.GetAccessTokenBody(tenant, mock.GetIDToken(tenant, fmt.Sprintf("https://%s/%s", lmo, tenant)), "rt-"+tenant, clientInfo, 3600)),
+			mock.GetAccessTokenBody(tenant, mock.GetIDToken(tenant, fmt.Sprintf(authorityFmt, lmo, tenant)), "rt-"+tenant, clientInfo, 3600)),
 		)
 		ar, err := client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(tenant))
 		if err != nil {
@@ -344,7 +381,7 @@ func TestWithCache(t *testing.T) {
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo := "login.microsoftonline.com"
 	tenantA, tenantB := "a", "b"
-	authorityA, authorityB := fmt.Sprintf("https://%s/%s", lmo, tenantA), fmt.Sprintf("https://%s/%s", lmo, tenantB)
+	authorityA, authorityB := fmt.Sprintf(authorityFmt, lmo, tenantA), fmt.Sprintf(authorityFmt, lmo, tenantB)
 	mockClient := mock.Client{}
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenantA, authorityA), refreshToken, clientInfo, 3600)))
@@ -410,7 +447,7 @@ func TestWithClaims(t *testing.T) {
 
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo, tenant := "login.microsoftonline.com", "tenant"
-	authority := fmt.Sprintf("https://%s/%s", lmo, tenant)
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
 	accessToken, idToken, refreshToken := "at", mock.GetIDToken(tenant, lmo), "rt"
 	for _, test := range []struct {
 		capabilities     []string
