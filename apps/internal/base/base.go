@@ -280,26 +280,8 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 }
 
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
+	// when tenant == "", the caller didn't specify a tenant and WithTenant will use the client's configured tenant
 	tenant := silent.TenantID
-	if tenant == "" {
-		// the caller didn't specify a tenant, so we'll use the client's configured tenant or the given account's home tenant
-		switch tenant = b.AuthParams.AuthorityInfo.Tenant; tenant {
-		case "common", "organizations":
-			if _, homeTenant, found := strings.Cut(silent.Account.HomeAccountID, "."); found {
-				// note that both public and confidential clients allow specifying an account for silent auth
-				tenant = homeTenant
-			} else if !b.AuthParams.IsConfidentialClient {
-				// public client requires the caller to identify a specific user for silent authentication
-				return AuthResult{}, errors.New("use the WithSilentAccount option to specify an account")
-			}
-			// else we have a confidential client and no account specified. We can't return an error here because
-			// the caller may have configured the client with a custom token provider, in which case the client
-			// handles caching and the token provider is responsible for everything else, including determining
-			// the correct tenant.
-		default:
-			// use the client's configured tenant
-		}
-	}
 	authParams, err := b.AuthParams.WithTenant(tenant)
 	if err != nil {
 		return AuthResult{}, err
