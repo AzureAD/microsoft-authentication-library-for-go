@@ -296,8 +296,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
-			b.cacheAccessor.Replace(s, suggestedCacheKey)
-			defer b.cacheAccessor.Export(s, suggestedCacheKey)
+			b.replace(ctx, s, suggestedCacheKey)
+			defer b.export(ctx, s, suggestedCacheKey)
 		}
 		storageTokenResponse, err = b.pmanager.Read(ctx, authParams)
 		if err != nil {
@@ -306,8 +306,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
-			b.cacheAccessor.Replace(s, suggestedCacheKey)
-			defer b.cacheAccessor.Export(s, suggestedCacheKey)
+			b.replace(ctx, s, suggestedCacheKey)
+			defer b.export(ctx, s, suggestedCacheKey)
 		}
 		authParams.AuthorizationType = authority.ATRefreshToken
 		storageTokenResponse, err = b.manager.Read(ctx, authParams, silent.Account)
@@ -411,8 +411,8 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {
 			suggestedCacheKey := token.CacheKey(authParams)
-			b.cacheAccessor.Replace(s, suggestedCacheKey)
-			defer b.cacheAccessor.Export(s, suggestedCacheKey)
+			b.replace(ctx, s, suggestedCacheKey)
+			defer b.export(ctx, s, suggestedCacheKey)
 		}
 		account, err = b.pmanager.Write(authParams, token)
 		if err != nil {
@@ -421,8 +421,8 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := token.CacheKey(authParams)
-			b.cacheAccessor.Replace(s, suggestedCacheKey)
-			defer b.cacheAccessor.Export(s, suggestedCacheKey)
+			b.replace(ctx, s, suggestedCacheKey)
+			defer b.export(ctx, s, suggestedCacheKey)
 		}
 		account, err = b.manager.Write(authParams, token)
 		if err != nil {
@@ -432,36 +432,56 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return NewAuthResult(token, account)
 }
 
-func (b Client) AllAccounts() []shared.Account {
+func (b Client) AllAccounts(ctx context.Context) []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.cacheAccessor.Replace(s, suggestedCacheKey)
-		defer b.cacheAccessor.Export(s, suggestedCacheKey)
+		b.replace(ctx, s, suggestedCacheKey)
+		defer b.export(ctx, s, suggestedCacheKey)
 	}
 
 	accounts := b.manager.AllAccounts()
 	return accounts
 }
 
-func (b Client) Account(homeAccountID string) shared.Account {
+func (b Client) Account(ctx context.Context, homeAccountID string) shared.Account {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.AuthorizationType = authority.AccountByID
 	authParams.HomeAccountID = homeAccountID
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.cacheAccessor.Replace(s, suggestedCacheKey)
-		defer b.cacheAccessor.Export(s, suggestedCacheKey)
+		b.replace(ctx, s, suggestedCacheKey)
+		defer b.export(ctx, s, suggestedCacheKey)
 	}
 	account := b.manager.Account(homeAccountID)
 	return account
 }
 
 // RemoveAccount removes all the ATs, RTs and IDTs from the cache associated with this account.
-func (b Client) RemoveAccount(account shared.Account) {
+func (b Client) RemoveAccount(ctx context.Context, account shared.Account) {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.cacheAccessor.Replace(s, suggestedCacheKey)
-		defer b.cacheAccessor.Export(s, suggestedCacheKey)
+		b.replace(ctx, s, suggestedCacheKey)
+		defer b.export(ctx, s, suggestedCacheKey)
 	}
 	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
+}
+
+// replace is a wrapper around our ExportReplace interface that detects if we are using the newer ExportReplaceCtx
+// or the original ExportReplace for Replace() and handles it appropriately.
+func (b Client) replace(ctx context.Context, unmarshal cache.Unmarshaler, key string) error {
+	if ca, ok := b.cacheAccessor.(cache.ExportReplaceCtx); ok {
+		return ca.ReplaceCtx(ctx, unmarshal, key)
+	}
+	b.cacheAccessor.Replace(unmarshal, key)
+	return nil
+}
+
+// export is a wrapper around our ExportReplace interface that detects if we are using the newer ExportReplaceCtx
+// or the orignal ExportReplace for Export() and handles it appropriately.
+func (b Client) export(ctx context.Context, marshal cache.Marshaler, key string) error {
+	if ca, ok := b.cacheAccessor.(cache.ExportReplaceCtx); ok {
+		return ca.ExportCtx(ctx, marshal, key)
+	}
+	b.cacheAccessor.Export(marshal, key)
+	return nil
 }

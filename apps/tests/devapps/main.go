@@ -6,7 +6,7 @@ import (
 
 var (
 	//config        = CreateConfig("config.json")
-	cacheAccessor = &TokenCache{"serialized_cache.json"}
+	cacheAccessor = &TokenCache{file: "serialized_cache.json"}
 )
 
 func main() {

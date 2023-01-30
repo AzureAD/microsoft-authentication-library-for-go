@@ -50,8 +50,7 @@ duplication.
 .Net People, Take note on X509:
 This uses x509.Certificates and private keys. x509 does not store private keys. .Net
 has some x509.Certificate2 thing that has private keys, but that is just some bullcrap that .Net
-added, it doesn't exist in real life.  Seriously, "x509.Certificate2", bahahahaha.  As such I've
-put a PEM decoder into here.
+added, it doesn't exist in real life. As such I've put a PEM decoder into here.
 */
 
 // TODO(msal): This should have example code for each method on client using Go's example doc framework.
@@ -740,12 +739,27 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 }
 
 // Account gets the account in the token cache with the specified homeAccountID.
+func (cca Client) AccountCtx(ctx context.Context, homeAccountID string) Account {
+	return cca.base.Account(ctx, homeAccountID)
+}
+
+// RemoveAccountCtx signs the account out and forgets account from token cache.
+func (cca Client) RemoveAccountCtx(ctx context.Context, account Account) error {
+	cca.base.RemoveAccount(ctx, account)
+	return nil
+}
+
+// Account gets the account in the token cache with the specified homeAccountID.
+//
+// Deprecated: This function is replaced with AccountCtx().
 func (cca Client) Account(homeAccountID string) Account {
-	return cca.base.Account(homeAccountID)
+	return cca.base.Account(context.Background(), homeAccountID)
 }
 
 // RemoveAccount signs the account out and forgets account from token cache.
+//
+// Deprecated: This function is replaced with AccountCtx().
 func (cca Client) RemoveAccount(account Account) error {
-	cca.base.RemoveAccount(account)
+	cca.base.RemoveAccount(context.Background(), account)
 	return nil
 }

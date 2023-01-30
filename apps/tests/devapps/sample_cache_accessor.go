@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -12,9 +13,14 @@ import (
 
 type TokenCache struct {
 	file string
+
+	// This will satisfy the ExportReplace and ExportReplaceCtx interfaces.
+	// We do not need to implement the Replace() or Export() methods as
+	// ReplaceCtx() and ExportCtx() will be chosen on each call.
+	cache.ExportReplaceCtx
 }
 
-func (t *TokenCache) Replace(cache cache.Unmarshaler, key string) {
+func (t *TokenCache) ReplaceCtx(ctx context.Context, cache cache.Unmarshaler, key string) {
 	data, err := os.ReadFile(t.file)
 	if err != nil {
 		log.Println(err)
@@ -25,7 +31,7 @@ func (t *TokenCache) Replace(cache cache.Unmarshaler, key string) {
 	}
 }
 
-func (t *TokenCache) Export(cache cache.Marshaler, key string) {
+func (t *TokenCache) ExportCtx(ctx context.Context, cache cache.Marshaler, key string) {
 	data, err := cache.Marshal()
 	if err != nil {
 		log.Println(err)
