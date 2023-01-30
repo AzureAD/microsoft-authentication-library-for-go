@@ -740,12 +740,12 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 
 // Account gets the account in the token cache with the specified homeAccountID.
 func (cca Client) AccountCtx(ctx context.Context, homeAccountID string) Account {
-	return cca.base.Account(ctx, homeAccountID)
+	return cca.base.AccountCtx(ctx, homeAccountID)
 }
 
 // RemoveAccountCtx signs the account out and forgets account from token cache.
 func (cca Client) RemoveAccountCtx(ctx context.Context, account Account) error {
-	cca.base.RemoveAccount(ctx, account)
+	cca.base.RemoveAccountCtx(ctx, account)
 	return nil
 }
 
@@ -753,13 +753,13 @@ func (cca Client) RemoveAccountCtx(ctx context.Context, account Account) error {
 //
 // Deprecated: This function is replaced with AccountCtx().
 func (cca Client) Account(homeAccountID string) Account {
-	return cca.base.Account(context.Background(), homeAccountID)
+	return cca.base.AccountCtx(context.Background(), homeAccountID)
 }
 
 // RemoveAccount signs the account out and forgets account from token cache.
 //
 // Deprecated: This function is replaced with AccountCtx().
 func (cca Client) RemoveAccount(account Account) error {
-	cca.base.RemoveAccount(context.Background(), account)
+	cca.base.RemoveAccountCtx(context.Background(), account)
 	return nil
 }

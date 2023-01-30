@@ -432,7 +432,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return NewAuthResult(token, account)
 }
 
-func (b Client) AllAccounts(ctx context.Context) []shared.Account {
+func (b Client) AllAccountsCtx(ctx context.Context) []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
 		b.replace(ctx, s, suggestedCacheKey)
@@ -443,7 +443,12 @@ func (b Client) AllAccounts(ctx context.Context) []shared.Account {
 	return accounts
 }
 
-func (b Client) Account(ctx context.Context, homeAccountID string) shared.Account {
+// Deprecated: Use AllAccountsCtx().
+func (b Client) AllAccounts() []shared.Account {
+	return b.AllAccountsCtx(context.Background())
+}
+
+func (b Client) AccountCtx(ctx context.Context, homeAccountID string) shared.Account {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.AuthorizationType = authority.AccountByID
 	authParams.HomeAccountID = homeAccountID
@@ -456,14 +461,24 @@ func (b Client) Account(ctx context.Context, homeAccountID string) shared.Accoun
 	return account
 }
 
-// RemoveAccount removes all the ATs, RTs and IDTs from the cache associated with this account.
-func (b Client) RemoveAccount(ctx context.Context, account shared.Account) {
+// Deprecated: Use AccountCtx().
+func (b Client) Account(homeAccountID string) shared.Account {
+	return b.AccountCtx(context.Background(), homeAccountID)
+}
+
+// RemoveAccountCtx removes all the ATs, RTs and IDTs from the cache associated with this account.
+func (b Client) RemoveAccountCtx(ctx context.Context, account shared.Account) {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
 		b.replace(ctx, s, suggestedCacheKey)
 		defer b.export(ctx, s, suggestedCacheKey)
 	}
 	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
+}
+
+// Deprecated: Use RemoveAccountCtx().
+func (b Client) RemoveAccount(account shared.Account) {
+	b.RemoveAccountCtx(context.Background(), account)
 }
 
 // replace is a wrapper around our ExportReplace interface that detects if we are using the newer ExportReplaceCtx

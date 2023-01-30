@@ -390,12 +390,12 @@ func TestRemoveAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestRemoveAccount: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
 	}
-	accounts := app.Accounts()
+	accounts := app.AccountsCtx(ctx)
 	if len(accounts) == 0 {
 		t.Fatal("TestRemoveAccount: No user accounts found in cache")
 	}
 	testAccount := accounts[0] // Only one account is populated and that is what we will remove.
-	err = app.RemoveAccount(testAccount)
+	err = app.RemoveAccountCtx(ctx, testAccount)
 	if err != nil {
 		t.Fatalf("TestRemoveAccount: on RemoveAccount(): got err == %s, want err == nil", errors.Verbose(err))
 	}

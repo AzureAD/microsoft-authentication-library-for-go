@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"os"
 )
 
@@ -10,6 +11,8 @@ var (
 )
 
 func main() {
+	ctx := context.Background()
+
 	// TODO(msal): This is pretty yikes. At least we should use the flag package.
 	exampleType := os.Args[1]
 	if exampleType == "1" {
@@ -18,7 +21,7 @@ func main() {
 		acquireByAuthorizationCodePublic()
 		*/
 	} else if exampleType == "3" {
-		acquireByUsernamePasswordPublic()
+		acquireByUsernamePasswordPublic(ctx)
 	} else if exampleType == "4" {
 		panic("currently not implemented")
 		//acquireByAuthorizationCodeConfidential()

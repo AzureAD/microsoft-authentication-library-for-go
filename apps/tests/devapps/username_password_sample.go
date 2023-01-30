@@ -11,7 +11,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
-func acquireByUsernamePasswordPublic() {
+func acquireByUsernamePasswordPublic(ctx context.Context) {
 	config := CreateConfig("config.json")
 	app, err := public.New(config.ClientID, public.WithCache(cacheAccessor), public.WithAuthority(config.Authority))
 	if err != nil {
@@ -20,7 +20,7 @@ func acquireByUsernamePasswordPublic() {
 
 	// look in the cache to see if the account to use has been cached
 	var userAccount public.Account
-	accounts := app.Accounts()
+	accounts := app.AccountsCtx(ctx)
 	for _, account := range accounts {
 		if account.PreferredUsername == config.Username {
 			userAccount = account

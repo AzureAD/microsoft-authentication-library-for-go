@@ -476,12 +476,12 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 // AccountsCtx gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
 func (pca Client) AccountsCtx(ctx context.Context) []Account {
-	return pca.base.AllAccounts(ctx)
+	return pca.base.AllAccountsCtx(ctx)
 }
 
 // RemoveAccountCtx signs the account out and forgets account from token cache.
 func (pca Client) RemoveAccountCtx(ctx context.Context, account Account) error {
-	pca.base.RemoveAccount(ctx, account)
+	pca.base.RemoveAccountCtx(ctx, account)
 	return nil
 }
 
@@ -490,14 +490,14 @@ func (pca Client) RemoveAccountCtx(ctx context.Context, account Account) error {
 //
 // Deprecated: This method is deprecated for AccountsCtx().
 func (pca Client) Accounts() []Account {
-	return pca.base.AllAccounts(context.Background())
+	return pca.base.AllAccountsCtx(context.Background())
 }
 
 // RemoveAccount signs the account out and forgets account from token cache.
 //
 // Deprecated: This method is deprecated for RemoveAccountCtx().
 func (pca Client) RemoveAccount(account Account) error {
-	pca.base.RemoveAccount(context.Background(), account)
+	pca.base.RemoveAccountCtx(context.Background(), account)
 	return nil
 }
 
