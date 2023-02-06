@@ -5,6 +5,7 @@ Contributors:
 - Keegan Caruso(Keegan.Caruso@microsoft.com)
 - Joel Hendrix(jhendrix@microsoft.com)
 - Santiago Gonzalez(Santiago.Gonzalez@microsoft.com)
+- Bogdan Gavril (bogavril@microsoft.com)
 
 ## History
 
@@ -140,6 +141,10 @@ Since we have representation from the Go SDK team, we might have them go bridge 
 the current implementation using some of that code so its possible for our users to store the
 cert in Keyvault.
 
-## Notes:
+## Logging
 
-Do we need: AcquireTokenSilent()??  Seems like we could just bake this into other acquire calls automatically????
+All logging is done using the `fmt` package. For errors, see [error design](../errors/error_design.md).
+
+This library does not log personal identifiable information (PII). For a definition of PII, see https://www.microsoft.com/en-us/trust-center/privacy/customer-data-definitions. MSAL Go does not log any of the 3 data categories listed there. 
+
+The library may log information related to your organization, such as tenant id, authority, client id etc. as well as information that cannot be tied to a user such as request correlation id, HTTP status codes etc.
