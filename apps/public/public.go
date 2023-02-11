@@ -275,11 +275,6 @@ type AcquireSilentOption interface {
 	acquireSilentOption()
 }
 
-// AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
-type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
-
-func (AcquireTokenSilentOption) acquireSilentOption() {}
-
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
 func WithSilentAccount(account Account) interface {
 	AcquireSilentOption
@@ -431,11 +426,6 @@ type AcquireTokenByAuthCodeOptions struct {
 type AcquireByAuthCodeOption interface {
 	acquireByAuthCodeOption()
 }
-
-// AcquireTokenByAuthCodeOption changes options inside AcquireTokenByAuthCodeOptions used in .AcquireTokenByAuthCode().
-type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
-
-func (AcquireTokenByAuthCodeOption) acquireByAuthCodeOption() {}
 
 // WithChallenge allows you to provide a code for the .AcquireTokenByAuthCode() call.
 func WithChallenge(challenge string) interface {
