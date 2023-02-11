@@ -51,7 +51,7 @@ func redirectToURL(w http.ResponseWriter, r *http.Request) {
 	authCodeURLParams := msal.CreateAuthorizationCodeURLParameters(config.ClientID, config.RedirectURI, config.Scopes)
 	authCodeURLParams.CodeChallenge = config.CodeChallenge
 	authCodeURLParams.State = config.State
-	authURL, err := publicClientApp.CreateAuthCodeURL(context.Background(), authCodeURLParams)
+	authURL, err := publicClientApp.AuthCodeURL(context.Background(), authCodeURLParams)
 	if err != nil {
 		log.Fatal(err)
 	}

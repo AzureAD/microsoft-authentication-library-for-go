@@ -17,7 +17,7 @@ func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeURLParams.State = confidentialConfig.State
-	authURL, err := app.CreateAuthCodeURL(context.Background(), confidentialConfig.ClientID, confidentialConfig.RedirectURI, confidentialConfig.Scopes)
+	authURL, err := app.AuthCodeURL(context.Background(), confidentialConfig.ClientID, confidentialConfig.RedirectURI, confidentialConfig.Scopes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return

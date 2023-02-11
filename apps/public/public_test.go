@@ -233,7 +233,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				case "authcode":
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
 				case "authcodeURL":
-					URL, err = client.CreateAuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithTenantID(test.tenant))
+					URL, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithTenantID(test.tenant))
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithTenantID(test.tenant))
 				case "interactive":
@@ -536,7 +536,7 @@ func TestWithClaims(t *testing.T) {
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithClaims(test.claims))
 				case "authcodeURL":
 					u := ""
-					if u, err = client.CreateAuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithClaims(test.claims)); err == nil {
+					if u, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithClaims(test.claims)); err == nil {
 						var parsed *url.URL
 						if parsed, err = url.Parse(u); err == nil {
 							validate(t, parsed.Query())
@@ -693,7 +693,7 @@ func TestWithLoginHint(t *testing.T) {
 				return fakeBrowserOpenURL(authURL)
 			}
 			acquireOpts := []AcquireInteractiveOption{}
-			urlOpts := []CreateAuthCodeURLOption{}
+			urlOpts := []AuthCodeURLOption{}
 			if expectHint {
 				acquireOpts = append(acquireOpts, WithLoginHint(upn))
 				urlOpts = append(urlOpts, WithLoginHint(upn))
@@ -705,7 +705,7 @@ func TestWithLoginHint(t *testing.T) {
 			if !called {
 				t.Fatal("browserOpenURL wasn't called")
 			}
-			u, err := client.CreateAuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
 			if err == nil {
 				var parsed *url.URL
 				parsed, err = url.Parse(u)
@@ -767,7 +767,7 @@ func TestWithDomainHint(t *testing.T) {
 				return fakeBrowserOpenURL(authURL)
 			}
 			var acquireOpts []AcquireInteractiveOption
-			var urlOpts []CreateAuthCodeURLOption
+			var urlOpts []AuthCodeURLOption
 			if expectHint {
 				acquireOpts = append(acquireOpts, WithDomainHint(domain))
 				urlOpts = append(urlOpts, WithDomainHint(domain))
@@ -779,7 +779,7 @@ func TestWithDomainHint(t *testing.T) {
 			if !called {
 				t.Fatal("browserOpenURL wasn't called")
 			}
-			u, err := client.CreateAuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
 			if err == nil {
 				var parsed *url.URL
 				parsed, err = url.Parse(u)
