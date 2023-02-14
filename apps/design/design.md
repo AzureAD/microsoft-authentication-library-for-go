@@ -143,7 +143,7 @@ cert in Keyvault.
 
 ## Logging
 
-All logging is done using the `fmt` package. For errors, see [error design](../errors/error_design.md).
+For errors, see [error design](../errors/error_design.md).
 
 This library does not log personal identifiable information (PII). For a definition of PII, see https://www.microsoft.com/en-us/trust-center/privacy/customer-data-definitions. MSAL Go does not log any of the 3 data categories listed there. 
 
