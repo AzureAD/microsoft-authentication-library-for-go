@@ -179,17 +179,6 @@ func NewCredFromSecret(secret string) (Credential, error) {
 	return Credential{secret: secret}, nil
 }
 
-// NewCredFromAssertion creates a Credential from a signed assertion.
-//
-// Deprecated: a Credential created by this function can't refresh the
-// assertion when it expires. Use NewCredFromAssertionCallback instead.
-func NewCredFromAssertion(assertion string) (Credential, error) {
-	if assertion == "" {
-		return Credential{}, errors.New("assertion can't be empty string")
-	}
-	return NewCredFromAssertionCallback(func(context.Context, AssertionRequestOptions) (string, error) { return assertion, nil }), nil
-}
-
 // NewCredFromAssertionCallback creates a Credential that invokes a callback to get assertions
 // authenticating the application. The callback must be thread safe.
 func NewCredFromAssertionCallback(callback func(context.Context, AssertionRequestOptions) (string, error)) Credential {
