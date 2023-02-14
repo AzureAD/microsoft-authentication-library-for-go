@@ -496,13 +496,13 @@ func WithClaims(claims string) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenByAuthCodeOptions:
+				case *acquireTokenByAuthCodeOptions:
 					t.claims = claims
 				case *acquireTokenByCredentialOptions:
 					t.claims = claims
 				case *acquireTokenOnBehalfOfOptions:
 					t.claims = claims
-				case *AcquireTokenSilentOptions:
+				case *acquireTokenSilentOptions:
 					t.claims = claims
 				case *authCodeURLOptions:
 					t.claims = claims
@@ -536,13 +536,13 @@ func WithTenantID(tenantID string) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenByAuthCodeOptions:
+				case *acquireTokenByAuthCodeOptions:
 					t.tenantID = tenantID
 				case *acquireTokenByCredentialOptions:
 					t.tenantID = tenantID
 				case *acquireTokenOnBehalfOfOptions:
 					t.tenantID = tenantID
-				case *AcquireTokenSilentOptions:
+				case *acquireTokenSilentOptions:
 					t.tenantID = tenantID
 				case *authCodeURLOptions:
 					t.tenantID = tenantID
@@ -555,12 +555,10 @@ func WithTenantID(tenantID string) interface {
 	}
 }
 
-// AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
+// acquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
 // These are set by using various AcquireTokenSilentOption functions.
-type AcquireTokenSilentOptions struct {
-	// Account represents the account to use. To set, use the WithSilentAccount() option.
-	Account Account
-
+type acquireTokenSilentOptions struct {
+	account          Account
 	claims, tenantID string
 }
 
@@ -581,8 +579,8 @@ func WithSilentAccount(account Account) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenSilentOptions:
-					t.Account = account
+				case *acquireTokenSilentOptions:
+					t.account = account
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
@@ -596,7 +594,7 @@ func WithSilentAccount(account Account) interface {
 //
 // Options: [WithClaims], [WithSilentAccount], [WithTenantID]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
-	o := AcquireTokenSilentOptions{}
+	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
@@ -607,21 +605,19 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
-		Account:     o.Account,
+		Account:     o.account,
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
-		IsAppCache:  o.Account.IsZero(),
+		IsAppCache:  o.account.IsZero(),
 		TenantID:    o.tenantID,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
 }
 
-// AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
-type AcquireTokenByAuthCodeOptions struct {
-	Challenge string
-
-	claims, tenantID string
+// acquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
+type acquireTokenByAuthCodeOptions struct {
+	challenge, claims, tenantID string
 }
 
 // AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
@@ -641,8 +637,8 @@ func WithChallenge(challenge string) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenByAuthCodeOptions:
-					t.Challenge = challenge
+				case *acquireTokenByAuthCodeOptions:
+					t.challenge = challenge
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
@@ -657,7 +653,7 @@ func WithChallenge(challenge string) interface {
 //
 // Options: [WithChallenge], [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
-	o := AcquireTokenByAuthCodeOptions{}
+	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
@@ -665,7 +661,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:      scopes,
 		Code:        code,
-		Challenge:   o.Challenge,
+		Challenge:   o.challenge,
 		Claims:      o.claims,
 		AppType:     accesstokens.ATConfidential,
 		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
