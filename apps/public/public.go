@@ -275,11 +275,6 @@ type AcquireSilentOption interface {
 	acquireSilentOption()
 }
 
-// AcquireTokenSilentOption changes options inside AcquireTokenSilentOptions used in .AcquireTokenSilent().
-type AcquireTokenSilentOption func(a *AcquireTokenSilentOptions)
-
-func (AcquireTokenSilentOption) acquireSilentOption() {}
-
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
 func WithSilentAccount(account Account) interface {
 	AcquireSilentOption
@@ -432,11 +427,6 @@ type AcquireByAuthCodeOption interface {
 	acquireByAuthCodeOption()
 }
 
-// AcquireTokenByAuthCodeOption changes options inside AcquireTokenByAuthCodeOptions used in .AcquireTokenByAuthCode().
-type AcquireTokenByAuthCodeOption func(a *AcquireTokenByAuthCodeOptions)
-
-func (AcquireTokenByAuthCodeOption) acquireByAuthCodeOption() {}
-
 // WithChallenge allows you to provide a code for the .AcquireTokenByAuthCode() call.
 func WithChallenge(challenge string) interface {
 	AcquireByAuthCodeOption
@@ -508,11 +498,6 @@ type InteractiveAuthOptions struct {
 type AcquireInteractiveOption interface {
 	acquireInteractiveOption()
 }
-
-// InteractiveAuthOption changes options inside InteractiveAuthOptions used in .AcquireTokenInteractive().
-type InteractiveAuthOption func(*InteractiveAuthOptions)
-
-func (InteractiveAuthOption) acquireInteractiveOption() {}
 
 // WithLoginHint pre-populates the login prompt with a username.
 func WithLoginHint(username string) interface {
