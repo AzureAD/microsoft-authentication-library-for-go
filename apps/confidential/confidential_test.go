@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
@@ -30,8 +31,6 @@ import (
 	"github.com/golang-jwt/jwt/v4"
 	"github.com/kylelemons/godebug/pretty"
 )
-
-const localhost = "http://localhost"
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
@@ -65,10 +64,12 @@ func TestCertFromPEM(t *testing.T) {
 }
 
 const (
+	authorityFmt      = "https://%s/%s"
 	fakeClientID      = "fake_client_id"
 	fakeTokenEndpoint = "https://fake_authority/fake/token"
-	token             = "fake_token"
+	localhost         = "http://localhost"
 	refresh           = "fake_refresh"
+	token             = "fake_token"
 )
 
 var tokenScope = []string{"the_scope"}
@@ -613,7 +614,7 @@ func TestTokenProviderOptions(t *testing.T) {
 		}
 		return TokenProviderResult{AccessToken: accessToken, ExpiresInSeconds: 3600}, nil
 	})
-	client, err := New("id", cred, WithHTTPClient(&errorClient{}))
+	client, err := New(fakeClientID, cred, WithHTTPClient(&errorClient{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -623,6 +624,73 @@ func TestTokenProviderOptions(t *testing.T) {
 	}
 	if ar.AccessToken != accessToken {
 		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+}
+
+// testCache is a simple in-memory cache.ExportReplace implementation
+type testCache map[string][]byte
+
+func (c testCache) Export(m cache.Marshaler, key string) {
+	if v, err := m.Marshal(); err == nil {
+		c[key] = v
+	}
+}
+
+func (c testCache) Replace(u cache.Unmarshaler, key string) {
+	if v, has := c[key]; has {
+		_ = u.Unmarshal(v)
+	}
+}
+
+func TestWithCache(t *testing.T) {
+	cache := make(testCache)
+	accessToken := "*"
+	lmo := "login.microsoftonline.com"
+	tenantA, tenantB := "a", "b"
+	authorityA, authorityB := fmt.Sprintf(authorityFmt, lmo, tenantA), fmt.Sprintf(authorityFmt, lmo, tenantB)
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenantA, authorityA), "", "", 3600)))
+
+	cred, err := NewCredFromSecret("...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(fakeClientID, cred, WithAuthority(authorityA), WithCache(&cache), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The particular flow isn't important, we just need to populate the cache. Auth code is the simplest for this test
+	ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	account := ar.Account
+	if actual := account.Realm; actual != tenantA {
+		t.Fatalf(`unexpected realm "%s"`, actual)
+	}
+
+	// a client configured for a different tenant should be able to authenticate silently with the shared cache's data
+	client, err = New(fakeClientID, cred, WithAuthority(authorityB), WithCache(&cache), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// this should succeed because the cache contains an access token from tenantA
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account), WithTenantID(tenantA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	// this should fail because the cache doesn't contain an access token from tenantB
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err == nil {
+		t.Fatal("expected an error because the cache doesn't have an appropriate access token")
 	}
 }
 
@@ -715,7 +783,7 @@ func TestWithClaims(t *testing.T) {
 					ar, err = client.AcquireTokenByAuthCode(ctx, "code", localhost, tokenScope, WithClaims(test.claims))
 				case "authcodeURL":
 					u := ""
-					if u, err = client.AuthCodeURL(ctx, "client-id", localhost, tokenScope, WithClaims(test.claims)); err == nil {
+					if u, err = client.AuthCodeURL(ctx, fakeClientID, localhost, tokenScope, WithClaims(test.claims)); err == nil {
 						var parsed *url.URL
 						if parsed, err = url.Parse(u); err == nil {
 							validate(t, parsed.Query())
@@ -831,7 +899,7 @@ func TestWithTenantID(t *testing.T) {
 				case "authcode":
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", localhost, tokenScope, WithTenantID(test.tenant))
 				case "authcodeURL":
-					URL, err = client.AuthCodeURL(ctx, "client-id", localhost, tokenScope, WithTenantID(test.tenant))
+					URL, err = client.AuthCodeURL(ctx, fakeClientID, localhost, tokenScope, WithTenantID(test.tenant))
 				case "credential":
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant))
 				case "obo":

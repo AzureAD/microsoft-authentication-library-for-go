@@ -87,7 +87,7 @@ func WithAuthority(authority string) Option {
 	}
 }
 
-// WithCache allows you to set some type of cache for storing authentication tokens.
+// WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
 	return func(o *Options) {
 		o.Accessor = accessor

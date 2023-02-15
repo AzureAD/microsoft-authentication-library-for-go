@@ -256,7 +256,7 @@ type Client struct {
 // returning Option calls.
 type Options struct {
 	// Accessor controls cache persistence.
-	// By default there is no cache persistence. This can be set using the WithAccessor() option.
+	// By default there is no cache persistence. This can be set using the WithCache() option.
 	Accessor cache.ExportReplace
 
 	// The host of the Azure Active Directory authority.
@@ -300,9 +300,8 @@ func WithAuthority(authority string) Option {
 	}
 }
 
-// WithAccessor provides a cache accessor that will read and write to some externally managed cache
-// that may or may not be shared with other applications.
-func WithAccessor(accessor cache.ExportReplace) Option {
+// WithCache provides an accessor that will read and write authentication data to an externally managed cache.
+func WithCache(accessor cache.ExportReplace) Option {
 	return func(o *Options) {
 		o.Accessor = accessor
 	}
