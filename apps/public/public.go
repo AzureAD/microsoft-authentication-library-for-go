@@ -144,21 +144,21 @@ func New(clientID string, options ...Option) (Client, error) {
 	return Client{base}, nil
 }
 
-// createAuthCodeURLOptions contains options for CreateAuthCodeURL
-type createAuthCodeURLOptions struct {
+// authCodeURLOptions contains options for AuthCodeURL
+type authCodeURLOptions struct {
 	claims, loginHint, tenantID, domainHint string
 }
 
-// CreateAuthCodeURLOption is implemented by options for CreateAuthCodeURL
-type CreateAuthCodeURLOption interface {
-	createAuthCodeURLOption()
+// AuthCodeURLOption is implemented by options for AuthCodeURL
+type AuthCodeURLOption interface {
+	authCodeURLOption()
 }
 
-// CreateAuthCodeURL creates a URL used to acquire an authorization code.
+// AuthCodeURL creates a URL used to acquire an authorization code.
 //
 // Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithTenantID]
-func (pca Client) CreateAuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...CreateAuthCodeURLOption) (string, error) {
-	o := createAuthCodeURLOptions{}
+func (pca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
+	o := authCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return "", err
 	}
@@ -181,7 +181,7 @@ func WithClaims(claims string) interface {
 	AcquireByUsernamePasswordOption
 	AcquireInteractiveOption
 	AcquireSilentOption
-	CreateAuthCodeURLOption
+	AuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
@@ -190,7 +190,7 @@ func WithClaims(claims string) interface {
 		AcquireByUsernamePasswordOption
 		AcquireInteractiveOption
 		AcquireSilentOption
-		CreateAuthCodeURLOption
+		AuthCodeURLOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -204,7 +204,7 @@ func WithClaims(claims string) interface {
 					t.claims = claims
 				case *AcquireTokenSilentOptions:
 					t.claims = claims
-				case *createAuthCodeURLOptions:
+				case *authCodeURLOptions:
 					t.claims = claims
 				case *InteractiveAuthOptions:
 					t.claims = claims
@@ -225,7 +225,7 @@ func WithTenantID(tenantID string) interface {
 	AcquireByUsernamePasswordOption
 	AcquireInteractiveOption
 	AcquireSilentOption
-	CreateAuthCodeURLOption
+	AuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
@@ -234,7 +234,7 @@ func WithTenantID(tenantID string) interface {
 		AcquireByUsernamePasswordOption
 		AcquireInteractiveOption
 		AcquireSilentOption
-		CreateAuthCodeURLOption
+		AuthCodeURLOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -248,7 +248,7 @@ func WithTenantID(tenantID string) interface {
 					t.tenantID = tenantID
 				case *AcquireTokenSilentOptions:
 					t.tenantID = tenantID
-				case *createAuthCodeURLOptions:
+				case *authCodeURLOptions:
 					t.tenantID = tenantID
 				case *InteractiveAuthOptions:
 					t.tenantID = tenantID
@@ -502,18 +502,18 @@ type AcquireInteractiveOption interface {
 // WithLoginHint pre-populates the login prompt with a username.
 func WithLoginHint(username string) interface {
 	AcquireInteractiveOption
-	CreateAuthCodeURLOption
+	AuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
 		AcquireInteractiveOption
-		CreateAuthCodeURLOption
+		AuthCodeURLOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *createAuthCodeURLOptions:
+				case *authCodeURLOptions:
 					t.loginHint = username
 				case *InteractiveAuthOptions:
 					t.loginHint = username
@@ -529,18 +529,18 @@ func WithLoginHint(username string) interface {
 // WithDomainHint adds the IdP domain as domain_hint query parameter in the auth url.
 func WithDomainHint(domain string) interface {
 	AcquireInteractiveOption
-	CreateAuthCodeURLOption
+	AuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
 		AcquireInteractiveOption
-		CreateAuthCodeURLOption
+		AuthCodeURLOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *createAuthCodeURLOptions:
+				case *authCodeURLOptions:
 					t.domainHint = domain
 				case *InteractiveAuthOptions:
 					t.domainHint = domain
