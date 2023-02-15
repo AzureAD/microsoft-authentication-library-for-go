@@ -499,11 +499,6 @@ type AcquireInteractiveOption interface {
 	acquireInteractiveOption()
 }
 
-// InteractiveAuthOption changes options inside InteractiveAuthOptions used in .AcquireTokenInteractive().
-type InteractiveAuthOption func(*InteractiveAuthOptions)
-
-func (InteractiveAuthOption) acquireInteractiveOption() {}
-
 // WithLoginHint pre-populates the login prompt with a username.
 func WithLoginHint(username string) interface {
 	AcquireInteractiveOption
