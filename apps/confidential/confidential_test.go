@@ -32,11 +32,6 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
-const (
-	authorityFmt = "https://%s/%s"
-	localhost    = "http://localhost"
-)
-
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
 
@@ -69,10 +64,12 @@ func TestCertFromPEM(t *testing.T) {
 }
 
 const (
+	authorityFmt      = "https://%s/%s"
 	fakeClientID      = "fake_client_id"
 	fakeTokenEndpoint = "https://fake_authority/fake/token"
-	token             = "fake_token"
+	localhost         = "http://localhost"
 	refresh           = "fake_refresh"
+	token             = "fake_token"
 )
 
 var tokenScope = []string{"the_scope"}
@@ -617,7 +614,7 @@ func TestTokenProviderOptions(t *testing.T) {
 		}
 		return TokenProviderResult{AccessToken: accessToken, ExpiresInSeconds: 3600}, nil
 	})
-	client, err := New("id", cred, WithHTTPClient(&errorClient{}))
+	client, err := New(fakeClientID, cred, WithHTTPClient(&errorClient{}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -659,7 +656,7 @@ func TestWithCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := New("client-id", cred, WithAuthority(authorityA), WithCache(&cache), WithHTTPClient(&mockClient))
+	client, err := New(fakeClientID, cred, WithAuthority(authorityA), WithCache(&cache), WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -677,7 +674,7 @@ func TestWithCache(t *testing.T) {
 	}
 
 	// a client configured for a different tenant should be able to authenticate silently with the shared cache's data
-	client, err = New("client-id", cred, WithAuthority(authorityB), WithCache(&cache), WithHTTPClient(&mockClient))
+	client, err = New(fakeClientID, cred, WithAuthority(authorityB), WithCache(&cache), WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -786,7 +783,7 @@ func TestWithClaims(t *testing.T) {
 					ar, err = client.AcquireTokenByAuthCode(ctx, "code", localhost, tokenScope, WithClaims(test.claims))
 				case "authcodeURL":
 					u := ""
-					if u, err = client.AuthCodeURL(ctx, "client-id", localhost, tokenScope, WithClaims(test.claims)); err == nil {
+					if u, err = client.AuthCodeURL(ctx, fakeClientID, localhost, tokenScope, WithClaims(test.claims)); err == nil {
 						var parsed *url.URL
 						if parsed, err = url.Parse(u); err == nil {
 							validate(t, parsed.Query())
@@ -902,7 +899,7 @@ func TestWithTenantID(t *testing.T) {
 				case "authcode":
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", localhost, tokenScope, WithTenantID(test.tenant))
 				case "authcodeURL":
-					URL, err = client.AuthCodeURL(ctx, "client-id", localhost, tokenScope, WithTenantID(test.tenant))
+					URL, err = client.AuthCodeURL(ctx, fakeClientID, localhost, tokenScope, WithTenantID(test.tenant))
 				case "credential":
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant))
 				case "obo":
