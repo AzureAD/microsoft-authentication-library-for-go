@@ -21,6 +21,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
@@ -31,7 +32,10 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 )
 
-const localhost = "http://localhost"
+const (
+	authorityFmt = "https://%s/%s"
+	localhost    = "http://localhost"
+)
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
@@ -623,6 +627,73 @@ func TestTokenProviderOptions(t *testing.T) {
 	}
 	if ar.AccessToken != accessToken {
 		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+}
+
+// testCache is a simple in-memory cache.ExportReplace implementation
+type testCache map[string][]byte
+
+func (c testCache) Export(m cache.Marshaler, key string) {
+	if v, err := m.Marshal(); err == nil {
+		c[key] = v
+	}
+}
+
+func (c testCache) Replace(u cache.Unmarshaler, key string) {
+	if v, has := c[key]; has {
+		_ = u.Unmarshal(v)
+	}
+}
+
+func TestWithCache(t *testing.T) {
+	cache := make(testCache)
+	accessToken := "*"
+	lmo := "login.microsoftonline.com"
+	tenantA, tenantB := "a", "b"
+	authorityA, authorityB := fmt.Sprintf(authorityFmt, lmo, tenantA), fmt.Sprintf(authorityFmt, lmo, tenantB)
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenantA, authorityA), "", "", 3600)))
+
+	cred, err := NewCredFromSecret("...")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New("client-id", cred, WithAuthority(authorityA), WithCache(&cache), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// The particular flow isn't important, we just need to populate the cache. Auth code is the simplest for this test
+	ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	account := ar.Account
+	if actual := account.Realm; actual != tenantA {
+		t.Fatalf(`unexpected realm "%s"`, actual)
+	}
+
+	// a client configured for a different tenant should be able to authenticate silently with the shared cache's data
+	client, err = New("client-id", cred, WithAuthority(authorityB), WithCache(&cache), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// this should succeed because the cache contains an access token from tenantA
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account), WithTenantID(tenantA))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	// this should fail because the cache doesn't contain an access token from tenantB
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err == nil {
+		t.Fatal("expected an error because the cache doesn't have an appropriate access token")
 	}
 }
 
