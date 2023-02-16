@@ -243,97 +243,74 @@ func AutoDetectRegion() string {
 // package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
-	base base.Client
-
-	cred *accesstokens.Credential
-
+	accessor                          cache.ExportReplace
+	authority, azureRegion            string
+	base                              base.Client
+	capabilities                      []string
+	cred                              *accesstokens.Credential
+	disableInstanceDiscovery, sendX5C bool
+	httpClient                        ops.HTTPClient
 	// userID is some unique identifier for a user. It actually isn't used by us at all, it
 	// simply acts as another hint that a confidential.Client is for a single user.
 	userID string
 }
 
-// Options are optional settings for New(). These options are set using various functions
-// returning Option calls.
-type Options struct {
-	// Accessor controls cache persistence.
-	// By default there is no cache persistence. This can be set using the WithCache() option.
-	Accessor cache.ExportReplace
-
-	// The host of the Azure Active Directory authority.
-	// The default is https://login.microsoftonline.com/common. This can be changed using the
-	// WithAuthority() option.
-	Authority string
-
-	// The HTTP client used for making requests.
-	// It defaults to a shared http.Client.
-	HTTPClient ops.HTTPClient
-
-	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
-	SendX5C bool
-
-	// Instructs MSAL Go to use an Azure regional token service with sepcified AzureRegion.
-	AzureRegion string
-
-	capabilities []string
-
-	disableInstanceDiscovery bool
-}
-
-func (o Options) validate() error {
-	u, err := url.Parse(o.Authority)
+func (c Client) validate() error {
+	u, err := url.Parse(c.authority)
 	if err != nil {
-		return fmt.Errorf("the Authority(%s) does not parse as a valid URL", o.Authority)
+		return fmt.Errorf("the authority %q isn't a valid URL: %w", c.authority, err)
 	}
 	if u.Scheme != "https" {
-		return fmt.Errorf("the Authority(%s) does not appear to use https", o.Authority)
+		return errors.New("the authority must use https")
 	}
 	return nil
 }
 
 // Option is an optional argument to New().
-type Option func(o *Options)
+type Option func(c *Client)
 
-// WithAuthority allows you to provide a custom authority for use in the client.
+// WithAuthority sets the host of the Azure Active Directory authority.
+// The default is https://login.microsoftonline.com/common
 func WithAuthority(authority string) Option {
-	return func(o *Options) {
-		o.Authority = authority
+	return func(c *Client) {
+		c.authority = authority
 	}
 }
 
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
-	return func(o *Options) {
-		o.Accessor = accessor
+	return func(c *Client) {
+		c.accessor = accessor
 	}
 }
 
 // WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
 func WithClientCapabilities(capabilities []string) Option {
-	return func(o *Options) {
+	return func(c *Client) {
 		// there's no danger of sharing the slice's underlying memory with the application because
 		// this slice is simply passed to base.WithClientCapabilities, which copies its data
-		o.capabilities = capabilities
+		c.capabilities = capabilities
 	}
 }
 
 // WithHTTPClient allows for a custom HTTP client to be set.
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
-	return func(o *Options) {
-		o.HTTPClient = httpClient
+	return func(c *Client) {
+		c.httpClient = httpClient
 	}
 }
 
 // WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
 func WithX5C() Option {
-	return func(o *Options) {
-		o.SendX5C = true
+	return func(c *Client) {
+		c.sendX5C = true
 	}
 }
 
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(enabled bool) Option {
-	return func(o *Options) {
-		o.disableInstanceDiscovery = !enabled
+	return func(c *Client) {
+		c.disableInstanceDiscovery = !enabled
 	}
 }
 
@@ -349,48 +326,48 @@ func WithInstanceDiscovery(enabled bool) Option {
 // If auto-detection fails, the non-regional endpoint will be used.
 // If an invalid region name is provided, the non-regional endpoint MIGHT be used or the token request MIGHT fail.
 func WithAzureRegion(val string) Option {
-	return func(o *Options) {
-		o.AzureRegion = val
+	return func(c *Client) {
+		c.azureRegion = val
 	}
 }
 
 // New is the constructor for Client. userID is the unique identifier of the user this client
 // will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
 // the type of credential to use.
+//
+// Options: [WithAuthority], [WithAzureRegion], [WithCache], [WithClientCapabilities], [WithHTTPClient], [WithInstanceDiscovery], [WithX5C]
 func New(clientID string, cred Credential, options ...Option) (Client, error) {
+	c := Client{authority: base.AuthorityPublicCloud, httpClient: shared.DefaultClient}
 	internalCred, err := cred.toInternal()
 	if err != nil {
-		return Client{}, err
+		return c, err
 	}
-
-	opts := Options{
-		Authority:  base.AuthorityPublicCloud,
-		HTTPClient: shared.DefaultClient,
-	}
+	c.cred = internalCred
 
 	for _, o := range options {
-		o(&opts)
+		o(&c)
 	}
-	if err := opts.validate(); err != nil {
-		return Client{}, err
+	if err := c.validate(); err != nil {
+		return c, err
 	}
 
 	baseOpts := []base.Option{
-		base.WithCacheAccessor(opts.Accessor),
-		base.WithClientCapabilities(opts.capabilities),
-		base.WithRegionDetection(opts.AzureRegion),
-		base.WithX5C(opts.SendX5C),
-		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
+		base.WithCacheAccessor(c.accessor),
+		base.WithClientCapabilities(c.capabilities),
+		base.WithRegionDetection(c.azureRegion),
+		base.WithX5C(c.sendX5C),
+		base.WithInstanceDiscovery(!c.disableInstanceDiscovery),
 	}
 	if cred.tokenProvider != nil {
 		// The caller will handle all details of authentication, using Client only as a token cache.
 		baseOpts = append(baseOpts, base.WithInstanceDiscovery(false))
 	}
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), baseOpts...)
+	base, err := base.New(clientID, c.authority, oauth.New(c.httpClient), baseOpts...)
 	if err != nil {
-		return Client{}, err
+		return c, err
 	}
 	base.AuthParams.IsConfidentialClient = true
+	c.base = base
 
 	return Client{base: base, cred: internalCred}, nil
 }
