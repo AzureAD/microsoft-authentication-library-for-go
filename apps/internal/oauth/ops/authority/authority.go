@@ -309,13 +309,17 @@ type Info struct {
 	InstanceDiscoveryDisabled bool
 }
 
-func firstPathSegment(u *url.URL) (string, error) {
+func firstTwoPathSegment(u *url.URL) (string, string, error) {
 	pathParts := strings.Split(u.EscapedPath(), "/")
-	if len(pathParts) >= 2 {
-		return pathParts[1], nil
+	if len(pathParts) >= 3 {
+		return pathParts[1], pathParts[2], nil
 	}
 
-	return "", errors.New("authority does not have two segments")
+	if len(pathParts) >= 2 {
+		return pathParts[1], "", nil
+	}
+
+	return "", "", errors.New("authority does not have two segments")
 }
 
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
@@ -330,21 +334,29 @@ func NewInfoFromAuthorityURI(authorityURI string, validateAuthority bool, instan
 		return Info{}, fmt.Errorf("authorityURI(%s) must have scheme https", authorityURI)
 	}
 
-	tenant, err := firstPathSegment(u)
+	tenant, policy, err := firstTwoPathSegment(u)
+	if err != nil {
+		return Info{}, err
+	}
+
 	if tenant == "adfs" {
 		authorityType = ADFS
 	} else {
 		authorityType = AAD
 	}
 
-	if err != nil {
-		return Info{}, err
+	var canonicalAuthorityURI string
+
+	if strings.HasPrefix(policy, "b2c_1_") {
+		canonicalAuthorityURI = fmt.Sprintf("https://%v/%v/%v/", u.Host, tenant, policy)
+	} else {
+		canonicalAuthorityURI = fmt.Sprintf("https://%v/%v/", u.Host, tenant)
 	}
 
 	// u.Host includes the port, if any, which is required for private cloud deployments
 	return Info{
 		Host:                      u.Host,
-		CanonicalAuthorityURI:     fmt.Sprintf("https://%v/%v/", u.Host, tenant),
+		CanonicalAuthorityURI:     canonicalAuthorityURI,
 		AuthorityType:             authorityType,
 		UserRealmURIPrefix:        fmt.Sprintf("https://%v/common/userrealm/", u.Hostname()),
 		ValidateAuthority:         validateAuthority,
