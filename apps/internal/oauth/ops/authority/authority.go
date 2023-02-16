@@ -51,6 +51,12 @@ func TrustedHost(host string) bool {
 	if _, ok := aadTrustedHostList[host]; ok {
 		return true
 	}
+
+	// default Azure AD B2C authority domain
+	if strings.HasSuffix(host, ".b2clogin.com") {
+		return true
+	}
+
 	return false
 }
 
