@@ -87,7 +87,6 @@ func TestIsMatchingScopes(t *testing.T) {
 }
 
 func TestAllAccounts(t *testing.T) {
-	ctx := context.Background()
 	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
 	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
@@ -100,8 +99,8 @@ func TestAllAccounts(t *testing.T) {
 	storageManager := Manager{}
 	storageManager.update(cache)
 
-	actualAccounts := storageManager.AllAccountsCtx(ctx)
-	// AllAccountsCtx() is unstable in that the order can be reversed between calls.
+	actualAccounts := storageManager.AllAccounts()
+	// AllAccounts() is unstable in that the order can be reversed between calls.
 	// This fixes that.
 	sort.Slice(
 		actualAccounts,
