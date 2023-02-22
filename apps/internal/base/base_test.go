@@ -5,11 +5,13 @@ package base
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
@@ -40,8 +42,8 @@ var (
 	testScopes = []string{"scope"}
 )
 
-func fakeClient(t *testing.T) Client {
-	client, err := New(fakeClientID, fmt.Sprintf("https://%s/%s", fakeAuthority, fakeTenantID), &oauth.Client{})
+func fakeClient(t *testing.T, opts ...Option) Client {
+	client, err := New(fakeClientID, fmt.Sprintf("https://%s/%s", fakeAuthority, fakeTenantID), &oauth.Client{}, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -189,6 +191,49 @@ func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
 		if ar.AccessToken != expectedToken {
 			t.Fatal("unexpected access token")
 		}
+	}
+}
+
+// failCache helps tests inject cache I/O errors
+type failCache struct {
+	exportErr, replaceErr error
+}
+
+func (c failCache) Export(context.Context, cache.Marshaler, string) error {
+	return c.exportErr
+}
+
+func (c failCache) Replace(context.Context, cache.Unmarshaler, string) error {
+	return c.replaceErr
+}
+
+func TestCacheIOErrors(t *testing.T) {
+	ctx := context.Background()
+	expected := errors.New("cache error")
+	for _, export := range []bool{true, false} {
+		name := "replace"
+		cache := failCache{}
+		if export {
+			cache.exportErr = expected
+			name = "export"
+		} else {
+			cache.replaceErr = expected
+		}
+		t.Run(name, func(t *testing.T) {
+			client := fakeClient(t, WithCacheAccessor(&cache))
+			_, actual := client.Account(ctx, "...")
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AllAccounts(ctx)
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			actual = client.RemoveAccount(ctx, shared.Account{})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+		})
 	}
 }
 
