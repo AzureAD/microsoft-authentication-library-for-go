@@ -303,7 +303,10 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 			if tk.AccessToken != token {
 				t.Fatalf("unexpected access token %s", tk.AccessToken)
 			}
-			account := client.Account(tk.Account.HomeAccountID)
+			account, err := client.Account(context.Background(), tk.Account.HomeAccountID)
+			if err != nil {
+				t.Fatal(err)
+			}
 			if params.utid == "" {
 				if actual := account.HomeAccountID; actual != "123-456.123-456" {
 					t.Fatalf("expected %q, got %q", "123-456.123-456", actual)

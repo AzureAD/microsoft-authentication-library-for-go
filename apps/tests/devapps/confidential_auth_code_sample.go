@@ -77,7 +77,7 @@ func acquireByAuthorizationCodeConfidential(ctx context.Context) {
 		log.Fatal(err)
 	}
 	var userAccount shared.Account
-	for _, account := range app.AccountsCtx(ctx) {
+	for _, account := range app.Accounts(ctx) {
 		if account.PreferredUsername == confidentialConfig.Username {
 			userAccount = account
 		}

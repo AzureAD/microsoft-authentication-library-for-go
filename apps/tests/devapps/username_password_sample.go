@@ -20,7 +20,10 @@ func acquireByUsernamePasswordPublic(ctx context.Context) {
 
 	// look in the cache to see if the account to use has been cached
 	var userAccount public.Account
-	accounts := app.AccountsCtx(ctx)
+	accounts, err := app.Accounts(ctx)
+	if err != nil {
+		panic("failed to read the cache")
+	}
 	for _, account := range accounts {
 		if account.PreferredUsername == config.Username {
 			userAccount = account

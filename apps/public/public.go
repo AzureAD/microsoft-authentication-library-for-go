@@ -473,32 +473,15 @@ func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 	return pca.base.AcquireTokenByAuthCode(ctx, params)
 }
 
-// AccountsCtx gets all the accounts in the token cache.
-// If there are no accounts in the cache the returned slice is empty.
-func (pca Client) AccountsCtx(ctx context.Context) []Account {
-	return pca.base.AllAccountsCtx(ctx)
-}
-
-// RemoveAccountCtx signs the account out and forgets account from token cache.
-func (pca Client) RemoveAccountCtx(ctx context.Context, account Account) error {
-	pca.base.RemoveAccountCtx(ctx, account)
-	return nil
-}
-
 // Accounts gets all the accounts in the token cache.
 // If there are no accounts in the cache the returned slice is empty.
-//
-// Deprecated: This method is deprecated for AccountsCtx().
-func (pca Client) Accounts() []Account {
-	return pca.base.AllAccountsCtx(context.Background())
+func (pca Client) Accounts(ctx context.Context) ([]Account, error) {
+	return pca.base.AllAccounts(ctx)
 }
 
 // RemoveAccount signs the account out and forgets account from token cache.
-//
-// Deprecated: This method is deprecated for RemoveAccountCtx().
-func (pca Client) RemoveAccount(account Account) error {
-	pca.base.RemoveAccountCtx(context.Background(), account)
-	return nil
+func (pca Client) RemoveAccount(ctx context.Context, account Account) error {
+	return pca.base.RemoveAccount(ctx, account)
 }
 
 // InteractiveAuthOptions contains the optional parameters used to acquire an access token for interactive auth code flow.

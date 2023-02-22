@@ -21,7 +21,10 @@ func acquireTokenDeviceCode() {
 
 	// look in the cache to see if the account to use has been cached
 	var userAccount public.Account
-	accounts := app.Accounts()
+	accounts, err := app.Accounts(context.Background())
+	if err != nil {
+		panic("failed to read the cache")
+	}
 	for _, account := range accounts {
 		if account.PreferredUsername == config.Username {
 			userAccount = account
