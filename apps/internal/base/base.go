@@ -45,8 +45,12 @@ type partitionedManager interface {
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) Replace(cache cache.Unmarshaler, key string) {}
-func (n noopCacheAccessor) Export(cache cache.Marshaler, key string)    {}
+func (n noopCacheAccessor) Replace(ctx context.Context, cache cache.Unmarshaler, key string) error {
+	return nil
+}
+func (n noopCacheAccessor) Export(ctx context.Context, cache cache.Marshaler, key string) error {
+	return nil
+}
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
@@ -296,8 +300,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
-			b.replace(ctx, s, suggestedCacheKey)
-			defer b.export(ctx, s, suggestedCacheKey)
+			b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			defer b.cacheAccessor.Export(ctx, s, suggestedCacheKey)
 		}
 		storageTokenResponse, err = b.pmanager.Read(ctx, authParams)
 		if err != nil {
@@ -306,8 +310,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
-			b.replace(ctx, s, suggestedCacheKey)
-			defer b.export(ctx, s, suggestedCacheKey)
+			b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			defer b.cacheAccessor.Export(ctx, s, suggestedCacheKey)
 		}
 		authParams.AuthorizationType = authority.ATRefreshToken
 		storageTokenResponse, err = b.manager.Read(ctx, authParams, silent.Account)
@@ -411,8 +415,8 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {
 			suggestedCacheKey := token.CacheKey(authParams)
-			b.replace(ctx, s, suggestedCacheKey)
-			defer b.export(ctx, s, suggestedCacheKey)
+			b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			defer b.cacheAccessor.Export(ctx, s, suggestedCacheKey)
 		}
 		account, err = b.pmanager.Write(authParams, token)
 		if err != nil {
@@ -421,8 +425,8 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := token.CacheKey(authParams)
-			b.replace(ctx, s, suggestedCacheKey)
-			defer b.export(ctx, s, suggestedCacheKey)
+			b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			defer b.cacheAccessor.Export(ctx, s, suggestedCacheKey)
 		}
 		account, err = b.manager.Write(authParams, token)
 		if err != nil {
@@ -435,8 +439,8 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 func (b Client) AllAccountsCtx(ctx context.Context) []shared.Account {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.replace(ctx, s, suggestedCacheKey)
-		defer b.export(ctx, s, suggestedCacheKey)
+		b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(ctx, s, suggestedCacheKey)
 	}
 
 	accounts := b.manager.AllAccounts()
@@ -454,8 +458,8 @@ func (b Client) AccountCtx(ctx context.Context, homeAccountID string) shared.Acc
 	authParams.HomeAccountID = homeAccountID
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.replace(ctx, s, suggestedCacheKey)
-		defer b.export(ctx, s, suggestedCacheKey)
+		b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(ctx, s, suggestedCacheKey)
 	}
 	account := b.manager.Account(homeAccountID)
 	return account
@@ -470,8 +474,8 @@ func (b Client) Account(homeAccountID string) shared.Account {
 func (b Client) RemoveAccountCtx(ctx context.Context, account shared.Account) {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		b.replace(ctx, s, suggestedCacheKey)
-		defer b.export(ctx, s, suggestedCacheKey)
+		b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+		defer b.cacheAccessor.Export(ctx, s, suggestedCacheKey)
 	}
 	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
 }
@@ -479,24 +483,4 @@ func (b Client) RemoveAccountCtx(ctx context.Context, account shared.Account) {
 // Deprecated: Use RemoveAccountCtx().
 func (b Client) RemoveAccount(account shared.Account) {
 	b.RemoveAccountCtx(context.Background(), account)
-}
-
-// replace is a wrapper around our ExportReplace interface that detects if we are using the newer ExportReplaceCtx
-// or the original ExportReplace for Replace() and handles it appropriately.
-func (b Client) replace(ctx context.Context, unmarshal cache.Unmarshaler, key string) error {
-	if ca, ok := b.cacheAccessor.(cache.ExportReplaceCtx); ok {
-		return ca.ReplaceCtx(ctx, unmarshal, key)
-	}
-	b.cacheAccessor.Replace(unmarshal, key)
-	return nil
-}
-
-// export is a wrapper around our ExportReplace interface that detects if we are using the newer ExportReplaceCtx
-// or the orignal ExportReplace for Export() and handles it appropriately.
-func (b Client) export(ctx context.Context, marshal cache.Marshaler, key string) error {
-	if ca, ok := b.cacheAccessor.(cache.ExportReplaceCtx); ok {
-		return ca.ExportCtx(ctx, marshal, key)
-	}
-	b.cacheAccessor.Export(marshal, key)
-	return nil
 }

@@ -363,16 +363,18 @@ type testCache struct {
 	store map[string][]byte
 }
 
-func (c *testCache) Export(m cache.Marshaler, key string) {
+func (c *testCache) Export(ctx context.Context, m cache.Marshaler, key string) error {
 	if v, err := m.Marshal(); err == nil {
 		c.store[key] = v
 	}
+	return nil
 }
 
-func (c *testCache) Replace(u cache.Unmarshaler, key string) {
+func (c *testCache) Replace(ctx context.Context, u cache.Unmarshaler, key string) error {
 	if v, has := c.store[key]; has {
 		_ = u.Unmarshal(v)
 	}
+	return nil
 }
 
 func TestWithCache(t *testing.T) {
