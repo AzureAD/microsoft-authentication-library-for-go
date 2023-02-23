@@ -739,8 +739,8 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 }
 
 // Account gets the account in the token cache with the specified homeAccountID.
-func (cca Client) Account(ctx context.Context, homeAccountID string) (Account, error) {
-	return cca.base.Account(ctx, homeAccountID)
+func (cca Client) Account(ctx context.Context, accountID string) (Account, error) {
+	return cca.base.Account(ctx, accountID)
 }
 
 // RemoveAccount signs the account out and forgets account from token cache.
