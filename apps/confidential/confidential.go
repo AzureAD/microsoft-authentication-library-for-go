@@ -246,10 +246,6 @@ type Client struct {
 	base base.Client
 
 	cred *accesstokens.Credential
-
-	// userID is some unique identifier for a user. It actually isn't used by us at all, it
-	// simply acts as another hint that a confidential.Client is for a single user.
-	userID string
 }
 
 // Options are optional settings for New(). These options are set using various functions
@@ -393,11 +389,6 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	base.AuthParams.IsConfidentialClient = true
 
 	return Client{base: base, cred: internalCred}, nil
-}
-
-// UserID is the unique user identifier this client if for.
-func (cca Client) UserID() string {
-	return cca.userID
 }
 
 // authCodeURLOptions contains options for AuthCodeURL
