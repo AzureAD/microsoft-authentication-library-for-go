@@ -196,10 +196,12 @@ func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
 
 // failCache helps tests inject cache I/O errors
 type failCache struct {
+	exported              bool
 	exportErr, replaceErr error
 }
 
-func (c failCache) Export(context.Context, cache.Marshaler, string) error {
+func (c *failCache) Export(context.Context, cache.Marshaler, string) error {
+	c.exported = true
 	return c.exportErr
 }
 
@@ -225,7 +227,23 @@ func TestCacheIOErrors(t *testing.T) {
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
+			_, actual = client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AcquireTokenOnBehalfOf(ctx, AcquireTokenOnBehalfOfParameters{Credential: &accesstokens.Credential{Secret: "..."}})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
 			_, actual = client.AllAccounts(ctx)
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{}, accesstokens.TokenResponse{}, true)
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
@@ -235,6 +253,25 @@ func TestCacheIOErrors(t *testing.T) {
 			}
 		})
 	}
+
+	// when the client fails to acquire a token, it should return an error instead of exporting the cache
+	t.Run("auth error", func(t *testing.T) {
+		cache := failCache{}
+		client := fakeClient(t, WithCacheAccessor(&cache))
+		client.Token.AccessTokens.(*fake.AccessTokens).Err = true
+		_, err := client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential})
+		if err == nil || cache.exported {
+			t.Fatal("client should have returned an error instead of exporting the cache")
+		}
+		_, err = client.AcquireTokenOnBehalfOf(ctx, AcquireTokenOnBehalfOfParameters{Credential: &accesstokens.Credential{Secret: "..."}})
+		if err == nil || cache.exported {
+			t.Fatal("client should have returned an error instead of exporting the cache")
+		}
+		_, err = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{})
+		if err == nil || cache.exported {
+			t.Fatal("client should have returned an error instead of exporting the cache")
+		}
+	})
 }
 
 func TestCreateAuthenticationResult(t *testing.T) {
