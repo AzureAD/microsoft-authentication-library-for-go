@@ -366,20 +366,9 @@ func TestAcquireTokenSilentTenants(t *testing.T) {
 }
 
 func TestInvalidCredential(t *testing.T) {
-	data, err := os.ReadFile("../testdata/test-cert.pem")
-	if err != nil {
-		t.Fatal(err)
-	}
-	certs, key, err := CertFromPEM(data, "")
-	if err != nil {
-		t.Fatal(err)
-	}
 	for _, cred := range []Credential{
 		{},
 		NewCredFromAssertionCallback(nil),
-		NewCredFromCert(nil, nil),
-		NewCredFromCert(certs[0], nil),
-		NewCredFromCert(nil, key),
 	} {
 		t.Run("", func(t *testing.T) {
 			_, err := New(fakeClientID, cred)
@@ -390,7 +379,7 @@ func TestInvalidCredential(t *testing.T) {
 	}
 }
 
-func TestNewCredFromCertChain(t *testing.T) {
+func TestNewCredFromCert(t *testing.T) {
 	for _, file := range []struct {
 		path     string
 		numCerts int
@@ -424,7 +413,7 @@ func TestNewCredFromCertChain(t *testing.T) {
 			t.Fatal("expected an RSA private key")
 		}
 		verifyingKey := &k.PublicKey
-		cred, err := NewCredFromCertChain(certs, key)
+		cred, err := NewCredFromCert(certs, key)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -507,7 +496,7 @@ func TestNewCredFromCertChain(t *testing.T) {
 	}
 }
 
-func TestNewCredFromCertChainError(t *testing.T) {
+func TestNewCredFromCertError(t *testing.T) {
 	data, err := os.ReadFile("../testdata/test-cert.pem")
 	if err != nil {
 		t.Fatal(err)
@@ -529,11 +518,22 @@ func TestNewCredFromCertChainError(t *testing.T) {
 		{[]*x509.Certificate{nil}, key},
 	} {
 		t.Run("", func(t *testing.T) {
-			_, err := NewCredFromCertChain(test.certs, test.key)
+			_, err := NewCredFromCert(test.certs, test.key)
 			if err == nil {
 				t.Fatal("expected an error")
 			}
 		})
+	}
+
+	// the key in this file doesn't match the cert loaded above
+	if data, err = os.ReadFile("../testdata/test-cert-chain.pem"); err != nil {
+		t.Fatal(err)
+	}
+	if _, key, err = CertFromPEM(data, ""); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = NewCredFromCert(certs, key); err == nil {
+		t.Fatal("expected an error because key doesn't match certs")
 	}
 }
 
