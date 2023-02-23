@@ -304,7 +304,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			if err != nil {
 				return
 			}
-			defer b.export(ctx, s, suggestedCacheKey, &err)
+			defer func() {
+				err = b.export(ctx, s, suggestedCacheKey, err)
+			}()
 		}
 		storageTokenResponse, err = b.pmanager.Read(ctx, authParams)
 		if err != nil {
@@ -317,7 +319,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			if err != nil {
 				return
 			}
-			defer b.export(ctx, s, suggestedCacheKey, &err)
+			defer func() {
+				err = b.export(ctx, s, suggestedCacheKey, err)
+			}()
 		}
 		authParams.AuthorizationType = authority.ATRefreshToken
 		storageTokenResponse, err = b.manager.Read(ctx, authParams, silent.Account)
@@ -426,7 +430,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 			if err != nil {
 				return
 			}
-			defer b.export(ctx, s, suggestedCacheKey, &err)
+			defer func() {
+				err = b.export(ctx, s, suggestedCacheKey, err)
+			}()
 		}
 		account, err = b.pmanager.Write(authParams, token)
 		if err != nil {
@@ -439,7 +445,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 			if err != nil {
 				return
 			}
-			defer b.export(ctx, s, suggestedCacheKey, &err)
+			defer func() {
+				err = b.export(ctx, s, suggestedCacheKey, err)
+			}()
 		}
 		account, err = b.manager.Write(authParams, token)
 		if err != nil {
@@ -457,7 +465,9 @@ func (b Client) AllAccounts(ctx context.Context) (accts []shared.Account, err er
 		if err != nil {
 			return
 		}
-		defer b.export(ctx, s, suggestedCacheKey, &err)
+		defer func() {
+			err = b.export(ctx, s, suggestedCacheKey, err)
+		}()
 	}
 
 	accts = b.manager.AllAccounts()
@@ -474,7 +484,9 @@ func (b Client) Account(ctx context.Context, homeAccountID string) (acct shared.
 		if err != nil {
 			return
 		}
-		defer b.export(ctx, s, suggestedCacheKey, &err)
+		defer func() {
+			err = b.export(ctx, s, suggestedCacheKey, err)
+		}()
 	}
 	acct = b.manager.Account(homeAccountID)
 	return
@@ -488,20 +500,20 @@ func (b Client) RemoveAccount(ctx context.Context, account shared.Account) (err 
 		if err != nil {
 			return
 		}
-		defer b.export(ctx, s, suggestedCacheKey, &err)
+		defer func() {
+			err = b.export(ctx, s, suggestedCacheKey, err)
+		}()
 	}
 	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
 	return
 }
 
-// export is a helper for returning errors from the cache accessor's Export method. This helper
-// assigns errors returned by that method to *err if and only if *err is nil. This helps callers
-// swallow Export errors when they have a more important error to return, but return them when
-// an operation otherwise succeeded.
-//
-// TODO: use errors.Join from Go 1.20 to return both errors instead
-func (b Client) export(ctx context.Context, marshal cache.Marshaler, key string, err *error) {
-	if e := b.cacheAccessor.Export(ctx, marshal, key); e != nil && *err == nil {
-		*err = e
+// export helps other methods defer exporting the cache after possibly updating its in-memory content.
+// err is the error the calling method will return. If err isn't nil, export returns it without
+// exporting the cache.
+func (b Client) export(ctx context.Context, marshal cache.Marshaler, key string, err error) error {
+	if err != nil {
+		return err
 	}
+	return b.cacheAccessor.Export(ctx, marshal, key)
 }
