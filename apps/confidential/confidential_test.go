@@ -633,20 +633,18 @@ func TestTokenProviderOptions(t *testing.T) {
 // testCache is a simple in-memory cache.ExportReplace implementation
 type testCache map[string][]byte
 
-func (c testCache) Export(ctx context.Context, m cache.Marshaler, key string) error {
-	v, err := m.Marshal()
-	if err == nil {
-		c[key] = v
+func (c testCache) Export(ctx context.Context, m cache.Marshaler, h cache.ExportHints) error {
+	if v, err := m.Marshal(); err == nil {
+		c[h.PartitionKey] = v
 	}
-	return err
+	return nil
 }
 
-func (c testCache) Replace(ctx context.Context, u cache.Unmarshaler, key string) error {
-	var err error
-	if v, has := c[key]; has {
-		err = u.Unmarshal(v)
+func (c testCache) Replace(ctx context.Context, u cache.Unmarshaler, h cache.ReplaceHints) error {
+	if v, has := c[h.PartitionKey]; has {
+		_ = u.Unmarshal(v)
 	}
-	return err
+	return nil
 }
 
 func TestWithCache(t *testing.T) {

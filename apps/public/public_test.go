@@ -363,27 +363,25 @@ func TestWithInstanceDiscovery(t *testing.T) {
 }
 
 // testCache is a simple in-memory cache.ExportReplace implementation
-type testCache struct {
-	store map[string][]byte
-}
+type testCache map[string][]byte
 
-func (c *testCache) Export(ctx context.Context, m cache.Marshaler, key string) error {
+func (c testCache) Export(ctx context.Context, m cache.Marshaler, h cache.ExportHints) error {
 	v, err := m.Marshal()
 	if err == nil {
-		c.store[key] = v
+		c[h.PartitionKey] = v
 	}
 	return err
 }
 
-func (c *testCache) Replace(ctx context.Context, u cache.Unmarshaler, key string) error {
-	if v, has := c.store[key]; has {
+func (c testCache) Replace(ctx context.Context, u cache.Unmarshaler, h cache.ReplaceHints) error {
+	if v, has := c[h.PartitionKey]; has {
 		return u.Unmarshal(v)
 	}
 	return nil
 }
 
 func TestWithCache(t *testing.T) {
-	cache := testCache{make(map[string][]byte)}
+	cache := make(testCache)
 	accessToken, refreshToken := "*", "rt"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo := "login.microsoftonline.com"

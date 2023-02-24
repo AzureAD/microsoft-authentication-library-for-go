@@ -45,10 +45,10 @@ type partitionedManager interface {
 
 type noopCacheAccessor struct{}
 
-func (n noopCacheAccessor) Replace(ctx context.Context, cache cache.Unmarshaler, key string) error {
+func (n noopCacheAccessor) Replace(ctx context.Context, u cache.Unmarshaler, h cache.ReplaceHints) error {
 	return nil
 }
-func (n noopCacheAccessor) Export(ctx context.Context, cache cache.Marshaler, key string) error {
+func (n noopCacheAccessor) Export(ctx context.Context, m cache.Marshaler, h cache.ExportHints) error {
 	return nil
 }
 
@@ -300,7 +300,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
-			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 			if err != nil {
 				return ar, err
 			}
@@ -315,7 +315,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
-			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 			if err != nil {
 				return ar, err
 			}
@@ -426,7 +426,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		if s, ok := b.pmanager.(cache.Serializer); ok {
 			suggestedCacheKey := token.CacheKey(authParams)
-			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 			if err != nil {
 				return ar, err
 			}
@@ -441,7 +441,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := token.CacheKey(authParams)
-			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+			err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 			if err != nil {
 				return ar, err
 			}
@@ -461,7 +461,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 func (b Client) AllAccounts(ctx context.Context) (accts []shared.Account, err error) {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+		err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 		if err != nil {
 			return accts, err
 		}
@@ -480,7 +480,7 @@ func (b Client) Account(ctx context.Context, homeAccountID string) (acct shared.
 	authParams.HomeAccountID = homeAccountID
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+		err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 		if err != nil {
 			return acct, err
 		}
@@ -496,7 +496,7 @@ func (b Client) Account(ctx context.Context, homeAccountID string) (acct shared.
 func (b Client) RemoveAccount(ctx context.Context, account shared.Account) (err error) {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
+		err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 		if err != nil {
 			return err
 		}
@@ -515,5 +515,5 @@ func (b Client) export(ctx context.Context, marshal cache.Marshaler, key string,
 	if err != nil {
 		return err
 	}
-	return b.cacheAccessor.Export(ctx, marshal, key)
+	return b.cacheAccessor.Export(ctx, marshal, cache.ExportHints{PartitionKey: key})
 }
