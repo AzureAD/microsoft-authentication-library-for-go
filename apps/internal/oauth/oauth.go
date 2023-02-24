@@ -212,7 +212,6 @@ func (d DeviceCode) Token(ctx context.Context) (accesstokens.TokenResponse, erro
 	}
 
 	var cancel context.CancelFunc
-	d.Result.ExpiresOn.Sub(time.Now().UTC())
 	if deadline, ok := ctx.Deadline(); !ok || d.Result.ExpiresOn.Before(deadline) {
 		ctx, cancel = context.WithDeadline(ctx, d.Result.ExpiresOn)
 	} else {
