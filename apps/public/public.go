@@ -24,7 +24,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
-	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -48,87 +47,91 @@ type AuthResult = base.AuthResult
 
 type Account = shared.Account
 
-func (c *Client) validate() error {
-	u, err := url.Parse(c.authority)
+// clientOptions configures the Client's behavior.
+type clientOptions struct {
+	accessor                 cache.ExportReplace
+	authority                string
+	capabilities             []string
+	disableInstanceDiscovery bool
+	httpClient               ops.HTTPClient
+}
+
+func (p *clientOptions) validate() error {
+	u, err := url.Parse(p.authority)
 	if err != nil {
-		return fmt.Errorf("the authority %q isn't a valid URL: %w", c.authority, err)
+		return fmt.Errorf("Authority options cannot be URL parsed: %w", err)
 	}
 	if u.Scheme != "https" {
-		return errors.New("the authority must use https")
+		return fmt.Errorf("Authority(%s) did not start with https://", u.String())
 	}
 	return nil
 }
 
 // Option is an optional argument to the New constructor.
-type Option func(c *Client)
+type Option func(o *clientOptions)
 
 // WithAuthority allows for a custom authority to be set. This must be a valid https url.
 func WithAuthority(authority string) Option {
-	return func(c *Client) {
-		c.authority = authority
+	return func(o *clientOptions) {
+		o.authority = authority
 	}
 }
 
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
-	return func(c *Client) {
-		c.accessor = accessor
+	return func(o *clientOptions) {
+		o.accessor = accessor
 	}
 }
 
 // WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
 func WithClientCapabilities(capabilities []string) Option {
-	return func(c *Client) {
+	return func(o *clientOptions) {
 		// there's no danger of sharing the slice's underlying memory with the application because
 		// this slice is simply passed to base.WithClientCapabilities, which copies its data
-		c.capabilities = capabilities
+		o.capabilities = capabilities
 	}
 }
 
 // WithHTTPClient allows for a custom HTTP client to be set.
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
-	return func(c *Client) {
-		c.httpClient = httpClient
+	return func(o *clientOptions) {
+		o.httpClient = httpClient
 	}
 }
 
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(enabled bool) Option {
-	return func(c *Client) {
-		c.disableInstanceDiscovery = !enabled
+	return func(o *clientOptions) {
+		o.disableInstanceDiscovery = !enabled
 	}
 }
 
 // Client is a representation of authentication client for public applications as defined in the
 // package doc. For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications.
 type Client struct {
-	accessor                 cache.ExportReplace
-	authority                string
-	base                     base.Client
-	capabilities             []string
-	disableInstanceDiscovery bool
-	httpClient               ops.HTTPClient
+	base base.Client
 }
 
 // New is the constructor for Client.
-//
-// Options: [WithAuthority], [WithCache], [WithClientCapabilities], [WithHTTPClient], [WithInstanceDiscovery]
 func New(clientID string, options ...Option) (Client, error) {
-	c := Client{authority: base.AuthorityPublicCloud, httpClient: shared.DefaultClient}
+	opts := clientOptions{
+		authority:  base.AuthorityPublicCloud,
+		httpClient: shared.DefaultClient,
+	}
 
 	for _, o := range options {
-		o(&c)
+		o(&opts)
 	}
-	if err := c.validate(); err != nil {
+	if err := opts.validate(); err != nil {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, c.authority, oauth.New(c.httpClient), base.WithCacheAccessor(c.accessor), base.WithClientCapabilities(c.capabilities), base.WithInstanceDiscovery(!c.disableInstanceDiscovery))
+	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), base.WithCacheAccessor(opts.accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.disableInstanceDiscovery))
 	if err != nil {
 		return Client{}, err
 	}
-	c.base = base
-	return c, nil
+	return Client{base}, nil
 }
 
 // authCodeURLOptions contains options for AuthCodeURL
