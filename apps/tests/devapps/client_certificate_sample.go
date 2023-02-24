@@ -26,14 +26,7 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	// PEM files can have multiple certs. This is usually for certificate chaining where roots
-	// sign to leafs. Useful for TLS, not for this use case.
-	if len(certs) > 1 {
-		log.Fatal("too many certificates in PEM file")
-	}
-
-	cred := confidential.NewCredFromCert(certs[0], privateKey)
+	cred, err := confidential.NewCredFromCert(certs, privateKey)
 	if err != nil {
 		log.Fatal(err)
 	}

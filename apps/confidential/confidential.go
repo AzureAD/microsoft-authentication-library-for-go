@@ -63,7 +63,7 @@ type AuthResult = base.AuthResult
 
 type Account = shared.Account
 
-// CertFromPEM converts a PEM file (.pem or .key) for use with NewCredFromCert(). The file
+// CertFromPEM converts a PEM file (.pem or .key) for use with [NewCredFromCert]. The file
 // must contain the public certificate and the private key. If a PEM block is encrypted and
 // password is not an empty string, it attempts to decrypt the PEM blocks using the password.
 // Multiple certs are due to certificate chaining for use cases like TLS that sign from root to leaf.
@@ -185,16 +185,9 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 	return Credential{assertionCallback: callback}
 }
 
-// NewCredFromCert creates a Credential from an x509.Certificate and an RSA private key.
-// CertFromPEM() can be used to get these values from a PEM file.
-func NewCredFromCert(cert *x509.Certificate, key crypto.PrivateKey) Credential {
-	cred, _ := NewCredFromCertChain([]*x509.Certificate{cert}, key)
-	return cred
-}
-
-// NewCredFromCertChain creates a Credential from a chain of x509.Certificates and an RSA private key
-// as returned by CertFromPEM().
-func NewCredFromCertChain(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
+// NewCredFromCert creates a Credential from a certificate or chain of certificates and an RSA private key
+// as returned by [CertFromPEM].
+func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
 	k, ok := key.(*rsa.PrivateKey)
 	if !ok {
@@ -245,9 +238,6 @@ func AutoDetectRegion() string {
 type Client struct {
 	base base.Client
 	cred *accesstokens.Credential
-	// userID is some unique identifier for a user. It actually isn't used by us at all, it
-	// simply acts as another hint that a confidential.Client is for a single user.
-	userID string
 }
 
 // clientOptions are optional settings for New(). These options are set using various functions
@@ -374,11 +364,6 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	base.AuthParams.IsConfidentialClient = true
 
 	return Client{base: base, cred: internalCred}, nil
-}
-
-// UserID is the unique user identifier this client if for.
-func (cca Client) UserID() string {
-	return cca.userID
 }
 
 // authCodeURLOptions contains options for AuthCodeURL
