@@ -237,68 +237,50 @@ func AutoDetectRegion() string {
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
 	base base.Client
-
 	cred *accesstokens.Credential
 }
 
-// Options are optional settings for New(). These options are set using various functions
+// clientOptions are optional settings for New(). These options are set using various functions
 // returning Option calls.
-type Options struct {
-	// Accessor controls cache persistence.
-	// By default there is no cache persistence. This can be set using the WithCache() option.
-	Accessor cache.ExportReplace
-
-	// The host of the Azure Active Directory authority.
-	// The default is https://login.microsoftonline.com/common. This can be changed using the
-	// WithAuthority() option.
-	Authority string
-
-	// The HTTP client used for making requests.
-	// It defaults to a shared http.Client.
-	HTTPClient ops.HTTPClient
-
-	// SendX5C specifies if x5c claim(public key of the certificate) should be sent to STS.
-	SendX5C bool
-
-	// Instructs MSAL Go to use an Azure regional token service with sepcified AzureRegion.
-	AzureRegion string
-
-	capabilities []string
-
-	disableInstanceDiscovery bool
+type clientOptions struct {
+	accessor                          cache.ExportReplace
+	authority, azureRegion            string
+	capabilities                      []string
+	disableInstanceDiscovery, sendX5C bool
+	httpClient                        ops.HTTPClient
 }
 
-func (o Options) validate() error {
-	u, err := url.Parse(o.Authority)
+func (o clientOptions) validate() error {
+	u, err := url.Parse(o.authority)
 	if err != nil {
-		return fmt.Errorf("the Authority(%s) does not parse as a valid URL", o.Authority)
+		return fmt.Errorf("the Authority(%s) does not parse as a valid URL", o.authority)
 	}
 	if u.Scheme != "https" {
-		return fmt.Errorf("the Authority(%s) does not appear to use https", o.Authority)
+		return fmt.Errorf("the Authority(%s) does not appear to use https", o.authority)
 	}
 	return nil
 }
 
 // Option is an optional argument to New().
-type Option func(o *Options)
+type Option func(o *clientOptions)
 
 // WithAuthority allows you to provide a custom authority for use in the client.
 func WithAuthority(authority string) Option {
-	return func(o *Options) {
-		o.Authority = authority
+	return func(o *clientOptions) {
+		o.authority = authority
 	}
 }
 
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
-	return func(o *Options) {
-		o.Accessor = accessor
+	return func(o *clientOptions) {
+		o.accessor = accessor
 	}
 }
 
 // WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
 func WithClientCapabilities(capabilities []string) Option {
-	return func(o *Options) {
+	return func(o *clientOptions) {
 		// there's no danger of sharing the slice's underlying memory with the application because
 		// this slice is simply passed to base.WithClientCapabilities, which copies its data
 		o.capabilities = capabilities
@@ -307,21 +289,21 @@ func WithClientCapabilities(capabilities []string) Option {
 
 // WithHTTPClient allows for a custom HTTP client to be set.
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
-	return func(o *Options) {
-		o.HTTPClient = httpClient
+	return func(o *clientOptions) {
+		o.httpClient = httpClient
 	}
 }
 
 // WithX5C specifies if x5c claim(public key of the certificate) should be sent to STS to enable Subject Name Issuer Authentication.
 func WithX5C() Option {
-	return func(o *Options) {
-		o.SendX5C = true
+	return func(o *clientOptions) {
+		o.sendX5C = true
 	}
 }
 
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(enabled bool) Option {
-	return func(o *Options) {
+	return func(o *clientOptions) {
 		o.disableInstanceDiscovery = !enabled
 	}
 }
@@ -338,8 +320,8 @@ func WithInstanceDiscovery(enabled bool) Option {
 // If auto-detection fails, the non-regional endpoint will be used.
 // If an invalid region name is provided, the non-regional endpoint MIGHT be used or the token request MIGHT fail.
 func WithAzureRegion(val string) Option {
-	return func(o *Options) {
-		o.AzureRegion = val
+	return func(o *clientOptions) {
+		o.azureRegion = val
 	}
 }
 
@@ -352,9 +334,9 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	opts := Options{
-		Authority:  base.AuthorityPublicCloud,
-		HTTPClient: shared.DefaultClient,
+	opts := clientOptions{
+		authority:  base.AuthorityPublicCloud,
+		httpClient: shared.DefaultClient,
 	}
 
 	for _, o := range options {
@@ -365,17 +347,17 @@ func New(clientID string, cred Credential, options ...Option) (Client, error) {
 	}
 
 	baseOpts := []base.Option{
-		base.WithCacheAccessor(opts.Accessor),
+		base.WithCacheAccessor(opts.accessor),
 		base.WithClientCapabilities(opts.capabilities),
-		base.WithRegionDetection(opts.AzureRegion),
-		base.WithX5C(opts.SendX5C),
+		base.WithRegionDetection(opts.azureRegion),
+		base.WithX5C(opts.sendX5C),
 		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
 	}
 	if cred.tokenProvider != nil {
 		// The caller will handle all details of authentication, using Client only as a token cache.
 		baseOpts = append(baseOpts, base.WithInstanceDiscovery(false))
 	}
-	base, err := base.New(clientID, opts.Authority, oauth.New(opts.HTTPClient), baseOpts...)
+	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), baseOpts...)
 	if err != nil {
 		return Client{}, err
 	}
@@ -480,13 +462,13 @@ func WithClaims(claims string) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenByAuthCodeOptions:
+				case *acquireTokenByAuthCodeOptions:
 					t.claims = claims
 				case *acquireTokenByCredentialOptions:
 					t.claims = claims
 				case *acquireTokenOnBehalfOfOptions:
 					t.claims = claims
-				case *AcquireTokenSilentOptions:
+				case *acquireTokenSilentOptions:
 					t.claims = claims
 				case *authCodeURLOptions:
 					t.claims = claims
@@ -520,13 +502,13 @@ func WithTenantID(tenantID string) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenByAuthCodeOptions:
+				case *acquireTokenByAuthCodeOptions:
 					t.tenantID = tenantID
 				case *acquireTokenByCredentialOptions:
 					t.tenantID = tenantID
 				case *acquireTokenOnBehalfOfOptions:
 					t.tenantID = tenantID
-				case *AcquireTokenSilentOptions:
+				case *acquireTokenSilentOptions:
 					t.tenantID = tenantID
 				case *authCodeURLOptions:
 					t.tenantID = tenantID
@@ -539,12 +521,10 @@ func WithTenantID(tenantID string) interface {
 	}
 }
 
-// AcquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
+// acquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
 // These are set by using various AcquireTokenSilentOption functions.
-type AcquireTokenSilentOptions struct {
-	// Account represents the account to use. To set, use the WithSilentAccount() option.
-	Account Account
-
+type acquireTokenSilentOptions struct {
+	account          Account
 	claims, tenantID string
 }
 
@@ -565,8 +545,8 @@ func WithSilentAccount(account Account) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenSilentOptions:
-					t.Account = account
+				case *acquireTokenSilentOptions:
+					t.account = account
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
@@ -580,7 +560,7 @@ func WithSilentAccount(account Account) interface {
 //
 // Options: [WithClaims], [WithSilentAccount], [WithTenantID]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
-	o := AcquireTokenSilentOptions{}
+	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
@@ -591,21 +571,19 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
-		Account:     o.Account,
+		Account:     o.account,
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
-		IsAppCache:  o.Account.IsZero(),
+		IsAppCache:  o.account.IsZero(),
 		TenantID:    o.tenantID,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
 }
 
-// AcquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
-type AcquireTokenByAuthCodeOptions struct {
-	Challenge string
-
-	claims, tenantID string
+// acquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
+type acquireTokenByAuthCodeOptions struct {
+	challenge, claims, tenantID string
 }
 
 // AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
@@ -625,8 +603,8 @@ func WithChallenge(challenge string) interface {
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
-				case *AcquireTokenByAuthCodeOptions:
-					t.Challenge = challenge
+				case *acquireTokenByAuthCodeOptions:
+					t.challenge = challenge
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
@@ -641,7 +619,7 @@ func WithChallenge(challenge string) interface {
 //
 // Options: [WithChallenge], [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
-	o := AcquireTokenByAuthCodeOptions{}
+	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
@@ -649,7 +627,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:      scopes,
 		Code:        code,
-		Challenge:   o.Challenge,
+		Challenge:   o.challenge,
 		Claims:      o.claims,
 		AppType:     accesstokens.ATConfidential,
 		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
