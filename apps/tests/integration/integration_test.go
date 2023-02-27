@@ -290,7 +290,7 @@ func TestOnBehalfOf(t *testing.T) {
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
-	cca, err := confidential.New(microsoftAuthority, ccaClientID, cred)
+	cca, err := confidential.New("https://login.microsoftonline.com/common", ccaClientID, cred)
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
