@@ -368,15 +368,16 @@ type testCache struct {
 }
 
 func (c *testCache) Export(ctx context.Context, m cache.Marshaler, key string) error {
-	if v, err := m.Marshal(); err == nil {
+	v, err := m.Marshal()
+	if err == nil {
 		c.store[key] = v
 	}
-	return nil
+	return err
 }
 
 func (c *testCache) Replace(ctx context.Context, u cache.Unmarshaler, key string) error {
 	if v, has := c.store[key]; has {
-		_ = u.Unmarshal(v)
+		return u.Unmarshal(v)
 	}
 	return nil
 }
