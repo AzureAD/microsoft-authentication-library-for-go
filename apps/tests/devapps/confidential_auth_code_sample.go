@@ -58,7 +58,7 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 // TODO(msal): Needs to use an x509 certificate like the other now that we are not using a
 // thumbprint directly.
 /*
-func acquireByAuthorizationCodeConfidential() {
+func acquireByAuthorizationCodeConfidential(ctx context.Context) {
 	key, err := os.ReadFile(confidentialConfig.KeyFile)
 	if err != nil {
 		log.Fatal(err)
@@ -77,7 +77,7 @@ func acquireByAuthorizationCodeConfidential() {
 		log.Fatal(err)
 	}
 	var userAccount shared.Account
-	for _, account := range app.Accounts() {
+	for _, account := range app.Accounts(ctx) {
 		if account.PreferredUsername == confidentialConfig.Username {
 			userAccount = account
 		}

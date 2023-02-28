@@ -4,6 +4,7 @@
 package main
 
 import (
+	"context"
 	"log"
 	"os"
 
@@ -14,24 +15,18 @@ type TokenCache struct {
 	file string
 }
 
-func (t *TokenCache) Replace(cache cache.Unmarshaler, key string) {
+func (t *TokenCache) Replace(ctx context.Context, cache cache.Unmarshaler, key string) error {
 	data, err := os.ReadFile(t.file)
 	if err != nil {
 		log.Println(err)
 	}
-	err = cache.Unmarshal(data)
-	if err != nil {
-		log.Println(err)
-	}
+	return cache.Unmarshal(data)
 }
 
-func (t *TokenCache) Export(cache cache.Marshaler, key string) {
+func (t *TokenCache) Export(ctx context.Context, cache cache.Marshaler, key string) error {
 	data, err := cache.Marshal()
 	if err != nil {
 		log.Println(err)
 	}
-	err = os.WriteFile(t.file, data, 0600)
-	if err != nil {
-		log.Println(err)
-	}
+	return os.WriteFile(t.file, data, 0600)
 }

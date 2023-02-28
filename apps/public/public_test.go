@@ -146,8 +146,12 @@ func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 
 	// cache should return the correct access token for each tenant
 	var account Account
-	if accounts := client.Accounts(); len(accounts) == 2 {
-		// expecting one account for each tenant we authenticated in above
+	accounts, err := client.Accounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// expecting one account for each tenant we authenticated in above
+	if len(accounts) == 2 {
 		account = accounts[0]
 	} else {
 		t.Fatalf("expected 2 accounts but got %d", len(accounts))
@@ -363,16 +367,19 @@ type testCache struct {
 	store map[string][]byte
 }
 
-func (c *testCache) Export(m cache.Marshaler, key string) {
-	if v, err := m.Marshal(); err == nil {
+func (c *testCache) Export(ctx context.Context, m cache.Marshaler, key string) error {
+	v, err := m.Marshal()
+	if err == nil {
 		c.store[key] = v
 	}
+	return err
 }
 
-func (c *testCache) Replace(u cache.Unmarshaler, key string) {
+func (c *testCache) Replace(ctx context.Context, u cache.Unmarshaler, key string) error {
 	if v, has := c.store[key]; has {
-		_ = u.Unmarshal(v)
+		return u.Unmarshal(v)
 	}
+	return nil
 }
 
 func TestWithCache(t *testing.T) {
@@ -408,7 +415,10 @@ func TestWithCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts := client.Accounts()
+	accounts, err := client.Accounts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if actual := len(accounts); actual != 1 {
 		t.Fatalf("expected 1 account but cache contains %d", actual)
 	}
