@@ -288,7 +288,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	tenant := silent.TenantID
 	authParams, err := b.AuthParams.WithTenant(tenant)
 	if err != nil {
-		return
+		return ar, err
 	}
 	authParams.Scopes = silent.Scopes
 	authParams.HomeAccountID = silent.Account.HomeAccountID
@@ -302,7 +302,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
 			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
 			if err != nil {
-				return
+				return ar, err
 			}
 			defer func() {
 				err = b.export(ctx, s, suggestedCacheKey, err)
@@ -310,14 +310,14 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		}
 		storageTokenResponse, err = b.pmanager.Read(ctx, authParams)
 		if err != nil {
-			return
+			return ar, err
 		}
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := authParams.CacheKey(silent.IsAppCache)
 			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
 			if err != nil {
-				return
+				return ar, err
 			}
 			defer func() {
 				err = b.export(ctx, s, suggestedCacheKey, err)
@@ -326,7 +326,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		authParams.AuthorizationType = authority.ATRefreshToken
 		storageTokenResponse, err = b.manager.Read(ctx, authParams, silent.Account)
 		if err != nil {
-			return
+			return ar, err
 		}
 	}
 
@@ -334,14 +334,14 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			return
+			return ar, err
 		}
 	}
 
 	// redeem a cached refresh token, if available
 	if reflect.ValueOf(storageTokenResponse.RefreshToken).IsZero() {
 		err = errors.New("no token found")
-		return
+		return ar, err
 	}
 	var cc *accesstokens.Credential
 	if silent.RequestType == accesstokens.ATConfidential {
@@ -350,11 +350,11 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 
 	token, err := b.Token.Refresh(ctx, silent.RequestType, authParams, cc, storageTokenResponse.RefreshToken)
 	if err != nil {
-		return
+		return ar, err
 	}
 
 	ar, err = b.AuthResultFromToken(ctx, authParams, token, true)
-	return
+	return ar, err
 }
 
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
@@ -428,7 +428,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 			suggestedCacheKey := token.CacheKey(authParams)
 			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
 			if err != nil {
-				return
+				return ar, err
 			}
 			defer func() {
 				err = b.export(ctx, s, suggestedCacheKey, err)
@@ -436,14 +436,14 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		}
 		account, err = b.pmanager.Write(authParams, token)
 		if err != nil {
-			return
+			return ar, err
 		}
 	} else {
 		if s, ok := b.manager.(cache.Serializer); ok {
 			suggestedCacheKey := token.CacheKey(authParams)
 			err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
 			if err != nil {
-				return
+				return ar, err
 			}
 			defer func() {
 				err = b.export(ctx, s, suggestedCacheKey, err)
@@ -451,11 +451,11 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		}
 		account, err = b.manager.Write(authParams, token)
 		if err != nil {
-			return
+			return ar, err
 		}
 	}
 	ar, err = NewAuthResult(token, account)
-	return
+	return ar, err
 }
 
 func (b Client) AllAccounts(ctx context.Context) (accts []shared.Account, err error) {
@@ -463,7 +463,7 @@ func (b Client) AllAccounts(ctx context.Context) (accts []shared.Account, err er
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
 		err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
 		if err != nil {
-			return
+			return accts, err
 		}
 		defer func() {
 			err = b.export(ctx, s, suggestedCacheKey, err)
@@ -471,7 +471,7 @@ func (b Client) AllAccounts(ctx context.Context) (accts []shared.Account, err er
 	}
 
 	accts = b.manager.AllAccounts()
-	return
+	return accts, err
 }
 
 func (b Client) Account(ctx context.Context, homeAccountID string) (acct shared.Account, err error) {
@@ -482,14 +482,14 @@ func (b Client) Account(ctx context.Context, homeAccountID string) (acct shared.
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
 		err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
 		if err != nil {
-			return
+			return acct, err
 		}
 		defer func() {
 			err = b.export(ctx, s, suggestedCacheKey, err)
 		}()
 	}
 	acct = b.manager.Account(homeAccountID)
-	return
+	return acct, err
 }
 
 // RemoveAccount removes all the ATs, RTs and IDTs from the cache associated with this account.
@@ -498,14 +498,14 @@ func (b Client) RemoveAccount(ctx context.Context, account shared.Account) (err 
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
 		err = b.cacheAccessor.Replace(ctx, s, suggestedCacheKey)
 		if err != nil {
-			return
+			return err
 		}
 		defer func() {
 			err = b.export(ctx, s, suggestedCacheKey, err)
 		}()
 	}
 	b.manager.RemoveAccount(account, b.AuthParams.ClientID)
-	return
+	return err
 }
 
 // export helps other methods defer exporting the cache after possibly updating its in-memory content.
