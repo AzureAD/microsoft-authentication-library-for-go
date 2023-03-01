@@ -15,7 +15,7 @@ type TokenCache struct {
 	file string
 }
 
-func (t *TokenCache) Replace(ctx context.Context, cache cache.Unmarshaler, key string) error {
+func (t *TokenCache) Replace(ctx context.Context, cache cache.Unmarshaler, hints cache.ReplaceHints) error {
 	data, err := os.ReadFile(t.file)
 	if err != nil {
 		log.Println(err)
@@ -23,7 +23,7 @@ func (t *TokenCache) Replace(ctx context.Context, cache cache.Unmarshaler, key s
 	return cache.Unmarshal(data)
 }
 
-func (t *TokenCache) Export(ctx context.Context, cache cache.Marshaler, key string) error {
+func (t *TokenCache) Export(ctx context.Context, cache cache.Marshaler, hints cache.ExportHints) error {
 	data, err := cache.Marshal()
 	if err != nil {
 		log.Println(err)

@@ -200,12 +200,12 @@ type failCache struct {
 	exportErr, replaceErr error
 }
 
-func (c *failCache) Export(context.Context, cache.Marshaler, string) error {
+func (c *failCache) Export(context.Context, cache.Marshaler, cache.ExportHints) error {
 	c.exported = true
 	return c.exportErr
 }
 
-func (c failCache) Replace(context.Context, cache.Unmarshaler, string) error {
+func (c failCache) Replace(context.Context, cache.Unmarshaler, cache.ReplaceHints) error {
 	return c.replaceErr
 }
 
