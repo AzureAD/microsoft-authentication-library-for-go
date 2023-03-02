@@ -97,7 +97,7 @@ func newLabClient() (*labClient, error) {
 		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
 	}
 
-	app, err := confidential.New(clientID, cred, confidential.WithAuthority(microsoftAuthority))
+	app, err := confidential.New(microsoftAuthority, clientID, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +227,7 @@ func TestConfidentialClientwithSecret(t *testing.T) {
 		panic(errors.Verbose(err))
 	}
 
-	app, err := confidential.New(clientID, cred, confidential.WithAuthority(microsoftAuthority))
+	app, err := confidential.New(microsoftAuthority, clientID, cred)
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
@@ -290,7 +290,7 @@ func TestOnBehalfOf(t *testing.T) {
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
-	cca, err := confidential.New(ccaClientID, cred)
+	cca, err := confidential.New("https://login.microsoftonline.com/common", ccaClientID, cred)
 	if err != nil {
 		panic(errors.Verbose(err))
 	}

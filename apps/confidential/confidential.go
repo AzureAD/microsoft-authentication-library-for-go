@@ -18,7 +18,6 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
-	"net/url"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
@@ -249,26 +248,8 @@ type clientOptions struct {
 	httpClient                        ops.HTTPClient
 }
 
-func (o clientOptions) validate() error {
-	u, err := url.Parse(o.authority)
-	if err != nil {
-		return fmt.Errorf("the Authority(%s) does not parse as a valid URL", o.authority)
-	}
-	if u.Scheme != "https" {
-		return fmt.Errorf("the Authority(%s) does not appear to use https", o.authority)
-	}
-	return nil
-}
-
 // Option is an optional argument to New().
 type Option func(o *clientOptions)
-
-// WithAuthority allows you to provide a custom authority for use in the client.
-func WithAuthority(authority string) Option {
-	return func(o *clientOptions) {
-		o.authority = authority
-	}
-}
 
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
@@ -324,37 +305,30 @@ func WithAzureRegion(val string) Option {
 	}
 }
 
-// New is the constructor for Client. userID is the unique identifier of the user this client
-// will store credentials for (a Client is per user). clientID is the Azure clientID and cred is
-// the type of credential to use.
-func New(clientID string, cred Credential, options ...Option) (Client, error) {
+// New is the constructor for Client. authority is the URL of a token authority such as "https://login.microsoftonline.com/<your tenant>".
+// If the Client will connect directly to AD FS, use "adfs" for the tenant. clientID is the application's client ID (also called its
+// "application ID").
+func New(authority, clientID string, cred Credential, options ...Option) (Client, error) {
 	internalCred, err := cred.toInternal()
 	if err != nil {
 		return Client{}, err
 	}
 
 	opts := clientOptions{
-		authority:  base.AuthorityPublicCloud,
-		httpClient: shared.DefaultClient,
+		authority: authority,
+		// if the caller specified a token provider, it will handle all details of authentication, using Client only as a token cache
+		disableInstanceDiscovery: cred.tokenProvider != nil,
+		httpClient:               shared.DefaultClient,
 	}
-
 	for _, o := range options {
 		o(&opts)
 	}
-	if err := opts.validate(); err != nil {
-		return Client{}, err
-	}
-
 	baseOpts := []base.Option{
 		base.WithCacheAccessor(opts.accessor),
 		base.WithClientCapabilities(opts.capabilities),
+		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
 		base.WithRegionDetection(opts.azureRegion),
 		base.WithX5C(opts.sendX5C),
-		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
-	}
-	if cred.tokenProvider != nil {
-		// The caller will handle all details of authentication, using Client only as a token cache.
-		baseOpts = append(baseOpts, base.WithInstanceDiscovery(false))
 	}
 	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), baseOpts...)
 	if err != nil {
@@ -480,7 +454,7 @@ func WithClaims(claims string) interface {
 	}
 }
 
-// WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
+// WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New].
 // This option is valid for any token acquisition method.
 func WithTenantID(tenantID string) interface {
 	AcquireByAuthCodeOption
