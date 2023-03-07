@@ -5,11 +5,13 @@ package base
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"reflect"
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
@@ -40,8 +42,8 @@ var (
 	testScopes = []string{"scope"}
 )
 
-func fakeClient(t *testing.T) Client {
-	client, err := New(fakeClientID, fmt.Sprintf("https://%s/%s", fakeAuthority, fakeTenantID), &oauth.Client{})
+func fakeClient(t *testing.T, opts ...Option) Client {
+	client, err := New(fakeClientID, fmt.Sprintf("https://%s/%s", fakeAuthority, fakeTenantID), &oauth.Client{}, opts...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -190,6 +192,86 @@ func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
 			t.Fatal("unexpected access token")
 		}
 	}
+}
+
+// failCache helps tests inject cache I/O errors
+type failCache struct {
+	exported              bool
+	exportErr, replaceErr error
+}
+
+func (c *failCache) Export(context.Context, cache.Marshaler, cache.ExportHints) error {
+	c.exported = true
+	return c.exportErr
+}
+
+func (c failCache) Replace(context.Context, cache.Unmarshaler, cache.ReplaceHints) error {
+	return c.replaceErr
+}
+
+func TestCacheIOErrors(t *testing.T) {
+	ctx := context.Background()
+	expected := errors.New("cache error")
+	for _, export := range []bool{true, false} {
+		name := "replace"
+		cache := failCache{}
+		if export {
+			cache.exportErr = expected
+			name = "export"
+		} else {
+			cache.replaceErr = expected
+		}
+		t.Run(name, func(t *testing.T) {
+			client := fakeClient(t, WithCacheAccessor(&cache))
+			_, actual := client.Account(ctx, "...")
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AcquireTokenOnBehalfOf(ctx, AcquireTokenOnBehalfOfParameters{Credential: &accesstokens.Credential{Secret: "..."}})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AllAccounts(ctx)
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{}, accesstokens.TokenResponse{}, true)
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+			actual = client.RemoveAccount(ctx, shared.Account{})
+			if !errors.Is(actual, expected) {
+				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			}
+		})
+	}
+
+	// when the client fails to acquire a token, it should return an error instead of exporting the cache
+	t.Run("auth error", func(t *testing.T) {
+		cache := failCache{}
+		client := fakeClient(t, WithCacheAccessor(&cache))
+		client.Token.AccessTokens.(*fake.AccessTokens).Err = true
+		_, err := client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential})
+		if err == nil || cache.exported {
+			t.Fatal("client should have returned an error instead of exporting the cache")
+		}
+		_, err = client.AcquireTokenOnBehalfOf(ctx, AcquireTokenOnBehalfOfParameters{Credential: &accesstokens.Credential{Secret: "..."}})
+		if err == nil || cache.exported {
+			t.Fatal("client should have returned an error instead of exporting the cache")
+		}
+		_, err = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{})
+		if err == nil || cache.exported {
+			t.Fatal("client should have returned an error instead of exporting the cache")
+		}
+	})
 }
 
 func TestCreateAuthenticationResult(t *testing.T) {

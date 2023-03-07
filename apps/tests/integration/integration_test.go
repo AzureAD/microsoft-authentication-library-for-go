@@ -97,7 +97,7 @@ func newLabClient() (*labClient, error) {
 		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
 	}
 
-	app, err := confidential.New(clientID, cred, confidential.WithAuthority(microsoftAuthority))
+	app, err := confidential.New(microsoftAuthority, clientID, cred)
 	if err != nil {
 		return nil, err
 	}
@@ -227,7 +227,7 @@ func TestConfidentialClientwithSecret(t *testing.T) {
 		panic(errors.Verbose(err))
 	}
 
-	app, err := confidential.New(clientID, cred, confidential.WithAuthority(microsoftAuthority))
+	app, err := confidential.New(microsoftAuthority, clientID, cred)
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
@@ -290,7 +290,7 @@ func TestOnBehalfOf(t *testing.T) {
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
-	cca, err := confidential.New(ccaClientID, cred)
+	cca, err := confidential.New("https://login.microsoftonline.com/common", ccaClientID, cred)
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
@@ -390,12 +390,15 @@ func TestRemoveAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestRemoveAccount: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
 	}
-	accounts := app.Accounts()
+	accounts, err := app.Accounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
 	if len(accounts) == 0 {
 		t.Fatal("TestRemoveAccount: No user accounts found in cache")
 	}
 	testAccount := accounts[0] // Only one account is populated and that is what we will remove.
-	err = app.RemoveAccount(testAccount)
+	err = app.RemoveAccount(ctx, testAccount)
 	if err != nil {
 		t.Fatalf("TestRemoveAccount: on RemoveAccount(): got err == %s, want err == nil", errors.Verbose(err))
 	}

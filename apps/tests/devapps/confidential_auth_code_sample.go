@@ -17,7 +17,7 @@ func redirectToURLConfidential(w http.ResponseWriter, r *http.Request) {
 	// Getting the URL to redirect to acquire the authorization code
 	authCodeURLParams.CodeChallenge = confidentialConfig.CodeChallenge
 	authCodeURLParams.State = confidentialConfig.State
-	authURL, err := app.CreateAuthCodeURL(context.Background(), confidentialConfig.ClientID, confidentialConfig.RedirectURI, confidentialConfig.Scopes)
+	authURL, err := app.AuthCodeURL(context.Background(), confidentialConfig.ClientID, confidentialConfig.RedirectURI, confidentialConfig.Scopes)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusUnauthorized)
 		return
@@ -58,7 +58,7 @@ func getTokenConfidential(w http.ResponseWriter, r *http.Request) {
 // TODO(msal): Needs to use an x509 certificate like the other now that we are not using a
 // thumbprint directly.
 /*
-func acquireByAuthorizationCodeConfidential() {
+func acquireByAuthorizationCodeConfidential(ctx context.Context) {
 	key, err := os.ReadFile(confidentialConfig.KeyFile)
 	if err != nil {
 		log.Fatal(err)
@@ -77,7 +77,7 @@ func acquireByAuthorizationCodeConfidential() {
 		log.Fatal(err)
 	}
 	var userAccount shared.Account
-	for _, account := range app.Accounts() {
+	for _, account := range app.Accounts(ctx) {
 		if account.PreferredUsername == confidentialConfig.Username {
 			userAccount = account
 		}

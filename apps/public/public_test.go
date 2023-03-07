@@ -146,8 +146,12 @@ func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 
 	// cache should return the correct access token for each tenant
 	var account Account
-	if accounts := client.Accounts(); len(accounts) == 2 {
-		// expecting one account for each tenant we authenticated in above
+	accounts, err := client.Accounts(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// expecting one account for each tenant we authenticated in above
+	if len(accounts) == 2 {
 		account = accounts[0]
 	} else {
 		t.Fatalf("expected 2 accounts but got %d", len(accounts))
@@ -233,7 +237,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				case "authcode":
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithTenantID(test.tenant))
 				case "authcodeURL":
-					URL, err = client.CreateAuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithTenantID(test.tenant))
+					URL, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithTenantID(test.tenant))
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithTenantID(test.tenant))
 				case "interactive":
@@ -359,24 +363,25 @@ func TestWithInstanceDiscovery(t *testing.T) {
 }
 
 // testCache is a simple in-memory cache.ExportReplace implementation
-type testCache struct {
-	store map[string][]byte
+type testCache map[string][]byte
+
+func (c testCache) Export(ctx context.Context, m cache.Marshaler, h cache.ExportHints) error {
+	v, err := m.Marshal()
+	if err == nil {
+		c[h.PartitionKey] = v
+	}
+	return err
 }
 
-func (c *testCache) Export(m cache.Marshaler, key string) {
-	if v, err := m.Marshal(); err == nil {
-		c.store[key] = v
+func (c testCache) Replace(ctx context.Context, u cache.Unmarshaler, h cache.ReplaceHints) error {
+	if v, has := c[h.PartitionKey]; has {
+		return u.Unmarshal(v)
 	}
-}
-
-func (c *testCache) Replace(u cache.Unmarshaler, key string) {
-	if v, has := c.store[key]; has {
-		_ = u.Unmarshal(v)
-	}
+	return nil
 }
 
 func TestWithCache(t *testing.T) {
-	cache := testCache{make(map[string][]byte)}
+	cache := make(testCache)
 	accessToken, refreshToken := "*", "rt"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo := "login.microsoftonline.com"
@@ -408,7 +413,10 @@ func TestWithCache(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	accounts := client.Accounts()
+	accounts, err := client.Accounts(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
 	if actual := len(accounts); actual != 1 {
 		t.Fatalf("expected 1 account but cache contains %d", actual)
 	}
@@ -536,7 +544,7 @@ func TestWithClaims(t *testing.T) {
 					ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope, WithClaims(test.claims))
 				case "authcodeURL":
 					u := ""
-					if u, err = client.CreateAuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithClaims(test.claims)); err == nil {
+					if u, err = client.AuthCodeURL(ctx, "client-id", "https://localhost", tokenScope, WithClaims(test.claims)); err == nil {
 						var parsed *url.URL
 						if parsed, err = url.Parse(u); err == nil {
 							validate(t, parsed.Query())
@@ -693,7 +701,7 @@ func TestWithLoginHint(t *testing.T) {
 				return fakeBrowserOpenURL(authURL)
 			}
 			acquireOpts := []AcquireInteractiveOption{}
-			urlOpts := []CreateAuthCodeURLOption{}
+			urlOpts := []AuthCodeURLOption{}
 			if expectHint {
 				acquireOpts = append(acquireOpts, WithLoginHint(upn))
 				urlOpts = append(urlOpts, WithLoginHint(upn))
@@ -705,7 +713,7 @@ func TestWithLoginHint(t *testing.T) {
 			if !called {
 				t.Fatal("browserOpenURL wasn't called")
 			}
-			u, err := client.CreateAuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
 			if err == nil {
 				var parsed *url.URL
 				parsed, err = url.Parse(u)
@@ -767,7 +775,7 @@ func TestWithDomainHint(t *testing.T) {
 				return fakeBrowserOpenURL(authURL)
 			}
 			var acquireOpts []AcquireInteractiveOption
-			var urlOpts []CreateAuthCodeURLOption
+			var urlOpts []AuthCodeURLOption
 			if expectHint {
 				acquireOpts = append(acquireOpts, WithDomainHint(domain))
 				urlOpts = append(urlOpts, WithDomainHint(domain))
@@ -779,7 +787,7 @@ func TestWithDomainHint(t *testing.T) {
 			if !called {
 				t.Fatal("browserOpenURL wasn't called")
 			}
-			u, err := client.CreateAuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
 			if err == nil {
 				var parsed *url.URL
 				parsed, err = url.Parse(u)
