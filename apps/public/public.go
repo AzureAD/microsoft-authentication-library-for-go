@@ -648,7 +648,7 @@ func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params
 	}
 	defer srv.Shutdown()
 	params.Scopes = accesstokens.AppendDefaultScopes(params)
-	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, srv.Addr, params.Scopes, params)
+	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, redirectURI.String(), params.Scopes, params)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}
@@ -663,7 +663,7 @@ func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params
 	}
 	return interactiveAuthResult{
 		authCode:    res.Code,
-		redirectURI: srv.Addr,
+		redirectURI: redirectURI.String(),
 	}, nil
 }
 
