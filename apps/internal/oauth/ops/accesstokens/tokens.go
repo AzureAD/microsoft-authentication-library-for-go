@@ -30,6 +30,7 @@ type IDToken struct {
 	TenantID          string `json:"tid,omitempty"`
 	Subject           string `json:"sub,omitempty"`
 	UPN               string `json:"upn,omitempty"`
+	IpAddress         string `json:"ipaddr,omitempty"`
 	Email             string `json:"email,omitempty"`
 	AlternativeID     string `json:"alternative_id,omitempty"`
 	Issuer            string `json:"iss,omitempty"`
