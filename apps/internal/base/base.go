@@ -458,38 +458,29 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return ar, err
 }
 
-func (b Client) AllAccounts(ctx context.Context) (accts []shared.Account, err error) {
+func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
+		err := b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 		if err != nil {
-			return accts, err
+			return nil, err
 		}
-		defer func() {
-			err = b.export(ctx, s, suggestedCacheKey, err)
-		}()
 	}
-
-	accts = b.manager.AllAccounts()
-	return accts, err
+	return b.manager.AllAccounts(), nil
 }
 
-func (b Client) Account(ctx context.Context, homeAccountID string) (acct shared.Account, err error) {
+func (b Client) Account(ctx context.Context, homeAccountID string) (shared.Account, error) {
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.AuthorizationType = authority.AccountByID
 	authParams.HomeAccountID = homeAccountID
 	if s, ok := b.manager.(cache.Serializer); ok {
 		suggestedCacheKey := b.AuthParams.CacheKey(false)
-		err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
+		err := b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 		if err != nil {
-			return acct, err
+			return shared.Account{}, err
 		}
-		defer func() {
-			err = b.export(ctx, s, suggestedCacheKey, err)
-		}()
 	}
-	acct = b.manager.Account(homeAccountID)
-	return acct, err
+	return b.manager.Account(homeAccountID), nil
 }
 
 // RemoveAccount removes all the ATs, RTs and IDTs from the cache associated with this account.
