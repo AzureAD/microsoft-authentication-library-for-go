@@ -27,20 +27,19 @@ const (
 )
 
 // manager provides an internal cache. It is defined to allow faking the cache in tests.
-// In all production use it is a *storage.Manager.
+// In production it's a *storage.Manager or *storage.PartitionedManager.
 type manager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams, account shared.Account) (storage.TokenResponse, error)
-	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
+	cache.Serializer
+	Read(context.Context, authority.AuthParams) (storage.TokenResponse, error)
+	Write(authority.AuthParams, accesstokens.TokenResponse) (shared.Account, error)
+}
+
+// accountManager is a manager that also caches accounts. In production it's a *storage.Manager.
+type accountManager interface {
+	manager
 	AllAccounts() []shared.Account
 	Account(homeAccountID string) shared.Account
 	RemoveAccount(account shared.Account, clientID string)
-}
-
-// partitionedManager provides an internal cache. It is defined to allow faking the cache in tests.
-// In all production use it is a *storage.PartitionedManager.
-type partitionedManager interface {
-	Read(ctx context.Context, authParameters authority.AuthParams) (storage.TokenResponse, error)
-	Write(authParameters authority.AuthParams, tokenResponse accesstokens.TokenResponse) (shared.Account, error)
 }
 
 type noopCacheAccessor struct{}
@@ -138,8 +137,9 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 // can be used by multiple clients.
 type Client struct {
 	Token    *oauth.Client
-	manager  manager            // *storage.Manager or fakeManager in tests
-	pmanager partitionedManager // *storage.PartitionedManager or fakeManager in tests
+	manager  accountManager // *storage.Manager or fakeManager in tests
+	// pmanager is a partitioned cache for OBO authentication. *storage.PartitionedManager or fakeManager in tests
+	pmanager manager
 
 	AuthParams    authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
 	cacheAccessor cache.ExportReplace
