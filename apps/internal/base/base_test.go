@@ -133,6 +133,7 @@ func TestAcquireTokenSilentScopes(t *testing.T) {
 				},
 				accesstokens.TokenResponse{
 					AccessToken:   fakeAccessToken,
+					ClientInfo:    accesstokens.ClientInfo{UID: "uid", UTID: "utid"},
 					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(-time.Hour)},
 					GrantedScopes: accesstokens.Scopes{Slice: test.cachedTokenScopes},
 					IDToken:       fakeIDToken,
