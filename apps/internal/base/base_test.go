@@ -224,23 +224,27 @@ func TestCacheIOErrors(t *testing.T) {
 		}
 		t.Run(name, func(t *testing.T) {
 			client := fakeClient(t, WithCacheAccessor(&cache))
-			_, actual := client.Account(ctx, "...")
-			if !errors.Is(actual, expected) {
-				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+			if !export {
+				// Account and AllAccounts don't export the cache, and AcquireTokenSilent does so
+				// only after redeeming a refresh token, so we test them only for replace errors
+				_, actual := client.Account(ctx, "...")
+				if !errors.Is(actual, expected) {
+					t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+				}
+				_, actual = client.AllAccounts(ctx)
+				if !errors.Is(actual, expected) {
+					t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+				}
+				_, actual = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{})
+				if cache.replaceErr != nil && !errors.Is(actual, expected) {
+					t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+				}
 			}
-			_, actual = client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential})
+			_, actual := client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential})
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
 			_, actual = client.AcquireTokenOnBehalfOf(ctx, AcquireTokenOnBehalfOfParameters{Credential: &accesstokens.Credential{Secret: "..."}})
-			if !errors.Is(actual, expected) {
-				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
-			}
-			_, actual = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{})
-			if !errors.Is(actual, expected) {
-				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
-			}
-			_, actual = client.AllAccounts(ctx)
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
@@ -254,6 +258,45 @@ func TestCacheIOErrors(t *testing.T) {
 			}
 		})
 	}
+
+	// testing that AcquireTokenSilent propagates errors from Export requires more elaborate
+	// setup because that method exports the cache only after acquiring a new access token
+	t.Run("silent auth export error", func(t *testing.T) {
+		cache := failCache{}
+		hid := "uid.utid"
+		client := fakeClient(t, WithCacheAccessor(&cache))
+		// cache fake tokens and app metadata
+		_, err := client.AuthResultFromToken(ctx,
+			authority.AuthParams{
+				AuthorityInfo: authority.Info{Host: fakeAuthority},
+				ClientID:      fakeClientID,
+				HomeAccountID: hid,
+				Scopes:        testScopes,
+			},
+			accesstokens.TokenResponse{
+				AccessToken:   "at",
+				ClientInfo:    accesstokens.ClientInfo{UID: "uid", UTID: "utid"},
+				GrantedScopes: accesstokens.Scopes{Slice: testScopes},
+				IDToken:       fakeIDToken,
+				RefreshToken:  "rt",
+			},
+			true,
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// AcquireTokenSilent should return this error after redeeming a refresh token
+		cache.exportErr = expected
+		_, actual := client.AcquireTokenSilent(ctx,
+			AcquireTokenSilentParameters{
+				Account: shared.NewAccount(hid, fakeAuthority, "realm", "id", authority.AAD, "upn"),
+				Scopes:  []string{"not-" + testScopes[0]},
+			},
+		)
+		if !errors.Is(actual, expected) {
+			t.Fatalf(`expected "%v", got "%v"`, expected, actual)
+		}
+	})
 
 	// when the client fails to acquire a token, it should return an error instead of exporting the cache
 	t.Run("auth error", func(t *testing.T) {
