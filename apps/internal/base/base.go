@@ -137,8 +137,8 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 // Client is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Client struct {
-	Token    *oauth.Client
-	manager  accountManager // *storage.Manager or fakeManager in tests
+	Token   *oauth.Client
+	manager accountManager // *storage.Manager or fakeManager in tests
 	// pmanager is a partitioned cache for OBO authentication. *storage.PartitionedManager or fakeManager in tests
 	pmanager manager
 
