@@ -341,7 +341,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
-	claims, loginHint, tenantID, domainHint string
+	claims, loginHint, tenantID, domainHint, state string
 }
 
 // AuthCodeURLOption is implemented by options for AuthCodeURL
@@ -364,6 +364,7 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
 	ap.DomainHint = o.domainHint
+	ap.State = o.state
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
@@ -445,6 +446,31 @@ func WithClaims(claims string) interface {
 					t.claims = claims
 				case *authCodeURLOptions:
 					t.claims = claims
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
+// Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
+// This option is valid for any token acquisition method.
+func WithState(state string) interface {
+	AuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *authCodeURLOptions:
+					t.state = state
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
