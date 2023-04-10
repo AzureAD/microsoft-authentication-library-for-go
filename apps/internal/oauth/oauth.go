@@ -83,7 +83,7 @@ func (t *Client) AADInstanceDiscovery(ctx context.Context, authorityInfo authori
 // AuthCode returns a token based on an authorization code.
 func (t *Client) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
 	if err := t.resolveEndpoint(ctx, &req.AuthParams, ""); err != nil {
-		return accesstokens.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, scopeError(err, req.AuthParams)
 	}
 
 	tResp, err := t.AccessTokens.FromAuthCode(ctx, req)
@@ -107,6 +107,9 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 		}
 		tr, err := cred.TokenProvider(ctx, params)
 		if err != nil {
+			if len(scopes) == 0 {
+				return accesstokens.TokenResponse{}, fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+			}
 			return accesstokens.TokenResponse{}, err
 		}
 		return accesstokens.TokenResponse{
@@ -143,9 +146,13 @@ func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams
 	}
 	jwt, err := cred.JWT(ctx, authParams)
 	if err != nil {
-		return accesstokens.TokenResponse{}, err
+		return accesstokens.TokenResponse{}, scopeError(err, authParams)
 	}
-	return t.AccessTokens.FromUserAssertionClientCertificate(ctx, authParams, authParams.UserAssertion, jwt)
+	tr, err := t.AccessTokens.FromUserAssertionClientCertificate(ctx, authParams, authParams.UserAssertion, jwt)
+	if err != nil {
+		return accesstokens.TokenResponse{}, scopeError(err, authParams)
+	}
+	return tr, nil
 }
 
 func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
@@ -153,7 +160,11 @@ func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, auth
 		return accesstokens.TokenResponse{}, err
 	}
 
-	return t.AccessTokens.FromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
+	tr, err := t.AccessTokens.FromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
+	if err != nil {
+		return accesstokens.TokenResponse{}, scopeError(err, authParams)
+	}
+	return tr, nil
 }
 
 // UsernamePassword retrieves a token where a username and password is used. However, if this is
@@ -178,15 +189,24 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 	case authority.Federated:
 		mexDoc, err := t.WSTrust.Mex(ctx, userRealm.FederationMetadataURL)
 		if err != nil {
-			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
+			err = fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
+			return accesstokens.TokenResponse{}, scopeError(err, authParams)
 		}
 
 		saml, err := t.WSTrust.SAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
 		if err != nil {
-			return accesstokens.TokenResponse{}, fmt.Errorf("problem getting SAML token info: %w", err)
+			err = fmt.Errorf("problem getting SAML token info: %w", err)
+			return accesstokens.TokenResponse{}, scopeError(err, authParams)
 		}
-		return t.AccessTokens.FromSamlGrant(ctx, authParams, saml)
+		tr, err := t.AccessTokens.FromSamlGrant(ctx, authParams, saml)
+		if err != nil {
+			return accesstokens.TokenResponse{}, scopeError(err, authParams)
+		}
+		return tr, nil
 	case authority.Managed:
+		if len(authParams.Scopes) == 0 {
+			return accesstokens.TokenResponse{}, fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+		}
 		return t.AccessTokens.FromUsernamePassword(ctx, authParams)
 	}
 	return accesstokens.TokenResponse{}, errors.New("unknown account type")
@@ -280,7 +300,7 @@ func (t *Client) DeviceCode(ctx context.Context, authParams authority.AuthParams
 
 	dcr, err := t.AccessTokens.DeviceCodeResult(ctx, authParams)
 	if err != nil {
-		return DeviceCode{}, err
+		return DeviceCode{}, scopeError(err, authParams)
 	}
 
 	return DeviceCode{Result: dcr, authParams: authParams, accessTokens: t.AccessTokens}, nil
@@ -293,4 +313,21 @@ func (t *Client) resolveEndpoint(ctx context.Context, authParams *authority.Auth
 	}
 	authParams.Endpoints = endpoints
 	return nil
+}
+
+// scopeError takes an error and an authority.AuthParams and returns a new error that wraps the
+// existing error if len(AuthParams.Scope) == 0. This is to help the user understand that the
+// error may be caused by an empty scope.
+func scopeError(err error, a authority.AuthParams) error {
+	// TODO(someone): we could look deeper at the message to determine if
+	// it's a scope error, but this is a good start.
+	/*
+		{error":"invalid_scope","error_description":"AADSTS1002012: The provided value for scope
+		openid offline_access profile is not valid. Client credential flows must have a scope value
+		with /.default suffixed to the resource identifier (application ID URI)...}
+	*/
+	if len(a.Scopes) == 0 {
+		return fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+	}
+	return err
 }
