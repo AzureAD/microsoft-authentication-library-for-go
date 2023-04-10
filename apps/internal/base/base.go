@@ -142,9 +142,9 @@ type Client struct {
 	// pmanager is a partitioned cache for OBO authentication. *storage.PartitionedManager or fakeManager in tests
 	pmanager manager
 
-	AuthParams    authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
-	cacheAccessor cache.ExportReplace
-	mu            *sync.RWMutex
+	AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
+	cacheAccessor   cache.ExportReplace
+	cacheAccessorMu *sync.RWMutex
 }
 
 // Option is an optional argument to the New constructor.
@@ -216,12 +216,12 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 	}
 	authParams := authority.NewAuthParams(clientID, authInfo)
 	client := Client{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
-		Token:         token,
-		AuthParams:    authParams,
-		cacheAccessor: noopCacheAccessor{},
-		manager:       storage.New(token),
-		pmanager:      storage.NewPartitionedManager(token),
-		mu:            &sync.RWMutex{},
+		Token:           token,
+		AuthParams:      authParams,
+		cacheAccessor:   noopCacheAccessor{},
+		cacheAccessorMu: &sync.RWMutex{},
+		manager:         storage.New(token),
+		pmanager:        storage.NewPartitionedManager(token),
 	}
 	for _, o := range options {
 		if err = o(&client); err != nil {
@@ -306,9 +306,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		m = b.manager
 	}
 	key := authParams.CacheKey(silent.IsAppCache)
-	b.mu.RLock()
+	b.cacheAccessorMu.RLock()
 	err = b.cacheAccessor.Replace(ctx, m, cache.ReplaceHints{PartitionKey: key})
-	b.mu.RUnlock()
+	b.cacheAccessorMu.RUnlock()
 	if err != nil {
 		return ar, err
 	}
@@ -404,8 +404,8 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	if !cacheWrite {
 		return NewAuthResult(token, shared.Account{})
 	}
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	b.cacheAccessorMu.Lock()
+	defer b.cacheAccessorMu.Unlock()
 	var m manager = b.manager
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		m = b.pmanager
@@ -427,8 +427,8 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 }
 
 func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.cacheAccessorMu.RLock()
+	defer b.cacheAccessorMu.RUnlock()
 	key := b.AuthParams.CacheKey(false)
 	err := b.cacheAccessor.Replace(ctx, b.manager, cache.ReplaceHints{PartitionKey: key})
 	if err != nil {
@@ -438,8 +438,8 @@ func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {
 }
 
 func (b Client) Account(ctx context.Context, homeAccountID string) (shared.Account, error) {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
+	b.cacheAccessorMu.RLock()
+	defer b.cacheAccessorMu.RUnlock()
 	authParams := b.AuthParams // This is a copy, as we dont' have a pointer receiver and .AuthParams is not a pointer.
 	authParams.AuthorizationType = authority.AccountByID
 	authParams.HomeAccountID = homeAccountID
@@ -453,8 +453,8 @@ func (b Client) Account(ctx context.Context, homeAccountID string) (shared.Accou
 
 // RemoveAccount removes all the ATs, RTs and IDTs from the cache associated with this account.
 func (b Client) RemoveAccount(ctx context.Context, account shared.Account) error {
-	b.mu.Lock()
-	defer b.mu.Unlock()
+	b.cacheAccessorMu.Lock()
+	defer b.cacheAccessorMu.Unlock()
 	key := b.AuthParams.CacheKey(false)
 	err := b.cacheAccessor.Replace(ctx, b.manager, cache.ReplaceHints{PartitionKey: key})
 	if err != nil {
