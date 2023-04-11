@@ -455,9 +455,7 @@ func WithClaims(claims string) interface {
 	}
 }
 
-// WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
-// Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
-// This option is valid for any token acquisition method.
+// WithState adds state query parameter to the auth url.
 func WithState(state string) interface {
 	AuthCodeURLOption
 	options.CallOption
