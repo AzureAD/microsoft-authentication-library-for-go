@@ -479,7 +479,7 @@ func (b Client) Account(ctx context.Context, homeAccountID string) (acct shared.
 	authParams.AuthorizationType = authority.AccountByID
 	authParams.HomeAccountID = homeAccountID
 	if s, ok := b.manager.(cache.Serializer); ok {
-		suggestedCacheKey := b.AuthParams.CacheKey(false)
+		suggestedCacheKey := authParams.CacheKey(false)
 		err = b.cacheAccessor.Replace(ctx, s, cache.ReplaceHints{PartitionKey: suggestedCacheKey})
 		if err != nil {
 			return acct, err
