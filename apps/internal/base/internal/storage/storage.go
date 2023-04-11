@@ -494,6 +494,8 @@ func (m *Manager) update(cache *Contract) {
 
 // Marshal implements cache.Marshaler.
 func (m *Manager) Marshal() ([]byte, error) {
+	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
 	return json.Marshal(m.contract)
 }
 
