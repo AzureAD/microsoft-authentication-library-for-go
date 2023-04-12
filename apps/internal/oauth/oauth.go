@@ -76,14 +76,19 @@ func (t *Client) ResolveEndpoints(ctx context.Context, authorityInfo authority.I
 	return t.Resolver.ResolveEndpoints(ctx, authorityInfo, userPrincipalName)
 }
 
+// AADInstanceDiscovery attempts to discover a tenant endpoint (used in OIDC auth with an authorization endpoint).
+// This is done by AAD which allows for aliasing of tenants (windows.sts.net is the same as login.windows.com).
 func (t *Client) AADInstanceDiscovery(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryResponse, error) {
 	return t.Authority.AADInstanceDiscovery(ctx, authorityInfo)
 }
 
 // AuthCode returns a token based on an authorization code.
 func (t *Client) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest) (accesstokens.TokenResponse, error) {
+	if err := scopeError(req.AuthParams); err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
 	if err := t.resolveEndpoint(ctx, &req.AuthParams, ""); err != nil {
-		return accesstokens.TokenResponse{}, scopeError(err, req.AuthParams)
+		return accesstokens.TokenResponse{}, err
 	}
 
 	tResp, err := t.AccessTokens.FromAuthCode(ctx, req)
@@ -137,6 +142,9 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 
 // Credential acquires a token from the authority using a client credentials grant.
 func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
+	if err := scopeError(authParams); err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
@@ -146,23 +154,26 @@ func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams
 	}
 	jwt, err := cred.JWT(ctx, authParams)
 	if err != nil {
-		return accesstokens.TokenResponse{}, scopeError(err, authParams)
+		return accesstokens.TokenResponse{}, err
 	}
 	tr, err := t.AccessTokens.FromUserAssertionClientCertificate(ctx, authParams, authParams.UserAssertion, jwt)
 	if err != nil {
-		return accesstokens.TokenResponse{}, scopeError(err, authParams)
+		return accesstokens.TokenResponse{}, err
 	}
 	return tr, nil
 }
 
 func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken accesstokens.RefreshToken) (accesstokens.TokenResponse, error) {
+	if err := scopeError(authParams); err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 
 	tr, err := t.AccessTokens.FromRefreshToken(ctx, reqType, authParams, cc, refreshToken.Secret)
 	if err != nil {
-		return accesstokens.TokenResponse{}, scopeError(err, authParams)
+		return accesstokens.TokenResponse{}, err
 	}
 	return tr, nil
 }
@@ -170,6 +181,10 @@ func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, auth
 // UsernamePassword retrieves a token where a username and password is used. However, if this is
 // a user realm of "Federated", this uses SAML tokens. If "Managed", uses normal username/password.
 func (t *Client) UsernamePassword(ctx context.Context, authParams authority.AuthParams) (accesstokens.TokenResponse, error) {
+	if err := scopeError(authParams); err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
+
 	if authParams.AuthorityInfo.AuthorityType == authority.ADFS {
 		if err := t.resolveEndpoint(ctx, &authParams, authParams.Username); err != nil {
 			return accesstokens.TokenResponse{}, err
@@ -190,17 +205,17 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 		mexDoc, err := t.WSTrust.Mex(ctx, userRealm.FederationMetadataURL)
 		if err != nil {
 			err = fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
-			return accesstokens.TokenResponse{}, scopeError(err, authParams)
+			return accesstokens.TokenResponse{}, err
 		}
 
 		saml, err := t.WSTrust.SAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
 		if err != nil {
 			err = fmt.Errorf("problem getting SAML token info: %w", err)
-			return accesstokens.TokenResponse{}, scopeError(err, authParams)
+			return accesstokens.TokenResponse{}, err
 		}
 		tr, err := t.AccessTokens.FromSamlGrant(ctx, authParams, saml)
 		if err != nil {
-			return accesstokens.TokenResponse{}, scopeError(err, authParams)
+			return accesstokens.TokenResponse{}, err
 		}
 		return tr, nil
 	case authority.Managed:
@@ -294,13 +309,17 @@ func isWaitDeviceCodeErr(err error) bool {
 // DeviceCode returns a DeviceCode object that can be used to get the code that must be entered on the second
 // device and optionally the token once the code has been entered on the second device.
 func (t *Client) DeviceCode(ctx context.Context, authParams authority.AuthParams) (DeviceCode, error) {
+	if err := scopeError(authParams); err != nil {
+		return DeviceCode{}, err
+	}
+
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return DeviceCode{}, err
 	}
 
 	dcr, err := t.AccessTokens.DeviceCodeResult(ctx, authParams)
 	if err != nil {
-		return DeviceCode{}, scopeError(err, authParams)
+		return DeviceCode{}, err
 	}
 
 	return DeviceCode{Result: dcr, authParams: authParams, accessTokens: t.AccessTokens}, nil
@@ -315,10 +334,9 @@ func (t *Client) resolveEndpoint(ctx context.Context, authParams *authority.Auth
 	return nil
 }
 
-// scopeError takes an error and an authority.AuthParams and returns a new error that wraps the
-// existing error if len(AuthParams.Scope) == 0. This is to help the user understand that the
-// error may be caused by an empty scope.
-func scopeError(err error, a authority.AuthParams) error {
+// scopeError takes an authority.AuthParams and returns an error
+// if len(AuthParams.Scope) == 0.
+func scopeError(a authority.AuthParams) error {
 	// TODO(someone): we could look deeper at the message to determine if
 	// it's a scope error, but this is a good start.
 	/*
@@ -327,7 +345,7 @@ func scopeError(err error, a authority.AuthParams) error {
 		with /.default suffixed to the resource identifier (application ID URI)...}
 	*/
 	if len(a.Scopes) == 0 {
-		return fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+		return fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which is invalid")
 	}
-	return err
+	return nil
 }
