@@ -267,7 +267,7 @@ func TestAADInstanceDiscoveryWithRegion(t *testing.T) {
 	client := Client{&fakeJSONCaller{}}
 	region := "region"
 	discoveryPath := "tenant/v2.0/.well-known/openid-configuration"
-	publicCloudEndpoint := fmt.Sprintf("https://%s.login.microsoft.com/%s", region, discoveryPath)
+	publicCloudEndpoint := fmt.Sprintf("https://%s.r.login.microsoftonline.com/%s", region, discoveryPath)
 	for _, test := range []struct{ host, expectedEndpoint string }{
 		{"login.chinacloudapi.cn", fmt.Sprintf("https://%s.login.chinacloudapi.cn/%s", region, discoveryPath)},
 		{"login.microsoft.com", publicCloudEndpoint},
