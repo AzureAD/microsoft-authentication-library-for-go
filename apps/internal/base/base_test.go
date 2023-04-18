@@ -235,16 +235,16 @@ func TestCacheIOErrors(t *testing.T) {
 				if !errors.Is(actual, expected) {
 					t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 				}
-				_, actual = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{})
+				_, actual = client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{Scopes: testScopes})
 				if cache.replaceErr != nil && !errors.Is(actual, expected) {
 					t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 				}
 			}
-			_, actual := client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential})
+			_, actual := client.AcquireTokenByAuthCode(ctx, AcquireTokenAuthCodeParameters{AppType: accesstokens.ATConfidential, Scopes: testScopes})
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
-			_, actual = client.AcquireTokenOnBehalfOf(ctx, AcquireTokenOnBehalfOfParameters{Credential: &accesstokens.Credential{Secret: "..."}})
+			_, actual = client.AcquireTokenOnBehalfOf(ctx, AcquireTokenOnBehalfOfParameters{Credential: &accesstokens.Credential{Secret: "..."}, Scopes: testScopes})
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
