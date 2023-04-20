@@ -25,6 +25,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
+var testScopes = []string{"scope"}
+
 func TestAuthCode(t *testing.T) {
 	tests := []struct {
 		desc string
@@ -56,7 +58,7 @@ func TestAuthCode(t *testing.T) {
 		token.AccessTokens = test.at
 		token.Resolver = test.re
 
-		_, err := token.AuthCode(context.Background(), accesstokens.AuthCodeRequest{})
+		_, err := token.AuthCode(context.Background(), accesstokens.AuthCodeRequest{AuthParams: authority.AuthParams{Scopes: testScopes}})
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestAuthCode(%s): got err == nil, want err != nil", test.desc)
@@ -183,7 +185,7 @@ func TestRefresh(t *testing.T) {
 		_, err := token.Refresh(
 			context.Background(),
 			accesstokens.ATPublic,
-			authority.AuthParams{},
+			authority.AuthParams{Scopes: testScopes},
 			&accesstokens.Credential{},
 			accesstokens.RefreshToken{},
 		)
@@ -263,7 +265,7 @@ func TestUsernamePassword(t *testing.T) {
 		token.Resolver = test.re
 		token.WSTrust = test.ws
 
-		_, err := token.UsernamePassword(context.Background(), authority.AuthParams{})
+		_, err := token.UsernamePassword(context.Background(), authority.AuthParams{Scopes: testScopes})
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestUsernamePassword(%s): got err == nil, want err != nil", test.desc)
@@ -382,7 +384,7 @@ func TestDeviceCodeToken(t *testing.T) {
 		token.AccessTokens = test.at
 		token.Resolver = test.re
 
-		dc, err := token.DeviceCode(context.Background(), authority.AuthParams{})
+		dc, err := token.DeviceCode(context.Background(), authority.AuthParams{Scopes: testScopes})
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestDeviceCodeToken(%s): got err == nil, want err != nil", test.desc)

@@ -792,7 +792,7 @@ func TestRead(t *testing.T) {
 		manager := newForTest(responder)
 		manager.update(contract)
 
-		got, err := manager.Read(context.Background(), authParameters, testAccount)
+		got, err := manager.Read(context.Background(), authParameters)
 		switch {
 		case err == nil && test.err:
 			t.Errorf("TestRead(%s): got err == nil, want err != nil", test.desc)
