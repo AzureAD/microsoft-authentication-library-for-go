@@ -113,7 +113,8 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 		tr, err := cred.TokenProvider(ctx, params)
 		if err != nil {
 			if len(scopes) == 0 {
-				return accesstokens.TokenResponse{}, fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+				err = fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+				return accesstokens.TokenResponse{}, err
 			}
 			return accesstokens.TokenResponse{}, err
 		}
@@ -220,7 +221,8 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 		return tr, nil
 	case authority.Managed:
 		if len(authParams.Scopes) == 0 {
-			return accesstokens.TokenResponse{}, fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+			err = fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+			return accesstokens.TokenResponse{}, err
 		}
 		return t.AccessTokens.FromUsernamePassword(ctx, authParams)
 	}
