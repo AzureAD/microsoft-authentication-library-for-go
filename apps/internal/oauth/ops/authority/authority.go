@@ -145,8 +145,10 @@ type AuthParams struct {
 	Endpoints     Endpoints
 	ClientID      string
 	// Redirecturi is used for auth flows that specify a redirect URI (e.g. local server for interactive auth flow).
-	Redirecturi   string
-	HomeAccountID string
+	Redirecturi string
+	// RedirecturiProxy is used for auth flows behind a proxy service (e. g. GitHub codespaces)
+	RedirecturiProxy string
+	HomeAccountID    string
 	// Username is the user-name portion for username/password auth flow.
 	Username string
 	// Password is the password portion for username/password auth flow.

@@ -472,7 +472,7 @@ func (pca Client) RemoveAccount(ctx context.Context, account Account) error {
 
 // interactiveAuthOptions contains the optional parameters used to acquire an access token for interactive auth code flow.
 type interactiveAuthOptions struct {
-	claims, domainHint, loginHint, redirectURI, tenantID string
+	claims, domainHint, loginHint, redirectURI, tenantID, redirectURIProxy string
 }
 
 // AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
@@ -558,6 +558,31 @@ func WithRedirectURI(redirectURI string) interface {
 	}
 }
 
+// WithRedirectURIProxy is used for interactive authentication when a server is waiting on localhost:port but behind
+// a uri proxy like a Github codespace. When set, msal will use this URI instead of localhost for redirect URI, but there
+// will still be a server waiting on localhost:port. The URIProxy will just redirect to the localhost:port.
+func WithRedirectURIProxy(redirectURIProxy string) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *interactiveAuthOptions:
+					t.redirectURIProxy = redirectURIProxy
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
@@ -580,6 +605,14 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 			return AuthResult{}, err
 		}
 	}
+
+	if o.redirectURIProxy != "" {
+		// check for valid url
+		_, err = url.Parse(o.redirectURIProxy)
+		if err != nil {
+			return AuthResult{}, err
+		}
+	}
 	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
 		return AuthResult{}, err
@@ -593,6 +626,8 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.DomainHint = o.domainHint
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
+	authParams.RedirecturiProxy = o.redirectURIProxy
+
 	res, err := pca.browserLogin(ctx, redirectURL, authParams)
 	if err != nil {
 		return AuthResult{}, err
@@ -648,7 +683,11 @@ func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params
 	}
 	defer srv.Shutdown()
 	params.Scopes = accesstokens.AppendDefaultScopes(params)
-	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, srv.Addr, params.Scopes, params)
+	redirectTo := srv.Addr
+	if params.RedirecturiProxy != "" {
+		redirectTo = params.RedirecturiProxy
+	}
+	authURL, err := pca.base.AuthCodeURL(ctx, params.ClientID, redirectTo, params.Scopes, params)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}
