@@ -4,12 +4,42 @@
 package confidential_test
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
+
+// This example demonstrates the general pattern for authenticating with MSAL Go:
+//   - create a client (only necessary at application start--it's best to reuse client instances)
+//   - call AcquireTokenSilent() to search for a cached access token
+//   - if the cache misses, acquire a new token
+func Example() {
+	cred, err := confidential.NewCredFromSecret("client_secret")
+	if err != nil {
+		// TODO: handle error
+	}
+	client, err := confidential.New("https://login.microsoft.com/your_tenant", "client_id", cred)
+	if err != nil {
+		// TODO: handle error
+	}
+
+	scopes := []string{"scope"}
+	result, err := client.AcquireTokenSilent(context.TODO(), scopes)
+	if err != nil {
+		// cache miss, authenticate with another AcquireToken* method
+		result, err = client.AcquireTokenByCredential(context.TODO(), scopes)
+		if err != nil {
+			// TODO: handle error
+		}
+	}
+	if err == nil {
+		// TODO: use access token
+		_ = result.AccessToken
+	}
+}
 
 func ExampleNewCredFromCert_pem() {
 	b, err := os.ReadFile("key.pem")
