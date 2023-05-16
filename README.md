@@ -35,7 +35,7 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     ```go
     import "github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 
-    publicClient, err := public.New("client_id", public.WithAuthority("https://login.microsoft.com/your_tenant"))
+    publicClient, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/your_tenant"))
     ```
 
    * Initializing a confidential client:
@@ -48,7 +48,7 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     if err != nil {
         // TODO: handle error
     }
-    confidentialClient, err := confidential.New("https://login.microsoft.com/your_tenant", "client_id", cred)
+    confidentialClient, err := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
     ```
 
 1. Call `AcquireTokenSilent()` to look for a cached token. If `AcquireTokenSilent()` returns an error, call another `AcquireToken...` method to authenticate.

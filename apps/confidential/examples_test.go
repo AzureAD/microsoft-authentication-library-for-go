@@ -21,7 +21,7 @@ func Example() {
 	if err != nil {
 		// TODO: handle error
 	}
-	client, err := confidential.New("https://login.microsoft.com/your_tenant", "client_id", cred)
+	client, err := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
 	if err != nil {
 		// TODO: handle error
 	}

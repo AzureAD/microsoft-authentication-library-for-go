@@ -11,7 +11,7 @@ import (
 //   - call AcquireTokenSilent() to search for a cached access token
 //   - if the cache misses, acquire a new token
 func Example() {
-	client, err := public.New("client_id", public.WithAuthority("https://login.microsoft.com/your_tenant"))
+	client, err := public.New("client_id", public.WithAuthority("https://login.microsoftonline.com/your_tenant"))
 	if err != nil {
 		// TODO: handle error
 	}
