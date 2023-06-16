@@ -61,7 +61,7 @@ func TestCreateAccessToken(t *testing.T) {
 }
 
 func TestKeyForAccessToken(t *testing.T) {
-	const want = "testHID-env-AccessToken-clientID-realm-user.read"
+	const want = "testhid-env-accesstoken-clientid-realm-user.read"
 	got := atCacheEntity.Key()
 	if got != want {
 		t.Errorf("TestKeyForAccessToken: got %s, want %s", got, want)
@@ -133,7 +133,7 @@ var (
 )
 
 func TestKeyForAppMetaData(t *testing.T) {
-	want := "AppMetaData-env-cid"
+	want := "appmetadata-env-cid"
 	got := appMeta.Key()
 	if want != got {
 		t.Errorf("actual key %v differs from expected key %v", want, got)
@@ -387,7 +387,7 @@ var idToken = IDToken{
 }
 
 func TestKeyForIDToken(t *testing.T) {
-	want := "HID-env-IdToken-clientID-realm"
+	want := "hid-env-idtoken-clientid-realm"
 	if idToken.Key() != want {
 		t.Errorf("actual key %v differs from expected key %v", idToken.Key(), want)
 	}
@@ -475,7 +475,7 @@ func TestNewRefreshToken(t *testing.T) {
 }
 
 func TestKeyForRefreshToken(t *testing.T) {
-	want := "HID-env-accesstokens.RefreshToken-clientID"
+	want := "hid-env-accesstokens.refreshtoken-clientid"
 	got := rt.Key()
 	if want != got {
 		t.Errorf("Actual key %v differs from expected key %v", got, want)

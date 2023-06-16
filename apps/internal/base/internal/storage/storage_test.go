@@ -87,8 +87,8 @@ func TestIsMatchingScopes(t *testing.T) {
 }
 
 func TestAllAccounts(t *testing.T) {
-	testAccOne := shared.NewAccount("hid", "env", "realm", "lid", accAuth, "username")
-	testAccTwo := shared.NewAccount("HID", "ENV", "REALM", "LID", accAuth, "USERNAME")
+	testAccOne := shared.NewAccount("oid1.tid", "env", "realm", "lid", accAuth, "username")
+	testAccTwo := shared.NewAccount("oid2.tid", "ENV", "REALM", "LID", accAuth, "USERNAME")
 	cache := &Contract{
 		Accounts: map[string]shared.Account{
 			testAccOne.Key(): testAccOne,
@@ -105,7 +105,7 @@ func TestAllAccounts(t *testing.T) {
 	sort.Slice(
 		actualAccounts,
 		func(i, j int) bool {
-			return actualAccounts[i].HomeAccountID > actualAccounts[j].HomeAccountID
+			return actualAccounts[i].HomeAccountID < actualAccounts[j].HomeAccountID
 		},
 	)
 
