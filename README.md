@@ -56,27 +56,33 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     * Public clients should specify a user account, if one is available:
 
     ```go
-    var userAccount public.Account
     accounts, err := publicClient.Accounts(context.TODO())
-	if err != nil {
-		// TODO: handle error
-	}
+    if err != nil {
+        // TODO: handle error
+    }
+    var userAccount public.Account
     if len(accounts) > 0 {
         // there may be more accounts; here we assume the first one is wanted
         userAccount = accounts[0]
     }
+
     scopes := []string{"scope"}
-    result, err := publicClient.AcquireTokenSilent(context.TODO(), scopes, public.WithSilentAccount(userAccount))
+    var result public.AuthResult
+    if !userAccount.IsZero() {
+        // search the cache for an access token
+        result, err = publicClient.AcquireTokenSilent(context.TODO(), scopes, public.WithSilentAccount(userAccount))
+    }
     if err != nil {
-        // cache miss, authenticate a user with another AcquireToken... method
+        // cache miss, authenticate a user with another AcquireToken* method
         result, err = publicClient.AcquireTokenInteractive(context.TODO(), scopes)
         if err != nil {
             // TODO: handle error
         }
+        // this account can be used in a future AcquireTokenSilent call
+        userAccount = result.Account
     }
-    if err == nil {
-        accessToken := result.AccessToken
-    }
+	// TODO: use access token
+    _ = result.AccessToken
     ```
 
     * Confidential clients can simply call `AcquireTokenSilent()`:

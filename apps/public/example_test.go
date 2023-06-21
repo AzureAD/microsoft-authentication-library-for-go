@@ -16,28 +16,31 @@ func Example() {
 		// TODO: handle error
 	}
 
-	var userAccount public.Account
+	var result public.AuthResult
+	scopes := []string{"scope"}
+
+	// If your application previously authenticated a user, call AcquireTokenSilent with that user's account
+	// to use cached authentication data. This example shows choosing an account from the cache, however this
+	// isn't always necessary because the AuthResult returned by authentication methods includes user account
+	// information.
 	accounts, err := client.Accounts(context.TODO())
 	if err != nil {
 		// TODO: handle error
 	}
 	if len(accounts) > 0 {
-		// there may be more accounts; here we assume the first one is wanted
-		userAccount = accounts[0]
+		// There may be more accounts; here we assume the first one is wanted.
+		// AcquireTokenSilent returns a non-nil error when it can't provide a token.
+		result, err = client.AcquireTokenSilent(context.TODO(), scopes, public.WithSilentAccount(accounts[0]))
 	}
-	scopes := []string{"scope"}
-	result, err := client.AcquireTokenSilent(context.TODO(), scopes, public.WithSilentAccount(userAccount))
-	if err != nil {
+	if err != nil || len(accounts) == 0 {
 		// cache miss, authenticate a user with another AcquireToken* method
 		result, err = client.AcquireTokenInteractive(context.TODO(), scopes)
 		if err != nil {
 			// TODO: handle error
 		}
 	}
-	if err == nil {
-		// this account can be used in a future AcquireTokenSilent call
-		userAccount = result.Account
-		// TODO: use access token
-		_ = result.AccessToken
-	}
+
+	// TODO: save the authenticated user's account, use the access token
+	_ = result.Account
+	_ = result.AccessToken
 }
