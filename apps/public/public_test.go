@@ -179,6 +179,27 @@ func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenSilentWithoutAccount(t *testing.T) {
+	for _, withZeroAccount := range []bool{false, true} {
+		opts := []AcquireSilentOption{}
+		name := "no account specified"
+		if withZeroAccount {
+			name = "zero value account specified"
+			opts = append(opts, WithSilentAccount(Account{}))
+		}
+		t.Run(name, func(t *testing.T) {
+			client, err := New("clientID")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.AcquireTokenSilent(context.Background(), tokenScope, opts...)
+			if !errors.Is(err, errNoAccount) {
+				t.Fatalf("expected %q, got %q", errNoAccount, err)
+			}
+		})
+	}
+}
+
 func TestAcquireTokenWithTenantID(t *testing.T) {
 	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
 	realBrowserOpenURL := browserOpenURL
