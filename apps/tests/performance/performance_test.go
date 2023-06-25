@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
-	"os"
 	"testing"
 	"time"
 
@@ -17,7 +16,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
-	"github.com/montanaflynn/stats"
 )
 
 func fakeClient() (base.Client, error) {
@@ -67,62 +65,6 @@ func populateCache(users int, tokens int, authParams authority.AuthParams, clien
 		}
 	}
 }
-func calculateStats(users, tokens int, duration []float64) {
-
-	fmt.Printf("No of users: %d, No of tokens per user: %d \n", users, tokens)
-
-	mean, err := stats.Mean(duration)
-	if err != nil {
-		panic(err)
-	}
-	meanTime := mean / float64(time.Microsecond)
-	fmt.Println("Mean")
-	fmt.Println(meanTime)
-
-	median, err := stats.Median(duration)
-	medianTime := median / float64(time.Microsecond)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Median")
-	fmt.Println(medianTime)
-
-	stdDev, err := stats.StandardDeviation(duration)
-	stdDevTime := stdDev / float64(time.Microsecond)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Standard Deviation")
-	fmt.Println(stdDevTime)
-
-	min, err := stats.Min(duration)
-	minTime := min / float64(time.Microsecond)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Min Time")
-	fmt.Println(minTime)
-
-	max, err := stats.Max(duration)
-	maxTime := max / float64(time.Microsecond)
-	if err != nil {
-		panic(err)
-	}
-	fmt.Println("Max Time")
-	fmt.Println(maxTime)
-
-}
-
-func benchMarkObo(users int, tokens int, client base.Client) {
-	var duration []float64
-	for start := time.Now(); time.Since(start) < time.Minute*1; {
-		s := time.Now()
-		queryCache(users, tokens, client)
-		e := time.Now()
-		duration = append(duration, float64(e.Sub(s)))
-	}
-	calculateStats(users, tokens, duration)
-}
 
 func queryCache(users int, tokens int, client base.Client) {
 	userAssertion := fmt.Sprintf("fake_access_token%d", rand.Intn(users))
@@ -137,28 +79,30 @@ func queryCache(users int, tokens int, client base.Client) {
 		panic(err)
 	}
 }
-func TestOnBehalfOfCacheTests(t *testing.T) {
-	if os.Getenv("CI") != "" {
-		t.Skip("Skipping testing in CI environment")
-	}
-	tests := []struct {
-		Users  int
-		Tokens int
+
+func BenchmarkQueryCache(b *testing.B) {
+	benchmarks := []struct {
+		users, tokens int
 	}{
 		{1, 10000},
 		{1, 100000},
+		{10, 10000},
 		{100, 10000},
-		{1000, 10000},
+		{1000, 1000},
 		{10000, 100},
 	}
-
-	for _, test := range tests {
-		client, err := fakeClient()
-		if err != nil {
-			panic(err)
-		}
-		authParams := client.AuthParams
-		populateCache(test.Users, test.Tokens, authParams, client)
-		benchMarkObo(test.Users, test.Tokens, client)
+	for _, bm := range benchmarks {
+		b.Run(fmt.Sprintf("%d users %d tokens", bm.users, bm.tokens), func(b *testing.B) {
+			client, err := fakeClient()
+			if err != nil {
+				panic(err)
+			}
+			authParams := client.AuthParams
+			populateCache(bm.users, bm.tokens, authParams, client)
+			b.ResetTimer()
+			for i := 0; i < b.N; i++ {
+				queryCache(bm.users, bm.tokens, client)
+			}
+		})
 	}
 }
