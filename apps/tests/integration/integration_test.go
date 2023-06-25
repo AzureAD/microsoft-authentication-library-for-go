@@ -88,9 +88,16 @@ type secret struct {
 	Value string `json:"value"`
 }
 
-func newLabClient() (*labClient, error) {
+func newLabClient(t *testing.T) (*labClient, error) {
 	clientID := os.Getenv("clientId")
 	secret := os.Getenv("clientSecret")
+	if clientID == "" || secret == "" {
+		if os.Getenv("CI") != "" {
+			// strict on CI
+			t.Fatal("test requires environment variables clientId and clientSecret")
+		}
+		t.Skip("skipping test because environment variables clientId and clientSecret not set")
+	}
 
 	cred, err := confidential.NewCredFromSecret(secret)
 	if err != nil {
@@ -173,7 +180,7 @@ func TestUsernamePassword(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	labClientInstance, err := newLabClient()
+	labClientInstance, err := newLabClient(t)
 	if err != nil {
 		panic("failed to get a lab client: " + err.Error())
 	}
@@ -222,6 +229,14 @@ func TestConfidentialClientwithSecret(t *testing.T) {
 	}
 	clientID := os.Getenv("clientId")
 	secret := os.Getenv("clientSecret")
+	if clientID == "" || secret == "" {
+		if os.Getenv("CI") != "" {
+			// strict on CI
+			t.Fatal("test requires environment variables clientId and clientSecret")
+		}
+		t.Skip("skipping test because environment variables clientId and clientSecret not set")
+	}
+
 	cred, err := confidential.NewCredFromSecret(secret)
 	if err != nil {
 		panic(errors.Verbose(err))
@@ -253,7 +268,7 @@ func TestOnBehalfOf(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	labClientInstance, err := newLabClient()
+	labClientInstance, err := newLabClient(t)
 	if err != nil {
 		panic("failed to get a lab client: " + err.Error())
 	}
@@ -369,7 +384,7 @@ func TestRemoveAccount(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	labClientInstance, err := newLabClient()
+	labClientInstance, err := newLabClient(t)
 	if err != nil {
 		panic("failed to get a lab client: " + err.Error())
 	}

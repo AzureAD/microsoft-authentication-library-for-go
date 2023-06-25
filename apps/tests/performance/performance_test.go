@@ -138,8 +138,8 @@ func queryCache(users int, tokens int, client base.Client) {
 	}
 }
 func TestOnBehalfOfCacheTests(t *testing.T) {
-	if os.Getenv("CI") != "" {
-		t.Skip("Skipping testing in CI environment")
+	if os.Getenv("TEST_PERFORMANCE") == "" {
+		t.Skip("skipping performance test because environment variable TEST_PERFORMANCE not set")
 	}
 	tests := []struct {
 		Users  int
