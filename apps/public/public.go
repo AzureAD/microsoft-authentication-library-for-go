@@ -24,6 +24,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -46,6 +47,8 @@ import (
 type AuthResult = base.AuthResult
 
 type Account = shared.Account
+
+var errNoAccount = errors.New("no account was specified with public.WithAccount(), or the specified account is invalid")
 
 // clientOptions configures the Client's behavior.
 type clientOptions struct {
@@ -293,6 +296,10 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
+	}
+	// a home account ID is required to find user tokens in the cache
+	if o.account.HomeAccountID == "" {
+		return AuthResult{}, errNoAccount
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
