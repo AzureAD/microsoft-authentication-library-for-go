@@ -118,7 +118,6 @@ func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 	tenantA, tenantB := "a", "b"
 	lmo := "login.microsoftonline.com"
 	mockClient := mock.Client{}
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
 	client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, tenantA)), WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
@@ -127,9 +126,6 @@ func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 	ctx := context.Background()
 	// cache an access token for each tenant. To simplify determining their provenance below, the value of each token is the ID of the tenant that provided it.
 	for _, tenant := range []string{tenantA, tenantB} {
-		if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant)); err == nil {
-			t.Fatal("silent auth should fail because the cache is empty")
-		}
 		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
 		mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
 		mockClient.AppendResponse(mock.WithBody(
@@ -156,6 +152,7 @@ func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 	} else {
 		t.Fatalf("expected 2 accounts but got %d", len(accounts))
 	}
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
 	for _, test := range []struct {
 		desc, expected string
 		opts           []AcquireSilentOption
@@ -174,6 +171,27 @@ func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 			}
 			if ar.AccessToken != test.expected {
 				t.Fatalf(`expected "%s", got "%s"`, test.expected, ar.AccessToken)
+			}
+		})
+	}
+}
+
+func TestAcquireTokenSilentWithoutAccount(t *testing.T) {
+	for _, withZeroAccount := range []bool{false, true} {
+		opts := []AcquireSilentOption{}
+		name := "no account specified"
+		if withZeroAccount {
+			name = "zero value account specified"
+			opts = append(opts, WithSilentAccount(Account{}))
+		}
+		t.Run(name, func(t *testing.T) {
+			client, err := New("clientID")
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.AcquireTokenSilent(context.Background(), tokenScope, opts...)
+			if !errors.Is(err, errNoAccount) {
+				t.Fatalf("expected %q, got %q", errNoAccount, err)
 			}
 		})
 	}
@@ -210,7 +228,6 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				}
-				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
 				if method == "devicecode" {
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
@@ -227,9 +244,6 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					t.Fatal(err)
 				}
 				ctx := context.Background()
-				if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant)); err == nil {
-					t.Fatal("silent auth should fail because the cache is empty")
-				}
 
 				var ar AuthResult
 				var dc DeviceCode
@@ -272,6 +286,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				}
 				// silent authentication should succeed for the given tenant because the client has a cached
 				// access token, and for a different tenant because the client has a cached refresh token
+				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithTenantID(test.tenant)); err != nil {
 					t.Fatal(err)
 				} else if ar.AccessToken != accessToken {
@@ -322,9 +337,6 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					t.Fatal(err)
 				}
 				ctx := context.Background()
-				if _, err = client.AcquireTokenSilent(ctx, tokenScope); err == nil {
-					t.Fatal("silent auth should fail because the cache is empty")
-				}
 
 				var ar AuthResult
 				var dc DeviceCode
@@ -510,7 +522,6 @@ func TestWithClaims(t *testing.T) {
 					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 				}
-				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
 				switch method {
 				case "devicecode":
@@ -532,9 +543,6 @@ func TestWithClaims(t *testing.T) {
 				client, err := New("client-id", WithAuthority(authority), WithClientCapabilities(test.capabilities), WithHTTPClient(&mockClient))
 				if err != nil {
 					t.Fatal(err)
-				}
-				if _, err = client.AcquireTokenSilent(context.Background(), tokenScope); err == nil {
-					t.Fatal("silent authentication should fail because the cache is empty")
 				}
 				ctx := context.Background()
 				var ar AuthResult
@@ -573,7 +581,7 @@ func TestWithClaims(t *testing.T) {
 				if ar.AccessToken != accessToken {
 					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
 				}
-				// silent auth should now succeed because the client has an access token cached
+				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 				ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account))
 				if err != nil {
 					t.Fatal(err)
@@ -617,14 +625,15 @@ func TestWithPortAuthority(t *testing.T) {
 	host := sl + port
 	tenant := "00000000-0000-0000-0000-000000000000"
 	authority := fmt.Sprintf("https://%s%s/%s", sl, port, tenant)
-	idToken, refreshToken, URL := "", "", ""
+	refreshToken, URL := "", ""
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
+		fmt.Sprintf(`{"uid":"uid","utid":"%s"}`, tenant),
+	))
 	mockClient := mock.Client{}
-	//2 calls to instance discovery are made because Host is not trusted
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
 	mockClient.AppendResponse(
-		mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, "issuer"), refreshToken, clientInfo, 3600)),
 		mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 	)
 	client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient))
@@ -632,9 +641,6 @@ func TestWithPortAuthority(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if _, err = client.AcquireTokenSilent(ctx, tokenScope); err == nil {
-		t.Fatal("silent auth should fail because the cache is empty")
-	}
 	var ar AuthResult
 	ar, err = client.AcquireTokenByAuthCode(ctx, "auth code", "https://localhost", tokenScope)
 	if err != nil {
@@ -646,7 +652,8 @@ func TestWithPortAuthority(t *testing.T) {
 	if ar.AccessToken != accessToken {
 		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
 	}
-	if ar, err = client.AcquireTokenSilent(ctx, tokenScope); err != nil {
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
+	if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account)); err != nil {
 		t.Fatal(err)
 	}
 	if ar.AccessToken != accessToken {
