@@ -56,33 +56,26 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     * Public clients should specify a user account, if one is available:
 
     ```go
-    accounts, err := publicClient.Accounts(context.TODO())
+    // If your application previously authenticated a user, call AcquireTokenSilent with that user's account
+    // to use cached authentication data. This example shows choosing an account from the cache, however this
+    // isn't always necessary because the AuthResult returned by authentication methods includes user account
+    // information.
+    accounts, err := client.Accounts(context.TODO())
     if err != nil {
         // TODO: handle error
     }
-    var userAccount public.Account
     if len(accounts) > 0 {
-        // there may be more accounts; here we assume the first one is wanted
-        userAccount = accounts[0]
+        // There may be more accounts; here we assume the first one is wanted.
+        // AcquireTokenSilent returns a non-nil error when it can't provide a token.
+        result, err = client.AcquireTokenSilent(context.TODO(), scopes, public.WithSilentAccount(accounts[0]))
     }
-
-    scopes := []string{"scope"}
-    var result public.AuthResult
-    if !userAccount.IsZero() {
-        // search the cache for an access token
-        result, err = publicClient.AcquireTokenSilent(context.TODO(), scopes, public.WithSilentAccount(userAccount))
-    }
-    if err != nil {
-        // cache miss, authenticate a user with another AcquireToken* method
-        result, err = publicClient.AcquireTokenInteractive(context.TODO(), scopes)
+    if err != nil || len(accounts) == 0 {
+            // cache miss, authenticate a user with another AcquireToken* method
+        result, err = client.AcquireTokenInteractive(context.TODO(), scopes)
         if err != nil {
             // TODO: handle error
         }
-        // this account can be used in a future AcquireTokenSilent call
-        userAccount = result.Account
     }
-	// TODO: use access token
-    _ = result.AccessToken
     ```
 
     * Confidential clients can simply call `AcquireTokenSilent()`:
