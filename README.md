@@ -70,12 +70,15 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
         result, err = client.AcquireTokenSilent(context.TODO(), scopes, public.WithSilentAccount(accounts[0]))
     }
     if err != nil || len(accounts) == 0 {
-            // cache miss, authenticate a user with another AcquireToken* method
+        // cache miss, authenticate a user with another AcquireToken* method
         result, err = client.AcquireTokenInteractive(context.TODO(), scopes)
         if err != nil {
             // TODO: handle error
         }
     }
+    // TODO: save the authenticated user's account, use the access token
+    userAccount := result.Account
+    accessToken := result.AccessToken
     ```
 
     * Confidential clients can simply call `AcquireTokenSilent()`:
@@ -90,9 +93,7 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
             // TODO: handle error
         }
     }
-    if err == nil {
-        accessToken := result.AccessToken
-    }
+    accessToken := result.AccessToken
     ```
 
 ## Community Help and Support

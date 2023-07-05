@@ -35,10 +35,9 @@ func Example() {
 			// TODO: handle error
 		}
 	}
-	if err == nil {
-		// TODO: use access token
-		_ = result.AccessToken
-	}
+
+	// TODO: use access token
+	_ = result.AccessToken
 }
 
 func ExampleNewCredFromCert_pem() {
