@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	testFile           = "test_serialized_cache.json"
+	testFile           = "testdata/test_serialized_cache.json"
 	defaultEnvironment = "login.windows.net"
 	defaultHID         = "uid.utid"
 	defaultRealm       = "contoso"
