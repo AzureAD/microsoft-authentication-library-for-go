@@ -657,7 +657,7 @@ func parsePort(u *url.URL) (int, error) {
 	return strconv.Atoi(p)
 }
 
-// browserLogin launches the system browser for interactive login
+// browserLogin calls openURL and waits for a user to log in
 func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams, openURL func(string) error) (interactiveAuthResult, error) {
 	// start local redirect server so login can call us back
 	port, err := parsePort(redirectURI)
