@@ -62,9 +62,6 @@ func fakeBrowserOpenURL(authURL string) error {
 }
 
 func TestAcquireTokenInteractive(t *testing.T) {
-	realBrowserOpenURL := browserOpenURL
-	defer func() { browserOpenURL = realBrowserOpenURL }()
-	browserOpenURL = fakeBrowserOpenURL
 	client, err := New("some_client_id")
 	if err != nil {
 		t.Fatal(err)
@@ -73,7 +70,7 @@ func TestAcquireTokenInteractive(t *testing.T) {
 	client.base.Token.Authority = &fake.Authority{}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{}
 	client.base.Token.WSTrust = &fake.WSTrust{}
-	_, err = client.AcquireTokenInteractive(context.Background(), []string{"the_scope"})
+	_, err = client.AcquireTokenInteractive(context.Background(), []string{"the_scope"}, WithOpenURL(fakeBrowserOpenURL))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -198,11 +195,6 @@ func TestAcquireTokenSilentWithoutAccount(t *testing.T) {
 }
 
 func TestAcquireTokenWithTenantID(t *testing.T) {
-	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
-	realBrowserOpenURL := browserOpenURL
-	defer func() { browserOpenURL = realBrowserOpenURL }()
-	browserOpenURL = fakeBrowserOpenURL
-
 	accessToken := "*"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	uuid1 := "00000000-0000-0000-0000-000000000000"
@@ -255,7 +247,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithTenantID(test.tenant))
 				case "interactive":
-					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithTenantID(test.tenant))
+					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithTenantID(test.tenant), WithOpenURL(fakeBrowserOpenURL))
 				case "password":
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(test.tenant))
 				default:
@@ -304,11 +296,6 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 }
 
 func TestWithInstanceDiscovery(t *testing.T) {
-	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
-	realBrowserOpenURL := browserOpenURL
-	defer func() { browserOpenURL = realBrowserOpenURL }()
-	browserOpenURL = fakeBrowserOpenURL
-
 	accessToken := "*"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	host := "stack.local"
@@ -346,7 +333,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope)
 				case "interactive":
-					ar, err = client.AcquireTokenInteractive(ctx, tokenScope)
+					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithOpenURL(fakeBrowserOpenURL))
 				case "password":
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password")
 				default:
@@ -460,11 +447,6 @@ func TestWithCache(t *testing.T) {
 }
 
 func TestWithClaims(t *testing.T) {
-	// replacing browserOpenURL with a fake for the duration of this test enables testing AcquireTokenInteractive
-	realBrowserOpenURL := browserOpenURL
-	defer func() { browserOpenURL = realBrowserOpenURL }()
-	browserOpenURL = fakeBrowserOpenURL
-
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo, tenant := "login.microsoftonline.com", "tenant"
 	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
@@ -562,7 +544,7 @@ func TestWithClaims(t *testing.T) {
 				case "devicecode":
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithClaims(test.claims))
 				case "interactive":
-					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithClaims(test.claims))
+					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithClaims(test.claims), WithOpenURL(fakeBrowserOpenURL))
 				case "password":
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithClaims(test.claims))
 				case "passwordFederated":
@@ -662,8 +644,6 @@ func TestWithPortAuthority(t *testing.T) {
 }
 
 func TestWithLoginHint(t *testing.T) {
-	realBrowserOpenURL := browserOpenURL
-	defer func() { browserOpenURL = realBrowserOpenURL }()
 	upn := "user@localhost"
 	client, err := New("client-id")
 	if err != nil {
@@ -690,7 +670,7 @@ func TestWithLoginHint(t *testing.T) {
 				}
 				return err
 			}
-			browserOpenURL = func(authURL string) error {
+			browserOpenURL := func(authURL string) error {
 				called = true
 				parsed, err := url.Parse(authURL)
 				if err != nil {
@@ -707,7 +687,7 @@ func TestWithLoginHint(t *testing.T) {
 				// this helper validates the other params and completes the redirect
 				return fakeBrowserOpenURL(authURL)
 			}
-			acquireOpts := []AcquireInteractiveOption{}
+			acquireOpts := []AcquireInteractiveOption{WithOpenURL(browserOpenURL)}
 			urlOpts := []AuthCodeURLOption{}
 			if expectHint {
 				acquireOpts = append(acquireOpts, WithLoginHint(upn))
@@ -736,8 +716,6 @@ func TestWithLoginHint(t *testing.T) {
 }
 
 func TestWithDomainHint(t *testing.T) {
-	realBrowserOpenURL := browserOpenURL
-	defer func() { browserOpenURL = realBrowserOpenURL }()
 	domain := "contoso.com"
 	client, err := New("client-id")
 	if err != nil {
@@ -764,7 +742,7 @@ func TestWithDomainHint(t *testing.T) {
 				}
 				return err
 			}
-			browserOpenURL = func(authURL string) error {
+			browserOpenURL := func(authURL string) error {
 				called = true
 				parsed, err := url.Parse(authURL)
 				if err != nil {
@@ -781,7 +759,7 @@ func TestWithDomainHint(t *testing.T) {
 				// this helper validates the other params and completes the redirect
 				return fakeBrowserOpenURL(authURL)
 			}
-			var acquireOpts []AcquireInteractiveOption
+			acquireOpts := []AcquireInteractiveOption{WithOpenURL(browserOpenURL)}
 			var urlOpts []AuthCodeURLOption
 			if expectHint {
 				acquireOpts = append(acquireOpts, WithDomainHint(domain))
