@@ -28,7 +28,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
-	"github.com/golang-jwt/jwt/v4"
+	"github.com/golang-jwt/jwt/v5"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -464,8 +464,8 @@ func TestNewCredFromCert(t *testing.T) {
 					if err != nil {
 						t.Fatal(err)
 					}
-					if err = tk.Claims.Valid(); err != nil {
-						t.Fatal(err)
+					if !tk.Valid {
+						t.Fatal("token not valid")
 					}
 					// x5c header should be set iff the sendX5c is true
 					if x5c, ok := tk.Header["x5c"]; ok != sendX5c {
