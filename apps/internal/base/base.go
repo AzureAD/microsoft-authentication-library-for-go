@@ -54,6 +54,7 @@ type AcquireTokenSilentParameters struct {
 	UserAssertion     string
 	AuthorizationType authority.AuthorizeType
 	Claims            string
+	AuthnScheme       authority.AuthenticationScheme
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -289,6 +290,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.AuthorizationType = silent.AuthorizationType
 	authParams.Claims = silent.Claims
 	authParams.UserAssertion = silent.UserAssertion
+	authParams.AuthenticationScheme = silent.AuthnScheme
 
 	m := b.pmanager
 	if authParams.AuthorizationType != authority.ATOnBehalfOf {
@@ -312,6 +314,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	// ignore cached access tokens when given claims
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
+		if authParams.AuthenticationScheme != nil {
+			ar.AccessToken, _ = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
+		}
 		if err == nil {
 			return ar, err
 		}
@@ -416,6 +421,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	ar, err := NewAuthResult(token, account)
 	if err == nil && b.cacheAccessor != nil {
 		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
+	}
+	if authParams.AuthenticationScheme != nil {
+		ar.AccessToken, _ = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
 	}
 	return ar, err
 }

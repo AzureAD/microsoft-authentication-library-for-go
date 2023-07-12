@@ -138,6 +138,13 @@ const (
 	ADFS = "ADFS"
 )
 
+// AuthenticationScheme interface
+type AuthenticationScheme interface {
+	GetTokenRequestParams() map[string]string
+	KeyId() string
+	FormatAccessToken(accessToken string) (string, error)
+}
+
 // AuthParams represents the parameters used for authorization for token acquisition.
 type AuthParams struct {
 	AuthorityInfo Info
@@ -180,6 +187,8 @@ type AuthParams struct {
 	LoginHint string
 	// DomainHint is a directive that can be used to accelerate the user to their federated IdP sign-in page
 	DomainHint string
+	// Authn Scheme
+	AuthenticationScheme
 }
 
 // NewAuthParams creates an authorization parameters object.

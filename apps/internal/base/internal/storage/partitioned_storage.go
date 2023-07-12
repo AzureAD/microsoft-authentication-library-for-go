@@ -41,6 +41,10 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
+	popKeyID := ""
+	if authParameters.AuthenticationScheme != nil {
+		popKeyID = authParameters.AuthenticationScheme.KeyId()
+	}
 
 	// fetch metadata if instanceDiscovery is enabled
 	aliases := []string{authParameters.AuthorityInfo.Host}
@@ -57,7 +61,7 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 
 	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
 	// TokenResponse fields so that e.g. lack of an ID token doesn't prevent the caller from receiving a refresh token.
-	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest)
+	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest+popKeyID)
 	if err == nil {
 		tr.AccessToken = accessToken
 	}
@@ -92,7 +96,10 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	userAssertionHash := authParameters.AssertionHash()
 	cachedAt := time.Now()
-
+	popKeyID := ""
+	if authParameters.AuthenticationScheme != nil {
+		popKeyID = authParameters.AuthenticationScheme.KeyId()
+	}
 	var account shared.Account
 
 	if len(tokenResponse.RefreshToken) > 0 {
@@ -116,6 +123,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			tokenResponse.ExtExpiresOn.T,
 			target,
 			tokenResponse.AccessToken,
+			popKeyID,
 		)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
 			accessToken.UserAssertionHash = userAssertionHash // get Hash method on this
@@ -123,7 +131,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
-			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)); err != nil {
+			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)+popKeyID); err != nil {
 				return account, err
 			}
 		} else {

@@ -89,6 +89,10 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
+	popKeyID := ""
+	if authParameters.AuthenticationScheme != nil {
+		popKeyID = authParameters.AuthenticationScheme.KeyId()
+	}
 
 	// fetch metadata if instanceDiscovery is enabled
 	aliases := []string{authParameters.AuthorityInfo.Host}
@@ -100,7 +104,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 		aliases = metadata.Aliases
 	}
 
-	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes)
+	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes, popKeyID)
 	tr.AccessToken = accessToken
 
 	if homeAccountID == "" {
@@ -141,6 +145,10 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	cachedAt := time.Now()
+	popKeyID := ""
+	if authParameters.AuthenticationScheme != nil {
+		popKeyID = authParameters.AuthenticationScheme.KeyId()
+	}
 
 	var account shared.Account
 
@@ -162,6 +170,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			tokenResponse.ExtExpiresOn.T,
 			target,
 			tokenResponse.AccessToken,
+			popKeyID,
 		)
 
 		// Since we have a valid access token, cache it before moving on.
@@ -249,14 +258,14 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string) AccessToken {
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, popKeyID string) AccessToken {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
 	// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
 	// an issue, however if it does become a problem then we know where to look.
 	for _, at := range m.contract.AccessTokens {
-		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
+		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID && at.PoPKeyID == popKeyID {
 			if checkAlias(at.Environment, envAliases) {
 				if isMatchingScopes(scopes, at.Scopes) {
 					return at
