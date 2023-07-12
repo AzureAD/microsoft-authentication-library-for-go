@@ -339,6 +339,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		RequestType: accesstokens.ATPublic,
 		IsAppCache:  false,
 		TenantID:    o.tenantID,
+		AuthnScheme: o.authScheme,
 	}
 
 	return pca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -432,6 +433,7 @@ func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string,
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATDeviceCode
 	authParams.Claims = o.claims
+	authParams.AuthenticationScheme = o.authScheme
 
 	dc, err := pca.base.Token.DeviceCode(ctx, authParams)
 	if err != nil {
