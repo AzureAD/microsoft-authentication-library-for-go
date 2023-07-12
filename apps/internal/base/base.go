@@ -314,8 +314,11 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	// ignore cached access tokens when given claims
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
-		if authParams.AuthenticationScheme != nil {
-			ar.AccessToken, _ = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
+		if err == nil && authParams.AuthenticationScheme != nil {
+			ar.AccessToken, err = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
+			if err != nil {
+				return ar, err
+			}
 		}
 		if err == nil {
 			return ar, err
@@ -423,7 +426,10 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
 	}
 	if authParams.AuthenticationScheme != nil {
-		ar.AccessToken, _ = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
+		ar.AccessToken, err = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
+		if err != nil {
+			return AuthResult{}, err
+		}
 	}
 	return ar, err
 }

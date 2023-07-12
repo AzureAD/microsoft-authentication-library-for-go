@@ -75,13 +75,13 @@ type AccessToken struct {
 	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
 	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
 	UserAssertionHash string            `json:"user_assertion_hash,omitempty"`
-	PoPKeyID          string            `json:"pop_key_id,omitempty"`
+	AuthnSchemeKeyID  string            `json:"authentication_scheme_keyid,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
 
 // NewAccessToken is the constructor for AccessToken.
-func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token, popKeyID string) AccessToken {
+func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token, authnSchemeKeyID string) AccessToken {
 	return AccessToken{
 		HomeAccountID:     homeID,
 		Environment:       env,
@@ -93,14 +93,14 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 		CachedAt:          internalTime.Unix{T: cachedAt.UTC()},
 		ExpiresOn:         internalTime.Unix{T: expiresOn.UTC()},
 		ExtendedExpiresOn: internalTime.Unix{T: extendedExpiresOn.UTC()},
-		PoPKeyID:          popKeyID,
+		AuthnSchemeKeyID:  authnSchemeKeyID,
 	}
 }
 
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
 	key := strings.Join(
-		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes, a.PoPKeyID},
+		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes, a.AuthnSchemeKeyID},
 		shared.CacheKeySeparator,
 	)
 	return strings.ToLower(key)

@@ -456,7 +456,8 @@ func WithClaims(claims string) interface {
 	}
 }
 
-func WithAuthenticationScheme(authScheme AuthenticationScheme) interface {
+// WithAuthenticationScheme
+func WithAuthenticationScheme(authnScheme AuthenticationScheme) interface {
 	AcquireSilentOption
 	AcquireByCredentialOption
 	options.CallOption
@@ -470,9 +471,9 @@ func WithAuthenticationScheme(authScheme AuthenticationScheme) interface {
 			func(a any) error {
 				switch t := a.(type) {
 				case *acquireTokenSilentOptions:
-					t.authScheme = authScheme
+					t.authnScheme = authnScheme
 				case *acquireTokenByCredentialOptions:
-					t.authScheme = authScheme
+					t.authnScheme = authnScheme
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
@@ -527,7 +528,7 @@ func WithTenantID(tenantID string) interface {
 type acquireTokenSilentOptions struct {
 	account          Account
 	claims, tenantID string
-	authScheme       AuthenticationScheme
+	authnScheme      AuthenticationScheme
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -578,7 +579,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		Credential:  cca.cred,
 		IsAppCache:  o.account.IsZero(),
 		TenantID:    o.tenantID,
-		AuthnScheme: o.authScheme,
+		AuthnScheme: o.authnScheme,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -644,7 +645,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 // acquireTokenByCredentialOptions contains optional configuration for AcquireTokenByCredential
 type acquireTokenByCredentialOptions struct {
 	claims, tenantID string
-	authScheme       AuthenticationScheme
+	authnScheme      AuthenticationScheme
 }
 
 // AcquireByCredentialOption is implemented by options for AcquireTokenByCredential
@@ -668,7 +669,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATClientCredentials
 	authParams.Claims = o.claims
-	authParams.AuthenticationScheme = o.authScheme
+	authParams.AuthenticationScheme = o.authnScheme
 	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
 		return AuthResult{}, err

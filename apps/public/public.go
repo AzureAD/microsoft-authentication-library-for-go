@@ -46,6 +46,8 @@ import (
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult = base.AuthResult
 
+type AuthenticationScheme = authority.AuthenticationScheme
+
 type Account = shared.Account
 
 var errNoAccount = errors.New("no account was specified with public.WithAccount(), or the specified account is invalid")
@@ -210,6 +212,33 @@ func WithClaims(claims string) interface {
 	}
 }
 
+// WithAuthenticationScheme
+func WithAuthenticationScheme(authnScheme AuthenticationScheme) interface {
+	AcquireSilentOption
+	AcquireByDeviceCodeOption
+	options.CallOption
+} {
+	return struct {
+		AcquireSilentOption
+		AcquireByDeviceCodeOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenSilentOptions:
+					t.authnScheme = authnScheme
+				case *AcquireByDeviceCodeOption:
+					t.authnScheme = authnScheme
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
 // WithTenantID specifies a tenant for a single authentication. It may be different than the tenant set in [New] by [WithAuthority].
 // This option is valid for any token acquisition method.
 func WithTenantID(tenantID string) interface {
@@ -259,6 +288,7 @@ func WithTenantID(tenantID string) interface {
 type acquireTokenSilentOptions struct {
 	account          Account
 	claims, tenantID string
+	authScheme       AuthenticationScheme
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -378,6 +408,7 @@ func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error
 // acquireTokenByDeviceCodeOptions contains optional configuration for AcquireTokenByDeviceCode
 type acquireTokenByDeviceCodeOptions struct {
 	claims, tenantID string
+	authScheme       AuthenticationScheme
 }
 
 // AcquireByDeviceCodeOption is implemented by options for AcquireTokenByDeviceCode
