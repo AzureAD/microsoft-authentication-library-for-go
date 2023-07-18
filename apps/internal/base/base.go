@@ -91,6 +91,18 @@ type AuthResult struct {
 	DeclinedScopes []string
 }
 
+func (ar *AuthResult) ApplyAuthnScheme(params *authority.AuthParams) (AuthResult, error) {
+
+	if params.AuthnScheme == nil {
+		return *ar, nil
+	}
+
+	result := *ar
+	var err error
+	result.AccessToken, err = params.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	return result, err
+}
+
 // AuthResultFromStorage creates an AuthResult from a storage token response (which is generated from the cache).
 func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResult, error) {
 	if err := storageTokenResponse.AccessToken.Validate(); err != nil {
@@ -290,7 +302,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.AuthorizationType = silent.AuthorizationType
 	authParams.Claims = silent.Claims
 	authParams.UserAssertion = silent.UserAssertion
-	authParams.AuthenticationScheme = silent.AuthnScheme
+	authParams.AuthnScheme = silent.AuthnScheme
 
 	m := b.pmanager
 	if authParams.AuthorizationType != authority.ATOnBehalfOf {
@@ -314,14 +326,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	// ignore cached access tokens when given claims
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
-		if err == nil && authParams.AuthenticationScheme != nil {
-			ar.AccessToken, err = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
-			if err != nil {
-				return ar, err
-			}
-		}
 		if err == nil {
-			return ar, err
+			return ar.ApplyAuthnScheme(&authParams)
 		}
 	}
 
@@ -425,13 +431,10 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	if err == nil && b.cacheAccessor != nil {
 		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
 	}
-	if authParams.AuthenticationScheme != nil {
-		ar.AccessToken, err = authParams.AuthenticationScheme.FormatAccessToken(ar.AccessToken)
-		if err != nil {
-			return AuthResult{}, err
-		}
+	if err != nil {
+		return AuthResult{}, err
 	}
-	return ar, err
+	return ar.ApplyAuthnScheme(&authParams)
 }
 
 func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {

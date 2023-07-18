@@ -669,7 +669,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATClientCredentials
 	authParams.Claims = o.claims
-	authParams.AuthenticationScheme = o.authnScheme
+	authParams.AuthnScheme = o.authnScheme
 	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
 		return AuthResult{}, err

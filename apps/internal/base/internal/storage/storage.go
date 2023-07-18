@@ -90,8 +90,8 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
 	authnSchemeKeyID := ""
-	if authParameters.AuthenticationScheme != nil {
-		authnSchemeKeyID = authParameters.AuthenticationScheme.KeyId()
+	if authParameters.AuthnScheme != nil {
+		authnSchemeKeyID = authParameters.AuthnScheme.KeyId()
 	}
 
 	// fetch metadata if instanceDiscovery is enabled
@@ -146,8 +146,8 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	cachedAt := time.Now()
 	authnSchemeKeyID := ""
-	if authParameters.AuthenticationScheme != nil {
-		authnSchemeKeyID = authParameters.AuthenticationScheme.KeyId()
+	if authParameters.AuthnScheme != nil {
+		authnSchemeKeyID = authParameters.AuthnScheme.KeyId()
 	}
 
 	var account shared.Account

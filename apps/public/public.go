@@ -215,12 +215,12 @@ func WithClaims(claims string) interface {
 // WithAuthenticationScheme
 func WithAuthenticationScheme(authnScheme AuthenticationScheme) interface {
 	AcquireSilentOption
-	AcquireByDeviceCodeOption
+	AcquireInteractiveOption
 	options.CallOption
 } {
 	return struct {
 		AcquireSilentOption
-		AcquireByDeviceCodeOption
+		AcquireInteractiveOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -228,7 +228,7 @@ func WithAuthenticationScheme(authnScheme AuthenticationScheme) interface {
 				switch t := a.(type) {
 				case *acquireTokenSilentOptions:
 					t.authnScheme = authnScheme
-				case *AcquireByDeviceCodeOption:
+				case *interactiveAuthOptions:
 					t.authnScheme = authnScheme
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
@@ -288,7 +288,7 @@ func WithTenantID(tenantID string) interface {
 type acquireTokenSilentOptions struct {
 	account          Account
 	claims, tenantID string
-	authScheme       AuthenticationScheme
+	authnScheme      AuthenticationScheme
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -339,7 +339,7 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		RequestType: accesstokens.ATPublic,
 		IsAppCache:  false,
 		TenantID:    o.tenantID,
-		AuthnScheme: o.authScheme,
+		AuthnScheme: o.authnScheme,
 	}
 
 	return pca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -409,7 +409,6 @@ func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error
 // acquireTokenByDeviceCodeOptions contains optional configuration for AcquireTokenByDeviceCode
 type acquireTokenByDeviceCodeOptions struct {
 	claims, tenantID string
-	authScheme       AuthenticationScheme
 }
 
 // AcquireByDeviceCodeOption is implemented by options for AcquireTokenByDeviceCode
@@ -433,7 +432,6 @@ func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string,
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATDeviceCode
 	authParams.Claims = o.claims
-	authParams.AuthenticationScheme = o.authScheme
 
 	dc, err := pca.base.Token.DeviceCode(ctx, authParams)
 	if err != nil {
@@ -514,6 +512,7 @@ func (pca Client) RemoveAccount(ctx context.Context, account Account) error {
 type interactiveAuthOptions struct {
 	claims, domainHint, loginHint, redirectURI, tenantID string
 	openURL                                              func(url string) error
+	authnScheme                                          AuthenticationScheme
 }
 
 // AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
@@ -660,6 +659,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.DomainHint = o.domainHint
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
+	authParams.AuthnScheme = o.authnScheme
 	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL)
 	if err != nil {
 		return AuthResult{}, err

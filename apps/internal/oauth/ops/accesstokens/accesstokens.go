@@ -380,8 +380,8 @@ func (c Client) FromSamlGrant(ctx context.Context, authParameters authority.Auth
 
 func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams, qv url.Values) (TokenResponse, error) {
 	resp := TokenResponse{}
-	if authParams.AuthenticationScheme != nil {
-		trParams := authParams.AuthenticationScheme.GetTokenRequestParams()
+	if authParams.AuthnScheme != nil {
+		trParams := authParams.AuthnScheme.GetTokenRequestParams()
 		for k, v := range trParams {
 			qv.Set(k, v)
 		}
