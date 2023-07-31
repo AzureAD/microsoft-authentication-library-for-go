@@ -238,7 +238,9 @@ func (tr *TokenResponse) CacheKey(authParams authority.AuthParams) string {
 
 func findDeclinedScopes(requestedScopes []string, grantedScopes []string) []string {
 	declined := []string{}
-	grantedMap := map[string]bool{}
+	grantedMap := map[string]bool{
+		"offline_access": true, // This will never be returned, so just assume that it's there.
+	}
 	for _, s := range grantedScopes {
 		grantedMap[strings.ToLower(s)] = true
 	}
