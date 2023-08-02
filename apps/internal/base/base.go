@@ -92,11 +92,6 @@ type AuthResult struct {
 }
 
 func (ar *AuthResult) ApplyAuthnScheme(params *authority.AuthParams) (AuthResult, error) {
-
-	if params.AuthnScheme == nil {
-		return *ar, nil
-	}
-
 	result := *ar
 	var err error
 	result.AccessToken, err = params.AuthnScheme.FormatAccessToken(ar.AccessToken)
@@ -302,7 +297,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.AuthorizationType = silent.AuthorizationType
 	authParams.Claims = silent.Claims
 	authParams.UserAssertion = silent.UserAssertion
-	authParams.AuthnScheme = silent.AuthnScheme
+	if silent.AuthnScheme != nil {
+		authParams.AuthnScheme = silent.AuthnScheme
+	}
 
 	m := b.pmanager
 	if authParams.AuthorizationType != authority.ATOnBehalfOf {

@@ -41,10 +41,8 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
-	authnSchemeKeyID := ""
-	if authParameters.AuthnScheme != nil {
-		authnSchemeKeyID = authParameters.AuthnScheme.KeyId()
-	}
+	authnSchemeKeyID := authParameters.AuthnScheme.KeyId()
+	tokenType := authParameters.AuthnScheme.AccessTokenType()
 
 	// fetch metadata if instanceDiscovery is enabled
 	aliases := []string{authParameters.AuthorityInfo.Host}
@@ -61,8 +59,8 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 
 	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
 	// TokenResponse fields so that e.g. lack of an ID token doesn't prevent the caller from receiving a refresh token.
-	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest+authnSchemeKeyID)
-	if err == nil {
+	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest+tokenType)
+	if err == nil && accessToken.AuthnSchemeKeyID == authnSchemeKeyID {
 		tr.AccessToken = accessToken
 	}
 	idToken, err := m.readIDToken(aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
@@ -123,6 +121,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			tokenResponse.ExtExpiresOn.T,
 			target,
 			tokenResponse.AccessToken,
+			tokenResponse.TokenType,
 			authnSchemeKeyID,
 		)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
@@ -131,7 +130,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
-			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)+authnSchemeKeyID); err != nil {
+			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)+tokenResponse.TokenType); err != nil {
 				return account, err
 			}
 		} else {

@@ -659,7 +659,9 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.DomainHint = o.domainHint
 	authParams.State = uuid.New().String()
 	authParams.Prompt = "select_account"
-	authParams.AuthnScheme = o.authnScheme
+	if o.authnScheme != nil {
+		authParams.AuthnScheme = o.authnScheme
+	}
 	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL)
 	if err != nil {
 		return AuthResult{}, err

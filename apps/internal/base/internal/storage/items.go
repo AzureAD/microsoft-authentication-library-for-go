@@ -75,13 +75,14 @@ type AccessToken struct {
 	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
 	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
 	UserAssertionHash string            `json:"user_assertion_hash,omitempty"`
-	AuthnSchemeKeyID  string            `json:"authentication_scheme_keyid,omitempty"`
+	TokenType         string            `json:"token_type,omitempty"`
+	AuthnSchemeKeyID  string            `json:"keyid,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
 
 // NewAccessToken is the constructor for AccessToken.
-func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token, authnSchemeKeyID string) AccessToken {
+func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token, tokenType, authnSchemeKeyID string) AccessToken {
 	return AccessToken{
 		HomeAccountID:     homeID,
 		Environment:       env,
@@ -93,6 +94,7 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 		CachedAt:          internalTime.Unix{T: cachedAt.UTC()},
 		ExpiresOn:         internalTime.Unix{T: expiresOn.UTC()},
 		ExtendedExpiresOn: internalTime.Unix{T: extendedExpiresOn.UTC()},
+		TokenType:         tokenType,
 		AuthnSchemeKeyID:  authnSchemeKeyID,
 	}
 }
@@ -100,7 +102,7 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
 	key := strings.Join(
-		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes, a.AuthnSchemeKeyID},
+		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes, a.TokenType},
 		shared.CacheKeySeparator,
 	)
 	return strings.ToLower(key)
