@@ -1225,3 +1225,32 @@ func TestWithDomainHint(t *testing.T) {
 		})
 	}
 }
+
+func TestWithAuthenticationScheme(t *testing.T) {
+	ctx := context.Background()
+	authScheme := mock.NewTestAuthnScheme()
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := fakeClient(accesstokens.TokenResponse{
+		AccessToken:   token,
+		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+	}, cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireTokenByCredential(ctx, tokenScope, WithAuthenticationScheme(authScheme))
+	if err != nil {
+		t.Fatal("silent authentication should fail because the cache is empty")
+	}
+	result, err = client.AcquireTokenSilent(ctx, tokenScope, WithAuthenticationScheme(authScheme))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccessToken != "FormatedAccessToken" {
+		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
+	}
+}

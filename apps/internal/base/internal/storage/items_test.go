@@ -54,6 +54,8 @@ func TestCreateAccessToken(t *testing.T) {
 		testExtExpiresOn,
 		"user.read",
 		"access",
+		"tokenType",
+		"keyID",
 	)
 	if !extExpiresOn.Equal(actualAt.ExtendedExpiresOn.T) {
 		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", actualAt.ExtendedExpiresOn, extExpiresOn)

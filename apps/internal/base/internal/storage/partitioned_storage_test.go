@@ -153,6 +153,8 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		now,
 		"openid user.read",
 		"secret",
+		"tokenType",
+		"",
 	)
 	testAccessToken.UserAssertionHash = "user_assertion_hash"
 	cache := &InMemoryContract{
@@ -203,6 +205,8 @@ func TestWritePartitionedAccessToken(t *testing.T) {
 		now,
 		"openid",
 		"secret",
+		"tokenType",
+		"",
 	)
 
 	key := testAccessToken.Key()

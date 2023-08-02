@@ -16,6 +16,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
@@ -406,6 +407,40 @@ func TestRemoveAccount(t *testing.T) {
 	_, err = app.AcquireTokenSilent(ctx, []string{graphDefaultScope}, public.WithSilentAccount(testAccount))
 	if err == nil {
 		t.Fatal("TestRemoveAccount: RemoveAccount() didn't clear the cache as expected")
+	}
+
+}
+
+func TestAuthnScheme(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	clientID := os.Getenv("clientId")
+	secret := os.Getenv("clientSecret")
+	cred, err := confidential.NewCredFromSecret(secret)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	app, err := confidential.New(microsoftAuthority, clientID, cred)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	scopes := []string{msIDlabDefaultScope}
+	var bearerScheme authority.BearerAuthenticationScheme
+	ctx := context.Background()
+	result, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithAuthenticationScheme(&bearerScheme))
+	if err != nil {
+		t.Fatalf("TestAuthnScheme: on AcquireTokenByCredential(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("TestAuthnScheme: on AcquireTokenByCredential(): got AccessToken == '', want AccessToken != ''")
+	}
+	silentResult, err := app.AcquireTokenSilent(ctx, scopes, confidential.WithAuthenticationScheme(&bearerScheme))
+	if err != nil {
+		t.Fatalf("TestAuthnScheme: on AcquireTokenSilent(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if silentResult.AccessToken == "" {
+		t.Fatal("TestAuthnScheme: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
 	}
 
 }

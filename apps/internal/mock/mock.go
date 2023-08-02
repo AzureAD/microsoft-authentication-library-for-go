@@ -11,6 +11,8 @@ import (
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 type response struct {
@@ -177,4 +179,32 @@ func GetTenantDiscoveryBody(host, tenant string) []byte {
 		"rbac_url": "https://pas.windows.net"
 	}`, "{authority}", authority)
 	return []byte(content)
+}
+
+const Authnschemeformat = "%s-formated"
+
+type AuthnSchemeTest struct {
+}
+
+func (a *AuthnSchemeTest) GetTokenRequestParams() map[string]string {
+	return map[string]string{
+		"foo":          "bar",
+		"customHeader": "customHeaderValue",
+	}
+}
+
+func (a *AuthnSchemeTest) KeyId() string {
+	return "KeyId"
+}
+
+func (a *AuthnSchemeTest) FormatAccessToken(accessToken string) (string, error) {
+	return fmt.Sprintf(Authnschemeformat, accessToken), nil
+}
+
+func (a *AuthnSchemeTest) AccessTokenType() string {
+	return "TokenType"
+}
+
+func NewTestAuthnScheme() authority.AuthenticationScheme {
+	return &AuthnSchemeTest{}
 }
