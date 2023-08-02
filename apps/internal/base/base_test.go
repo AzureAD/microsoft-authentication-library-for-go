@@ -179,6 +179,7 @@ func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
 			AccessToken:   expectedToken,
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: grantedScopes},
+			TokenType:     "Bearer",
 		},
 	)
 	if err != nil {
@@ -273,6 +274,7 @@ func TestCacheIOErrors(t *testing.T) {
 				ClientID:      fakeClientID,
 				HomeAccountID: hid,
 				Scopes:        testScopes,
+				AuthnScheme:   &authority.BearerAuthenticationScheme{},
 			},
 			accesstokens.TokenResponse{
 				AccessToken:   "at",
@@ -457,8 +459,9 @@ func TestApplyAuthnScheme(t *testing.T) {
 			},
 		},
 		{
-			desc: "Should returns passed AuthResult if no AuthnScheme is set",
-			at:   "noAutnScheme",
+			desc:   "Should returns passed AuthResult if no AuthnScheme is set. (defaulted to Bearer)",
+			at:     "noAutnScheme",
+			scheme: &authority.BearerAuthenticationScheme{},
 			want: AuthResult{
 				AccessToken: "noAutnScheme",
 			},

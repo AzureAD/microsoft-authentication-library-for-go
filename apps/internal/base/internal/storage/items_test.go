@@ -38,6 +38,7 @@ var (
 		ExpiresOn:         internalTime.Unix{T: expiresOn},
 		ExtendedExpiresOn: internalTime.Unix{T: extExpiresOn},
 		CachedAt:          internalTime.Unix{T: cachedAt},
+		TokenType:         "Bearer",
 	}
 )
 
@@ -63,7 +64,7 @@ func TestCreateAccessToken(t *testing.T) {
 }
 
 func TestKeyForAccessToken(t *testing.T) {
-	const want = "testhid-env-accesstoken-clientid-realm-user.read"
+	const want = "testhid-env-accesstoken-clientid-realm-user.read-bearer"
 	got := atCacheEntity.Key()
 	if got != want {
 		t.Errorf("TestKeyForAccessToken: got %s, want %s", got, want)

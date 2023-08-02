@@ -78,7 +78,7 @@ func (*Client) CloseIdleConnections() {}
 
 func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, expiresIn int) []byte {
 	body := fmt.Sprintf(
-		`{"access_token": "%s","expires_in": %d,"expires_on": %d`,
+		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
 		accessToken, expiresIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix(),
 	)
 	if clientInfo != "" {

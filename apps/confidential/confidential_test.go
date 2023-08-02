@@ -108,6 +108,7 @@ func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ..
 			fakeTokenEndpoint, "https://fake_authority/fake/jwt", "fake_authority"),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
+	client.base.AuthParams.AuthnScheme = &authority.BearerAuthenticationScheme{}
 	return client, nil
 }
 
@@ -136,6 +137,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+			TokenType:     "Bearer",
 		}, cred)
 		if err != nil {
 			t.Fatal(err)
@@ -1238,6 +1240,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+		TokenType:     "TokenType",
 	}, cred)
 	if err != nil {
 		t.Fatal(err)
@@ -1250,7 +1253,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AccessToken != "FormatedAccessToken" {
+	if result.AccessToken != token+"-formated" {
 		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
 	}
 }

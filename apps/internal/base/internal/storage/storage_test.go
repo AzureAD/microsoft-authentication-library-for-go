@@ -726,7 +726,7 @@ func TestRead(t *testing.T) {
 		time.Now(),
 		"openid profile",
 		"secret",
-		"tokenType",
+		"Bearer",
 		"",
 	)
 	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
@@ -761,6 +761,7 @@ func TestRead(t *testing.T) {
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
 		Scopes:        []string{"openid", "profile"},
+		AuthnScheme:   &authority.BearerAuthenticationScheme{},
 	}
 
 	tests := []struct {
@@ -848,6 +849,7 @@ func TestWrite(t *testing.T) {
 		GrantedScopes: accesstokens.Scopes{Slice: []string{"openid", "profile"}},
 		ExpiresOn:     expiresOn,
 		ExtExpiresOn:  internalTime.DurationTime{T: now},
+		TokenType:     "Bearer",
 	}
 	authInfo := authority.Info{Host: "env", Tenant: "realm", AuthorityType: accAuth}
 	authParams := authority.AuthParams{
@@ -872,7 +874,7 @@ func TestWrite(t *testing.T) {
 		now,
 		"openid profile",
 		"accessToken",
-		"tokenType",
+		"Bearer",
 		"",
 	)
 

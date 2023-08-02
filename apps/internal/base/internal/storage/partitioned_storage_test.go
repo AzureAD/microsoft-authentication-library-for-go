@@ -52,6 +52,7 @@ func TestOBOAccessTokenScopes(t *testing.T) {
 			Scopes:            scope,
 			UserAssertion:     upn + "-assertion",
 			Username:          idt.PreferredUsername,
+			AuthnScheme:       &authority.BearerAuthenticationScheme{},
 		}
 		_, err := mgr.Write(
 			ap,
@@ -62,6 +63,7 @@ func TestOBOAccessTokenScopes(t *testing.T) {
 				GrantedScopes: accesstokens.Scopes{Slice: scope},
 				IDToken:       idt,
 				RefreshToken:  upn + "-rt",
+				TokenType:     "Bearer",
 			},
 		)
 		if err != nil {
@@ -112,6 +114,7 @@ func TestOBOPartitioning(t *testing.T) {
 			Scopes:            scopes,
 			UserAssertion:     upn + "-assertion",
 			Username:          idt.PreferredUsername,
+			AuthnScheme:       &authority.BearerAuthenticationScheme{},
 		}
 		account, err := mgr.Write(
 			authParams[i],
@@ -122,6 +125,7 @@ func TestOBOPartitioning(t *testing.T) {
 				GrantedScopes: accesstokens.Scopes{Slice: scopes},
 				IDToken:       idt,
 				RefreshToken:  upn + "-rt",
+				TokenType:     "Bearer",
 			},
 		)
 		if err != nil {
