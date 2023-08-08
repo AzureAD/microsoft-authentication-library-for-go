@@ -140,11 +140,11 @@ const (
 
 type AuthenticationScheme interface {
 	// Extra parameters that are added to the request to the /token endpoint.
-	GetTokenRequestParams() map[string]string
+	TokenRequestParams() map[string]string
 	// Key ID of the public / private key pair used by the encryption algorithm, if any.
 	// Tokens obtained by authentication schemes that use this are bound to the KeyId, i.e.
 	// if a different kid is presented, the access token cannot be used.
-	KeyId() string
+	KeyID() string
 	// Creates the access token that goes into an Authorization HTTP header.
 	FormatAccessToken(accessToken string) (string, error)
 	//Expected to match the token_type parameter returned by ESTS. Used to disambiguate
@@ -157,10 +157,10 @@ type BearerAuthenticationScheme struct{}
 
 var bearerAuthnScheme BearerAuthenticationScheme
 
-func (ba *BearerAuthenticationScheme) GetTokenRequestParams() map[string]string {
+func (ba *BearerAuthenticationScheme) TokenRequestParams() map[string]string {
 	return nil
 }
-func (ba *BearerAuthenticationScheme) KeyId() string {
+func (ba *BearerAuthenticationScheme) KeyID() string {
 	return ""
 }
 func (ba *BearerAuthenticationScheme) FormatAccessToken(accessToken string) (string, error) {

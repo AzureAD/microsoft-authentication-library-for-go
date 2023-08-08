@@ -186,14 +186,14 @@ const Authnschemeformat = "%s-formated"
 type AuthnSchemeTest struct {
 }
 
-func (a *AuthnSchemeTest) GetTokenRequestParams() map[string]string {
+func (a *AuthnSchemeTest) TokenRequestParams() map[string]string {
 	return map[string]string{
 		"foo":          "bar",
 		"customHeader": "customHeaderValue",
 	}
 }
 
-func (a *AuthnSchemeTest) KeyId() string {
+func (a *AuthnSchemeTest) KeyID() string {
 	return "KeyId"
 }
 

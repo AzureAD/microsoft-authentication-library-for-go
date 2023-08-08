@@ -108,7 +108,6 @@ func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ..
 			fakeTokenEndpoint, "https://fake_authority/fake/jwt", "fake_authority"),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
-	client.base.AuthParams.AuthnScheme = &authority.BearerAuthenticationScheme{}
 	return client, nil
 }
 
@@ -1247,7 +1246,10 @@ func TestWithAuthenticationScheme(t *testing.T) {
 	}
 	result, err := client.AcquireTokenByCredential(ctx, tokenScope, WithAuthenticationScheme(authScheme))
 	if err != nil {
-		t.Fatal("silent authentication should fail because the cache is empty")
+		t.Fatal(err)
+	}
+	if result.AccessToken != token+"-formated" {
+		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
 	}
 	result, err = client.AcquireTokenSilent(ctx, tokenScope, WithAuthenticationScheme(authScheme))
 	if err != nil {

@@ -89,7 +89,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
-	authnSchemeKeyID := authParameters.AuthnScheme.KeyId()
+	authnSchemeKeyID := authParameters.AuthnScheme.KeyID()
 	tokenType := authParameters.AuthnScheme.AccessTokenType()
 
 	// fetch metadata if instanceDiscovery is enabled
@@ -145,7 +145,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	cachedAt := time.Now()
 	authnSchemeKeyID := ""
 	if authParameters.AuthnScheme != nil {
-		authnSchemeKeyID = authParameters.AuthnScheme.KeyId()
+		authnSchemeKeyID = authParameters.AuthnScheme.KeyID()
 	}
 
 	var account shared.Account

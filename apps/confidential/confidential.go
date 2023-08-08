@@ -456,7 +456,7 @@ func WithClaims(claims string) interface {
 	}
 }
 
-// WithAuthenticationScheme
+// WithAuthenticationScheme is an extensibility mechanism designed to be used only by Azure Arc for proof of possession tokens.
 func WithAuthenticationScheme(authnScheme AuthenticationScheme) interface {
 	AcquireSilentOption
 	AcquireByCredentialOption

@@ -64,14 +64,14 @@ type authnScheme struct {
 	poPKey PoPKey
 }
 
-func (as *authnScheme) GetTokenRequestParams() map[string]string {
+func (as *authnScheme) TokenRequestParams() map[string]string {
 	return map[string]string{
 		"token_type": popTokenType,
 		"req_cnf":    as.poPKey.ReqCnf(),
 	}
 }
 
-func (as *authnScheme) KeyId() string {
+func (as *authnScheme) KeyID() string {
 	return as.poPKey.KeyID()
 }
 

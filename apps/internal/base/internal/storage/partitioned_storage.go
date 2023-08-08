@@ -41,7 +41,7 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
 	scopes := authParameters.Scopes
-	authnSchemeKeyID := authParameters.AuthnScheme.KeyId()
+	authnSchemeKeyID := authParameters.AuthnScheme.KeyID()
 	tokenType := authParameters.AuthnScheme.AccessTokenType()
 
 	// fetch metadata if instanceDiscovery is enabled
@@ -96,7 +96,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	cachedAt := time.Now()
 	authnSchemeKeyID := ""
 	if authParameters.AuthnScheme != nil {
-		authnSchemeKeyID = authParameters.AuthnScheme.KeyId()
+		authnSchemeKeyID = authParameters.AuthnScheme.KeyID()
 	}
 	var account shared.Account
 
