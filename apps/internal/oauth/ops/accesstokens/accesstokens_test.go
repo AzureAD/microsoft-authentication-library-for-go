@@ -940,30 +940,42 @@ func TestComputeScopes(t *testing.T) {
 func TestHomeAccountID(t *testing.T) {
 	tests := []struct {
 		desc string
-		ci   ClientInfo
+		tr   TokenResponse
 		want string
 	}{
 		{
-			desc: "UID and UTID is not set",
+			desc: "no UID or UTID",
+			tr:   TokenResponse{IDToken: IDToken{Subject: "subject"}},
+			want: "subject",
 		},
 		{
-			desc: "UID is not set",
-			ci:   ClientInfo{UTID: "utid"},
-		},
-		{
-			desc: "UTID is not set",
-			ci:   ClientInfo{UID: "uid"},
+			desc: "UID with no UTID",
+			tr: TokenResponse{
+				ClientInfo: ClientInfo{UID: "uid"},
+				IDToken:    IDToken{Subject: "subject"},
+			},
 			want: "uid.uid",
 		},
 		{
+			desc: "UTID with no UID",
+			tr: TokenResponse{
+				ClientInfo: ClientInfo{UTID: "utid"},
+				IDToken:    IDToken{Subject: "subject"},
+			},
+			want: "subject",
+		},
+		{
 			desc: "UID and UTID are set",
-			ci:   ClientInfo{UID: "uid", UTID: "utid"},
+			tr: TokenResponse{
+				ClientInfo: ClientInfo{UID: "uid", UTID: "utid"},
+				IDToken:    IDToken{Subject: "subject"},
+			},
 			want: "uid.utid",
 		},
 	}
 
 	for _, test := range tests {
-		got := test.ci.HomeAccountID()
+		got := test.tr.HomeAccountID()
 		if got != test.want {
 			t.Errorf("TestHomeAccountID(%s): got %q, want %q", test.desc, got, test.want)
 		}

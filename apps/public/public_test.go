@@ -13,10 +13,14 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
 	"github.com/kylelemons/godebug/pretty"
 )
@@ -291,6 +295,69 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					t.Fatal(err)
 				}
 			})
+		}
+	}
+}
+
+func TestADFSTokenCaching(t *testing.T) {
+	client, err := New("clientID", WithAuthority("https://fake_authority/adfs"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fakeAT := fake.AccessTokens{
+		AccessToken: accesstokens.TokenResponse{
+			AccessToken:   "at1",
+			RefreshToken:  "rt",
+			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+			IDToken: accesstokens.IDToken{
+				ExpirationTime: time.Now().Add(time.Hour).Unix(),
+				Name:           "A",
+				RawToken:       "x.e30",
+				Subject:        "A",
+				TenantID:       "tenant",
+				UPN:            "A",
+			},
+		},
+	}
+	client.base.Token.AccessTokens = &fakeAT
+	client.base.Token.Authority = &fake.Authority{
+		InstanceResp: authority.InstanceDiscoveryResponse{
+			Metadata: []authority.InstanceDiscoveryMetadata{
+				{Aliases: []string{"fake_authority"}},
+			},
+		},
+	}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	ctx := context.Background()
+	ar1, err := client.AcquireTokenByUsernamePassword(ctx, tokenScope, "A", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// simulate authenticating a different user
+	fakeAT.AccessToken.AccessToken = "at2"
+	fakeAT.AccessToken.IDToken.Name = "B"
+	fakeAT.AccessToken.IDToken.PreferredUsername = "B"
+	fakeAT.AccessToken.IDToken.Subject = "B"
+	fakeAT.AccessToken.IDToken.UPN = "B"
+	ar2, err := client.AcquireTokenByUsernamePassword(ctx, tokenScope, "B", "password")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar1.AccessToken == ar2.AccessToken {
+		t.Fatal("expected different access tokens")
+	}
+
+	// cache should now have an access token for each account
+	for _, ar := range []AuthResult{ar1, ar2} {
+		actual, err := client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual.AccessToken != ar.AccessToken {
+			t.Fatalf("expected %q, got %q", ar.AccessToken, actual.AccessToken)
 		}
 	}
 }
