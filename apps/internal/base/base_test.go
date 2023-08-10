@@ -14,7 +14,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -441,48 +440,3 @@ func TestAuthResultFromStorage(t *testing.T) {
 const (
 	authnshemetestToken = "testToken"
 )
-
-func TestApplyAuthnScheme(t *testing.T) {
-	tests := []struct {
-		desc   string
-		at     string
-		scheme authority.AuthenticationScheme
-		err    bool
-		want   AuthResult
-	}{
-		{
-			desc:   "Success with Authn Scheme",
-			at:     authnshemetestToken,
-			scheme: mock.NewTestAuthnScheme(),
-			want: AuthResult{
-				AccessToken: fmt.Sprintf(mock.Authnschemeformat, authnshemetestToken),
-			},
-		},
-		{
-			desc:   "Should returns passed AuthResult if no AuthnScheme is set. (defaulted to Bearer)",
-			at:     "noAutnScheme",
-			scheme: &authority.BearerAuthenticationScheme{},
-			want: AuthResult{
-				AccessToken: "noAutnScheme",
-			},
-		},
-	}
-
-	for _, test := range tests {
-		ap := &authority.AuthParams{
-			AuthnScheme: test.scheme,
-		}
-		ar := &AuthResult{
-			AccessToken: test.at,
-		}
-		result, err := ar.ApplyAuthnScheme(ap)
-		if err != nil && !test.err {
-			t.Errorf("TestApplyAuthnScheme(%s): got err == %s, want == nil", test.desc, err)
-			continue
-		}
-		if result.AccessToken != test.want.AccessToken {
-			t.Errorf("TestApplyAuthnScheme(%s): got AccessToken == %s, want == %s", test.desc, result.AccessToken, test.want.AccessToken)
-			continue
-		}
-	}
-}

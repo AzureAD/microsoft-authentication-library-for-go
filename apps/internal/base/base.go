@@ -91,13 +91,6 @@ type AuthResult struct {
 	DeclinedScopes []string
 }
 
-func (ar *AuthResult) ApplyAuthnScheme(params *authority.AuthParams) (AuthResult, error) {
-	result := *ar
-	var err error
-	result.AccessToken, err = params.AuthnScheme.FormatAccessToken(ar.AccessToken)
-	return result, err
-}
-
 // AuthResultFromStorage creates an AuthResult from a storage token response (which is generated from the cache).
 func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResult, error) {
 	if err := storageTokenResponse.AccessToken.Validate(); err != nil {
@@ -324,7 +317,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			return ar.ApplyAuthnScheme(&authParams)
+			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			return ar, err
 		}
 	}
 
@@ -431,7 +425,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return ar.ApplyAuthnScheme(&authParams)
+
+	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	return ar, err
 }
 
 func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {
