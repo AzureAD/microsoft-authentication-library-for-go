@@ -59,8 +59,8 @@ func (m *PartitionedManager) Read(ctx context.Context, authParameters authority.
 
 	// errors returned by read* methods indicate a cache miss and are therefore non-fatal. We continue populating
 	// TokenResponse fields so that e.g. lack of an ID token doesn't prevent the caller from receiving a refresh token.
-	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest+tokenType)
-	if err == nil && accessToken.AuthnSchemeKeyID == authnSchemeKeyID {
+	accessToken, err := m.readAccessToken(aliases, realm, clientID, userAssertionHash, scopes, partitionKeyFromRequest, tokenType, authnSchemeKeyID)
+	if err == nil {
 		tr.AccessToken = accessToken
 	}
 	idToken, err := m.readIDToken(aliases, realm, clientID, userAssertionHash, getPartitionKeyIDTokenRead(accessToken))
@@ -94,10 +94,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	userAssertionHash := authParameters.AssertionHash()
 	cachedAt := time.Now()
-	authnSchemeKeyID := ""
-	if authParameters.AuthnScheme != nil {
-		authnSchemeKeyID = authParameters.AuthnScheme.KeyID()
-	}
+	authnSchemeKeyID := authParameters.AuthnScheme.KeyID()
 	var account shared.Account
 
 	if len(tokenResponse.RefreshToken) > 0 {
@@ -130,7 +127,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
-			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)+tokenResponse.TokenType); err != nil {
+			if err := m.writeAccessToken(accessToken, getPartitionKeyAccessToken(accessToken)); err != nil {
 				return account, err
 			}
 		} else {
@@ -222,7 +219,7 @@ func (m *PartitionedManager) aadMetadata(ctx context.Context, authorityInfo auth
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *PartitionedManager) readAccessToken(envAliases []string, realm, clientID, userAssertionHash string, scopes []string, partitionKey string) (AccessToken, error) {
+func (m *PartitionedManager) readAccessToken(envAliases []string, realm, clientID, userAssertionHash string, scopes []string, partitionKey, tokenType, authnSchemeKeyID string) (AccessToken, error) {
 	m.contractMu.RLock()
 	defer m.contractMu.RUnlock()
 	if accessTokens, ok := m.contract.AccessTokensPartition[partitionKey]; ok {
@@ -231,9 +228,11 @@ func (m *PartitionedManager) readAccessToken(envAliases []string, realm, clientI
 		// an issue, however if it does become a problem then we know where to look.
 		for _, at := range accessTokens {
 			if at.Realm == realm && at.ClientID == clientID && at.UserAssertionHash == userAssertionHash {
-				if checkAlias(at.Environment, envAliases) {
-					if isMatchingScopes(scopes, at.Scopes) {
-						return at, nil
+				if at.TokenType == tokenType && at.AuthnSchemeKeyID == authnSchemeKeyID {
+					if checkAlias(at.Environment, envAliases) {
+						if isMatchingScopes(scopes, at.Scopes) {
+							return at, nil
+						}
 					}
 				}
 			}

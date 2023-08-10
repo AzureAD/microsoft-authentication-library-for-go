@@ -29,6 +29,7 @@ const (
 	defaultAPIVersion                 = "2021-10-01"
 	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute/location?format=text&api-version=" + defaultAPIVersion
 	autoDetectRegion                  = "TryAutoDetect"
+	AccessTokenTypeBearer             = "Bearer"
 )
 
 // These are various hosts that host AAD Instance discovery endpoints.
@@ -167,7 +168,7 @@ func (ba *BearerAuthenticationScheme) FormatAccessToken(accessToken string) (str
 	return accessToken, nil
 }
 func (ba *BearerAuthenticationScheme) AccessTokenType() string {
-	return "Bearer"
+	return AccessTokenTypeBearer
 }
 
 // AuthParams represents the parameters used for authorization for token acquisition.

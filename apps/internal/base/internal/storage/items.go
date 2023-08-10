@@ -12,6 +12,7 @@ import (
 
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -102,9 +103,14 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
 	key := strings.Join(
-		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes, a.TokenType},
+		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes},
 		shared.CacheKeySeparator,
 	)
+	// add token type to key for new access tokens types. skip for bearer token type to
+	// preserve fwd and back compat between a common cache and msal clients
+	if !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) {
+		key = strings.Join([]string{key, a.TokenType}, shared.CacheKeySeparator)
+	}
 	return strings.ToLower(key)
 }
 

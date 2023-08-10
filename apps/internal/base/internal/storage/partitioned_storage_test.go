@@ -157,7 +157,7 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		now,
 		"openid user.read",
 		"secret",
-		"tokenType",
+		"Bearer",
 		"",
 	)
 	testAccessToken.UserAssertionHash = "user_assertion_hash"
@@ -176,6 +176,8 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		"user_assertion_hash",
 		[]string{"user.read", "openid"},
 		"at_partition",
+		"Bearer",
+		"",
 	)
 	if err != nil {
 		t.Errorf("TestReadPartitionedAccessToken: got err == %s, want err == nil", err)
@@ -190,6 +192,8 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		"this_should_break_it",
 		[]string{"user.read", "openid"},
 		"at_partition",
+		"Bearer",
+		"",
 	)
 	if err == nil {
 		t.Errorf("TestReadPartitionedAccessToken: got err == nil, want err != nil")
