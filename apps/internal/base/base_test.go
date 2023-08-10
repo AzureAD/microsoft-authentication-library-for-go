@@ -438,7 +438,3 @@ func TestAuthResultFromStorage(t *testing.T) {
 		}
 	}
 }
-
-const (
-	authnshemetestToken = "testToken"
-)
