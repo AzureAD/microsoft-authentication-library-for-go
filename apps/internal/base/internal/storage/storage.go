@@ -143,10 +143,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	clientID := authParameters.ClientID
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	cachedAt := time.Now()
-	authnSchemeKeyID := ""
-	if authParameters.AuthnScheme != nil {
-		authnSchemeKeyID = authParameters.AuthnScheme.KeyID()
-	}
+	authnSchemeKeyID := authParameters.AuthnScheme.KeyID()
 
 	var account shared.Account
 

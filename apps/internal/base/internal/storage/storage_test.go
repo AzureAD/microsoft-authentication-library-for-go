@@ -855,6 +855,7 @@ func TestWrite(t *testing.T) {
 	authParams := authority.AuthParams{
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
+		AuthnScheme:   &authority.BearerAuthenticationScheme{},
 	}
 	testRefreshToken := accesstokens.NewRefreshToken(
 		"testUID.testUtid",
