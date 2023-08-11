@@ -195,7 +195,7 @@ func (tr *TokenResponse) ComputeScope(authParams authority.AuthParams) {
 	tr.scopesComputed = true
 }
 
-// HomeAccountID uniquely identifies the authenticated account.
+// HomeAccountID uniquely identifies the authenticated account, if any. It's "" when the token is an app token.
 func (tr *TokenResponse) HomeAccountID() string {
 	id := tr.IDToken.Subject
 	if uid := tr.ClientInfo.UID; uid != "" {
