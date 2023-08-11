@@ -139,6 +139,7 @@ const (
 	ADFS = "ADFS"
 )
 
+// AuthenticationScheme is an extensibility mechanism designed to be used only by Azure Arc for proof of possession access tokens.
 type AuthenticationScheme interface {
 	// Extra parameters that are added to the request to the /token endpoint.
 	TokenRequestParams() map[string]string
@@ -213,7 +214,7 @@ type AuthParams struct {
 	LoginHint string
 	// DomainHint is a directive that can be used to accelerate the user to their federated IdP sign-in page
 	DomainHint string
-	// Optional scheme passed by callers to custom format access token
+	// AuthnScheme is an optional scheme for formatting access tokens
 	AuthnScheme AuthenticationScheme
 }
 

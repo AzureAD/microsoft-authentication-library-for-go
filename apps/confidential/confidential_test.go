@@ -1248,14 +1248,14 @@ func TestWithAuthenticationScheme(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AccessToken != token+"-formated" {
+	if result.AccessToken != fmt.Sprintf(mock.Authnschemeformat, token) {
 		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
 	}
 	result, err = client.AcquireTokenSilent(ctx, tokenScope, WithAuthenticationScheme(authScheme))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.AccessToken != token+"-formated" {
+	if result.AccessToken != fmt.Sprintf(mock.Authnschemeformat, token) {
 		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
 	}
 }
