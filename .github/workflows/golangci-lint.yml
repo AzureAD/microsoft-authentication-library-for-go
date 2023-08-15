@@ -3,10 +3,8 @@ on:
   push:
     tags:
       - v*
-    branches:
-      - master
-      - main
-      - dev
+    branches:      
+      - main      
   pull_request:
     # This guards against unknown PR until a community member vet it and label it.
       types: [ labeled ]
