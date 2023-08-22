@@ -136,6 +136,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+			TokenType:     "Bearer",
 		}, cred)
 		if err != nil {
 			t.Fatal(err)
@@ -1290,5 +1291,38 @@ func TestWithDomainHint(t *testing.T) {
 				t.Fatalf(`unexpected domain_hint "%v"`, actual)
 			}
 		})
+	}
+}
+
+func TestWithAuthenticationScheme(t *testing.T) {
+	ctx := context.Background()
+	authScheme := mock.NewTestAuthnScheme()
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := fakeClient(accesstokens.TokenResponse{
+		AccessToken:   token,
+		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+		TokenType:     "TokenType",
+	}, cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireTokenByCredential(ctx, tokenScope, WithAuthenticationScheme(authScheme))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccessToken != fmt.Sprintf(mock.Authnschemeformat, token) {
+		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
+	}
+	result, err = client.AcquireTokenSilent(ctx, tokenScope, WithAuthenticationScheme(authScheme))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccessToken != fmt.Sprintf(mock.Authnschemeformat, token) {
+		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
 	}
 }
