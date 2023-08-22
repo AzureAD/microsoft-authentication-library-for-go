@@ -853,3 +853,40 @@ func TestWithDomainHint(t *testing.T) {
 		})
 	}
 }
+
+func TestWithAuthenticationScheme(t *testing.T) {
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+	lmo, tenant := "login.microsoftonline.com", "tenant"
+	authori := fmt.Sprintf(authorityFmt, lmo, tenant)
+	accessToken, idToken, refreshToken := "at", mock.GetIDToken(tenant, lmo), "rt"
+	authScheme := mock.NewTestAuthnScheme()
+
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600)))
+	client, err := New("client-id", WithAuthority(authori), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	var ar AuthResult
+	ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithAuthenticationScheme(authScheme), WithOpenURL(fakeBrowserOpenURL))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != fmt.Sprintf(mock.Authnschemeformat, accessToken) {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600)))
+
+	ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account), WithAuthenticationScheme(authScheme))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != fmt.Sprintf(mock.Authnschemeformat, accessToken) {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+
+}
