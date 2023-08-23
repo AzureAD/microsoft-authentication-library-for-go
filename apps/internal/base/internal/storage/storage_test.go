@@ -127,8 +127,6 @@ func TestReadAccessToken(t *testing.T) {
 		now,
 		"openid user.read",
 		"secret",
-		"tokenType",
-		"",
 	)
 	cache := &Contract{
 		AccessTokens: map[string]AccessToken{
@@ -144,8 +142,6 @@ func TestReadAccessToken(t *testing.T) {
 		"realm",
 		"cid",
 		[]string{"user.read", "openid"},
-		"tokenType",
-		"",
 	)
 	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
@@ -156,8 +152,6 @@ func TestReadAccessToken(t *testing.T) {
 		"realm",
 		"cid",
 		[]string{"user.read", "openid"},
-		"tokenType",
-		"",
 	)
 	if !reflect.ValueOf(retAccessToken).IsZero() {
 		t.Fatal("expected to find no access token")
@@ -177,8 +171,6 @@ func TestWriteAccessToken(t *testing.T) {
 		now,
 		"openid",
 		"secret",
-		"tokenType",
-		"",
 	)
 
 	key := testAccessToken.Key()
@@ -690,16 +682,16 @@ func TestIsAccessTokenValid(t *testing.T) {
 	}{
 		{
 			desc:  "Success",
-			token: NewAccessToken("hid", "env", "realm", "cid", cachedAt, expiresOn, extended, "openid", "secret", "tokenType", ""),
+			token: NewAccessToken("hid", "env", "realm", "cid", cachedAt, expiresOn, extended, "openid", "secret"),
 		},
 		{
 			desc:  "ExpiresOnUnixTimestamp has expired",
-			token: NewAccessToken("hid", "env", "realm", "cid", cachedAt, badExpiresOn, extended, "openid", "secret", "tokenType", ""),
+			token: NewAccessToken("hid", "env", "realm", "cid", cachedAt, badExpiresOn, extended, "openid", "secret"),
 			err:   true,
 		},
 		{
 			desc:  "Success",
-			token: NewAccessToken("hid", "env", "realm", "cid", badCachedAt, expiresOn, extended, "openid", "secret", "tokenType", ""),
+			token: NewAccessToken("hid", "env", "realm", "cid", badCachedAt, expiresOn, extended, "openid", "secret"),
 			err:   true,
 		},
 	}
@@ -726,8 +718,6 @@ func TestRead(t *testing.T) {
 		time.Now(),
 		"openid profile",
 		"secret",
-		"Bearer",
-		"",
 	)
 	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
@@ -761,7 +751,6 @@ func TestRead(t *testing.T) {
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
 		Scopes:        []string{"openid", "profile"},
-		AuthnScheme:   &authority.BearerAuthenticationScheme{},
 	}
 
 	tests := []struct {
@@ -849,13 +838,11 @@ func TestWrite(t *testing.T) {
 		GrantedScopes: accesstokens.Scopes{Slice: []string{"openid", "profile"}},
 		ExpiresOn:     expiresOn,
 		ExtExpiresOn:  internalTime.DurationTime{T: now},
-		TokenType:     "Bearer",
 	}
 	authInfo := authority.Info{Host: "env", Tenant: "realm", AuthorityType: accAuth}
 	authParams := authority.AuthParams{
 		AuthorityInfo: authInfo,
 		ClientID:      "cid",
-		AuthnScheme:   &authority.BearerAuthenticationScheme{},
 	}
 	testRefreshToken := accesstokens.NewRefreshToken(
 		"testUID.testUtid",
@@ -875,8 +862,6 @@ func TestWrite(t *testing.T) {
 		now,
 		"openid profile",
 		"accessToken",
-		"Bearer",
-		"",
 	)
 
 	testIDToken := NewIDToken(
@@ -968,7 +953,7 @@ func TestRemoveRefreshTokens(t *testing.T) {
 func TestRemoveAccessTokens(t *testing.T) {
 	now := time.Now()
 	storageManager := newForTest(nil)
-	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid", "secret", "tokenType", "")
+	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid", "secret")
 	key := testAccessToken.Key()
 	contract := &Contract{
 		AccessTokens: map[string]AccessToken{
@@ -1019,7 +1004,7 @@ func TestRemoveAccountObject(t *testing.T) {
 
 func TestRemoveAccount(t *testing.T) {
 	now := time.Now()
-	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret", "tokenType", "")
+	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
 	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
 	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
@@ -1061,7 +1046,7 @@ func TestRemoveAccount(t *testing.T) {
 
 func TestRemoveEmptyAccount(t *testing.T) {
 	now := time.Now()
-	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret", "tokenType", "")
+	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, "openid profile", "secret")
 	testIDToken := NewIDToken("hid", "env", "realm", "cid", "secret")
 	testAppMeta := NewAppMetaData("fid", "cid", "env")
 	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")

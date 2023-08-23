@@ -12,7 +12,6 @@ import (
 
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -76,14 +75,12 @@ type AccessToken struct {
 	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
 	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
 	UserAssertionHash string            `json:"user_assertion_hash,omitempty"`
-	TokenType         string            `json:"token_type,omitempty"`
-	AuthnSchemeKeyID  string            `json:"keyid,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
 
 // NewAccessToken is the constructor for AccessToken.
-func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token, tokenType, authnSchemeKeyID string) AccessToken {
+func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token string) AccessToken {
 	return AccessToken{
 		HomeAccountID:     homeID,
 		Environment:       env,
@@ -95,8 +92,6 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 		CachedAt:          internalTime.Unix{T: cachedAt.UTC()},
 		ExpiresOn:         internalTime.Unix{T: expiresOn.UTC()},
 		ExtendedExpiresOn: internalTime.Unix{T: extendedExpiresOn.UTC()},
-		TokenType:         tokenType,
-		AuthnSchemeKeyID:  authnSchemeKeyID,
 	}
 }
 
@@ -106,11 +101,6 @@ func (a AccessToken) Key() string {
 		[]string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes},
 		shared.CacheKeySeparator,
 	)
-	// add token type to key for new access tokens types. skip for bearer token type to
-	// preserve fwd and back compat between a common cache and msal clients
-	if !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) {
-		key = strings.Join([]string{key, a.TokenType}, shared.CacheKeySeparator)
-	}
 	return strings.ToLower(key)
 }
 

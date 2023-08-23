@@ -127,10 +127,9 @@ func TestAcquireTokenSilentScopes(t *testing.T) {
 						Host:          fakeAuthority,
 						Tenant:        fakeIDToken.TenantID,
 					},
-					ClientID:    fakeClientID,
-					Scopes:      test.cachedTokenScopes,
-					Username:    fakeIDToken.PreferredUsername,
-					AuthnScheme: &authority.BearerAuthenticationScheme{},
+					ClientID: fakeClientID,
+					Scopes:   test.cachedTokenScopes,
+					Username: fakeIDToken.PreferredUsername,
 				},
 				accesstokens.TokenResponse{
 					AccessToken:   fakeAccessToken,
@@ -172,15 +171,13 @@ func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
 				Host:          fakeAuthority,
 				Tenant:        fakeIDToken.TenantID,
 			},
-			ClientID:    fakeClientID,
-			Scopes:      grantedScopes[1:],
-			AuthnScheme: &authority.BearerAuthenticationScheme{},
+			ClientID: fakeClientID,
+			Scopes:   grantedScopes[1:],
 		},
 		accesstokens.TokenResponse{
 			AccessToken:   expectedToken,
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: grantedScopes},
-			TokenType:     "Bearer",
 		},
 	)
 	if err != nil {
@@ -251,7 +248,7 @@ func TestCacheIOErrors(t *testing.T) {
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
-			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{AuthnScheme: &authority.BearerAuthenticationScheme{}}, accesstokens.TokenResponse{}, true)
+			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{}, accesstokens.TokenResponse{}, true)
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
@@ -275,7 +272,6 @@ func TestCacheIOErrors(t *testing.T) {
 				ClientID:      fakeClientID,
 				HomeAccountID: hid,
 				Scopes:        testScopes,
-				AuthnScheme:   &authority.BearerAuthenticationScheme{},
 			},
 			accesstokens.TokenResponse{
 				AccessToken:   "at",
