@@ -52,7 +52,6 @@ func TestOBOAccessTokenScopes(t *testing.T) {
 			Scopes:            scope,
 			UserAssertion:     upn + "-assertion",
 			Username:          idt.PreferredUsername,
-			AuthnScheme:       &authority.BearerAuthenticationScheme{},
 		}
 		_, err := mgr.Write(
 			ap,
@@ -63,7 +62,6 @@ func TestOBOAccessTokenScopes(t *testing.T) {
 				GrantedScopes: accesstokens.Scopes{Slice: scope},
 				IDToken:       idt,
 				RefreshToken:  upn + "-rt",
-				TokenType:     "Bearer",
 			},
 		)
 		if err != nil {
@@ -114,7 +112,6 @@ func TestOBOPartitioning(t *testing.T) {
 			Scopes:            scopes,
 			UserAssertion:     upn + "-assertion",
 			Username:          idt.PreferredUsername,
-			AuthnScheme:       &authority.BearerAuthenticationScheme{},
 		}
 		account, err := mgr.Write(
 			authParams[i],
@@ -125,7 +122,6 @@ func TestOBOPartitioning(t *testing.T) {
 				GrantedScopes: accesstokens.Scopes{Slice: scopes},
 				IDToken:       idt,
 				RefreshToken:  upn + "-rt",
-				TokenType:     "Bearer",
 			},
 		)
 		if err != nil {
@@ -157,8 +153,6 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		now,
 		"openid user.read",
 		"secret",
-		"Bearer",
-		"",
 	)
 	testAccessToken.UserAssertionHash = "user_assertion_hash"
 	cache := &InMemoryContract{
@@ -176,8 +170,6 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		"user_assertion_hash",
 		[]string{"user.read", "openid"},
 		"at_partition",
-		"Bearer",
-		"",
 	)
 	if err != nil {
 		t.Errorf("TestReadPartitionedAccessToken: got err == %s, want err == nil", err)
@@ -192,8 +184,6 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		"this_should_break_it",
 		[]string{"user.read", "openid"},
 		"at_partition",
-		"Bearer",
-		"",
 	)
 	if err == nil {
 		t.Errorf("TestReadPartitionedAccessToken: got err == nil, want err != nil")
@@ -213,8 +203,6 @@ func TestWritePartitionedAccessToken(t *testing.T) {
 		now,
 		"openid",
 		"secret",
-		"tokenType",
-		"",
 	)
 
 	key := testAccessToken.Key()

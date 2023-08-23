@@ -11,8 +11,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 type response struct {
@@ -78,7 +76,7 @@ func (*Client) CloseIdleConnections() {}
 
 func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, expiresIn int) []byte {
 	body := fmt.Sprintf(
-		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
+		`{"access_token": "%s","expires_in": %d,"expires_on": %d`,
 		accessToken, expiresIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix(),
 	)
 	if clientInfo != "" {
@@ -179,32 +177,4 @@ func GetTenantDiscoveryBody(host, tenant string) []byte {
 		"rbac_url": "https://pas.windows.net"
 	}`, "{authority}", authority)
 	return []byte(content)
-}
-
-const Authnschemeformat = "%s-formated"
-
-type AuthnSchemeTest struct {
-}
-
-func (a *AuthnSchemeTest) TokenRequestParams() map[string]string {
-	return map[string]string{
-		"foo":          "bar",
-		"customHeader": "customHeaderValue",
-	}
-}
-
-func (a *AuthnSchemeTest) KeyID() string {
-	return "KeyId"
-}
-
-func (a *AuthnSchemeTest) FormatAccessToken(accessToken string) (string, error) {
-	return fmt.Sprintf(Authnschemeformat, accessToken), nil
-}
-
-func (a *AuthnSchemeTest) AccessTokenType() string {
-	return "TokenType"
-}
-
-func NewTestAuthnScheme() authority.AuthenticationScheme {
-	return &AuthnSchemeTest{}
 }

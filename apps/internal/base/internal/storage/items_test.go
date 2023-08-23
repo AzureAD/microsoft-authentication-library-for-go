@@ -38,20 +38,6 @@ var (
 		ExpiresOn:         internalTime.Unix{T: expiresOn},
 		ExtendedExpiresOn: internalTime.Unix{T: extExpiresOn},
 		CachedAt:          internalTime.Unix{T: cachedAt},
-		TokenType:         "Bearer",
-	}
-	popAtCacheEntity = &AccessToken{
-		HomeAccountID:     testHID,
-		Environment:       env,
-		CredentialType:    credential,
-		ClientID:          clientID,
-		Realm:             realm,
-		Scopes:            scopes,
-		Secret:            secret,
-		ExpiresOn:         internalTime.Unix{T: expiresOn},
-		ExtendedExpiresOn: internalTime.Unix{T: extExpiresOn},
-		CachedAt:          internalTime.Unix{T: cachedAt},
-		TokenType:         "pop",
 	}
 )
 
@@ -68,8 +54,6 @@ func TestCreateAccessToken(t *testing.T) {
 		testExtExpiresOn,
 		"user.read",
 		"access",
-		"tokenType",
-		"keyID",
 	)
 	if !extExpiresOn.Equal(actualAt.ExtendedExpiresOn.T) {
 		t.Errorf("Actual ext expires on %s differs from expected ext expires on %s", actualAt.ExtendedExpiresOn, extExpiresOn)
@@ -77,17 +61,10 @@ func TestCreateAccessToken(t *testing.T) {
 }
 
 func TestKeyForAccessToken(t *testing.T) {
-	//test key for bearer type token, it should not have token type in key
-	want := "testhid-env-accesstoken-clientid-realm-user.read"
+	const want = "testhid-env-accesstoken-clientid-realm-user.read"
 	got := atCacheEntity.Key()
 	if got != want {
-		t.Errorf("TestKeyForAccessToken for bearer access token: got %s, want %s", got, want)
-	}
-
-	want = "testhid-env-accesstoken-clientid-realm-user.read-pop"
-	got = popAtCacheEntity.Key()
-	if got != want {
-		t.Errorf("TestKeyForAccessToken for pop access token: got %s, want %s", got, want)
+		t.Errorf("TestKeyForAccessToken: got %s, want %s", got, want)
 	}
 }
 
