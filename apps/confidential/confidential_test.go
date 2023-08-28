@@ -384,6 +384,7 @@ func TestADFSTokenCaching(t *testing.T) {
 		AccessToken: accesstokens.TokenResponse{
 			AccessToken:   "at1",
 			RefreshToken:  "rt",
+			TokenType:     "Bearer",
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
@@ -414,6 +415,7 @@ func TestADFSTokenCaching(t *testing.T) {
 
 	// simulate authenticating a different user
 	fakeAT.AccessToken.AccessToken = "at2"
+	fakeAT.AccessToken.TokenType = "Bearer"
 	fakeAT.AccessToken.IDToken.Name = "B"
 	fakeAT.AccessToken.IDToken.PreferredUsername = "B"
 	fakeAT.AccessToken.IDToken.Subject = "B"
