@@ -419,21 +419,21 @@ func TestAccountFromCache(t *testing.T) {
 	cacheAccessor := &TokenCache{file: testCacheFile}
 	labClientInstance, err := newLabClient()
 	if err != nil {
-		panic("failed to get a lab client: " + err.Error())
+		t.Fatalf("TestAccountFromCache: on newLabClient(): got err == %s, want err == nil", errors.Verbose(err))
 	}
 	ctx := context.Background()
 	user := testUser(ctx, "Managed", labClientInstance, url.Values{"usertype": []string{"cloud"}})
 
 	app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority), public.WithCache(cacheAccessor))
 	if err != nil {
-		panic(errors.Verbose(err))
+		t.Fatalf("TestAccountFromCache: on New(): got err == %s, want err == nil", errors.Verbose(err))
 	}
 
 	// look in the cache to see if the account to use has been cached
 	var userAccount public.Account
 	accounts, err := app.Accounts(ctx)
 	if err != nil {
-		panic("failed to read the cache")
+		t.Fatalf("TestAccountFromCache: on Accounts(): got err == %s, want err == nil", errors.Verbose(err))
 	}
 	for _, account := range accounts {
 		t.Logf("TestAccountFromCache: account found in cache: %v", account)
