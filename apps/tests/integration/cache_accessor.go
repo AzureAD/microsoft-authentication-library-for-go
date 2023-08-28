@@ -30,3 +30,11 @@ func (t *TokenCache) Export(ctx context.Context, cache cache.Marshaler, hints ca
 	}
 	return os.WriteFile(t.file, data, 0600)
 }
+
+func (t *TokenCache) Print() string {
+	data, err := os.ReadFile(t.file)
+	if err != nil {
+		return err.Error()
+	}
+	return string(data)
+}
