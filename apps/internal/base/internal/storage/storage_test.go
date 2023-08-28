@@ -117,6 +117,7 @@ func TestAllAccounts(t *testing.T) {
 
 func TestReadAccessToken(t *testing.T) {
 	now := time.Now()
+	// Tokeb with token type
 	testAccessToken := NewAccessToken(
 		"hid",
 		"env",
@@ -130,14 +131,30 @@ func TestReadAccessToken(t *testing.T) {
 		"tokenType",
 		"",
 	)
+	// Token without token type
+	testAccessTokenWithoutTokenType := NewAccessToken(
+		"hid2",
+		"env2",
+		"realm2",
+		"cid2",
+		now,
+		now,
+		now,
+		"openid user.read",
+		"secret2",
+		"",
+		"",
+	)
 	cache := &Contract{
 		AccessTokens: map[string]AccessToken{
-			testAccessToken.Key(): testAccessToken,
+			testAccessToken.Key():                 testAccessToken,
+			testAccessTokenWithoutTokenType.Key(): testAccessTokenWithoutTokenType,
 		},
 	}
 	storageManager := newForTest(nil)
 	storageManager.update(cache)
 
+	// Test that we can find the access token with the token type
 	retAccessToken := storageManager.readAccessToken(
 		"hid",
 		[]string{"hello", "env", "test"},
@@ -150,6 +167,32 @@ func TestReadAccessToken(t *testing.T) {
 	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
+	// Test that we can find the access token without the token type
+	retAccessToken2 := storageManager.readAccessToken(
+		"hid2",
+		[]string{"hello", "env2", "test"},
+		"realm2",
+		"cid2",
+		[]string{"user.read", "openid"},
+		"",
+		"",
+	)
+	if diff := pretty.Compare(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
+		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
+	}
+	// Test that we can find fallback to an empty token type in the cache when the token type is not provided
+	retAccessToken2 = storageManager.readAccessToken(
+		"hid2",
+		[]string{"hello", "env2", "test"},
+		"realm2",
+		"cid2",
+		[]string{"user.read", "openid"},
+		"tokenType",
+		"",
+	)
+	if diff := pretty.Compare(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
+		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
+	}
 	retAccessToken = storageManager.readAccessToken(
 		"this_should_break_it",
 		[]string{"hello", "env", "test"},
@@ -160,6 +203,30 @@ func TestReadAccessToken(t *testing.T) {
 		"",
 	)
 	if !reflect.ValueOf(retAccessToken).IsZero() {
+		t.Fatal("expected to find no access token")
+	}
+	retAccessToken2 = storageManager.readAccessToken(
+		"this_should_break_it",
+		[]string{"hello", "env2", "test"},
+		"realm2",
+		"cid2",
+		[]string{"user.read", "openid"},
+		"",
+		"",
+	)
+	if !reflect.ValueOf(retAccessToken2).IsZero() {
+		t.Fatal("expected to find no access token")
+	}
+	retAccessToken2 = storageManager.readAccessToken(
+		"this_should_break_it",
+		[]string{"hello", "env2", "test"},
+		"realm2",
+		"cid2",
+		[]string{"user.read", "openid"},
+		"tokenType",
+		"",
+	)
+	if !reflect.ValueOf(retAccessToken2).IsZero() {
 		t.Fatal("expected to find no access token")
 	}
 }
