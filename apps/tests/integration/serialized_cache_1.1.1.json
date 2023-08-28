@@ -1,91 +1,51 @@
 {
-    "AccessToken": {
-        "uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3": {
-            "home_account_id": "uid.utid",
-            "environment": "login.windows.net",
-            "realm": "contoso",
-            "credential_type": "AccessToken",
-            "client_id": "my_client_id",
-            "secret": "an access token",
-            "target": "s2 s1 s3",
-            "expires_on": "4600",
-            "extended_expires_on": "4600",
-            "cached_at": "1000"
-        },
-        "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-accesstoken-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0-organizations-agreement.read.all agreement.readwrite.all agreementacceptance.read agreementacceptance.read.all allsites.fullcontrol allsites.manage allsites.read allsites.write appcatalog.readwrite.all auditlog.read.all bookings.manage.all bookings.read.all bookings.readwrite.all bookingsappointment.readwrite.all calendars.read calendars.read.all calendars.read.shared calendars.readwrite calendars.readwrite.all calendars.readwrite.shared contacts.read contacts.read.all contacts.read.shared contacts.readwrite contacts.readwrite.all contacts.readwrite.shared device.command device.read devicemanagementapps.read.all devicemanagementapps.readwrite.all devicemanagementconfiguration.read.all devicemanagementconfiguration.readwrite.all devicemanagementmanageddevices.privilegedoperations.all devicemanagementmanageddevices.read.all devicemanagementmanageddevices.readwrite.all devicemanagementrbac.read.all devicemanagementrbac.readwrite.all devicemanagementserviceconfig.read.all devicemanagementserviceconfig.readwrite.all directory.accessasuser.all directory.read.all directory.readwrite.all eas.accessasuser.all eduadministration.read eduadministration.readwrite eduassignments.read eduassignments.readbasic eduassignments.readwrite eduassignments.readwritebasic eduroster.read eduroster.readbasic eduroster.readwrite email ews.accessasuser.all exchange.manage files.read files.read.all files.read.selected files.readwrite files.readwrite.all files.readwrite.appfolder files.readwrite.selected financials.readwrite.all group.read.all group.readwrite.all identityprovider.read.all identityprovider.readwrite.all identityriskevent.read.all mail.read mail.read.all mail.read.shared mail.readwrite mail.readwrite.all mail.readwrite.shared mail.send mail.send.all mail.send.shared mailboxsettings.read mailboxsettings.readwrite member.read.hidden myfiles.read myfiles.write notes.create notes.read notes.read.all notes.readwrite notes.readwrite.all notes.readwrite.createdbyapp openid people.read people.read.all people.readwrite privilegedaccess.readwrite.azuread privilegedaccess.readwrite.azureresources profile reports.read.all securityevents.read.all securityevents.readwrite.all sites.fullcontrol.all sites.manage.all sites.read.all sites.readwrite.all sites.search.all subscription.read.all tasks.read tasks.read.shared tasks.readwrite tasks.readwrite.shared termstore.read.all termstore.readwrite.all user.export.all user.invite.all user.read user.read.all user.readbasic.all user.readwrite user.readwrite.all useractivity.readwrite.createdbyapp usertimelineactivity.write.createdbyapp": {
-            "home_account_id": "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
-            "environment": "login.microsoftonline.com",
-            "realm": "organizations",
-            "credential_type": "AccessToken",
-            "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
-            "secret": "secret",
-            "target": "Agreement.Read.All Agreement.ReadWrite.All AgreementAcceptance.Read AgreementAcceptance.Read.All AllSites.FullControl AllSites.Manage AllSites.Read AllSites.Write AppCatalog.ReadWrite.All AuditLog.Read.All Bookings.Manage.All Bookings.Read.All Bookings.ReadWrite.All BookingsAppointment.ReadWrite.All Calendars.Read Calendars.Read.All Calendars.Read.Shared Calendars.ReadWrite Calendars.ReadWrite.All Calendars.ReadWrite.Shared Contacts.Read Contacts.Read.All Contacts.Read.Shared Contacts.ReadWrite Contacts.ReadWrite.All Contacts.ReadWrite.Shared Device.Command Device.Read DeviceManagementApps.Read.All DeviceManagementApps.ReadWrite.All DeviceManagementConfiguration.Read.All DeviceManagementConfiguration.ReadWrite.All DeviceManagementManagedDevices.PrivilegedOperations.All DeviceManagementManagedDevices.Read.All DeviceManagementManagedDevices.ReadWrite.All DeviceManagementRBAC.Read.All DeviceManagementRBAC.ReadWrite.All DeviceManagementServiceConfig.Read.All DeviceManagementServiceConfig.ReadWrite.All Directory.AccessAsUser.All Directory.Read.All Directory.ReadWrite.All EAS.AccessAsUser.All EduAdministration.Read EduAdministration.ReadWrite EduAssignments.Read EduAssignments.ReadBasic EduAssignments.ReadWrite EduAssignments.ReadWriteBasic EduRoster.Read EduRoster.ReadBasic EduRoster.ReadWrite email EWS.AccessAsUser.All Exchange.Manage Files.Read Files.Read.All Files.Read.Selected Files.ReadWrite Files.ReadWrite.All Files.ReadWrite.AppFolder Files.ReadWrite.Selected Financials.ReadWrite.All Group.Read.All Group.ReadWrite.All IdentityProvider.Read.All IdentityProvider.ReadWrite.All IdentityRiskEvent.Read.All Mail.Read Mail.Read.All Mail.Read.Shared Mail.ReadWrite Mail.ReadWrite.All Mail.ReadWrite.Shared Mail.Send Mail.Send.All Mail.Send.Shared MailboxSettings.Read MailboxSettings.ReadWrite Member.Read.Hidden MyFiles.Read MyFiles.Write Notes.Create Notes.Read Notes.Read.All Notes.ReadWrite Notes.ReadWrite.All Notes.ReadWrite.CreatedByApp openid People.Read People.Read.All People.ReadWrite PrivilegedAccess.ReadWrite.AzureAD PrivilegedAccess.ReadWrite.AzureResources profile Reports.Read.All SecurityEvents.Read.All SecurityEvents.ReadWrite.All Sites.FullControl.All Sites.Manage.All Sites.Read.All Sites.ReadWrite.All Sites.Search.All Subscription.Read.All Tasks.Read Tasks.Read.Shared Tasks.ReadWrite Tasks.ReadWrite.Shared TermStore.Read.All TermStore.ReadWrite.All User.Export.All User.Invite.All User.Read User.Read.All User.ReadBasic.All User.ReadWrite User.ReadWrite.All UserActivity.ReadWrite.CreatedByApp UserTimelineActivity.Write.CreatedByApp",
-            "expires_on": "1692799453",
-            "extended_expires_on": "1692799453",
-            "cached_at": "1692795260"
-        }
-    },
-    "RefreshToken": {
-        "uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3": {
-            "home_account_id": "uid.utid",
-            "environment": "login.windows.net",
-            "credential_type": "RefreshToken",
-            "client_id": "my_client_id",
-            "secret": "a refresh token",
-            "target": "s2 s1 s3"
-        },
-        "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-refreshtoken-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0": {
-            "home_account_id": "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
-            "environment": "login.microsoftonline.com",
-            "credential_type": "RefreshToken",
-            "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
-            "secret": "secret"
-        }
-    },
-    "IdToken": {
-        "uid.utid-login.windows.net-idtoken-my_client_id-contoso-": {
-            "home_account_id": "uid.utid",
-            "environment": "login.windows.net",
-            "realm": "contoso",
-            "credential_type": "IdToken",
-            "client_id": "my_client_id",
-            "secret": "header.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9.signature"
-        },
-        "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-idtoken-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0-organizations": {
-            "home_account_id": "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
-            "environment": "login.microsoftonline.com",
-            "realm": "organizations",
-            "credential_type": "IDToken",
-            "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
-            "secret": "secret.eyJvaWQiOiAib2JqZWN0MTIzNCIsICJwcmVmZXJyZWRfdXNlcm5hbWUiOiAiSm9obiBEb2UiLCAic3ViIjogInN1YiJ9"
-        }
-    },
-    "Account": {
-        "uid.utid-login.windows.net-contoso": {
-            "home_account_id": "uid.utid",
-            "environment": "login.windows.net",
-            "realm": "contoso",
-            "local_account_id": "object1234",
-            "authority_type": "MSSTS",
-            "username": "John Doe"
-        },
-        "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-organizations": {
-            "home_account_id": "9f4880d8-80ba-4c40-97bc-f7a23c703084.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
-            "environment": "login.microsoftonline.com",
-            "realm": "organizations",
-            "local_account_id": "9f4880d8-80ba-4c40-97bc-f7a23c703084",
-            "authority_type": "MSSTS",
-            "username": "idlab1@msidlab4.onmicrosoft.com"
-        }
-    },
-    "AppMetadata": {
-        "AppMetadata-login.windows.net-my_client_id": {
-            "client_id": "my_client_id",
-            "environment": "login.windows.net"
-        },
-        "appmetadata-login.microsoftonline.com-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0": {
-            "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
-            "environment": "login.microsoftonline.com"
-        }
+  "AccessToken": {
+    "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-accesstoken-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0-organizations-https://graph.windows.net/agreement.read.all https://graph.windows.net/agreement.readwrite.all https://graph.windows.net/agreementacceptance.read https://graph.windows.net/agreementacceptance.read.all https://graph.windows.net/appcatalog.readwrite.all https://graph.windows.net/auditlog.read.all https://graph.windows.net/bookings.manage.all https://graph.windows.net/bookings.read.all https://graph.windows.net/bookings.readwrite.all https://graph.windows.net/bookingsappointment.readwrite.all https://graph.windows.net/calendars.read https://graph.windows.net/calendars.read.shared https://graph.windows.net/calendars.readwrite https://graph.windows.net/calendars.readwrite.shared https://graph.windows.net/contacts.read https://graph.windows.net/contacts.read.shared https://graph.windows.net/contacts.readwrite https://graph.windows.net/contacts.readwrite.shared https://graph.windows.net/device.command https://graph.windows.net/device.read https://graph.windows.net/devicemanagementapps.read.all https://graph.windows.net/devicemanagementapps.readwrite.all https://graph.windows.net/devicemanagementconfiguration.read.all https://graph.windows.net/devicemanagementconfiguration.readwrite.all https://graph.windows.net/devicemanagementmanageddevices.privilegedoperations.all https://graph.windows.net/devicemanagementmanageddevices.read.all https://graph.windows.net/devicemanagementmanageddevices.readwrite.all https://graph.windows.net/devicemanagementrbac.read.all https://graph.windows.net/devicemanagementrbac.readwrite.all https://graph.windows.net/devicemanagementserviceconfig.read.all https://graph.windows.net/devicemanagementserviceconfig.readwrite.all https://graph.windows.net/directory.accessasuser.all https://graph.windows.net/directory.read.all https://graph.windows.net/directory.readwrite.all https://graph.windows.net/eas.accessasuser.all https://graph.windows.net/eduadministration.read https://graph.windows.net/eduadministration.readwrite https://graph.windows.net/eduassignments.read https://graph.windows.net/eduassignments.readbasic https://graph.windows.net/eduassignments.readwrite https://graph.windows.net/eduassignments.readwritebasic https://graph.windows.net/eduroster.read https://graph.windows.net/eduroster.readbasic https://graph.windows.net/eduroster.readwrite https://graph.windows.net/files.read https://graph.windows.net/files.read.all https://graph.windows.net/files.read.selected https://graph.windows.net/files.readwrite https://graph.windows.net/files.readwrite.all https://graph.windows.net/files.readwrite.appfolder https://graph.windows.net/files.readwrite.selected https://graph.windows.net/financials.readwrite.all https://graph.windows.net/group.read.all https://graph.windows.net/group.readwrite.all https://graph.windows.net/identityprovider.read.all https://graph.windows.net/identityprovider.readwrite.all https://graph.windows.net/identityriskevent.read.all https://graph.windows.net/mail.read https://graph.windows.net/mail.read.shared https://graph.windows.net/mail.readwrite https://graph.windows.net/mail.readwrite.shared https://graph.windows.net/mail.send https://graph.windows.net/mail.send.shared https://graph.windows.net/mailboxsettings.read https://graph.windows.net/mailboxsettings.readwrite https://graph.windows.net/member.read.hidden https://graph.windows.net/notes.create https://graph.windows.net/notes.read https://graph.windows.net/notes.read.all https://graph.windows.net/notes.readwrite https://graph.windows.net/notes.readwrite.all https://graph.windows.net/notes.readwrite.createdbyapp https://graph.windows.net/people.read https://graph.windows.net/people.read.all https://graph.windows.net/privilegedaccess.readwrite.azuread https://graph.windows.net/privilegedaccess.readwrite.azureresources https://graph.windows.net/reports.read.all https://graph.windows.net/securityevents.read.all https://graph.windows.net/securityevents.readwrite.all https://graph.windows.net/sites.fullcontrol.all https://graph.windows.net/sites.manage.all https://graph.windows.net/sites.read.all https://graph.windows.net/sites.readwrite.all https://graph.windows.net/subscription.read.all https://graph.windows.net/tasks.read https://graph.windows.net/tasks.read.shared https://graph.windows.net/tasks.readwrite https://graph.windows.net/tasks.readwrite.shared https://graph.windows.net/user.export.all https://graph.windows.net/user.invite.all https://graph.windows.net/user.read https://graph.windows.net/user.read.all https://graph.windows.net/user.readbasic.all https://graph.windows.net/user.readwrite https://graph.windows.net/user.readwrite.all https://graph.windows.net/useractivity.readwrite.createdbyapp https://graph.windows.net/usertimelineactivity.write.createdbyapp https://graph.windows.net/.default": {
+      "home_account_id": "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
+      "environment": "login.microsoftonline.com",
+      "realm": "organizations",
+      "credential_type": "AccessToken",
+      "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
+      "secret": "***",
+      "target": "https://graph.windows.net/Agreement.Read.All https://graph.windows.net/Agreement.ReadWrite.All https://graph.windows.net/AgreementAcceptance.Read https://graph.windows.net/AgreementAcceptance.Read.All https://graph.windows.net/AppCatalog.ReadWrite.All https://graph.windows.net/AuditLog.Read.All https://graph.windows.net/Bookings.Manage.All https://graph.windows.net/Bookings.Read.All https://graph.windows.net/Bookings.ReadWrite.All https://graph.windows.net/BookingsAppointment.ReadWrite.All https://graph.windows.net/Calendars.Read https://graph.windows.net/Calendars.Read.Shared https://graph.windows.net/Calendars.ReadWrite https://graph.windows.net/Calendars.ReadWrite.Shared https://graph.windows.net/Contacts.Read https://graph.windows.net/Contacts.Read.Shared https://graph.windows.net/Contacts.ReadWrite https://graph.windows.net/Contacts.ReadWrite.Shared https://graph.windows.net/Device.Command https://graph.windows.net/Device.Read https://graph.windows.net/DeviceManagementApps.Read.All https://graph.windows.net/DeviceManagementApps.ReadWrite.All https://graph.windows.net/DeviceManagementConfiguration.Read.All https://graph.windows.net/DeviceManagementConfiguration.ReadWrite.All https://graph.windows.net/DeviceManagementManagedDevices.PrivilegedOperations.All https://graph.windows.net/DeviceManagementManagedDevices.Read.All https://graph.windows.net/DeviceManagementManagedDevices.ReadWrite.All https://graph.windows.net/DeviceManagementRBAC.Read.All https://graph.windows.net/DeviceManagementRBAC.ReadWrite.All https://graph.windows.net/DeviceManagementServiceConfig.Read.All https://graph.windows.net/DeviceManagementServiceConfig.ReadWrite.All https://graph.windows.net/Directory.AccessAsUser.All https://graph.windows.net/Directory.Read.All https://graph.windows.net/Directory.ReadWrite.All https://graph.windows.net/EAS.AccessAsUser.All https://graph.windows.net/EduAdministration.Read https://graph.windows.net/EduAdministration.ReadWrite https://graph.windows.net/EduAssignments.Read https://graph.windows.net/EduAssignments.ReadBasic https://graph.windows.net/EduAssignments.ReadWrite https://graph.windows.net/EduAssignments.ReadWriteBasic https://graph.windows.net/EduRoster.Read https://graph.windows.net/EduRoster.ReadBasic https://graph.windows.net/EduRoster.ReadWrite https://graph.windows.net/Files.Read https://graph.windows.net/Files.Read.All https://graph.windows.net/Files.Read.Selected https://graph.windows.net/Files.ReadWrite https://graph.windows.net/Files.ReadWrite.All https://graph.windows.net/Files.ReadWrite.AppFolder https://graph.windows.net/Files.ReadWrite.Selected https://graph.windows.net/Financials.ReadWrite.All https://graph.windows.net/Group.Read.All https://graph.windows.net/Group.ReadWrite.All https://graph.windows.net/IdentityProvider.Read.All https://graph.windows.net/IdentityProvider.ReadWrite.All https://graph.windows.net/IdentityRiskEvent.Read.All https://graph.windows.net/Mail.Read https://graph.windows.net/Mail.Read.Shared https://graph.windows.net/Mail.ReadWrite https://graph.windows.net/Mail.ReadWrite.Shared https://graph.windows.net/Mail.Send https://graph.windows.net/Mail.Send.Shared https://graph.windows.net/MailboxSettings.Read https://graph.windows.net/MailboxSettings.ReadWrite https://graph.windows.net/Member.Read.Hidden https://graph.windows.net/Notes.Create https://graph.windows.net/Notes.Read https://graph.windows.net/Notes.Read.All https://graph.windows.net/Notes.ReadWrite https://graph.windows.net/Notes.ReadWrite.All https://graph.windows.net/Notes.ReadWrite.CreatedByApp https://graph.windows.net/People.Read https://graph.windows.net/People.Read.All https://graph.windows.net/PrivilegedAccess.ReadWrite.AzureAD https://graph.windows.net/PrivilegedAccess.ReadWrite.AzureResources https://graph.windows.net/Reports.Read.All https://graph.windows.net/SecurityEvents.Read.All https://graph.windows.net/SecurityEvents.ReadWrite.All https://graph.windows.net/Sites.FullControl.All https://graph.windows.net/Sites.Manage.All https://graph.windows.net/Sites.Read.All https://graph.windows.net/Sites.ReadWrite.All https://graph.windows.net/Subscription.Read.All https://graph.windows.net/Tasks.Read https://graph.windows.net/Tasks.Read.Shared https://graph.windows.net/Tasks.ReadWrite https://graph.windows.net/Tasks.ReadWrite.Shared https://graph.windows.net/User.Export.All https://graph.windows.net/User.Invite.All https://graph.windows.net/User.Read https://graph.windows.net/User.Read.All https://graph.windows.net/User.ReadBasic.All https://graph.windows.net/User.ReadWrite https://graph.windows.net/User.ReadWrite.All https://graph.windows.net/UserActivity.ReadWrite.CreatedByApp https://graph.windows.net/UserTimelineActivity.Write.CreatedByApp https://graph.windows.net/.default",
+      "expires_on": "1999999999",
+      "extended_expires_on": "1999999999",
+      "cached_at": "1693251452"
     }
+  },
+  "RefreshToken": {
+    "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-refreshtoken-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0": {
+      "home_account_id": "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
+      "environment": "login.microsoftonline.com",
+      "credential_type": "RefreshToken",
+      "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
+      "secret": "***"
+    }
+  },
+  "IdToken": {
+    "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-idtoken-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0-organizations": {
+      "home_account_id": "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
+      "environment": "login.microsoftonline.com",
+      "realm": "organizations",
+      "credential_type": "IDToken",
+      "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
+      "secret": "***"
+    }
+  },
+  "Account": {
+    "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca-login.microsoftonline.com-organizations": {
+      "home_account_id": "597f86cd-13f3-44c0-bece-a1e77ba43228.f645ad92-e38d-4d1a-b510-d1b09a74a8ca",
+      "environment": "login.microsoftonline.com",
+      "realm": "organizations",
+      "local_account_id": "597f86cd-13f3-44c0-bece-a1e77ba43228",
+      "authority_type": "MSSTS",
+      "username": "idlab1@msidlab4.onmicrosoft.com"
+    }
+  },
+  "AppMetadata": {
+    "appmetadata-login.microsoftonline.com-4b0db8c2-9f26-4417-8bde-3f0e3656f8e0": {
+      "client_id": "4b0db8c2-9f26-4417-8bde-3f0e3656f8e0",
+      "environment": "login.microsoftonline.com"
+    }
+  }
 }
