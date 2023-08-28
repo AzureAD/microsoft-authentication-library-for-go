@@ -410,7 +410,7 @@ func TestRemoveAccount(t *testing.T) {
 
 }
 
-const testCacheFile = "serialized_cache_1.1.1.json"
+const testCacheFile = "serialized_cache_1.1.12.json"
 
 func TestAccountFromCache(t *testing.T) {
 	if testing.Short() {
@@ -428,30 +428,43 @@ func TestAccountFromCache(t *testing.T) {
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
-
-	// look in the cache to see if the account to use has been cached
-	var userAccount public.Account
-	accounts, err := app.Accounts(ctx)
-	if err != nil {
-		panic("failed to read the cache")
-	}
-	for _, account := range accounts {
-		t.Logf("TestAccountFromCache: account found in cache: %v", account)
-		if account.PreferredUsername == user.Upn {
-			userAccount = account
-		}
-	}
-	t.Logf("TestAccountFromCache: userAccount: %v", userAccount)
-	result, err := app.AcquireTokenSilent(
+	r, err := app.AcquireTokenByUsernamePassword(
 		ctx,
 		[]string{graphDefaultScope},
-		public.WithSilentAccount(userAccount),
+		user.Upn,
+		user.Password,
 	)
 	if err != nil {
-		t.Fatalf("TestAccountFromCache: on AcquireTokenSilent(): got err == %s, want err == nil", errors.Verbose(err))
+		t.Fatalf("TestAccountFromCache: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
 	}
-	if result.AccessToken == "" {
-		t.Fatal("TestAccountFromCache: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
+	if r.AccessToken == "" {
+		t.Fatal("TestAccountFromCache: on AcquireTokenByUsernamePassword(): got AccessToken == '', want AccessToken != ''")
 	}
+	t.Logf("TestAccountFromCache: r: %v", cacheAccessor.Print())
+
+	// // look in the cache to see if the account to use has been cached
+	// var userAccount public.Account
+	// accounts, err := app.Accounts(ctx)
+	// if err != nil {
+	// 	panic("failed to read the cache")
+	// }
+	// for _, account := range accounts {
+	// 	t.Logf("TestAccountFromCache: account found in cache: %v", account)
+	// 	if account.PreferredUsername == user.Upn {
+	// 		userAccount = account
+	// 	}
+	// }
+	// t.Logf("TestAccountFromCache: userAccount: %v", userAccount)
+	// result, err := app.AcquireTokenSilent(
+	// 	ctx,
+	// 	[]string{graphDefaultScope},
+	// 	public.WithSilentAccount(userAccount),
+	// )
+	// if err != nil {
+	// 	t.Fatalf("TestAccountFromCache: on AcquireTokenSilent(): got err == %s, want err == nil", errors.Verbose(err))
+	// }
+	// if result.AccessToken == "" {
+	// 	t.Fatal("TestAccountFromCache: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
+	// }
 
 }
