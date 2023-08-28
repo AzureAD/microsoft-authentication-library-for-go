@@ -409,3 +409,46 @@ func TestRemoveAccount(t *testing.T) {
 	}
 
 }
+
+const testCacheFile = "serialized_cache_1.1.1.json"
+
+func TestAccountFromCache(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	cacheAccessor := &TokenCache{file: testCacheFile}
+	labClientInstance, err := newLabClient()
+	if err != nil {
+		panic("failed to get a lab client: " + err.Error())
+	}
+	ctx := context.Background()
+	user := testUser(ctx, "Managed", labClientInstance, url.Values{"usertype": []string{"cloud"}})
+
+	app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority), public.WithCache(cacheAccessor))
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	// look in the cache to see if the account to use has been cached
+	var userAccount public.Account
+	accounts, err := app.Accounts(ctx)
+	if err != nil {
+		panic("failed to read the cache")
+	}
+	for _, account := range accounts {
+		if account.PreferredUsername == user.Upn {
+			userAccount = account
+		}
+	}
+	result, err := app.AcquireTokenSilent(
+		ctx,
+		[]string{graphDefaultScope},
+		public.WithSilentAccount(userAccount),
+	)
+	if err != nil {
+		t.Fatalf("TestAccountFromCache: on AcquireTokenSilent(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("TestAccountFromCache: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
+	}
+
+}
