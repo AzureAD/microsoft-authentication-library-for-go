@@ -423,11 +423,12 @@ func TestAccountFromCache(t *testing.T) {
 	}
 	ctx := context.Background()
 	user := testUser(ctx, "Managed", labClientInstance, url.Values{"usertype": []string{"cloud"}})
-
+	t.Logf("TestAccountFromCache: user: %v", user)
 	app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority), public.WithCache(cacheAccessor))
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
+	t.Logf("TestAccountFromCache: app: %v", app)
 	// look in the cache to see if the account to use has been cached
 	var userAccount public.Account
 	accounts, err := app.Accounts(ctx)
@@ -435,10 +436,12 @@ func TestAccountFromCache(t *testing.T) {
 		panic("failed to read the cache")
 	}
 	for _, account := range accounts {
+		t.Logf("TestAccountFromCache: account found in cache: %v", account)
 		if account.PreferredUsername == user.Upn {
 			userAccount = account
 		}
 	}
+	t.Logf("TestAccountFromCache: userAccount: %v", userAccount)
 	result, err := app.AcquireTokenSilent(
 		ctx,
 		[]string{graphDefaultScope},
