@@ -261,7 +261,7 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 	// an issue, however if it does become a problem then we know where to look.
 	for _, at := range m.contract.AccessTokens {
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
-			if at.TokenType == tokenType && at.AuthnSchemeKeyID == authnSchemeKeyID || at.TokenType == "" {
+			if (at.TokenType == tokenType && at.AuthnSchemeKeyID == authnSchemeKeyID) || (at.TokenType == "" && (tokenType == "" || tokenType == "Bearer")) {
 				if checkAlias(at.Environment, envAliases) {
 					if isMatchingScopes(scopes, at.Scopes) {
 						return at
