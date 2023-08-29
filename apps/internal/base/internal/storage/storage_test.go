@@ -180,14 +180,14 @@ func TestReadAccessToken(t *testing.T) {
 	if diff := pretty.Compare(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
-	// Test that we can find fallback to an empty token type in the cache when the token type is not provided
+	// Test that we can find fallback to an empty token type in the cache when the token type is Bearer (defaulted)
 	retAccessToken2 = storageManager.readAccessToken(
 		"hid2",
 		[]string{"hello", "env2", "test"},
 		"realm2",
 		"cid2",
 		[]string{"user.read", "openid"},
-		"tokenType",
+		"Bearer",
 		"",
 	)
 	if diff := pretty.Compare(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
