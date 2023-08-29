@@ -436,12 +436,10 @@ func TestAccountFromCache(t *testing.T) {
 		t.Fatalf("TestAccountFromCache: on Accounts(): got err == %s, want err == nil", errors.Verbose(err))
 	}
 	for _, account := range accounts {
-		t.Logf("TestAccountFromCache: account found in cache: %v", account)
 		if account.PreferredUsername == user.Upn {
 			userAccount = account
 		}
 	}
-	t.Logf("TestAccountFromCache: userAccount: %v", userAccount)
 	result, err := app.AcquireTokenSilent(
 		ctx,
 		[]string{graphDefaultScope},
