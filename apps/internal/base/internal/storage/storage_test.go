@@ -9,6 +9,7 @@ import (
 	"os"
 	"reflect"
 	"sort"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,6 +113,106 @@ func TestAllAccounts(t *testing.T) {
 	expectedAccounts := []shared.Account{testAccOne, testAccTwo}
 	if diff := pretty.Compare(expectedAccounts, actualAccounts); diff != "" {
 		t.Errorf("Actual accounts differ from expected accounts: -want/+got:\n%s", diff)
+	}
+}
+
+func TestSchemaUpgrade(t *testing.T) {
+	countV1Keys := func(mgr *Manager) int {
+		v1Keys := 0
+		for k := range mgr.contract.AccessTokens {
+			if strings.ToLower(k) != k {
+				v1Keys++
+			}
+		}
+		for k := range mgr.contract.AppMetaData {
+			if strings.ToLower(k) != k {
+				v1Keys++
+			}
+		}
+		for k := range mgr.contract.IDTokens {
+			if strings.ToLower(k) != k {
+				v1Keys++
+			}
+		}
+		for k := range mgr.contract.RefreshTokens {
+			if strings.ToLower(k) != k {
+				v1Keys++
+			}
+		}
+		return v1Keys
+	}
+
+	for _, test := range []struct {
+		desc, file            string
+		shouldRemoveAllV1Keys bool
+	}{
+		{
+			desc:                  "v1.0 cache",
+			file:                  "testdata/v1.0_cache.json",
+			shouldRemoveAllV1Keys: true,
+		},
+		{
+			desc: "cache shared by v1.0 and v1.1",
+			file: "testdata/v1.0_v1.1_cache.json",
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			mgr := newForTest(&fakeDiscoveryResponser{
+				ret: authority.InstanceDiscoveryResponse{
+					Metadata: []authority.InstanceDiscoveryMetadata{
+						{Aliases: []string{defaultEnvironment}},
+					},
+				},
+			})
+			b, err := os.ReadFile(test.file)
+			if err != nil {
+				t.Fatal(err)
+			}
+			err = mgr.Unmarshal(b)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			before := countV1Keys(mgr)
+			if before == 0 {
+				t.Fatal("test bug: expected to have some v1.0 (mixed case) keys before Read")
+			}
+			tr, err := mgr.Read(context.Background(), authority.AuthParams{
+				AuthnScheme: &authority.BearerAuthenticationScheme{},
+				AuthorityInfo: authority.Info{
+					Host:   defaultEnvironment,
+					Tenant: defaultRealm,
+				},
+				ClientID:      defaultClientID,
+				HomeAccountID: defaultHID,
+				Scopes:        strings.Split(defaultScopes, " "),
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if tr.Account.LocalAccountID != accLID {
+				t.Errorf("expected local ID %q, got %q", accLID, tr.Account.LocalAccountID)
+			}
+			if tr.AccessToken.Secret != accessTokenSecret {
+				t.Errorf("expected access token %q, got %q", accessTokenSecret, tr.AccessToken.Secret)
+			}
+			if tr.IDToken.Secret != idSecret {
+				t.Errorf("expected ID token %q, got %q", idSecret, tr.IDToken.Secret)
+			}
+			if tr.RefreshToken.Secret != rtSecret {
+				t.Errorf("expected refresh token %q, got %q", rtSecret, tr.RefreshToken.Secret)
+			}
+			after := countV1Keys(mgr)
+			if test.shouldRemoveAllV1Keys {
+				if after != 0 {
+					t.Fatal("expected to have no v1.0 (mixed case) keys after Read")
+				}
+			} else if after >= before {
+				// we can't predict how many keys will be removed because this depends on the
+				// iteration order of the Manager's maps, which isn't specified or stabale
+				t.Fatal("Read should have removed some v1.0 (mixed case) keys")
+			}
+		})
 	}
 }
 
