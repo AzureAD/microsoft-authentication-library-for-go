@@ -33,11 +33,13 @@ type Contract struct {
 // the internal cache. This design is shared between MSAL versions in many languages.
 // This cannot be changed without design that includes other SDKs.
 type InMemoryContract struct {
-	AccessTokensPartition  map[string]map[string]AccessToken
-	RefreshTokensPartition map[string]map[string]accesstokens.RefreshToken
-	IDTokensPartition      map[string]map[string]IDToken
-	AccountsPartition      map[string]map[string]shared.Account
-	AppMetaData            map[string]AppMetaData
+	AccessTokensPartition  map[string]map[string]AccessToken               `json:"AccessTokensPartition,omitempty"`
+	RefreshTokensPartition map[string]map[string]accesstokens.RefreshToken `json:"RefreshTokensPartition,omitempty"`
+	IDTokensPartition      map[string]map[string]IDToken                   `json:"IdTokensPartition,omitempty"`
+	AccountsPartition      map[string]map[string]shared.Account            `json:"AccountsPartition,omitempty"`
+	AppMetaData            map[string]AppMetaData                          `json:"AppMetadata,omitempty"`
+
+	AdditionalFields map[string]interface{}
 }
 
 // NewContract is the constructor for Contract.

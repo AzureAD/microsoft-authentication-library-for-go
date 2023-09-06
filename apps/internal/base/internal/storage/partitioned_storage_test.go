@@ -6,6 +6,7 @@ package storage
 import (
 	"context"
 	"fmt"
+	"os"
 	"reflect"
 	"testing"
 	"time"
@@ -250,6 +251,39 @@ func TestReadPartitionedAccount(t *testing.T) {
 	_, err = storageManager.readAccount([]string{"hello", "env", "test"}, "realm", "this_should_break_it", "acc_partition")
 	if err == nil {
 		t.Errorf("TestReadPartitionedAccount: got err == nil, want err != nil")
+	}
+}
+
+func TestUnmarshalPartitioned(t *testing.T) {
+	manager := newPartitionedManagerForTest(nil)
+	b, err := os.ReadFile("testdata/test_partitioned_cache.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = manager.Unmarshal(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	hash := "0EuY9I6Pi8wVxq5awFCAHNbc_UKPtfnmXE4W54BzQPo="
+	actual := manager.contract.AccessTokensPartition[hash]["uid.utid-login.windows.net-accesstoken-my_client_id-contoso-s2 s1 s3"].Secret
+	if actual != accessTokenSecret {
+		t.Errorf("got access token %q, want %q", actual, accessTokenSecret)
+	}
+	actual = manager.contract.RefreshTokensPartition[hash]["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
+	if actual != rtSecret {
+		t.Errorf("got refresh token %q, want %q", actual, rtSecret)
+	}
+	actual = manager.contract.IDTokensPartition[hash]["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
+	if actual != idSecret {
+		t.Errorf("got ID token %q, want %q", actual, idSecret)
+	}
+	actual = manager.contract.AccountsPartition[hash]["uid.utid-login.windows.net-contoso"].PreferredUsername
+	if actual != accUser {
+		t.Errorf("got username %q, want %q", actual, accUser)
+	}
+	actual = manager.contract.AppMetaData["appmetadata-login.windows.net-my_client_id"].FamilyID
+	if actual != "1" {
+		t.Errorf(`got family ID %q, want "1"`, actual)
 	}
 }
 
