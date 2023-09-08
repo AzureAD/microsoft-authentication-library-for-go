@@ -18,6 +18,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/broker"
 )
 
 const (
@@ -124,6 +126,20 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 	}, nil
 }
 
+type BrokerOptions struct {
+	// ListOperatingSystemAccounts determines whether the Windows broker includes
+	// work and school accounts when listing accounts
+	ListOperatingSystemAccounts bool
+
+	// MSAPassthrough is a legacy option applicable only to Microsoft first-party applications
+	MSAPassthrough bool
+
+	// ParentWindow applies only to the Windows broker. It returns a parent window handle for the
+	// interactive login window, to ensure the login window appears on top of the application window.
+	// TODO: should we allow this to be nil and default to GetConsoleWindow?
+	ParentWindow func() (uintptr, error)
+}
+
 // Client is a base client that provides access to common methods and primatives that
 // can be used by multiple clients.
 type Client struct {
@@ -133,12 +149,22 @@ type Client struct {
 	pmanager manager
 
 	AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
+	brokerEnabled   bool
+	brokerOpts      BrokerOptions
 	cacheAccessor   cache.ExportReplace
 	cacheAccessorMu *sync.RWMutex
 }
 
 // Option is an optional argument to the New constructor.
 type Option func(c *Client) error
+
+func WithBroker(options BrokerOptions) Option {
+	return func(c *Client) error {
+		c.brokerEnabled = true
+		c.brokerOpts = options
+		return nil
+	}
+}
 
 // WithCacheAccessor allows you to set some type of cache for storing authentication tokens.
 func WithCacheAccessor(ca cache.ExportReplace) Option {
@@ -318,6 +344,23 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
+	}
+
+	// TODO: could public.Client do this? Is there a scenario in which this client's cache
+	// has a refresh token it shouldn't redeem?
+	if b.brokerEnabled {
+		if broker.SignInSilently == nil {
+			return AuthResult{}, errors.New("call broker.Initialize() before calling broker-enabled methods")
+		}
+		ar, err = broker.SignInSilently(ctx, broker.AuthParams{
+			Account:       silent.Account,
+			Authority:     authParams.AuthorityInfo.CanonicalAuthorityURI,
+			Claims:        silent.Claims,
+			ClientID:      authParams.ClientID,
+			CorrelationID: authParams.CorrelationID,
+			Scopes:        silent.Scopes,
+		})
+		return ar, err
 	}
 
 	// redeem a cached refresh token, if available

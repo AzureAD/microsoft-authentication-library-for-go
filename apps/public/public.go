@@ -28,6 +28,7 @@ import (
 	"fmt"
 	"net/url"
 	"reflect"
+	"runtime"
 	"strconv"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
@@ -39,6 +40,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/internal/broker"
 	"github.com/google/uuid"
 	"github.com/pkg/browser"
 )
@@ -51,12 +53,18 @@ type AuthenticationScheme = authority.AuthenticationScheme
 
 type Account = shared.Account
 
+type BrokerOptions = base.BrokerOptions
+
+type IDToken = accesstokens.IDToken
+
 var errNoAccount = errors.New("no account was specified with public.WithAccount(), or the specified account is invalid")
 
 // clientOptions configures the Client's behavior.
 type clientOptions struct {
 	accessor                 cache.ExportReplace
 	authority                string
+	brokerEnabled            bool
+	brokerOptions            BrokerOptions
 	capabilities             []string
 	disableInstanceDiscovery bool
 	httpClient               ops.HTTPClient
@@ -73,13 +81,20 @@ func (p *clientOptions) validate() error {
 	return nil
 }
 
-// Option is an optional argument to the New constructor.
+// Option is an optional argument to [New].
 type Option func(o *clientOptions)
 
 // WithAuthority allows for a custom authority to be set. This must be a valid https url.
 func WithAuthority(authority string) Option {
 	return func(o *clientOptions) {
 		o.authority = authority
+	}
+}
+
+func WithBroker(options BrokerOptions) Option {
+	return func(o *clientOptions) {
+		o.brokerEnabled = true
+		o.brokerOptions = options
 	}
 }
 
@@ -116,7 +131,9 @@ func WithInstanceDiscovery(enabled bool) Option {
 // Client is a representation of authentication client for public applications as defined in the
 // package doc. For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications.
 type Client struct {
-	base base.Client
+	base          base.Client
+	brokerEnabled bool
+	brokerOptions BrokerOptions
 }
 
 // New is the constructor for Client.
@@ -133,11 +150,22 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), base.WithCacheAccessor(opts.accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.disableInstanceDiscovery))
-	if err != nil {
-		return Client{}, err
+	client := Client{}
+	baseOpts := []base.Option{
+		base.WithCacheAccessor(opts.accessor),
+		base.WithClientCapabilities(opts.capabilities),
+		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
 	}
-	return Client{base}, nil
+	if opts.brokerEnabled {
+		baseOpts = append(baseOpts, base.WithBroker(opts.brokerOptions))
+		client.brokerEnabled = true
+		client.brokerOptions = opts.brokerOptions
+	}
+	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), baseOpts...)
+	if err == nil {
+		client.base = base
+	}
+	return client, err
 }
 
 // authCodeURLOptions contains options for AuthCodeURL
@@ -369,6 +397,20 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 	if err != nil {
 		return AuthResult{}, err
 	}
+
+	if pca.brokerEnabled {
+		if broker.SignInSilently == nil {
+			return AuthResult{}, errors.New("call broker.Initialize() before calling broker-enabled methods")
+		}
+		return broker.SignInSilently(ctx, broker.AuthParams{
+			Authority: authParams.AuthorityInfo.CanonicalAuthorityURI,
+			ClientID:  authParams.ClientID,
+			Password:  password,
+			Scopes:    scopes,
+			Username:  username,
+		})
+	}
+
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATUsernamePassword
 	authParams.Claims = o.claims
@@ -631,6 +673,34 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
+
+	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	authParams.Scopes = scopes
+
+	if pca.brokerEnabled {
+		if broker.SignInInteractively == nil {
+			return AuthResult{}, errors.New("call broker.Initialize() before calling broker-enabled methods")
+		}
+		hwnd := uintptr(0)
+		if runtime.GOOS == "windows" && pca.brokerOptions.ParentWindow != nil {
+			hwnd, err = pca.brokerOptions.ParentWindow()
+			if err != nil {
+				return AuthResult{}, err
+			}
+		}
+		return broker.SignInInteractively(ctx, broker.AuthParams{
+			Authority:    authParams.AuthorityInfo.CanonicalAuthorityURI,
+			Claims:       o.claims,
+			ClientID:     authParams.ClientID,
+			ParentWindow: hwnd,
+			RedirectURI:  o.redirectURI,
+			Scopes:       scopes,
+		})
+	}
+
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636
 	cv, challenge, err := codeVerifier()
@@ -647,11 +717,6 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	if o.openURL == nil {
 		o.openURL = browser.OpenURL
 	}
-	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
-	if err != nil {
-		return AuthResult{}, err
-	}
-	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATInteractive
 	authParams.Claims = o.claims
 	authParams.CodeChallenge = challenge
