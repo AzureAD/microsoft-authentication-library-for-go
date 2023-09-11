@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
@@ -82,14 +81,7 @@ type AcquireTokenOnBehalfOfParameters struct {
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
-type AuthResult struct {
-	Account        shared.Account
-	IDToken        accesstokens.IDToken
-	AccessToken    string
-	ExpiresOn      time.Time
-	GrantedScopes  []string
-	DeclinedScopes []string
-}
+type AuthResult = internal.AuthResult
 
 // AuthResultFromStorage creates an AuthResult from a storage token response (which is generated from the cache).
 func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResult, error) {
@@ -109,7 +101,13 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 			return AuthResult{}, fmt.Errorf("problem decoding JWT token: %w", err)
 		}
 	}
-	return AuthResult{account, idToken, accessToken, storageTokenResponse.AccessToken.ExpiresOn.T, grantedScopes, nil}, nil
+	return AuthResult{
+		AccessToken:   accessToken,
+		Account:       account,
+		ExpiresOn:     storageTokenResponse.AccessToken.ExpiresOn.T,
+		GrantedScopes: grantedScopes,
+		IDToken:       idToken,
+	}, nil
 }
 
 // NewAuthResult creates an AuthResult.
