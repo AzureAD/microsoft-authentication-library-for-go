@@ -176,6 +176,7 @@ type TokenResponse struct {
 	ExpiresOn      internalTime.DurationTime `json:"expires_in"`
 	ExtExpiresOn   internalTime.DurationTime `json:"ext_expires_in"`
 	GrantedScopes  Scopes                    `json:"scope"`
+	RefreshOn      internalTime.DurationTime `json:"refresh_in"`
 	DeclinedScopes []string                  // This is derived
 
 	AdditionalFields map[string]interface{}
