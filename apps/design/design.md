@@ -11,7 +11,7 @@ Contributors:
 
 The original code submitted for Go MSAL was a translation of either Java or .Net code.  This was done as a best effort by an intern who was attempting their first crack at Go.  It had a
 very interesting structure that didn't fit into Go style and made it difficult to understand or
-change. It used global locks, global variables, base type classes (mimicing inheritence), ...
+change. It used global locks, global variables, base type classes (mimicing inheritance), ...
 
 This probably should have be re-written from scratch, but we decided to try and do it in pieces.
 The lesson to be learned from this is that this type of refactor leads to re-writing the code 7 or 8 times instead of once. 
@@ -41,7 +41,7 @@ apps/
     client/ - Shared package for common calls that Public and Confidential apps share
     json/ - Our own json encoder/decoder for special needs
     shared/ - Holds types that need to be in multiple packages and can't be moved into a single one due to import cycles
-    requests/ - The pacakge to communicate to services to get tokens
+    requests/ - The package to communicate to services to get tokens
 ```
 
 ### Use of the Go special internal/ directory
@@ -66,7 +66,7 @@ The public API will be encapsulated in apps/.  apps/ has 3 packages of interest 
 
 - public/ - This is what MSAL calls the Public Application Client (service client)
 - confidential/ - This is what MSAL calls the Confidential Application Client (service)
-- cache/ - This provides the interfaces that must be implemented to create peristent caches for any MSAL client
+- cache/ - This provides the interfaces that must be implemented to create persistent caches for any MSAL client
 
 ## Internals
 
