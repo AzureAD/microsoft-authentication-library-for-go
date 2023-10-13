@@ -66,6 +66,7 @@ func TestCreateAccessToken(t *testing.T) {
 		testCachedAt,
 		testExpiresOn,
 		testExtExpiresOn,
+		time.Time{},
 		"user.read",
 		"access",
 		"tokenType",

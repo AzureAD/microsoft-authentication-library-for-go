@@ -195,6 +195,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			cachedAt,
 			tokenResponse.ExpiresOn.T,
 			tokenResponse.ExtExpiresOn.T,
+			tokenResponse.RefreshOn.T,
 			target,
 			tokenResponse.AccessToken,
 			tokenResponse.TokenType,
