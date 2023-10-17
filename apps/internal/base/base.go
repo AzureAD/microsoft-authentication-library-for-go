@@ -148,6 +148,7 @@ type Client struct {
 	AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
 	cacheAccessor   cache.ExportReplace
 	cacheAccessorMu *sync.RWMutex
+	refreshMu       *sync.Mutex
 }
 
 // Option is an optional argument to the New constructor.
@@ -224,6 +225,7 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		cacheAccessorMu: &sync.RWMutex{},
 		manager:         storage.New(token),
 		pmanager:        storage.NewPartitionedManager(token),
+		refreshMu:       &sync.Mutex{},
 	}
 	for _, o := range options {
 		if err = o(&client); err != nil {
@@ -288,6 +290,13 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 	return baseURL.String(), nil
 }
 
+// NeedsRefresh enables tests to decide whether a cached token needs to be refreshed. It takes a time.Time because
+// tests in the confidential package can't reference the relevant types from the storage package. That could be
+// fixed with refactoring but doesn't seem worth it given the limited use of this function.
+var NeedsRefresh = func(t time.Time) bool {
+	return !t.IsZero() && t.Before(time.Now())
+}
+
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	ar := AuthResult{}
 	// when tenant == "", the caller didn't specify a tenant and WithTenant will choose the client's configured tenant
@@ -324,9 +333,27 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		return ar, err
 	}
 
-	// ignore cached access tokens when given claims
+	// don't return a cached access token when given claims
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
+		// if the caller specified a Credential for the client credentials grant and the cached token
+		// is past its suggested refresh time, start a new goroutine to request a new token
+		if silent.Credential != nil && NeedsRefresh(storageTokenResponse.AccessToken.RefreshOn.T) && b.refreshMu.TryLock() {
+			go func() {
+				defer b.refreshMu.Unlock()
+				// The outer method can return before this goroutine finishes, creating an opportunity for the caller to
+				// unwittingly cancel this refresh attempt by cancelling the passed in context. So, we need a new context
+				// here with a timeout to ensure this goroutine doesn't run forever.
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				// read the cache again because it may have been updated by another goroutine
+				if str, er := m.Read(ctx, authParams); er == nil && NeedsRefresh(str.AccessToken.RefreshOn.T) {
+					if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
+						b.AuthResultFromToken(ctx, authParams, tr, true)
+					}
+				}
+			}()
+		}
 		if err == nil {
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
