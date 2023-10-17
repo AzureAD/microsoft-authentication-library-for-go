@@ -83,10 +83,13 @@ type AcquireTokenOnBehalfOfParameters struct {
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult struct {
-	Account        shared.Account
-	IDToken        accesstokens.IDToken
-	AccessToken    string
-	ExpiresOn      time.Time
+	Account     shared.Account
+	IDToken     accesstokens.IDToken
+	AccessToken string
+	ExpiresOn   time.Time
+	// RefreshOn is a suggested time at which to request a new access token. This value is zero for
+	// tokens which don't have a suggested refresh time.
+	RefreshOn      time.Time
 	GrantedScopes  []string
 	DeclinedScopes []string
 }
@@ -109,7 +112,14 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 			return AuthResult{}, fmt.Errorf("problem decoding JWT token: %w", err)
 		}
 	}
-	return AuthResult{account, idToken, accessToken, storageTokenResponse.AccessToken.ExpiresOn.T, grantedScopes, nil}, nil
+	return AuthResult{
+		AccessToken:   accessToken,
+		Account:       account,
+		ExpiresOn:     storageTokenResponse.AccessToken.ExpiresOn.T,
+		GrantedScopes: grantedScopes,
+		IDToken:       idToken,
+		RefreshOn:     storageTokenResponse.AccessToken.RefreshOn.T,
+	}, nil
 }
 
 // NewAuthResult creates an AuthResult.
@@ -123,6 +133,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		AccessToken:   tokenResponse.AccessToken,
 		ExpiresOn:     tokenResponse.ExpiresOn.T,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
+		RefreshOn:     tokenResponse.RefreshOn.T,
 	}, nil
 }
 
