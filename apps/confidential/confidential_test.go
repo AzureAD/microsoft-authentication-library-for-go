@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -631,6 +632,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	expectedToken := "expected token"
 	called := false
 	expiresIn := 4200
+	refreshIn := expiresIn / 2
 	key := struct{}{}
 	ctx := context.WithValue(context.Background(), key, true)
 	cred := NewCredFromTokenProvider(func(c context.Context, tp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
@@ -650,6 +652,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 		return exported.TokenProviderResult{
 			AccessToken:      expectedToken,
 			ExpiresInSeconds: expiresIn,
+			RefreshInSeconds: refreshIn,
 		}, nil
 	})
 	client, err := New(fakeAuthority, fakeClientID, cred, WithHTTPClient(&errorClient{}))
@@ -664,7 +667,10 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 		t.Fatal("token provider wasn't invoked")
 	}
 	if v := int(time.Until(ar.ExpiresOn).Seconds()); v < expiresIn-2 || v > expiresIn {
-		t.Fatalf("expected ExpiresOn ~= %d seconds, got %d", expiresIn, v)
+		t.Fatalf("expected ExpiresOn ~= %d seconds from now, got %d", expiresIn, v)
+	}
+	if v := int(time.Until(ar.RefreshOn).Seconds()); v < refreshIn-2 || v > refreshIn {
+		t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshIn, v)
 	}
 	if ar.AccessToken != expectedToken {
 		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
@@ -690,6 +696,86 @@ func TestNewCredFromTokenProviderError(t *testing.T) {
 	_, err = client.AcquireTokenByCredential(context.Background(), tokenScope)
 	if err == nil || !strings.Contains(err.Error(), expectedError) {
 		t.Fatalf(`unexpected error "%v"`, err)
+	}
+}
+
+func TestRefreshIn(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstToken := "first token"
+	secondToken := "second token"
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+
+	for _, needsRefresh := range []bool{false, true} {
+		name := "token doesn't need refresh"
+		refreshIn := 42
+		if needsRefresh {
+			name = "token needs refresh"
+			// negative refresh_in is unrealistic but works because the token's RefreshOn field is time.Now().Add(refreshIn * time.Second)
+			refreshIn = -42
+		}
+		t.Run(name, func(t *testing.T) {
+			mockClient := mock.Client{}
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			mockClient.AppendResponse(
+				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":3600,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, refreshIn))),
+			)
+			mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(secondToken, "", "", "", 3600)))
+			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+			if err != nil {
+				t.Fatal(err)
+			}
+			ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ar.AccessToken != firstToken {
+				t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+			}
+			if ar.RefreshOn.IsZero() {
+				t.Fatal("RefreshOn shouldn't be zero")
+			}
+			if v := int(time.Until(ar.RefreshOn).Seconds()); v < refreshIn-2 || v > refreshIn {
+				t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshIn, v)
+			}
+			wg := sync.WaitGroup{}
+			ec := make(chan error, 1)
+			for i := 0; i < 50; i++ {
+				wg.Add(1)
+				go func() {
+					// If a background refresh is required, the client should launch one during this
+					// call. Because the mock.Client has only two token responses, this call will panic
+					// when more than one goroutine attempts a refresh.
+					if _, err := client.AcquireTokenSilent(context.Background(), tokenScope); err != nil {
+						select {
+						case ec <- err:
+							// set error
+						default:
+							// error already set
+						}
+					}
+					wg.Done()
+				}()
+			}
+			wg.Wait()
+			select {
+			case err = <-ec:
+				t.Fatal(err)
+			default:
+			}
+			// wait to ensure the background refresh has completed
+			time.Sleep(time.Millisecond)
+			ar, err = client.AcquireTokenSilent(context.Background(), tokenScope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (ar.AccessToken == secondToken) != needsRefresh {
+				t.Fatalf("wanted %q, got %q", secondToken, ar.AccessToken)
+			}
+		})
 	}
 }
 

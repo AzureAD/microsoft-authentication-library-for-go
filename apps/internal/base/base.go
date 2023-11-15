@@ -336,17 +336,18 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	// don't return a cached access token when given claims
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
-		// if the caller specified a Credential for the client credentials grant and the cached token
-		// is past its suggested refresh time, start a new goroutine to request a new token
+		// If the caller provided a Credential for the client credentials grant and the cached
+		// token is past its suggested refresh time, start a goroutine to acquire a new token.
+		// We don't need to wait for this goroutine to finish because the caller will get the
+		// cached token, which is still valid.
 		if silent.Credential != nil && NeedsRefresh(storageTokenResponse.AccessToken.RefreshOn.T) && b.refreshMu.TryLock() {
 			go func() {
 				defer b.refreshMu.Unlock()
-				// The outer method can return before this goroutine finishes, creating an opportunity for the caller to
-				// unwittingly cancel this refresh attempt by cancelling the passed in context. So, we need a new context
-				// here with a timeout to ensure this goroutine doesn't run forever.
+				// need a new context because the outer method may return before this goroutine, allowing
+				// the caller to cancel the passed in context while this refresh attempt is in progress
 				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 				defer cancel()
-				// read the cache again because it may have been updated by another goroutine
+				// check the cache again because it may have been updated by another goroutine
 				if str, er := m.Read(ctx, authParams); er == nil && NeedsRefresh(str.AccessToken.RefreshOn.T) {
 					if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
 						b.AuthResultFromToken(ctx, authParams, tr, true)

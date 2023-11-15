@@ -438,3 +438,28 @@ func TestAuthResultFromStorage(t *testing.T) {
 		}
 	}
 }
+
+func TestNeedsRefresh(t *testing.T) {
+	for _, test := range []struct {
+		desc      string
+		refreshIn int
+	}{
+		{"future refresh_in", 42},
+		{"no refresh_in", 0},
+		{"past refresh_in", -42},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			tm := time.Time{}
+			if test.refreshIn != 0 {
+				tm = time.Now().Add(time.Duration(test.refreshIn) * time.Second)
+			}
+			if shouldRefresh := test.refreshIn < 0; shouldRefresh != NeedsRefresh(tm) {
+				s := "shouldn't"
+				if shouldRefresh {
+					s = "should"
+				}
+				t.Fatalf("%s refresh when refresh_in is %d seconds from now", s, test.refreshIn)
+			}
+		})
+	}
+}
