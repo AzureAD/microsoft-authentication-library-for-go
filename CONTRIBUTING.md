@@ -26,7 +26,7 @@ Please see the [Build & Run](https://github.com/AzureAD/microsoft-authentication
 
 ## Decide on which branch to create
 
-**Bug fixes for the current stable version need to go to 'master' branch.**
+**Bug fixes for the current stable version need to go to 'main' branch.**
 
 If you need to contribute to a different branch, please contact us first (open an issue).
 
@@ -92,7 +92,7 @@ Use `git rebase` (not `git merge`) to sync your work from time to time.
 
 ```
 $ git fetch upstream
-$ git rebase upstream/v0.1  # or upstream/master
+$ git rebase upstream/v0.1  # or upstream/main
 ```
 
 ### Tests
