@@ -95,7 +95,7 @@ func BenchmarkQueryCache(b *testing.B) {
 		b.Run(fmt.Sprintf("%d users %d tokens", bm.users, bm.tokens), func(b *testing.B) {
 			client, err := fakeClient()
 			if err != nil {
-				panic(err)
+				b.Fatal(err)
 			}
 			authParams := client.AuthParams
 			populateCache(bm.users, bm.tokens, authParams, client)
