@@ -11,23 +11,28 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
+// Keep the ConfidentialClient application object around, because it maintains a token cache
+var _app *confidential.Client
+
 func acquireTokenClientSecret() {
 	config := CreateConfig("confidential_config.json")
-	cred, err := confidential.NewCredFromSecret(config.ClientSecret)
-	if err != nil {
-		log.Fatal(err)
-	}
-	app, err := confidential.New(config.Authority, config.ClientID, cred, confidential.WithCache(cacheAccessor))
-	if err != nil {
-		log.Fatal(err)
-	}
-	result, err := app.AcquireTokenSilent(context.Background(), config.Scopes)
-	if err != nil {
-		result, err = app.AcquireTokenByCredential(context.Background(), config.Scopes)
+
+	if _app == nil {
+		cred, err := confidential.NewCredFromSecret(config.ClientSecret)
 		if err != nil {
 			log.Fatal(err)
 		}
-		fmt.Println("Access Token Is " + result.AccessToken)
+		app, err := confidential.New(config.Authority, config.ClientID, cred)
+		if err != nil {
+			log.Fatal(err)
+		}
+		_app = &app
 	}
-	fmt.Println("Silently acquired token " + result.AccessToken)
+
+	result, err := _app.AcquireTokenByCredential(context.Background(), config.Scopes)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	fmt.Println("A Bearer token was acquired, it expires on: ", result.ExpiresOn)
 }

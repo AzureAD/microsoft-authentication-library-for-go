@@ -34,14 +34,8 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	result, err := app.AcquireTokenSilent(context.Background(), config.Scopes)
-	if err != nil {
-		result, err = app.AcquireTokenByCredential(context.Background(), config.Scopes)
-		if err != nil {
-			log.Fatal(err)
-		}
-		fmt.Println("Access Token Is " + result.AccessToken)
-		return
-	}
-	fmt.Println("Silently acquired token " + result.AccessToken)
+
+	result, err := app.AcquireTokenByCredential(context.Background(), config.Scopes)
+
+	fmt.Println("Got a token using the certificate. It expires on", result.ExpiresOn)
 }
