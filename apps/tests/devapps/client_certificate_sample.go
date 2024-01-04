@@ -12,10 +12,16 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
-func acquireTokenClientCertificate() {
-	config := CreateConfig("confidential_config.json")
+var _config2 *Config = CreateConfig("confidential_config.json")
 
-	pemData, err := os.ReadFile(config.PemData)
+// Keep the ConfidentialClient application object around, because it maintains a token cache
+// For simplicity, the sample uses global variables.
+// For user flows (web site, web api) or for large multi-tenant apps use a cache per user or per tenant
+var _app2 *confidential.Client = createAppWithCert()
+
+func createAppWithCert() *confidential.Client {
+
+	pemData, err := os.ReadFile(_config2.PemData)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -30,12 +36,19 @@ func acquireTokenClientCertificate() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	app, err := confidential.New(config.Authority, config.ClientID, cred, confidential.WithCache(cacheAccessor))
+	app, err := confidential.New(_config2.Authority, _config2.ClientID, cred, confidential.WithCache(cacheAccessor))
+	if err != nil {
+		log.Fatal(err)
+	}
+	return &app
+}
+
+func acquireTokenClientCertificate() {
+
+	result, err := _app2.AcquireTokenByCredential(context.Background(), _config1.Scopes)
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	result, err := app.AcquireTokenByCredential(context.Background(), config.Scopes)
-
-	fmt.Println("Got a token using the certificate. It expires on", result.ExpiresOn)
+	fmt.Println("A Bearer token was acquired, it expires on: ", result.ExpiresOn)
 }
