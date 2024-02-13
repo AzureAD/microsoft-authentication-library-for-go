@@ -891,4 +891,14 @@ func TestWithAuthenticationScheme(t *testing.T) {
 		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
 	}
 
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600)))
+	ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithAuthenticationScheme(authScheme))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != fmt.Sprintf(mock.Authnschemeformat, accessToken) {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
 }
