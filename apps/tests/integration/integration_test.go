@@ -1,6 +1,9 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
+// These tests connect to test apps in a private test tenant the MSAL team has setup. 
+// The tests will not run on a contributor's dev box, but will run as part of the CI
+
 package integration
 
 import (
