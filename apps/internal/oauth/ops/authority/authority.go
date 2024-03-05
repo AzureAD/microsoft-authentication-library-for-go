@@ -137,6 +137,7 @@ const (
 const (
 	AAD  = "MSSTS"
 	ADFS = "ADFS"
+	DSTS = "DSTS"
 )
 
 // AuthenticationScheme is an extensibility mechanism designed to be used only by Azure Arc for proof of possession access tokens.
@@ -351,15 +352,6 @@ type Info struct {
 	InstanceDiscoveryDisabled bool
 }
 
-func firstPathSegment(u *url.URL) (string, error) {
-	pathParts := strings.Split(u.EscapedPath(), "/")
-	if len(pathParts) >= 2 {
-		return pathParts[1], nil
-	}
-
-	return "", errors.New(`authority must be an https URL such as "https://login.microsoftonline.com/<your tenant>"`)
-}
-
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
 func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceDiscoveryDisabled bool) (Info, error) {
 	u, err := url.Parse(strings.ToLower(authority))
@@ -367,13 +359,24 @@ func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceD
 		return Info{}, errors.New(`authority must be an https URL such as "https://login.microsoftonline.com/<your tenant>"`)
 	}
 
-	tenant, err := firstPathSegment(u)
-	if err != nil {
-		return Info{}, err
+	pathParts := strings.Split(u.EscapedPath(), "/")
+	if len(pathParts) < 2 {
+		return Info{}, errors.New(`authority must be an https URL such as "https://login.microsoftonline.com/<your tenant>"`)
 	}
-	authorityType := AAD
-	if tenant == "adfs" {
+
+	var authorityType, tenant string
+	switch pathParts[1] {
+	case "adfs":
 		authorityType = ADFS
+	case "dstsv2":
+		authorityType = DSTS
+		if len(pathParts) != 3 {
+			return Info{}, errors.New(`dSTS authority must be an https URL such as "https://login.microsoftonline.com/dstsv2/<your tenant>"`)
+		}
+		tenant = pathParts[2]
+	default:
+		authorityType = AAD
+		tenant = pathParts[1]
 	}
 
 	// u.Host includes the port, if any, which is required for private cloud deployments
