@@ -305,7 +305,6 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 		Host:                  "login.microsoftonline.com",
 		CanonicalAuthorityURI: authorityURI,
 		AuthorityType:         "MSSTS",
-		UserRealmURIPrefix:    "https://login.microsoftonline.com/common/userrealm/",
 		Tenant:                "common",
 		ValidateAuthority:     true,
 	}
