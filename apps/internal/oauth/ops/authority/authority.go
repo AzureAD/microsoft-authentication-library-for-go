@@ -343,7 +343,6 @@ type Info struct {
 	Host                      string
 	CanonicalAuthorityURI     string
 	AuthorityType             string
-	UserRealmURIPrefix        string
 	ValidateAuthority         bool
 	Tenant                    string
 	Region                    string
@@ -380,7 +379,6 @@ func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceD
 		Host:                      u.Host,
 		CanonicalAuthorityURI:     fmt.Sprintf("https://%v/%v/", u.Host, tenant),
 		AuthorityType:             authorityType,
-		UserRealmURIPrefix:        fmt.Sprintf("https://%v/common/userrealm/", u.Hostname()),
 		ValidateAuthority:         validateAuthority,
 		Tenant:                    tenant,
 		InstanceDiscoveryDisabled: instanceDiscoveryDisabled,
