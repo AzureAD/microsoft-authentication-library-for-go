@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -319,22 +321,25 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 }
 
 func TestAuthParamsWithTenant(t *testing.T) {
-	uuid1 := "00000000-0000-0000-0000-000000000000"
-	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
+	uuid1 := uuid.New().String()
+	uuid2 := uuid.New().String()
 	host := "https://localhost/"
-	for _, test := range []struct {
+
+	tests := map[string]struct {
 		authority, expectedAuthority, tenant string
 		expectError                          bool
 	}{
-		{authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
-		{authority: host + uuid1, tenant: "common", expectError: true},
-		{authority: host + uuid1, tenant: "organizations", expectError: true},
-		{authority: host + "adfs", tenant: uuid1, expectError: true},
-		{authority: host + "consumers", tenant: uuid1, expectError: true},
-	} {
-		t.Run("", func(t *testing.T) {
+		"override common to tenant":             {authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
+		"override organizations to tenant":      {authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
+		"override tenant to tenant2":            {authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
+		"tenant can't be common for AAD":        {authority: host + uuid1, tenant: "common", expectError: true},
+		"tenant can't be organizations for AAD": {authority: host + uuid1, tenant: "organizations", expectError: true},
+		"can't override tenant for ADFS ever":   {authority: host + "adfs", tenant: uuid1, expectError: true},
+		"can't override AAD tenant consumers":   {authority: host + "consumers", tenant: uuid1, expectError: true},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
 			info, err := NewInfoFromAuthorityURI(test.authority, false, false)
 			if err != nil {
 				t.Fatal(err)
