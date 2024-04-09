@@ -329,10 +329,16 @@ func TestAuthParamsWithTenant(t *testing.T) {
 		authority, expectedAuthority, tenant string
 		expectError                          bool
 	}{
-		"override common to tenant":             {authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
-		"override organizations to tenant":      {authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
-		"override tenant to tenant2":            {authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
+		"do nothing if tenant override is empty":          {authority: host + uuid1, tenant: "", expectedAuthority: host + uuid1},
+		"do nothing if tenant override is empty for ADFS": {authority: host + "adfs", tenant: "", expectedAuthority: host + "adfs"},
+		"do nothing if tenant override equals tenant":     {authority: host + uuid1, tenant: uuid1, expectedAuthority: host + uuid1},
+
+		"override common to tenant":        {authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
+		"override organizations to tenant": {authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
+		"override tenant to tenant2":       {authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
+
 		"tenant can't be common for AAD":        {authority: host + uuid1, tenant: "common", expectError: true},
+		"tenant can't be consumers for AAD":     {authority: host + uuid1, tenant: "consumers", expectError: true},
 		"tenant can't be organizations for AAD": {authority: host + uuid1, tenant: "organizations", expectError: true},
 		"can't override tenant for ADFS ever":   {authority: host + "adfs", tenant: uuid1, expectError: true},
 		"can't override AAD tenant consumers":   {authority: host + "consumers", tenant: uuid1, expectError: true},
