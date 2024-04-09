@@ -543,17 +543,19 @@ func detectRegion(ctx context.Context) string {
 	client := http.Client{
 		Timeout: time.Duration(2 * time.Second),
 	}
-	req, _ := http.NewRequest("GET", imdsEndpoint, nil)
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, imdsEndpoint, nil)
 	req.Header.Set("Metadata", "true")
 	resp, err := client.Do(req)
+	if err == nil {
+		defer resp.Body.Close()
+	}
 	// If the request times out or there is an error, it is retried once
-	if err != nil || resp.StatusCode != 200 {
+	if err != nil || resp.StatusCode != http.StatusOK {
 		resp, err = client.Do(req)
-		if err != nil || resp.StatusCode != 200 {
+		if err != nil || resp.StatusCode != http.StatusOK {
 			return ""
 		}
 	}
-	defer resp.Body.Close()
 	response, err := io.ReadAll(resp.Body)
 	if err != nil {
 		return ""
