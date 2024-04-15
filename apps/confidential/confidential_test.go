@@ -66,10 +66,10 @@ func TestCertFromPEM(t *testing.T) {
 
 const (
 	authorityFmt      = "https://%s/%s"
-	fakeAuthority     = "https://fake_authority/fake"
+	fakeAuthority     = "https://fake_authority/fake_tenant"
 	fakeClientID      = "fake_client_id"
 	fakeSecret        = "fake_secret"
-	fakeTokenEndpoint = "https://fake_authority/fake/token"
+	fakeTokenEndpoint = "https://fake_authority/fake_tenant/token"
 	localhost         = "http://localhost"
 	refresh           = "fake_refresh"
 	token             = "fake_token"
@@ -77,7 +77,7 @@ const (
 
 var tokenScope = []string{"the_scope"}
 
-func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ...Option) (Client, error) {
+func fakeClient(tk accesstokens.TokenResponse, credential Credential, fakeAuthority string, options ...Option) (Client, error) {
 	client, err := New(fakeAuthority, fakeClientID, credential, options...)
 	if err != nil {
 		return Client{}, err
@@ -87,7 +87,7 @@ func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ..
 	}
 	client.base.Token.Authority = &fake.Authority{
 		InstanceResp: authority.InstanceDiscoveryResponse{
-			TenantDiscoveryEndpoint: "https://fake_authority/fake/discovery/endpoint",
+			TenantDiscoveryEndpoint: fakeAuthority + "/discovery/endpoint",
 			Metadata: []authority.InstanceDiscoveryMetadata{
 				{
 					PreferredNetwork: "fake_authority",
@@ -105,8 +105,12 @@ func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ..
 		},
 	}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{
-		Endpoints: authority.NewEndpoints("https://fake_authority/fake/auth",
-			fakeTokenEndpoint, "https://fake_authority/fake/jwt", "fake_authority"),
+		Endpoints: authority.NewEndpoints(
+			fakeAuthority+"/auth",
+			fakeAuthority+"/token",
+			fakeAuthority+"/jwt",
+			fakeAuthority,
+		),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
 	return client, nil
@@ -138,7 +142,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			TokenType:     "Bearer",
-		}, cred)
+		}, cred, fakeAuthority)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -305,7 +309,7 @@ func TestAcquireTokenByAssertionCallback(t *testing.T) {
 		return "", errors.New("expected error")
 	}
 	cred := NewCredFromAssertionCallback(getAssertion)
-	client, err := fakeClient(accesstokens.TokenResponse{}, cred)
+	client, err := fakeClient(accesstokens.TokenResponse{}, cred, fakeAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -349,7 +353,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 					Oid:               "123-456",
 					TenantID:          "fake",
 					Subject:           "nothing",
-					Issuer:            "https://fake_authority/fake",
+					Issuer:            fakeAuthority,
 					Audience:          "abc-123",
 					ExpirationTime:    time.Now().Add(time.Hour).Unix(),
 					IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
@@ -364,7 +368,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 				},
 			}
 
-			client, err := fakeClient(tr, cred)
+			client, err := fakeClient(tr, cred, fakeAuthority)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -591,7 +595,7 @@ func TestNewCredFromCert(t *testing.T) {
 					AccessToken:   token,
 					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-				}, cred, opts...)
+				}, cred, fakeAuthority, opts...)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1383,7 +1387,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 		TokenType:     "TokenType",
-	}, cred)
+	}, cred, fakeAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
