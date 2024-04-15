@@ -214,7 +214,7 @@ func TestAADInstanceDiscovery(t *testing.T) {
 		},
 		{
 			desc:     "Success with authorityInfo.Host not in trusted list",
-			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, defaultHost),
+			endpoint: fmt.Sprintf(aadInstanceDiscoveryEndpoint, defaultHost),
 			authInfo: Info{
 				Host:   "host",
 				Tenant: "tenant",
@@ -227,7 +227,7 @@ func TestAADInstanceDiscovery(t *testing.T) {
 		},
 		{
 			desc:     "Success with authorityInfo.Host in trusted list",
-			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, "login.microsoftonline.de"),
+			endpoint: fmt.Sprintf(aadInstanceDiscoveryEndpoint, "login.microsoftonline.de"),
 			authInfo: Info{
 				Host:   "login.microsoftonline.de",
 				Tenant: "tenant",
