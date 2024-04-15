@@ -136,7 +136,11 @@ const (
 const (
 	AAD  = "MSSTS"
 	ADFS = "ADFS"
+	DSTS = "DSTS"
 )
+
+// DSTSTenant is referenced throughout multiple files, let us use a const in case we ever need to change it.
+const DSTSTenant = "7a433bfc-2514-4697-b467-e0933190487f"
 
 // AuthenticationScheme is an extensibility mechanism designed to be used only by Azure Arc for proof of possession access tokens.
 type AuthenticationScheme interface {
@@ -251,6 +255,8 @@ func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 		authority = "https://" + path.Join(p.AuthorityInfo.Host, ID)
 	case ADFS:
 		return p, errors.New("ADFS authority doesn't support tenants")
+	case DSTS:
+		return p, errors.New("dSTS authority doesn't support tenants")
 	}
 
 	info, err := NewInfoFromAuthorityURI(authority, p.AuthorityInfo.ValidateAuthority, p.AuthorityInfo.InstanceDiscoveryDisabled)
@@ -350,35 +356,43 @@ type Info struct {
 	InstanceDiscoveryDisabled bool
 }
 
-func firstPathSegment(u *url.URL) (string, error) {
-	pathParts := strings.Split(u.EscapedPath(), "/")
-	if len(pathParts) >= 2 {
-		return pathParts[1], nil
-	}
-
-	return "", errors.New(`authority must be an https URL such as "https://login.microsoftonline.com/<your tenant>"`)
-}
-
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
 func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceDiscoveryDisabled bool) (Info, error) {
 	u, err := url.Parse(strings.ToLower(authority))
-	if err != nil || u.Scheme != "https" {
-		return Info{}, errors.New(`authority must be an https URL such as "https://login.microsoftonline.com/<your tenant>"`)
+	if err != nil {
+		return Info{}, fmt.Errorf("couldn't parse authority url: %w", err)
+	}
+	if u.Scheme != "https" {
+		return Info{}, errors.New("authority url scheme must be https")
 	}
 
-	tenant, err := firstPathSegment(u)
-	if err != nil {
-		return Info{}, err
+	pathParts := strings.Split(u.EscapedPath(), "/")
+	if len(pathParts) < 2 {
+		return Info{}, errors.New(`authority must be an URL such as "https://login.microsoftonline.com/<your tenant>"`)
 	}
-	authorityType := AAD
-	if tenant == "adfs" {
+
+	var authorityType, tenant string
+	switch pathParts[1] {
+	case "adfs":
 		authorityType = ADFS
+	case "dstsv2":
+		if len(pathParts) != 3 {
+			return Info{}, fmt.Errorf("dSTS authority must be an https URL such as https://<authority>/dstsv2/%s", DSTSTenant)
+		}
+		if pathParts[2] != DSTSTenant {
+			return Info{}, fmt.Errorf("dSTS authority only accepts a single tenant %q", DSTSTenant)
+		}
+		authorityType = DSTS
+		tenant = DSTSTenant
+	default:
+		authorityType = AAD
+		tenant = pathParts[1]
 	}
 
 	// u.Host includes the port, if any, which is required for private cloud deployments
 	return Info{
 		Host:                      u.Host,
-		CanonicalAuthorityURI:     fmt.Sprintf("https://%v/%v/", u.Host, tenant),
+		CanonicalAuthorityURI:     authority,
 		AuthorityType:             authorityType,
 		ValidateAuthority:         validateAuthority,
 		Tenant:                    tenant,
