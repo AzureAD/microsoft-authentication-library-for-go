@@ -48,7 +48,7 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 		return endpoints, nil
 	}
 
-	endpoint, err := m.openIDConfigurationEndpoint(ctx, authorityInfo, userPrincipalName)
+	endpoint, err := m.openIDConfigurationEndpoint(ctx, authorityInfo)
 	if err != nil {
 		return authority.Endpoints{}, err
 	}
@@ -116,9 +116,12 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, use
 	m.cache[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
-func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo authority.Info, userPrincipalName string) (string, error) {
-	if authorityInfo.Tenant == "adfs" {
+func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo authority.Info) (string, error) {
+	if authorityInfo.AuthorityType == authority.ADFS {
 		return fmt.Sprintf("https://%s/adfs/.well-known/openid-configuration", authorityInfo.Host), nil
+	} else if authorityInfo.AuthorityType == authority.DSTS {
+		return fmt.Sprintf("https://%s/dstsv2/%s/v2.0/.well-known/openid-configuration", authorityInfo.Host, authority.DSTSTenant), nil
+
 	} else if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
 		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
 		if err != nil {
@@ -131,7 +134,6 @@ func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, aut
 			return "", err
 		}
 		return resp.TenantDiscoveryEndpoint, nil
-
 	}
 
 	return authorityInfo.CanonicalAuthorityURI + "v2.0/.well-known/openid-configuration", nil
