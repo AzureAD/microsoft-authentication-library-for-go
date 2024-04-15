@@ -341,6 +341,7 @@ func TestAuthParamsWithTenant(t *testing.T) {
 		"tenant can't be consumers for AAD":     {authority: host + uuid1, tenant: "consumers", expectError: true},
 		"tenant can't be organizations for AAD": {authority: host + uuid1, tenant: "organizations", expectError: true},
 		"can't override tenant for ADFS ever":   {authority: host + "adfs", tenant: uuid1, expectError: true},
+		"can't override tenant for dSTS ever":   {authority: host + "dstsv2/" + DSTSTenant, tenant: uuid1, expectError: true},
 		"can't override AAD tenant consumers":   {authority: host + "consumers", tenant: uuid1, expectError: true},
 	}
 
