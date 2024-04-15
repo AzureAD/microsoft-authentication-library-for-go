@@ -394,6 +394,9 @@ func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceD
 		}
 		authorityType = DSTS
 		tenant = DSTSTenant
+	default:
+		authorityType = AAD
+		tenant = pathParts[1]
 	}
 
 	// u.Host includes the port, if any, which is required for private cloud deployments
