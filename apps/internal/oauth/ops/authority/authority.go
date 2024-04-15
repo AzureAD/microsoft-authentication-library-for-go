@@ -23,7 +23,7 @@ import (
 
 const (
 	authorizationEndpoint             = "https://%v/%v/oauth2/v2.0/authorize"
-	instanceDiscoveryEndpoint         = "https://%v/common/discovery/instance"
+	aadInstanceDiscoveryEndpoint      = "https://%v/common/discovery/instance"
 	tenantDiscoveryEndpointWithRegion = "https://%s.%s/%s/v2.0/.well-known/openid-configuration"
 	regionName                        = "REGION_NAME"
 	defaultAPIVersion                 = "2021-10-01"
@@ -522,7 +522,7 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 			discoveryHost = authorityInfo.Host
 		}
 
-		endpoint := fmt.Sprintf(instanceDiscoveryEndpoint, discoveryHost)
+		endpoint := fmt.Sprintf(aadInstanceDiscoveryEndpoint, discoveryHost)
 		err = c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
 	}
 	return resp, err
