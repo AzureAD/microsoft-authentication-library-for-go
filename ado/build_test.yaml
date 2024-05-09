@@ -11,12 +11,7 @@ steps:
 - task: PowerShell@2
   inputs:
     targetType: 'inline'
-    script: |
-      # Write your PowerShell commands here.
-            Write-Host "Hello World"
-            get-childitem
-            Write-Host "-------------"
-            gci env:* | sort-object name'  
+    script: 'get-childitem'
 - task: Go@0
   inputs:
     command: 'get'
