@@ -8,6 +8,15 @@ steps:
 - task: GoTool@0
   inputs:
     version: '1.22.3'
+- task: PowerShell@2
+  inputs:
+    targetType: 'inline'
+    script: |
+      # Write your PowerShell commands here.
+            Write-Host "Hello World"
+            get-childitem
+            Write-Host "-------------"
+            gci env:* | sort-object name'  
 - task: Go@0
   inputs:
     command: 'get'
