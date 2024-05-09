@@ -8,23 +8,30 @@ steps:
 - task: GoTool@0
   inputs:
     version: '1.22.3'
-- task: PowerShell@2
-  inputs:
-    targetType: 'inline'
-    script: 'get-childitem'
 - task: Go@0
   inputs:
     command: 'get'
     arguments: '-d -v -t -d ./...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
+  displayName: "Install dependencies"
 - task: Go@0
   inputs:
     command: 'build'
     arguments: './apps/...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
+  displayName: "Build"
 - task: Go@0
-  inputs:
+  inputs:       
     command: 'test'
     arguments: '-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
+  displayName: "Run Unit Tests"
+
+- task: Go@0
+  inputs:       
+    command: 'test'
+    arguments: '-race ./apps/tests/integration/...'
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+  displayName: "Run Integration Tests"
+  
 
