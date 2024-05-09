@@ -15,15 +15,16 @@ steps:
 - task: Go@0
   inputs:
     command: 'get'
-    arguments: '-d'
+    arguments: '-d -v -t -d ./...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
 - task: Go@0
   inputs:
     command: 'build'
+    arguments: './apps/...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
-- task: CopyFiles@2
+- task: Go@0
   inputs:
-    TargetFolder: '$(Build.ArtifactStagingDirectory)'
-- task: PublishBuildArtifacts@1
-  inputs:
-     artifactName: drop
+    command: 'test'
+    arguments: '-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/...'
+    workingDirectory: '$(System.DefaultWorkingDirectory)'
+
