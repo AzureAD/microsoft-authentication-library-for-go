@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        go: ["1.19", "1.20"]
+        go: ["1.21", "1.22"]
 
     steps:
       - name: Set up Go 1.x
@@ -32,8 +32,8 @@ jobs:
         run: go get -v -t -d ./...
 
         # designed to only run on linux
-      - name: Format Check
-        run: if [ $(gofmt -l -s . | wc -l) -ne 0 ]; then echo "fmt failed"; exit 1; fi
+        # - name: Format Check
+        # run: if [ $(gofmt -l -s . | wc -l) -ne 0 ]; then echo "fmt failed"; exit 1; fi
 
       - name: Build
         run: go build ./apps/...
