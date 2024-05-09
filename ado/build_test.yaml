@@ -7,7 +7,7 @@ pool:
 steps: 
 - task: GoTool@0
   inputs:
-    version: '1.22'
+    version: '1.22.3'
 - task: Go@0
   inputs:
     command: 'get'
