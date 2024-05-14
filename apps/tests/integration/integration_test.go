@@ -128,7 +128,7 @@ func getCertByName(certName string) (*x509.Certificate, error) {
 
     var cert *windows.CertContext
     for {
-        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(certName))), cert)
+        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, unsafe.Pointer(syscall.StringToUTF16Ptr(certName)), cert)
         if err != nil {
             if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(windows.CRYPT_E_NOT_FOUND) {
                 break
@@ -136,7 +136,7 @@ func getCertByName(certName string) (*x509.Certificate, error) {
             return nil, fmt.Errorf("failed to find certificate: %w", err)
         }
         if cert != nil {
-            x509Cert, err := x509.ParseCertificate(cert.EncodedCert)
+            x509Cert, err := x509.ParseCertificate(cert.EncodedCert) // Ensure this accesses the byte slice correctly
             if err != nil {
                 return nil, fmt.Errorf("failed to parse certificate: %w", err)
             }
