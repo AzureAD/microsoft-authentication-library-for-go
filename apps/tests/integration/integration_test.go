@@ -106,7 +106,7 @@ func newLabClient() (*labClient, error) {
     }
 
     // Create MSAL credential from certificate
-    cred, err := confidential.NewCredFromCert(cert, nil) // Assumes the certificate includes the private key
+    cred, err := confidential.NewCredFromCert([]*x509.Certificate{cert}, nil)
     if err != nil {
         return nil, fmt.Errorf("could not create credential from certificate: %w", err)
     }
@@ -120,12 +120,14 @@ func newLabClient() (*labClient, error) {
 }
 
 func getCertByName(certName string) (*x509.Certificate, error) {
+    // Open the "My" certificate store.
     store, err := windows.CertOpenSystemStore(0, syscall.StringToUTF16Ptr("MY"))
     if err != nil {
         return nil, fmt.Errorf("failed to open certificate store: %w", err)
     }
     defer windows.CertCloseStore(store, 0)
 
+    // Search for the certificate by its subject name.
     var cert *windows.CertContext
     for {
         cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, unsafe.Pointer(syscall.StringToUTF16Ptr(certName)), cert)
@@ -136,7 +138,12 @@ func getCertByName(certName string) (*x509.Certificate, error) {
             return nil, fmt.Errorf("failed to find certificate: %w", err)
         }
         if cert != nil {
-            x509Cert, err := x509.ParseCertificate(cert.EncodedCert) // Ensure this accesses the byte slice correctly
+            // Convert the encoded certificate from a pointer to a byte slice.
+            certBytes := make([]byte, cert.Length) // Assuming you know the length or it's available in the context.
+            copy(certBytes, (*[1 << 20]byte)(unsafe.Pointer(cert.EncodedCert))[:cert.Length:cert.Length])
+
+            // Parse the certificate bytes to get an x509.Certificate.
+            x509Cert, err := x509.ParseCertificate(certBytes)
             if err != nil {
                 return nil, fmt.Errorf("failed to parse certificate: %w", err)
             }
