@@ -120,17 +120,17 @@ func newLabClient() (*labClient, error) {
 }
 
 func getCertByName(certName string) (*x509.Certificate, error) {
-    // Open the "My" certificate store.
+    // Open the "My" certificate store on LocalMachine.
     store, err := windows.CertOpenSystemStore(0, syscall.StringToUTF16Ptr("MY"))
     if err != nil {
         return nil, fmt.Errorf("failed to open certificate store: %w", err)
     }
     defer windows.CertCloseStore(store, 0)
 
-    // Search for the certificate by its subject name.
+    // Make sure to use the exact name as appears in your certificate details.
     var cert *windows.CertContext
     for {
-        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, unsafe.Pointer(syscall.StringToUTF16Ptr(certName)), cert)
+        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, unsafe.Pointer(syscall.StringToUTF16Ptr("CN=LabVaultAccessCert")), cert)
         if err != nil {
             if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(windows.CRYPT_E_NOT_FOUND) {
                 break
@@ -138,11 +138,11 @@ func getCertByName(certName string) (*x509.Certificate, error) {
             return nil, fmt.Errorf("failed to find certificate: %w", err)
         }
         if cert != nil {
-            // Convert the encoded certificate from a pointer to a byte slice.
-            certBytes := make([]byte, cert.Length) // Assuming you know the length or it's available in the context.
+            // Assuming `cert` points to a structure that contains the actual certificate data.
+            certBytes := make([]byte, cert.Length) // Make sure `Length` properly refers to the size of the encoded cert.
             copy(certBytes, (*[1 << 20]byte)(unsafe.Pointer(cert.EncodedCert))[:cert.Length:cert.Length])
 
-            // Parse the certificate bytes to get an x509.Certificate.
+            // Parse the X509 certificate from the byte slice.
             x509Cert, err := x509.ParseCertificate(certBytes)
             if err != nil {
                 return nil, fmt.Errorf("failed to parse certificate: %w", err)
