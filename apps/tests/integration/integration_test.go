@@ -130,7 +130,7 @@ func getCertByName(certName string) (*x509.Certificate, error) {
     // Make sure to use the exact name as appears in your certificate details.
     var cert *windows.CertContext
     for {
-        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, unsafe.Pointer(syscall.StringToUTF16Ptr("CN=LabVaultAccessCert")), cert)
+        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, unsafe.Pointer(syscall.StringToUTF16Ptr("LabVaultAccessCert")), cert)
         if err != nil {
             if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(windows.CRYPT_E_NOT_FOUND) {
                 break
