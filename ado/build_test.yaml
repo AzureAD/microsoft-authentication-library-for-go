@@ -33,16 +33,18 @@ steps:
 
 - powershell: |
    $kvSecretBytes = [System.Convert]::FromBase64String('$(LabVaultAccessCert)')
-   $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
-   $certCollection.Import($kvSecretBytes, $null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+   $pfxPath = '$(Build.SourcesDirectory)' + "/TestCert.pfx"
+   [System.IO.File]::WriteAllBytes($pfxPath, $kvSecretBytes)
 
-   $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12)
-   $pfxPath = '$(Build.SourcesDirectory)' + "\TestCert.pfx"
-   [System.IO.File]::WriteAllBytes($pfxPath, $protectedCertificateBytes)
+   # Convert PFX to PEM format
+   $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
+   $cert.Import($pfxPath)
+   $pemCertPath = '$(Build.SourcesDirectory)' + "/TestCert.pem"
+   $pemKeyPath = '$(Build.SourcesDirectory)' + "/TestCert.key"
+   [System.IO.File]::WriteAllText($pemCertPath, $cert.GetRawCertDataString())
+   [System.IO.File]::WriteAllText($pemKeyPath, $cert.GetRawCertDataString())
 
-   Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\LocalMachine\My
-
-  displayName: 'Install Keyvault Secrets'
+  displayName: 'Convert and Install Certificate for Linux'
   
 - task: Go@0
   inputs:       
