@@ -32,17 +32,20 @@ steps:
     SecretsFilter: 'LabVaultAccessCert'
 
 - powershell: |
-   $kvSecretBytes = [System.Convert]::FromBase64String('$(LabVaultAccessCert)')
    $pfxPath = '$(Build.SourcesDirectory)' + "/TestCert.pfx"
+   $kvSecretBytes = [System.Convert]::FromBase64String('$(LabVaultAccessCert)')
    [System.IO.File]::WriteAllBytes($pfxPath, $kvSecretBytes)
 
-   # Convert PFX to PEM format
-   $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2
-   $cert.Import($pfxPath)
+   # Load the certificate directly from the file
+   $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $null)
+
+   # Export the certificate and private key to PEM format
    $pemCertPath = '$(Build.SourcesDirectory)' + "/TestCert.pem"
    $pemKeyPath = '$(Build.SourcesDirectory)' + "/TestCert.key"
-   [System.IO.File]::WriteAllText($pemCertPath, $cert.GetRawCertDataString())
-   [System.IO.File]::WriteAllText($pemKeyPath, $cert.GetRawCertDataString())
+   $certExported = [System.Security.Cryptography.X509Certificates.X509ContentType]::Cert
+   $keyExported = [System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12
+   [System.IO.File]::WriteAllText($pemCertPath, [System.Convert]::ToBase64String($cert.Export($certExported)))
+   [System.IO.File]::WriteAllText($pemKeyPath, [System.Convert]::ToBase64String($cert.Export($keyExported)))
 
   displayName: 'Convert and Install Certificate for Linux'
   
