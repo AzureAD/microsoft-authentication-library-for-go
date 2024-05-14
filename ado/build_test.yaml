@@ -8,18 +8,42 @@ steps:
 - task: GoTool@0
   inputs:
     version: '1.22.3'
+    
 - task: Go@0
   inputs:
     command: 'get'
     arguments: '-d -v -t -d ./...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
   displayName: "Install dependencies"
+  
 - task: Go@0
   inputs:
     command: 'build'
     arguments: './apps/...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
   displayName: "Build"
+
+# Begin Azure Key Vault integration
+- task: AzureKeyVault@2
+  displayName: 'Connect to Key Vault'
+  inputs:
+    azureSubscription: 'AuthSdkResourceManager'
+    KeyVaultName: 'msidlabs'
+    SecretsFilter: 'LabVaultAccessCert'
+
+- powershell: |
+   $kvSecretBytes = [System.Convert]::FromBase64String('$(LabVaultAccessCert)')
+   $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+   $certCollection.Import($kvSecretBytes, $null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
+
+   $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12)
+   $pfxPath = '$(Build.SourcesDirectory)' + "\TestCert.pfx"
+   [System.IO.File]::WriteAllBytes($pfxPath, $protectedCertificateBytes)
+
+   Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\LocalMachine\My
+
+  displayName: 'Install Keyvault Secrets'
+  
 - task: Go@0
   inputs:       
     command: 'test'
