@@ -8,18 +8,22 @@ package integration
 
 import (
 	"context"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"os"
+	"syscall"
 	"testing"
 	"time"
+	"unsafe"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"golang.org/x/sys/windows"
 )
 
 const (
@@ -92,21 +96,57 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-	clientID := os.Getenv("clientId")
-	secret := os.Getenv("clientSecret")
+    clientID := os.Getenv("clientId")
+    certName := os.Getenv("certName") // Assumes the name of the certificate is stored in an environment variable
 
-	cred, err := confidential.NewCredFromSecret(secret)
-	if err != nil {
-		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
-	}
+    // Load the certificate from the Windows certificate store
+    cert, err := getCertByName(certName)
+    if err != nil {
+        return nil, fmt.Errorf("could not find certificate: %w", err)
+    }
 
-	app, err := confidential.New(microsoftAuthority, clientID, cred)
-	if err != nil {
-		return nil, err
-	}
+    // Create MSAL credential from certificate
+    cred, err := confidential.NewCredFromCert(cert, nil) // Assumes the certificate includes the private key
+    if err != nil {
+        return nil, fmt.Errorf("could not create credential from certificate: %w", err)
+    }
 
-	return &labClient{app: app}, nil
+    app, err := confidential.New(microsoftAuthority, clientID, cred)
+    if err != nil {
+        return nil, err
+    }
+
+    return &labClient{app: app}, nil
 }
+
+func getCertByName(certName string) (*x509.Certificate, error) {
+    store, err := windows.CertOpenSystemStore(0, syscall.StringToUTF16Ptr("MY"))
+    if err != nil {
+        return nil, fmt.Errorf("failed to open certificate store: %w", err)
+    }
+    defer windows.CertCloseStore(store, 0)
+
+    var cert *windows.CertContext
+    for {
+        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, uintptr(unsafe.Pointer(syscall.StringToUTF16Ptr(certName))), cert)
+        if err != nil {
+            if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(windows.CRYPT_E_NOT_FOUND) {
+                break
+            }
+            return nil, fmt.Errorf("failed to find certificate: %w", err)
+        }
+        if cert != nil {
+            x509Cert, err := x509.ParseCertificate(cert.EncodedCert)
+            if err != nil {
+                return nil, fmt.Errorf("failed to parse certificate: %w", err)
+            }
+            return x509Cert, nil
+        }
+    }
+
+    return nil, fmt.Errorf("no certificate found with name: %s", certName)
+}
+
 func (l *labClient) labAccessToken() (string, error) {
 	scopes := []string{msIDlabDefaultScope}
 	result, err := l.app.AcquireTokenSilent(context.Background(), scopes)
