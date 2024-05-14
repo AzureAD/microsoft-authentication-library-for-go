@@ -2,7 +2,7 @@ trigger:
  - main
 
 pool:
-   vmImage: 'ubuntu-latest'
+   vmImage: 'windows-latest'
 
 steps: 
 - task: GoTool@0
@@ -32,22 +32,17 @@ steps:
     SecretsFilter: 'LabVaultAccessCert'
 
 - powershell: |
-   $pfxPath = '$(Build.SourcesDirectory)' + "/TestCert.pfx"
    $kvSecretBytes = [System.Convert]::FromBase64String('$(LabVaultAccessCert)')
-   [System.IO.File]::WriteAllBytes($pfxPath, $kvSecretBytes)
+   $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
+   $certCollection.Import($kvSecretBytes, $null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
 
-   # Load the certificate directly from the file
-   $cert = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2($pfxPath, $null)
+   $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12)
+   $pfxPath = '$(Build.SourcesDirectory)' + "\TestCert.pfx"
+   [System.IO.File]::WriteAllBytes($pfxPath, $protectedCertificateBytes)
 
-   # Export the certificate and private key to PEM format
-   $pemCertPath = '$(Build.SourcesDirectory)' + "/TestCert.pem"
-   $pemKeyPath = '$(Build.SourcesDirectory)' + "/TestCert.key"
-   $certExported = [System.Security.Cryptography.X509Certificates.X509ContentType]::Cert
-   $keyExported = [System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12
-   [System.IO.File]::WriteAllText($pemCertPath, [System.Convert]::ToBase64String($cert.Export($certExported)))
-   [System.IO.File]::WriteAllText($pemKeyPath, [System.Convert]::ToBase64String($cert.Export($keyExported)))
+   Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\LocalMachine\My
 
-  displayName: 'Convert and Install Certificate for Linux'
+  displayName: 'Install Keyvault Secrets'
   
 - task: Go@0
   inputs:       
@@ -62,5 +57,3 @@ steps:
     arguments: '-race ./apps/tests/integration/...'
     workingDirectory: '$(System.DefaultWorkingDirectory)'
   displayName: "Run Integration Tests"
-  
-
