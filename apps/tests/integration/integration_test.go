@@ -97,19 +97,13 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-	
-    if err := printAllCerts(); err != nil {
-        fmt.Println("Error:", err)
-    }
 
     clientID := os.Getenv("clientId")
     certThumbprint := os.Getenv("certThumbprint") // Assumes the thumbprint of the certificate is stored in an environment variable
 
-    // Load the certificate from the Windows certificate store
-    cert, err := getCertByThumbprint(certThumbprint)
-    if err != nil {
-        return nil, fmt.Errorf("could not find certificate: %w", err)
-    }
+    certPath := "D:\a\1\s\TestCert.pfx"
+    password := "" 
+    cert, err := loadCertFromDisk(certPath, password)
 
     // Create MSAL credential from certificate
     cred, err := confidential.NewCredFromCert([]*x509.Certificate{cert}, nil)
@@ -125,69 +119,26 @@ func newLabClient() (*labClient, error) {
     return &labClient{app: app}, nil
 }
 
-func getCertByThumbprint(thumbprint string) (*x509.Certificate, error) {
-    // Open the "My" certificate store on LocalMachine.
-    store, err := windows.CertOpenSystemStore(0, syscall.StringToUTF16Ptr("MY"))
+func loadCertFromDisk(certPath string) (*x509.Certificate, error) {
+    // Read the PEM file
+    pemData, err := ioutil.ReadFile(certPath)
     if err != nil {
-        return nil, fmt.Errorf("failed to open certificate store: %w", err)
-    }
-    defer windows.CertCloseStore(store, 0)
-
-    var cert *windows.CertContext
-    for {
-        cert, err = windows.CertEnumCertificatesInStore(store, cert)
-        if cert == nil {
-            break // No more certificates, or an error occurred
-        }
-
-        // Extract the certificate's thumbprint
-        certBytes := make([]byte, cert.Length)
-        copy(certBytes, (*[1 << 20]byte)(unsafe.Pointer(cert.EncodedCert))[:cert.Length:cert.Length])
-
-        x509Cert, err := x509.ParseCertificate(certBytes)
-        if err != nil {
-            continue // Continue to next certificate in case of parsing error.
-        }
-
-        // Compute the SHA1 hash of the certificate to get the thumbprint
-        hash := sha1.Sum(x509Cert.Raw)
-        if fmt.Sprintf("%x", hash) == thumbprint {
-            return x509Cert, nil // Thumbprint matches, return the certificate
-        }
+        return nil, fmt.Errorf("unable to read certificate file: %w", err)
     }
 
-    return nil, fmt.Errorf("no certificate found with thumbprint: %s", thumbprint)
-}
+    // Extract the PEM block
+    block, _ := pem.Decode(pemData)
+    if block == nil {
+        return nil, fmt.Errorf("failed to parse certificate PEM")
+    }
 
-func printAllCerts() error {
-    store, err := windows.CertOpenSystemStore(0, syscall.StringToUTF16Ptr("MY"))
+    // Parse the certificate
+    cert, err := x509.ParseCertificate(block.Bytes)
     if err != nil {
-        return fmt.Errorf("failed to open certificate store: %w", err)
-    }
-    defer windows.CertCloseStore(store, 0)
-
-    var cert *windows.CertContext
-    for {
-        cert, err = windows.CertEnumCertificatesInStore(store, cert)
-        if cert == nil {
-            break // No more certificates
-        }
-
-        certBytes := make([]byte, cert.Length)
-        copy(certBytes, (*[1 << 20]byte)(unsafe.Pointer(cert.EncodedCert))[:cert.Length:cert.Length])
-
-        x509Cert, err := x509.ParseCertificate(certBytes)
-        if err != nil {
-            continue // Parsing error, skip to the next certificate
-        }
-
-        hash := sha1.Sum(x509Cert.Raw)
-        thumbprint := fmt.Sprintf("%X", hash) // Format as hex string
-
-        fmt.Printf("Subject: %s, Thumbprint: %s\n", x509Cert.Subject, thumbprint)
+        return nil, fmt.Errorf("failed to parse certificate: %w", err)
     }
 
-    return nil
+    return cert, nil
 }
 
 func (l *labClient) labAccessToken() (string, error) {
