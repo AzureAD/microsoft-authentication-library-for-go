@@ -97,7 +97,7 @@ type secret struct {
 func newLabClient() (*labClient, error) {
     clientID := os.Getenv("clientId")
 
-    certPath := "$(Build.SourcesDirectory)" + "\\TestCert.pfx"
+    certPath := "D:\\a\\1\\s\\TestCert.pfx"
     password := "" 
 
     cert, err := loadCertFromPFX(certPath, password)
