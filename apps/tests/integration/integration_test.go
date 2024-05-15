@@ -97,12 +97,13 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-    clientID := os.Getenv("clientId")
-    certThumbprint := os.Getenv("certThumbprint") // Assumes the thumbprint of the certificate is stored in an environment variable
-
+	
     if err := printAllCerts(); err != nil {
         fmt.Println("Error:", err)
     }
+
+    clientID := os.Getenv("clientId")
+    certThumbprint := os.Getenv("certThumbprint") // Assumes the thumbprint of the certificate is stored in an environment variable
 
     // Load the certificate from the Windows certificate store
     cert, err := getCertByThumbprint(certThumbprint)
