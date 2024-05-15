@@ -97,10 +97,10 @@ type secret struct {
 
 func newLabClient() (*labClient, error) {
     clientID := os.Getenv("clientId")
-    certName := os.Getenv("certName") // Assumes the name of the certificate is stored in an environment variable
+    certThumbprint := os.Getenv("certThumbprint") // Assumes the thumbprint of the certificate is stored in an environment variable
 
     // Load the certificate from the Windows certificate store
-    cert, err := getCertByName(certName)
+    cert, err := getCertByThumbprint(certThumbprint)
     if err != nil {
         return nil, fmt.Errorf("could not find certificate: %w", err)
     }
@@ -119,7 +119,7 @@ func newLabClient() (*labClient, error) {
     return &labClient{app: app}, nil
 }
 
-func getCertByName(certName string) (*x509.Certificate, error) {
+func getCertByThumbprint(thumbprint string) (*x509.Certificate, error) {
     // Open the "My" certificate store on LocalMachine.
     store, err := windows.CertOpenSystemStore(0, syscall.StringToUTF16Ptr("MY"))
     if err != nil {
@@ -127,10 +127,9 @@ func getCertByName(certName string) (*x509.Certificate, error) {
     }
     defer windows.CertCloseStore(store, 0)
 
-    // Make sure to use the exact name as appears in your certificate details.
     var cert *windows.CertContext
     for {
-        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SUBJECT_STR, unsafe.Pointer(syscall.StringToUTF16Ptr("LabVaultAccessCert")), cert)
+        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SHA1_HASH, unsafe.Pointer(syscall.StringToUTF16Ptr(thumbprint)), cert)
         if err != nil {
             if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(windows.CRYPT_E_NOT_FOUND) {
                 break
@@ -151,7 +150,7 @@ func getCertByName(certName string) (*x509.Certificate, error) {
         }
     }
 
-    return nil, fmt.Errorf("no certificate found with name: %s", certName)
+    return nil, fmt.Errorf("no certificate found with thumbprint: %s", thumbprint)
 }
 
 func (l *labClient) labAccessToken() (string, error) {
