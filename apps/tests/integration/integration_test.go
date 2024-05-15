@@ -97,13 +97,15 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-
     clientID := os.Getenv("clientId")
-    certThumbprint := os.Getenv("certThumbprint") // Assumes the thumbprint of the certificate is stored in an environment variable
 
-    pfxPath := "$(Build.SourcesDirectory)" + "\\TestCert.pfx"
+    certPath := "$(Build.SourcesDirectory)" + "\\TestCert.pfx"
     password := "" 
-    cert, err := loadCertFromDisk(certPath, password)
+
+    cert, err := loadCertFromPFX(certPath, password)
+    if err != nil {
+        return nil, fmt.Errorf("could not load certificate from disk: %w", err)
+    }
 
     // Create MSAL credential from certificate
     cred, err := confidential.NewCredFromCert([]*x509.Certificate{cert}, nil)
@@ -119,26 +121,28 @@ func newLabClient() (*labClient, error) {
     return &labClient{app: app}, nil
 }
 
-func loadCertFromDisk(certPath string) (*x509.Certificate, error) {
-    // Read the PEM file
-    pemData, err := ioutil.ReadFile(certPath)
+func loadCertFromPFX(certPath, password string) (*x509.Certificate, error) {
+    // Read the PFX file
+    pfxData, err := ioutil.ReadFile(certPath)
     if err != nil {
         return nil, fmt.Errorf("unable to read certificate file: %w", err)
     }
 
-    // Extract the PEM block
-    block, _ := pem.Decode(pemData)
-    if block == nil {
-        return nil, fmt.Errorf("failed to parse certificate PEM")
-    }
-
-    // Parse the certificate
-    cert, err := x509.ParseCertificate(block.Bytes)
+    // Decode the PFX data
+    certs, err := x509.ParseCertificates(pfxData, []byte(password))
     if err != nil {
-        return nil, fmt.Errorf("failed to parse certificate: %w", err)
+        return nil, fmt.Errorf("failed to parse certificate from PFX: %w", err)
+    }
+    if len(certs) == 0 {
+        return nil, fmt.Errorf("no certificates found in PFX file")
     }
 
-    return cert, nil
+    // Return the first certificate found
+    return certs[0], nil
+}
+
+type labClient struct {
+    app confidential.Client
 }
 
 func (l *labClient) labAccessToken() (string, error) {
