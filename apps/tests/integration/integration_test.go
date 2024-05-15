@@ -9,22 +9,19 @@ package integration
 import (
 	"context"
 	"crypto/x509"
-	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
-	"syscall"
 	"testing"
 	"time"
-	"unsafe"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"golang.org/x/sys/windows"
 )
 
 const (
@@ -128,17 +125,16 @@ func loadCertFromPFX(certPath, password string) (*x509.Certificate, error) {
         return nil, fmt.Errorf("unable to read certificate file: %w", err)
     }
 
-    // Decode the PFX data
-    certs, err := x509.ParseCertificates(pfxData, []byte(password))
+    // Decode the PFX data using go-pkcs12
+    privateKey, cert, _, err := pkcs12.DecodeChain(pfxData, password)
     if err != nil {
         return nil, fmt.Errorf("failed to parse certificate from PFX: %w", err)
     }
-    if len(certs) == 0 {
-        return nil, fmt.Errorf("no certificates found in PFX file")
-    }
 
-    // Return the first certificate found
-    return certs[0], nil
+    // Optionally, check the private key or additional certificates if needed
+    fmt.Println("Private key type:", fmt.Sprintf("%T", privateKey))
+
+    return cert, nil
 }
 
 type labClient struct {
