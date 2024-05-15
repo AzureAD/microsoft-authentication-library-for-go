@@ -9,6 +9,7 @@ package integration
 import (
 	"context"
 	"crypto/x509"
+	"crypto/sha1"
 	"encoding/json"
 	"fmt"
 	"io"
