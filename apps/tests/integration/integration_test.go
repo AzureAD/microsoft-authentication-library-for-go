@@ -180,14 +180,14 @@ func printAllCerts() error {
             continue // Parsing error, skip to the next certificate
         }
 
-        // Compute the SHA1 hash to get the thumbprint
         hash := sha1.Sum(x509Cert.Raw)
-        fmt.Printf("Subject: %s, Thumbprint: %X\n", x509Cert.Subject, hash)
+        thumbprint := fmt.Sprintf("%X", hash) // Format as hex string
+
+        fmt.Printf("Subject: %s, Thumbprint: %s\n", x509Cert.Subject, thumbprint)
     }
 
     return nil
 }
-
 
 func (l *labClient) labAccessToken() (string, error) {
 	scopes := []string{msIDlabDefaultScope}
