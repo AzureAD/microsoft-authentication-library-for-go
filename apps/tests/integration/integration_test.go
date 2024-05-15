@@ -22,6 +22,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"software.sslmate.com/src/go-pkcs12"
 )
 
 const (
