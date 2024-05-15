@@ -40,9 +40,10 @@ steps:
    $pfxPath = '$(Build.SourcesDirectory)' + "\TestCert.pfx"
    [System.IO.File]::WriteAllBytes($pfxPath, $protectedCertificateBytes)
 
-   Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\LocalMachine\My
+   # Print the path where the certificate is saved
+   Write-Output "Certificate saved to: $pfxPath"
 
-  displayName: 'Install Keyvault Secrets'
+  displayName: 'Prepare Keyvault Certificate and Save to Disk'
   
 - task: Go@0
   inputs:       
