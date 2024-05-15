@@ -101,7 +101,7 @@ func newLabClient() (*labClient, error) {
     clientID := os.Getenv("clientId")
     certThumbprint := os.Getenv("certThumbprint") // Assumes the thumbprint of the certificate is stored in an environment variable
 
-    certPath := "D:\a\1\s\TestCert.pfx"
+    pfxPath := "$(Build.SourcesDirectory)" + "\\TestCert.pfx"
     password := "" 
     cert, err := loadCertFromDisk(certPath, password)
 
