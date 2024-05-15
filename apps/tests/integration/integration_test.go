@@ -138,10 +138,6 @@ func loadCertFromPFX(certPath, password string) (*x509.Certificate, error) {
     return cert, nil
 }
 
-type labClient struct {
-    app confidential.Client
-}
-
 func (l *labClient) labAccessToken() (string, error) {
 	scopes := []string{msIDlabDefaultScope}
 	result, err := l.app.AcquireTokenSilent(context.Background(), scopes)
