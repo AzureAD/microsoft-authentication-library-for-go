@@ -123,34 +123,35 @@ func getCertByThumbprint(thumbprint string) (*x509.Certificate, error) {
     // Open the "My" certificate store on LocalMachine.
     store, err := windows.CertOpenSystemStore(0, syscall.StringToUTF16Ptr("MY"))
     if err != nil {
-        return nil, fmt.Errorf("failed to open certificate store: %w", err)
+        return fmt.Errorf("failed to open certificate store: %w", err)
     }
     defer windows.CertCloseStore(store, 0)
 
     var cert *windows.CertContext
     for {
-        cert, err = windows.CertFindCertificateInStore(store, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0, windows.CERT_FIND_SHA1_HASH, unsafe.Pointer(syscall.StringToUTF16Ptr(thumbprint)), cert)
+        cert, err = windows.CertEnumCertificatesInStore(store, cert)
         if err != nil {
             if errno, ok := err.(syscall.Errno); ok && errno == syscall.Errno(windows.CRYPT_E_NOT_FOUND) {
                 break
             }
-            return nil, fmt.Errorf("failed to find certificate: %w", err)
+            return fmt.Errorf("failed to enumerate certificates: %w", err)
         }
         if cert != nil {
-            // Assuming `cert` points to a structure that contains the actual certificate data.
+            // Extract the certificate's Subject and Thumbprint
             certBytes := make([]byte, cert.Length) // Make sure `Length` properly refers to the size of the encoded cert.
             copy(certBytes, (*[1 << 20]byte)(unsafe.Pointer(cert.EncodedCert))[:cert.Length:cert.Length])
 
-            // Parse the X509 certificate from the byte slice.
             x509Cert, err := x509.ParseCertificate(certBytes)
             if err != nil {
-                return nil, fmt.Errorf("failed to parse certificate: %w", err)
+                fmt.Printf("Failed to parse certificate: %v\n", err)
+                continue // Continue to next certificate in case of parsing error.
             }
-            return x509Cert, nil
+
+            fmt.Printf("Subject: %s, Thumbprint: %X\n", x509Cert.Subject, x509Cert.SubjectKeyId)
         }
     }
 
-    return nil, fmt.Errorf("no certificate found with thumbprint: %s", thumbprint)
+    return nil
 }
 
 func (l *labClient) labAccessToken() (string, error) {
