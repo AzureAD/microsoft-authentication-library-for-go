@@ -343,7 +343,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
-	claims, loginHint, tenantID, domainHint string
+	claims, loginHint, tenantID, domainHint, state string
 }
 
 // AuthCodeURLOption is implemented by options for AuthCodeURL
@@ -363,10 +363,34 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	if err != nil {
 		return "", err
 	}
+	ap.State = o.state
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
 	ap.DomainHint = o.domainHint
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
+}
+
+// WithState adds a user-generated state to the request.
+func WithState(state string) interface {
+	AuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *authCodeURLOptions:
+					t.state = state
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }
 
 // WithLoginHint pre-populates the login prompt with a username.
