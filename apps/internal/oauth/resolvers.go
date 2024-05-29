@@ -18,9 +18,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
-// ADFS is an active directory federation service authority type.
-const ADFS = "ADFS"
-
 type cacheEntry struct {
 	Endpoints             authority.Endpoints
 	ValidForDomainsInList map[string]bool
@@ -83,7 +80,7 @@ func (m *authorityEndpoint) cachedEndpoints(authorityInfo authority.Info, userPr
 	defer m.mu.Unlock()
 
 	if cacheEntry, ok := m.cache[authorityInfo.CanonicalAuthorityURI]; ok {
-		if authorityInfo.AuthorityType == ADFS {
+		if authorityInfo.AuthorityType == authority.ADFS {
 			domain, err := adfsDomainFromUpn(userPrincipalName)
 			if err == nil {
 				if _, ok := cacheEntry.ValidForDomainsInList[domain]; ok {
@@ -102,7 +99,7 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, use
 
 	updatedCacheEntry := createcacheEntry(endpoints)
 
-	if authorityInfo.AuthorityType == ADFS {
+	if authorityInfo.AuthorityType == authority.ADFS {
 		// Since we're here, we've made a call to the backend.  We want to ensure we're caching
 		// the latest values from the server.
 		if cacheEntry, ok := m.cache[authorityInfo.CanonicalAuthorityURI]; ok {
