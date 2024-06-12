@@ -522,11 +522,57 @@ type interactiveAuthOptions struct {
 	claims, domainHint, loginHint, redirectURI, tenantID string
 	openURL                                              func(url string) error
 	authnScheme                                          AuthenticationScheme
+	successPage                                          []byte
+	errorPage                                            []byte
 }
 
 // AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
 type AcquireInteractiveOption interface {
 	acquireInteractiveOption()
+}
+
+func WithSuccessPage(successPage []byte) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *interactiveAuthOptions:
+					t.successPage = successPage
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+func WithErrorPage(errorPage []byte) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *interactiveAuthOptions:
+					t.errorPage = errorPage
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }
 
 // WithLoginHint pre-populates the login prompt with a username.
@@ -671,7 +717,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
 	}
-	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL)
+	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL, o.successPage, o.successPage)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -709,13 +755,13 @@ func parsePort(u *url.URL) (int, error) {
 }
 
 // browserLogin calls openURL and waits for a user to log in
-func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams, openURL func(string) error) (interactiveAuthResult, error) {
+func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams, openURL func(string) error, successPage []byte, errorPage []byte) (interactiveAuthResult, error) {
 	// start local redirect server so login can call us back
 	port, err := parsePort(redirectURI)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}
-	srv, err := local.New(params.State, port)
+	srv, err := local.New(params.State, port, successPage, errorPage)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}

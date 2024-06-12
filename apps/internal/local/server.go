@@ -28,7 +28,7 @@ var okPage = []byte(`
 </html>
 `)
 
-const failPage = `
+var failPage = []byte(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -40,7 +40,7 @@ const failPage = `
 	<p>Error details: error %s error_description: %s</p>
 </body>
 </html>
-`
+`)
 
 // Result is the result from the redirect.
 type Result struct {
@@ -60,7 +60,7 @@ type Server struct {
 }
 
 // New creates a local HTTP server and starts it.
-func New(reqState string, port int) (*Server, error) {
+func New(reqState string, port int, successPage []byte, errorPage []byte) (*Server, error) {
 	var l net.Listener
 	var err error
 	var portStr string
@@ -82,6 +82,14 @@ func New(reqState string, port int) (*Server, error) {
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if len(successPage) > 0 {
+		okPage = successPage
+	}
+
+	if len(errorPage) > 0 {
+		failPage = errorPage
 	}
 
 	serv := &Server{
@@ -145,7 +153,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		desc := html.EscapeString(q.Get("error_description"))
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		_, _ = w.Write([]byte(fmt.Sprintf(failPage, headerErr, desc)))
+		_, _ = w.Write([]byte(fmt.Sprintf(string(failPage), headerErr, desc)))
 		s.putResult(Result{Err: fmt.Errorf(desc)})
 		return
 	}
