@@ -717,7 +717,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
 	}
-	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL, o.successPage, o.successPage)
+	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL, o.successPage, o.errorPage)
 	if err != nil {
 		return AuthResult{}, err
 	}
