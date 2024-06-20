@@ -531,7 +531,7 @@ type AcquireInteractiveOption interface {
 	acquireInteractiveOption()
 }
 
-func WithSuccessPage(successPage []byte) interface {
+func WithSystemBrowserOptions(successPage []byte, errorPage []byte) interface {
 	AcquireInteractiveOption
 	options.CallOption
 } {
@@ -544,27 +544,6 @@ func WithSuccessPage(successPage []byte) interface {
 				switch t := a.(type) {
 				case *interactiveAuthOptions:
 					t.successPage = successPage
-				default:
-					return fmt.Errorf("unexpected options type %T", a)
-				}
-				return nil
-			},
-		),
-	}
-}
-
-func WithErrorPage(errorPage []byte) interface {
-	AcquireInteractiveOption
-	options.CallOption
-} {
-	return struct {
-		AcquireInteractiveOption
-		options.CallOption
-	}{
-		CallOption: options.NewCallOption(
-			func(a any) error {
-				switch t := a.(type) {
-				case *interactiveAuthOptions:
 					t.errorPage = errorPage
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
