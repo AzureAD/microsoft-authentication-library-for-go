@@ -856,6 +856,44 @@ func TestWithDomainHint(t *testing.T) {
 	}
 }
 
+func TestWithState(t *testing.T) {
+	state := "abc-123-secure-string"
+	client, err := New("client-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectHint := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectHint), func(t *testing.T) {
+			var urlOpts []AuthCodeURLOption
+			if expectHint {
+				urlOpts = append(urlOpts, WithState(state))
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := url.Parse(u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !parsed.Query().Has("state") {
+				if !expectHint {
+					return
+				}
+				t.Fatal("expected a state")
+			} else if !expectHint {
+				t.Fatal("expected no state")
+			}
+			if actual := parsed.Query()["state"]; len(actual) != 1 || actual[0] != state {
+				t.Fatalf(`unexpected state "%v"`, actual)
+			}
+		})
+	}
+}
+
 func TestWithAuthenticationScheme(t *testing.T) {
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo, tenant := "login.microsoftonline.com", "tenant"
