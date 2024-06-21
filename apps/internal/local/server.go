@@ -53,10 +53,12 @@ type Result struct {
 // Server is an HTTP server.
 type Server struct {
 	// Addr is the address the server is listening on.
-	Addr     string
-	resultCh chan Result
-	s        *http.Server
-	reqState string
+	Addr              string
+	resultCh          chan Result
+	s                 *http.Server
+	reqState          string
+	optionSuccessPage []byte
+	optionErrorPage   []byte
 }
 
 // New creates a local HTTP server and starts it.
@@ -84,19 +86,13 @@ func New(reqState string, port int, successPage []byte, errorPage []byte) (*Serv
 		return nil, err
 	}
 
-	if len(successPage) > 0 {
-		okPage = successPage
-	}
-
-	if len(errorPage) > 0 {
-		failPage = errorPage
-	}
-
 	serv := &Server{
-		Addr:     fmt.Sprintf("http://localhost:%s", portStr),
-		s:        &http.Server{Addr: "localhost:0", ReadHeaderTimeout: time.Second},
-		reqState: reqState,
-		resultCh: make(chan Result, 1),
+		Addr:              fmt.Sprintf("http://localhost:%s", portStr),
+		s:                 &http.Server{Addr: "localhost:0", ReadHeaderTimeout: time.Second},
+		reqState:          reqState,
+		resultCh:          make(chan Result, 1),
+		optionSuccessPage: successPage,
+		optionErrorPage:   errorPage,
 	}
 	serv.s.Handler = http.HandlerFunc(serv.handler)
 
@@ -153,7 +149,11 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		desc := html.EscapeString(q.Get("error_description"))
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
+		if len(s.optionErrorPage) > 0 {
+			_, _ = w.Write(s.optionErrorPage)
+		} else {
 			_, _ = w.Write([]byte(fmt.Sprintf(failPage, headerErr, desc)))
+		}
 		s.putResult(Result{Err: fmt.Errorf(desc)})
 		return
 	}
@@ -175,7 +175,11 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _ = w.Write(okPage)
+	if len(s.optionSuccessPage) > 0 {
+		_, _ = w.Write(s.optionSuccessPage)
+	} else {
+		_, _ = w.Write(okPage)
+	}
 	s.putResult(Result{Code: code})
 }
 
