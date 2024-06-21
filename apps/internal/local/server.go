@@ -28,7 +28,7 @@ var okPage = []byte(`
 </html>
 `)
 
-var failPage = []byte(`
+const failPage = `
 <!DOCTYPE html>
 <html>
 <head>
@@ -40,7 +40,7 @@ var failPage = []byte(`
 	<p>Error details: error %s error_description: %s</p>
 </body>
 </html>
-`)
+`
 
 // Result is the result from the redirect.
 type Result struct {
@@ -153,7 +153,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		desc := html.EscapeString(q.Get("error_description"))
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		_, _ = w.Write([]byte(fmt.Sprintf(string(failPage), headerErr, desc)))
+			_, _ = w.Write([]byte(fmt.Sprintf(failPage, headerErr, desc)))
 		s.putResult(Result{Err: fmt.Errorf(desc)})
 		return
 	}
