@@ -543,8 +543,11 @@ func WithSystemBrowserOptions(successPage []byte, errorPage []byte) interface {
 			func(a any) error {
 				switch t := a.(type) {
 				case *interactiveAuthOptions:
-					t.successPage = successPage
-					t.errorPage = errorPage
+					t.successPage = make([]byte, len(successPage))
+					copy(t.successPage, successPage)
+
+					t.errorPage = make([]byte, len(errorPage))
+					copy(t.errorPage, errorPage)
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
