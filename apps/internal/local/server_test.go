@@ -20,53 +20,83 @@ func TestServer(t *testing.T) {
 	defer cancel()
 
 	tests := []struct {
-		desc       string
-		reqState   string
-		port       int
-		q          url.Values
-		failPage   bool
-		statusCode int
+		desc        string
+		reqState    string
+		port        int
+		q           url.Values
+		failPage    bool
+		statusCode  int
+		successPage []byte
+		errorPage   []byte
 	}{
 		{
-			desc:       "Error: Query Values has 'error' key",
-			reqState:   "state",
-			port:       0,
-			q:          url.Values{"state": []string{"state"}, "error": []string{"error"}},
-			statusCode: 200,
-			failPage:   true,
+			desc:        "Error: Query Values has 'error' key",
+			reqState:    "state",
+			port:        0,
+			q:           url.Values{"state": []string{"state"}, "error": []string{"error"}},
+			statusCode:  200,
+			failPage:    true,
+			successPage: nil,
+			errorPage:   nil,
 		},
 		{
-			desc:       "Error: Query Values missing 'state' key",
-			reqState:   "state",
-			port:       0,
-			q:          url.Values{"code": []string{"code"}},
-			statusCode: http.StatusInternalServerError,
+			desc:        "Error: Query Values missing 'state' key",
+			reqState:    "state",
+			port:        0,
+			q:           url.Values{"code": []string{"code"}},
+			statusCode:  http.StatusInternalServerError,
+			successPage: nil,
+			errorPage:   nil,
 		},
 		{
-			desc:       "Error: Query Values missing had 'state' key value that was different that requested",
-			reqState:   "state",
-			port:       0,
-			q:          url.Values{"state": []string{"etats"}, "code": []string{"code"}},
-			statusCode: http.StatusInternalServerError,
+			desc:        "Error: Query Values missing had 'state' key value that was different that requested",
+			reqState:    "state",
+			port:        0,
+			q:           url.Values{"state": []string{"etats"}, "code": []string{"code"}},
+			statusCode:  http.StatusInternalServerError,
+			successPage: nil,
+			errorPage:   nil,
 		},
 		{
-			desc:       "Error: Query Values missing 'code' key",
-			reqState:   "state",
-			port:       0,
-			q:          url.Values{"state": []string{"state"}},
-			statusCode: http.StatusInternalServerError,
+			desc:        "Error: Query Values missing 'code' key",
+			reqState:    "state",
+			port:        0,
+			q:           url.Values{"state": []string{"state"}},
+			statusCode:  http.StatusInternalServerError,
+			successPage: nil,
+			errorPage:   nil,
 		},
 		{
-			desc:       "Success",
-			reqState:   "state",
-			port:       0,
-			q:          url.Values{"state": []string{"state"}, "code": []string{"code"}},
-			statusCode: 200,
+			desc:        "Success",
+			reqState:    "state",
+			port:        0,
+			q:           url.Values{"state": []string{"state"}, "code": []string{"code"}},
+			statusCode:  200,
+			successPage: nil,
+			errorPage:   nil,
+		},
+		{
+			desc:        "Success, with optional success page",
+			reqState:    "state",
+			port:        0,
+			q:           url.Values{"state": []string{"state"}, "code": []string{"code"}},
+			statusCode:  200,
+			successPage: []byte("test option success page"),
+			errorPage:   nil,
+		},
+		{
+			desc:        "Error: Query Values missing 'state' key, and optional error page",
+			reqState:    "state",
+			port:        0,
+			q:           url.Values{"code": []string{"code"}},
+			statusCode:  http.StatusInternalServerError,
+			successPage: nil,
+			errorPage:   []byte("test option error page"),
 		},
 	}
 
 	for _, test := range tests {
-		serv, err := New(test.reqState, test.port)
+		serv, err := New(test.reqState, test.port, test.successPage, test.errorPage)
 		if err != nil {
 			panic(err)
 		}
@@ -125,6 +155,20 @@ func TestServer(t *testing.T) {
 			res := serv.Result(ctx)
 			if res.Err == nil {
 				t.Errorf("TestServer(%s): Result.Err == nil, want Result.Err != nil", test.desc)
+			}
+			continue
+		}
+
+		if len(test.successPage) > 0 {
+			if !strings.Contains(string(content), "test option success page") {
+				t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
+			}
+			continue
+
+		}
+		if len(test.errorPage) > 0 {
+			if !strings.Contains(string(content), "test option error page") {
+				t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
 			}
 			continue
 		}
