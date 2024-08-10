@@ -37,10 +37,18 @@ const failPage = `
 </head>
 <body>
 	<p>Authentication failed. You can return to the application. Feel free to close this browser tab.</p>
-	<p>Error details: error %s error_description: %s</p>
+	<p>Error details: error {{.Code}}, error description: {{.Err}}</p>
 </body>
 </html>
 `
+
+// code is the html template variable name,
+// which matches the Result Code variable
+const code string = "Code"
+
+// err is the html template variable name
+// which matches the Rest Err variable
+const err string = "Err"
 
 // Result is the result from the redirect.
 type Result struct {
