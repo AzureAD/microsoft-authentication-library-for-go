@@ -531,6 +531,9 @@ type AcquireInteractiveOption interface {
 	acquireInteractiveOption()
 }
 
+// WithSystemBrowserOptions sets the optional success and error pages.
+// The error page supports two optional html template variables {{.Code}} and {{.Err}},
+// which will be replaced with the corresponding error code, and descriptions.
 func WithSystemBrowserOptions(successPage []byte, errorPage []byte) interface {
 	AcquireInteractiveOption
 	options.CallOption
