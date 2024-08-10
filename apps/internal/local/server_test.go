@@ -158,7 +158,7 @@ func TestServer(t *testing.T) {
 		}
 
 		if len(test.successPage) > 0 {
-			if !strings.Contains(string(content), "test option success page") {
+			if !bytes.Equal(content, test.successPage) {
 				t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
 			}
 			continue
