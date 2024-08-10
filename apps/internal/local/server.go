@@ -67,6 +67,7 @@ type Server struct {
 	reqState          string
 	optionSuccessPage []byte
 	optionErrorPage   []byte
+	errorPageTemplate string
 }
 
 // New creates a local HTTP server and starts it.
@@ -101,6 +102,7 @@ func New(reqState string, port int, successPage []byte, errorPage []byte) (*Serv
 		resultCh:          make(chan Result, 1),
 		optionSuccessPage: successPage,
 		optionErrorPage:   errorPage,
+		errorPageTemplate: failPage, // default error page
 	}
 	serv.s.Handler = http.HandlerFunc(serv.handler)
 
