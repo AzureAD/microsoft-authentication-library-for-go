@@ -36,8 +36,6 @@ func TestServer(t *testing.T) {
 			q:           url.Values{"state": []string{"state"}, "error": []string{"error"}},
 			statusCode:  200,
 			failPage:    true,
-			successPage: nil,
-			errorPage:   nil,
 		},
 		{
 			desc:        "Error: Query Values missing 'state' key",
