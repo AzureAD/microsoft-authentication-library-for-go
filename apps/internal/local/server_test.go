@@ -4,6 +4,7 @@
 package local
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -30,48 +31,40 @@ func TestServer(t *testing.T) {
 		errorPage   []byte
 	}{
 		{
-			desc:        "Error: Query Values has 'error' key",
-			reqState:    "state",
-			port:        0,
-			q:           url.Values{"state": []string{"state"}, "error": []string{"error"}},
-			statusCode:  200,
-			failPage:    true,
+			desc:       "Error: Query Values has 'error' key",
+			reqState:   "state",
+			port:       0,
+			q:          url.Values{"state": []string{"state"}, "error": []string{"error"}},
+			statusCode: 200,
+			failPage:   true,
 		},
 		{
-			desc:        "Error: Query Values missing 'state' key",
-			reqState:    "state",
-			port:        0,
-			q:           url.Values{"code": []string{"code"}},
-			statusCode:  http.StatusInternalServerError,
-			successPage: nil,
-			errorPage:   nil,
+			desc:       "Error: Query Values missing 'state' key",
+			reqState:   "state",
+			port:       0,
+			q:          url.Values{"code": []string{"code"}},
+			statusCode: http.StatusInternalServerError,
 		},
 		{
-			desc:        "Error: Query Values missing had 'state' key value that was different that requested",
-			reqState:    "state",
-			port:        0,
-			q:           url.Values{"state": []string{"etats"}, "code": []string{"code"}},
-			statusCode:  http.StatusInternalServerError,
-			successPage: nil,
-			errorPage:   nil,
+			desc:       "Error: Query Values missing had 'state' key value that was different that requested",
+			reqState:   "state",
+			port:       0,
+			q:          url.Values{"state": []string{"etats"}, "code": []string{"code"}},
+			statusCode: http.StatusInternalServerError,
 		},
 		{
-			desc:        "Error: Query Values missing 'code' key",
-			reqState:    "state",
-			port:        0,
-			q:           url.Values{"state": []string{"state"}},
-			statusCode:  http.StatusInternalServerError,
-			successPage: nil,
-			errorPage:   nil,
+			desc:       "Error: Query Values missing 'code' key",
+			reqState:   "state",
+			port:       0,
+			q:          url.Values{"state": []string{"state"}},
+			statusCode: http.StatusInternalServerError,
 		},
 		{
-			desc:        "Success",
-			reqState:    "state",
-			port:        0,
-			q:           url.Values{"state": []string{"state"}, "code": []string{"code"}},
-			statusCode:  200,
-			successPage: nil,
-			errorPage:   nil,
+			desc:       "Success",
+			reqState:   "state",
+			port:       0,
+			q:          url.Values{"state": []string{"state"}, "code": []string{"code"}},
+			statusCode: 200,
 		},
 		{
 			desc:        "Success, with optional success page",
@@ -80,16 +73,14 @@ func TestServer(t *testing.T) {
 			q:           url.Values{"state": []string{"state"}, "code": []string{"code"}},
 			statusCode:  200,
 			successPage: []byte("test option success page"),
-			errorPage:   nil,
 		},
 		{
-			desc:        "Error: Query Values missing 'state' key, and optional error page",
-			reqState:    "state",
-			port:        0,
-			q:           url.Values{"code": []string{"code"}},
-			statusCode:  http.StatusInternalServerError,
-			successPage: nil,
-			errorPage:   []byte("test option error page"),
+			desc:       "Error: Query Values missing 'state' key, and optional error page",
+			reqState:   "state",
+			port:       0,
+			q:          url.Values{"code": []string{"code"}},
+			statusCode: http.StatusInternalServerError,
+			errorPage:  []byte("test option error page"),
 		},
 	}
 
