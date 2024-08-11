@@ -28,7 +28,7 @@ var okPage = []byte(`
 </html>
 `)
 
-const failPage = `
+var failPage = []byte(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -40,7 +40,7 @@ const failPage = `
 	<p>Error details: error {{.Code}}, error description: {{.Err}}</p>
 </body>
 </html>
-`
+`)
 
 // code is the html template variable name,
 // which matches the Result Code variable
@@ -61,13 +61,12 @@ type Result struct {
 // Server is an HTTP server.
 type Server struct {
 	// Addr is the address the server is listening on.
-	Addr              string
-	resultCh          chan Result
-	s                 *http.Server
-	reqState          string
-	optionSuccessPage []byte
-	optionErrorPage   []byte
-	errorPageTemplate string
+	Addr        string
+	resultCh    chan Result
+	s           *http.Server
+	reqState    string
+	successPage []byte
+	errorPage   []byte
 }
 
 // New creates a local HTTP server and starts it.
@@ -95,14 +94,21 @@ func New(reqState string, port int, successPage []byte, errorPage []byte) (*Serv
 		return nil, err
 	}
 
+	if len(successPage) == 0 {
+		successPage = okPage
+	}
+
+	if len(errorPage) == 0 {
+		errorPage = failPage
+	}
+
 	serv := &Server{
-		Addr:              fmt.Sprintf("http://localhost:%s", portStr),
-		s:                 &http.Server{Addr: "localhost:0", ReadHeaderTimeout: time.Second},
-		reqState:          reqState,
-		resultCh:          make(chan Result, 1),
-		optionSuccessPage: successPage,
-		optionErrorPage:   errorPage,
-		errorPageTemplate: failPage, // default error page
+		Addr:        fmt.Sprintf("http://localhost:%s", portStr),
+		s:           &http.Server{Addr: "localhost:0", ReadHeaderTimeout: time.Second},
+		reqState:    reqState,
+		resultCh:    make(chan Result, 1),
+		successPage: successPage,
+		errorPage:   errorPage,
 	}
 	serv.s.Handler = http.HandlerFunc(serv.handler)
 
@@ -154,15 +160,11 @@ func (s *Server) putResult(r Result) {
 func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
-	if len(s.optionErrorPage) > 0 {
-		s.errorPageTemplate = string(s.optionErrorPage)
-	}
-
 	headerErr := q.Get("error")
 	if headerErr != "" {
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		failPageTemplate, err := template.New("failPage").Parse(s.errorPageTemplate)
+		failPageTemplate, err := template.New("failPage").Parse(string(s.errorPage))
 		if err != nil {
 			s.error(w, http.StatusInternalServerError, "error parsing template")
 		}
@@ -193,11 +195,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if len(s.optionSuccessPage) > 0 {
-		_, _ = w.Write(s.optionSuccessPage)
-	} else {
-		_, _ = w.Write(okPage)
-	}
+	_, _ = w.Write(s.successPage)
 	s.putResult(Result{Code: code})
 }
 

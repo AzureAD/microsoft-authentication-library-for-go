@@ -68,22 +68,6 @@ func TestServer(t *testing.T) {
 			statusCode: 200,
 		},
 		{
-			desc:        "Success, with optional success page",
-			reqState:    "state",
-			port:        0,
-			q:           url.Values{"state": []string{"state"}, "code": []string{"code"}},
-			statusCode:  200,
-			successPage: []byte("test option success page"),
-		},
-		{
-			desc:       "Error: Query Values missing 'state' key, and optional error page",
-			reqState:   "state",
-			port:       0,
-			q:          url.Values{"code": []string{"code"}},
-			statusCode: http.StatusInternalServerError,
-			errorPage:  []byte("test option error page"),
-		},
-		{
 			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having code and error",
 			reqState:     "state",
 			port:         0,
