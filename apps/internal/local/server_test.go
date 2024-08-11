@@ -103,6 +103,14 @@ func TestServer(t *testing.T) {
 			errorPage:    []byte("test option error page"),
 			testTemplate: true,
 		},
+		{
+			desc:         "Error: Query Values missing 'state' key, using default fail error page",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			testTemplate: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -200,6 +208,11 @@ func TestServer(t *testing.T) {
 					if !strings.Contains(string(content), "test option error page error_description") {
 						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_description", test.desc)
 					}
+				}
+				continue
+			} else {
+				if !strings.Contains(string(content), "<p>Error details: error error_code, error description: error_description</p>") {
+					t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
 				}
 				continue
 			}
