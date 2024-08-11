@@ -47,7 +47,7 @@ var failPage = []byte(`
 const code string = "Code"
 
 // err is the html template variable name
-// which matches the Rest Err variable
+// which matches the Result Err variable
 const err string = "Err"
 
 // Result is the result from the redirect.
