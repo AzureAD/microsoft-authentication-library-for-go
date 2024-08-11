@@ -7,7 +7,7 @@ package local
 import (
 	"context"
 	"fmt"
-	"html"
+	"html/template"
 	"net"
 	"net/http"
 	"strconv"
@@ -154,17 +154,25 @@ func (s *Server) putResult(r Result) {
 func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 
+	if len(s.optionErrorPage) > 0 {
+		s.errorPageTemplate = string(s.optionErrorPage)
+	}
+
 	headerErr := q.Get("error")
 	if headerErr != "" {
-		desc := html.EscapeString(q.Get("error_description"))
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		if len(s.optionErrorPage) > 0 {
-			_, _ = w.Write(s.optionErrorPage)
-		} else {
-			_, _ = w.Write([]byte(fmt.Sprintf(failPage, headerErr, desc)))
+		failPageTemplate, err := template.New("failPage").Parse(s.errorPageTemplate)
+		if err != nil {
+			s.error(w, http.StatusInternalServerError, "error parsing template")
 		}
-		s.putResult(Result{Err: fmt.Errorf(desc)})
+
+		errDesc := fmt.Errorf(q.Get("error_description"))
+		err = failPageTemplate.Execute(w, Result{Code: headerErr, Err: errDesc})
+		if err != nil {
+			s.error(w, http.StatusInternalServerError, "error rendering page")
+		}
+		s.putResult(Result{Err: errDesc})
 		return
 	}
 
