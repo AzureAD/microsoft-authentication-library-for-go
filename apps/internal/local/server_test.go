@@ -21,14 +21,15 @@ func TestServer(t *testing.T) {
 	defer cancel()
 
 	tests := []struct {
-		desc        string
-		reqState    string
-		port        int
-		q           url.Values
-		failPage    bool
-		statusCode  int
-		successPage []byte
-		errorPage   []byte
+		desc         string
+		reqState     string
+		port         int
+		q            url.Values
+		failPage     bool
+		statusCode   int
+		successPage  []byte
+		errorPage    []byte
+		testTemplate bool
 	}{
 		{
 			desc:       "Error: Query Values has 'error' key",
@@ -81,6 +82,42 @@ func TestServer(t *testing.T) {
 			q:          url.Values{"code": []string{"code"}},
 			statusCode: http.StatusInternalServerError,
 			errorPage:  []byte("test option error page"),
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having code and error",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page {{.Code}} {{.Err}}"),
+			testTemplate: true,
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having only code",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page {{.Code}}"),
+			testTemplate: true,
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having only error",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page {{.Err}}"),
+			testTemplate: true,
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, having no code or error",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page"),
+			testTemplate: true,
 		},
 	}
 
@@ -153,13 +190,35 @@ func TestServer(t *testing.T) {
 				t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
 			}
 			continue
-
 		}
-		if len(test.errorPage) > 0 {
-			if !strings.Contains(string(content), "test option error page") {
-				t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
+
+		if test.testTemplate {
+			if len(test.errorPage) > 0 {
+				errCode := bytes.Contains(test.errorPage, []byte("{{.Code}}"))
+				errDescription := bytes.Contains(test.errorPage, []byte("{{.Err}}"))
+
+				if !errCode && !errDescription {
+					if !strings.Contains(string(content), "test option error page") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
+					}
+				}
+				if errCode && errDescription {
+					if !strings.Contains(string(content), "test option error page error_code error_description") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
+					}
+				}
+				if errCode && !errDescription {
+					if !strings.Contains(string(content), "test option error page error_code") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code", test.desc)
+					}
+				}
+				if !errCode && errDescription {
+					if !strings.Contains(string(content), "test option error page error_description") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_description", test.desc)
+					}
+				}
+				continue
 			}
-			continue
 		}
 
 		if !strings.Contains(string(content), "Authentication Complete") {
