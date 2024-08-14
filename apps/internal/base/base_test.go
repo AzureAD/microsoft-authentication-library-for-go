@@ -344,6 +344,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 				ExpiresOn:      future,
 				GrantedScopes:  []string{"user.read"},
 				DeclinedScopes: nil,
+				IsFromCache:    false,
 			},
 		},
 		{
@@ -416,6 +417,7 @@ func TestAuthResultFromStorage(t *testing.T) {
 				},
 				ExpiresOn:     future,
 				GrantedScopes: []string{"profile", "openid", "user.read"},
+				IsFromCache:   true,
 			},
 		},
 	}
