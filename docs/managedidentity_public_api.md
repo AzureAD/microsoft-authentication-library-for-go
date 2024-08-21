@@ -112,7 +112,7 @@ func WithClaims(claims string) AcquireTokenOption {
 
 Error handling in GO is different to what we used to in languages like Java or Swift.
 There is no concept of ‘exceptions’, instead we just return errors and immediately check if an error was returned and handle it there and then.  
-Basically, we will return client-side errors like so:
+The SDK will return client-side errors like so:
 
 ```go
 if err != nil {
