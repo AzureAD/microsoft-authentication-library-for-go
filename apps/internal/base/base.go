@@ -83,14 +83,27 @@ type AcquireTokenOnBehalfOfParameters struct {
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult struct {
-	Account        shared.Account
-	IDToken        accesstokens.IDToken
-	AccessToken    string
-	ExpiresOn      time.Time
-	GrantedScopes  []string
-	DeclinedScopes []string
-	IsFromCache    bool
+	Account            shared.Account
+	IDToken            accesstokens.IDToken
+	AccessToken        string
+	ExpiresOn          time.Time
+	GrantedScopes      []string
+	DeclinedScopes     []string
+	AuthResultMetadata AuthResultMetadata
 }
+
+// AuthResultMetadata which contains meta data for the AuthResult
+type AuthResultMetadata struct {
+	TokenSource TokenSource
+}
+
+type TokenSource int
+
+// These are all the types of token flows.
+const (
+	IdentityProvider TokenSource = 0
+	Cache            TokenSource = 1
+)
 
 // AuthResultFromStorage creates an AuthResult from a storage token response (which is generated from the cache).
 func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResult, error) {
@@ -117,7 +130,10 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 		ExpiresOn:      storageTokenResponse.AccessToken.ExpiresOn.T,
 		GrantedScopes:  grantedScopes,
 		DeclinedScopes: nil,
-		IsFromCache:    true}, nil
+		AuthResultMetadata: AuthResultMetadata{
+			TokenSource: Cache,
+		},
+	}, nil
 }
 
 // NewAuthResult creates an AuthResult.
@@ -131,6 +147,9 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		AccessToken:   tokenResponse.AccessToken,
 		ExpiresOn:     tokenResponse.ExpiresOn.T,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
+		AuthResultMetadata: AuthResultMetadata{
+			TokenSource: IdentityProvider,
+		},
 	}, nil
 }
 
