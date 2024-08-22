@@ -39,6 +39,8 @@ func main() {
 		acquireTokenClientCertificate()
 
 		// this time the token comes from the cache!
-		acquireTokenClientCertificate()
+		// acquireTokenClientCertificate()
+	} else if exampleType == "7" {
+		RunManagedIdentity()
 	}
 }
