@@ -20,11 +20,11 @@ import (
 )
 
 const (
-	// AzureArc represents the source to acquire token for managed identity is Azure Arc.
-	AzureArc = 0
-
 	// DefaultToIMDS indicates that the source is defaulted to IMDS since no environment variables are set.
-	DefaultToIMDS = 1
+	DefaultToIMDS = 0
+
+	// AzureArc represents the source to acquire token for managed identity is Azure Arc.
+	AzureArc = 1
 )
 
 // Client is a client that provides access to Managed Identity token calls.
