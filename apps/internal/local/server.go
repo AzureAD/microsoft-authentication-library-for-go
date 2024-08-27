@@ -7,7 +7,7 @@ package local
 import (
 	"context"
 	"fmt"
-	"html/template"
+	"html/template" // must be html/template, and not text/template to have injection protection
 	"net"
 	"net/http"
 	"strconv"
@@ -164,13 +164,13 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 	if headerErr != "" {
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		failPageTemplate, err := template.New("failPage").Parse(string(s.errorPage))
+		failPageTemplate, err := template.New("failPage").Parse(string(s.errorPage)) // html template will be injection safe
 		if err != nil {
 			s.error(w, http.StatusInternalServerError, "error parsing template")
 		}
 
 		errDesc := fmt.Errorf(q.Get("error_description"))
-		err = failPageTemplate.Execute(w, Result{Code: headerErr, Err: errDesc})
+		err = failPageTemplate.Execute(w, Result{Code: headerErr, Err: errDesc}) // escapes html entities
 		if err != nil {
 			s.error(w, http.StatusInternalServerError, "error rendering page")
 		}
