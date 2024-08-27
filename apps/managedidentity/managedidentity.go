@@ -11,12 +11,20 @@ package managedidentity
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"sync"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	// "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	// "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
+	// "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 const (
@@ -29,10 +37,10 @@ const (
 
 // Client is a client that provides access to Managed Identity token calls.
 type Client struct {
-	AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New(). also may remove from here
+	// AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New(). also may remove from here
 	cacheAccessorMu *sync.RWMutex
-	// base                ops.HTTPClient
-	// managedIdentityType Type
+	httpClient      ops.HTTPClient
+	MiType          ID
 	// Token    			*oauth.Client
 	// pmanager manager 	// todo :  expose the manager from base.
 	// cacheAccessor   		cache.ExportReplace
@@ -47,13 +55,18 @@ type clientOptions struct {
 	// clientId     string
 }
 
-type withClaimsOption struct{ Claims string }
-type withHTTPClientOption struct{ HttpClient ops.HTTPClient }
+// type withClaimsOption struct{ Claims string }
+type withHTTPClientOption struct {
+	HttpClient ops.HTTPClient
+}
 
 // Option is an optional argument to New().
 type Option interface{ apply(*clientOptions) }
 type ClientOption interface{ ClientOption() }
-type AcquireTokenOption interface{ AcquireTokenOption() }
+type AcquireTokenOptions struct {
+	Claims string
+}
+type AcquireTokenOption interface{ apply(*AcquireTokenOptions) }
 
 // Source represents the managed identity sources supported.
 type Source int
@@ -77,14 +90,14 @@ func (c ClientID) value() string            { return string(c) }
 func (o ObjectID) value() string            { return string(o) }
 func (r ResourceID) value() string          { return string(r) }
 
-func (w withClaimsOption) AcquireTokenOption()           {}
-func (w withHTTPClientOption) AcquireTokenOption()       {}
-func (w withHTTPClientOption) apply(opts *clientOptions) { opts.httpClient = w.HttpClient }
+func (w AcquireTokenOptions) AcquireTokenOption()  {}
+func (w withHTTPClientOption) AcquireTokenOption() {}
+func (w Client) apply(opts *clientOptions)         { opts.httpClient = w.HttpClient }
 
 // WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
 // Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
-func WithClaims(claims string) AcquireTokenOption {
-	return withClaimsOption{Claims: claims}
+func WithClaims(claims string) AcquireTokenOptions {
+	return AcquireTokenOptions{Claims: claims}
 }
 
 // WithHTTPClient allows for a custom HTTP client to be set.
@@ -99,28 +112,29 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 func New(id ID, options ...Option) (Client, error) {
 	fmt.Println("idType: ", id.value())
 
-	opts := clientOptions{
-		claims: "claims",
+	opts := clientOptions{ // work on this side where
+		httpClient: shared.DefaultClient,
 	}
 
 	for _, option := range options {
 		option.apply(&opts)
 	}
 
-	authInfo, err := authority.NewInfoFromAuthorityURI("authorityURI", true, false)
-	if err != nil {
-		return Client{}, err
+	client := Client{ // TODO :: check for http client
+		MiType: id,
 	}
 
-	authParams := authority.NewAuthParams(id.value(), authInfo)
-	client := Client{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
-		AuthParams:      authParams,
-		cacheAccessorMu: &sync.RWMutex{},
-		// manager:         storage.New(token),
-		// pmanager:        storage.NewPartitionedManager(token),
-	}
+	return client, nil
+}
 
-	return client, err
+type responseJson struct {
+	AccessToken  string `json:"access_token"`
+	RefreshToken string `json:"refresh_token"`
+	ExpiresIn    string `json:"expires_in"`
+	ExpiresOn    string `json:"expires_on"`
+	NotBefore    string `json:"not_before"`
+	Resource     string `json:"resource"`
+	TokenType    string `json:"token_type"`
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.
@@ -128,6 +142,57 @@ func New(id ID, options ...Option) (Client, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (client Client) AcquireToken(context context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	o := AcquireTokenOptions{}
+
+	for _, option := range options {
+		option.apply(&o)
+	}
+
+	if client.MiType == SystemAssigned() {
+		systemUrl := "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01"
+		var msiEndpoint *url.URL
+		msi_endpoint, err := url.Parse(systemUrl)
+		if err != nil {
+			fmt.Println("Error creating URL: ", err)
+			return base.AuthResult{}, nil
+		}
+		msiParameters := msi_endpoint.Query()
+		msiParameters.Add("resource", "https://management.azure.com/")
+		msiEndpoint.RawQuery = msiParameters.Encode()
+		req, err := http.NewRequest(http.MethodGet, msiEndpoint.String(), nil)
+		if err != nil {
+			fmt.Println("Error creating HTTP request: ", err)
+			return base.AuthResult{}, nil
+		}
+		req.Header.Add("Metadata", "true")
+
+		resp, err := client.httpClient.Do(req)
+		if err != nil {
+			fmt.Println("Error calling token endpoint: ", err)
+			return base.AuthResult{}, nil
+		}
+
+		// Pull out response body
+		responseBytes, err := io.ReadAll(resp.Body)
+		defer resp.Body.Close()
+		if err != nil {
+			fmt.Println("Error reading response body : ", err)
+			return base.AuthResult{}, nil
+		}
+
+		// Unmarshall response body into struct
+		var r accesstokens.TokenResponse
+		err = json.Unmarshal(responseBytes, &r)
+		if err != nil {
+			fmt.Println("Error unmarshalling the response:", err)
+			return base.AuthResult{}, nil
+		}
+
+		println("Access token :: ", r.AccessToken)
+		return base.NewAuthResult(r, shared.Account{})
+	}
+
+	// all the other options.
 	return base.AuthResult{}, nil
 }
 
