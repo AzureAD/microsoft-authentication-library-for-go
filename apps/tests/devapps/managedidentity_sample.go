@@ -3,15 +3,14 @@ package main
 import (
 	"context"
 	"fmt"
-	"net/http"
 
 	mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
 
 func RunManagedIdentity() {
-	customHttpClient := &http.Client{}
+	// customHttpClient := &http.Client{}
 
-	miSystemAssigned, error := mi.New(mi.SystemAssigned(), mi.WithHTTPClient(customHttpClient))
+	miSystemAssigned, error := mi.New(mi.SystemAssigned())
 	if error != nil {
 		fmt.Println(error)
 	}

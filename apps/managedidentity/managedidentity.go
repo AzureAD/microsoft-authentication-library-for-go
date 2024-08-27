@@ -16,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"sync"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
@@ -35,40 +34,7 @@ const (
 	AzureArc = 1
 )
 
-// Client is a client that provides access to Managed Identity token calls.
-type Client struct {
-	// AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New(). also may remove from here
-	cacheAccessorMu *sync.RWMutex
-	httpClient      ops.HTTPClient
-	MiType          ID
-	// Token    			*oauth.Client
-	// pmanager manager 	// todo :  expose the manager from base.
-	// cacheAccessor   		cache.ExportReplace
-}
-
-// clientOptions are optional settings for New(). These options are set using various functions
-// returning Option calls.
-type clientOptions struct {
-	claims     string // bypasses cache, does nothing else
-	httpClient ops.HTTPClient
-	// disableInstanceDiscovery bool // always false
-	// clientId     string
-}
-
-// type withClaimsOption struct{ Claims string }
-type withHTTPClientOption struct {
-	HttpClient ops.HTTPClient
-}
-
-// Option is an optional argument to New().
-type Option interface{ apply(*clientOptions) }
-type ClientOption interface{ ClientOption() }
-type AcquireTokenOptions struct {
-	Claims string
-}
-type AcquireTokenOption interface{ apply(*AcquireTokenOptions) }
-
-// Source represents the managed identity sources supported.
+// id type managed identity
 type Source int
 
 type systemAssignedValue string
@@ -90,9 +56,49 @@ func (c ClientID) value() string            { return string(c) }
 func (o ObjectID) value() string            { return string(o) }
 func (r ResourceID) value() string          { return string(r) }
 
-func (w AcquireTokenOptions) AcquireTokenOption()  {}
-func (w withHTTPClientOption) AcquireTokenOption() {}
-func (w Client) apply(opts *clientOptions)         { opts.httpClient = w.HttpClient }
+//------------------
+
+// Client is a client that provides access to Managed Identity token calls.
+type Client struct {
+	// AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New(). also may remove from here
+	// cacheAccessorMu *sync.RWMutex
+	httpClient ops.HTTPClient
+	MiType     ID
+	// Token    			*oauth.Client
+	// pmanager manager 	// todo :  expose the manager from base.
+	// cacheAccessor   		cache.ExportReplace
+}
+
+// clientOptions are optional settings for New(). These options are set using various functions
+// returning Option calls.
+type ClientOptions struct {
+	claims     string // bypasses cache, does nothing else
+	httpClient ops.HTTPClient
+	// disableInstanceDiscovery bool // always false
+	// clientId     string
+}
+
+// type withClaimsOption struct{ Claims string }
+// type withHTTPClientOption struct {
+// 	HttpClient ops.HTTPClient
+// }
+
+// Option is an optional argument to New().
+type Option interface{ apply(*ClientOptions) }
+
+// type ClientOptions interface{ ClientOption() }
+type AcquireTokenOptions struct {
+	Claims string
+}
+type AcquireTokenOption interface{ apply(*AcquireTokenOptions) }
+
+// Source represents the managed identity sources supported.
+
+func (w AcquireTokenOptions) AcquireTokenOption() {}
+func (w ClientOptions) ClientOptions()            {}
+
+// func (w *Client) apply(opts )
+func (w Client) apply(opts *ClientOptions) { w.httpClient = opts.httpClient }
 
 // WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
 // Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
@@ -101,8 +107,8 @@ func WithClaims(claims string) AcquireTokenOptions {
 }
 
 // WithHTTPClient allows for a custom HTTP client to be set.
-func WithHTTPClient(httpClient ops.HTTPClient) Option {
-	return withHTTPClientOption{HttpClient: httpClient}
+func WithHTTPClient(httpClient ops.HTTPClient) ClientOptions {
+	return ClientOptions{httpClient: httpClient}
 }
 
 // Client to be used to acquire tokens for managed identity.
@@ -112,7 +118,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 func New(id ID, options ...Option) (Client, error) {
 	fmt.Println("idType: ", id.value())
 
-	opts := clientOptions{ // work on this side where
+	opts := ClientOptions{ // work on this side where
 		httpClient: shared.DefaultClient,
 	}
 
@@ -121,7 +127,8 @@ func New(id ID, options ...Option) (Client, error) {
 	}
 
 	client := Client{ // TODO :: check for http client
-		MiType: id,
+		MiType:     id,
+		httpClient: opts.httpClient,
 	}
 
 	return client, nil
@@ -141,22 +148,22 @@ type responseJson struct {
 //
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
-func (client Client) AcquireToken(context context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
-	o := AcquireTokenOptions{}
+func (client Client) AcquireToken(context context.Context, resource string) (base.AuthResult, error) {
+	// o := AcquireTokenOptions{}
 
-	for _, option := range options {
-		option.apply(&o)
-	}
+	// for _, option := range options {
+	// 	option.apply(&o)
+	// }
 
 	if client.MiType == SystemAssigned() {
 		systemUrl := "http://169.254.169.254/metadata/identity/oauth2/token?api-version=2018-02-01"
 		var msiEndpoint *url.URL
-		msi_endpoint, err := url.Parse(systemUrl)
+		msiEndpoint, err := url.Parse(systemUrl)
 		if err != nil {
 			fmt.Println("Error creating URL: ", err)
 			return base.AuthResult{}, nil
 		}
-		msiParameters := msi_endpoint.Query()
+		msiParameters := msiEndpoint.Query()
 		msiParameters.Add("resource", "https://management.azure.com/")
 		msiEndpoint.RawQuery = msiParameters.Encode()
 		req, err := http.NewRequest(http.MethodGet, msiEndpoint.String(), nil)
