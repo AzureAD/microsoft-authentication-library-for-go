@@ -21,16 +21,17 @@ func TestServer(t *testing.T) {
 	defer cancel()
 
 	tests := []struct {
-		desc              string
-		reqState          string
-		port              int
-		q                 url.Values
-		failPage          bool
-		statusCode        int
-		successPage       []byte
-		errorPage         []byte
-		testTemplate      bool
-		testHTMLInjection bool
+		desc                  string
+		reqState              string
+		port                  int
+		q                     url.Values
+		failPage              bool
+		statusCode            int
+		successPage           []byte
+		errorPage             []byte
+		testTemplate          bool
+		testErrCodeXSS        bool
+		testErrDescriptionXSS bool
 	}{
 		{
 			desc:       "Error: Query Values has 'error' key",
@@ -113,13 +114,22 @@ func TestServer(t *testing.T) {
 			testTemplate: true,
 		},
 		{
-			desc:              "Error: Query Values missing 'state' key, using default fail error page - XSS test",
-			reqState:          "state",
-			port:              0,
-			q:                 url.Values{"error": []string{"<script>alert('this code snippet was executed')</script>"}, "error_description": []string{"error_description"}},
-			statusCode:        200,
-			testTemplate:      true,
-			testHTMLInjection: true,
+			desc:           "Error: Query Values missing 'state' key, using default fail error page - Error Code XSS test",
+			reqState:       "state",
+			port:           0,
+			q:              url.Values{"error": []string{"<script>alert('this code snippet was executed')</script>"}, "error_description": []string{"error_description"}},
+			statusCode:     200,
+			testTemplate:   true,
+			testErrCodeXSS: true,
+		},
+		{
+			desc:                  "Error: Query Values missing 'state' key, using default fail error page - Error Description XSS test",
+			reqState:              "state",
+			port:                  0,
+			q:                     url.Values{"error": []string{"error_code"}, "error_description": []string{"<script>alert('this code snippet was executed')</script>"}},
+			statusCode:            200,
+			testTemplate:          true,
+			testErrDescriptionXSS: true,
 		},
 	}
 
@@ -195,7 +205,7 @@ func TestServer(t *testing.T) {
 		}
 
 		if test.testTemplate {
-			if test.testHTMLInjection {
+			if test.testErrCodeXSS || test.testErrDescriptionXSS {
 				if !strings.Contains(string(content), "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;") {
 					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
 				}
