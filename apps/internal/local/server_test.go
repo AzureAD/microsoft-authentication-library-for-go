@@ -131,6 +131,26 @@ func TestServer(t *testing.T) {
 			testTemplate:          true,
 			testErrDescriptionXSS: true,
 		},
+		{
+			desc:           "Error: Query Values missing 'state' key, using optional fail error page - Error Code XSS test",
+			reqState:       "state",
+			port:           0,
+			q:              url.Values{"error": []string{"<script>alert('this code snippet was executed')</script>"}, "error_description": []string{"error_description"}},
+			statusCode:     200,
+			errorPage:      []byte("error: {{.Code}} error_description: {{.Err}}"),
+			testTemplate:   true,
+			testErrCodeXSS: true,
+		},
+		{
+			desc:                  "Error: Query Values missing 'state' key, using optional fail error page - Error Description XSS test",
+			reqState:              "state",
+			port:                  0,
+			q:                     url.Values{"error": []string{"error_code"}, "error_description": []string{"<script>alert('this code snippet was executed')</script>"}},
+			statusCode:            200,
+			errorPage:             []byte("error: {{.Code}} error_description: {{.Err}}"),
+			testTemplate:          true,
+			testErrDescriptionXSS: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -206,6 +226,13 @@ func TestServer(t *testing.T) {
 
 		if test.testTemplate {
 			if test.testErrCodeXSS || test.testErrDescriptionXSS {
+				if !strings.Contains(string(content), "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;") {
+					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
+				}
+				continue
+			}
+
+			if len(test.errorPage) > 0 && (test.testErrCodeXSS || test.testErrDescriptionXSS) {
 				if !strings.Contains(string(content), "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;") {
 					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
 				}
