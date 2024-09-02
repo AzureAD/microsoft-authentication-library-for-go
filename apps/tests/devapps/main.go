@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	//config        = CreateConfig("config.json")
+	config        = CreateConfig("config.json")
 	cacheAccessor = &TokenCache{file: "serialized_cache.json"}
 )
 
@@ -36,10 +36,9 @@ func main() {
 	} else if exampleType == "6" {
 		// This sample does not use a serialized cache - it relies on in-memory cache by reusing the app object
 		// This works well for app tokens, because there is only 1 token per resource, per tenant.
-		// acquireTokenClientCertificate()
-		println("Nothing to do in this option")
+		acquireTokenClientCertificate()
 		// this time the token comes from the cache!
-		// acquireTokenClientCertificate()
+		acquireTokenClientCertificate()
 	} else if exampleType == "7" {
 		RunManagedIdentity()
 	}
