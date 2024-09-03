@@ -23,42 +23,24 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
+// General request querry parameter names
 const (
 	MetaHTTPHeadderName               = "Metadata"
 	APIVersionQuerryParameterName     = "api-version"
 	ResourceBodyOrQuerryParameterName = "resource"
 )
 
+// UAMI querry parameter name
 const (
 	MIQuerryParameterClientId   = "client_id"
 	MIQuerryParameterObjectId   = "object_id"
 	MIQuerryParameterResourceId = "mi_res_id"
 )
 
-//	AZURE_POD_IDENTITY_AUTHORITY_HOST: "AZURE_POD_IDENTITY_AUTHORITY_HOST",
-//
-// IDENTITY_ENDPOINT: "IDENTITY_ENDPOINT",
-// IDENTITY_HEADER: "IDENTITY_HEADER",
-// IDENTITY_SERVER_THUMBPRINT: "IDENTITY_SERVER_THUMBPRINT",
-// IMDS_ENDPOINT: "IMDS_ENDPOINT",
-// MSI_ENDPOINT: "MSI_ENDPOINT",
-//     APP_SERVICE: "AppService",
-//
-// These are the MI source names
-// AZURE_ARC: "AzureArc",
-// CLOUD_SHELL: "CloudShell",
-// DEFAULT_TO_IMDS: "DefaultToImds",
-// IMDS: "Imds",
-// SERVICE_FABRIC: "ServiceFabric",
-
-// CouldShell
-// This also comes from enviourment point  :: ::
-const ()
-
 // Appservice
-// end point comes from enviournment variable ??  ?!?!?!?!?
+// end point comes from enviournment variable ??
 const (
-	AppServiceMSIEndPointVersion = "2019-08-01"
+	AppServiceMSIEndPointAPIVersion = "2019-08-01"
 )
 
 // Arc
@@ -69,8 +51,7 @@ const (
 
 // IMDS
 const (
-	IMDSTokenPath  = "/metadata/identity/oauth2/token"
-	IMDSEndpoint   = "http://169.254.169.254" + IMDSTokenPath
+	IMDSEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
 	IMDSAPIVersion = "2018-02-01"
 )
 
@@ -101,9 +82,6 @@ func (r ResourceID) value() string          { return string(r) }
 func SystemAssigned() ID {
 	return systemAssignedValue("")
 }
-
-//------------------
-//-- construction of the structues and the API's
 
 // Client is a client that provides access to Managed Identity token calls.
 type Client struct {
@@ -204,7 +182,7 @@ func (client Client) AcquireToken(context context.Context, resource string, opti
 		option(&o)
 	}
 
-	// try and find some resource which cna be accessed
+	// try and find some resource which can be accessed
 	// service fabric  GET
 	// app service  GET
 	// could shell  POST request
@@ -214,25 +192,41 @@ func (client Client) AcquireToken(context context.Context, resource string, opti
 	// Sources that send GET requests: App Service, Azure Arc, IMDS, Service Fabric
 	//
 	// Sources that send POST requests: Cloud Shell
-	if client.MiType == SystemAssigned() {
-		var msiEndpoint *url.URL
-		msiEndpoint, err := url.Parse(IMDSEndpoint)
-		if err != nil {
-			fmt.Println("Error creating URL: ", err)
-			return base.AuthResult{}, nil
-		}
-		msiParameters := msiEndpoint.Query()
-		msiParameters.Add("api-version", "2018-02-01")
-		msiParameters.Add("resource", resource)
-		msiEndpoint.RawQuery = msiParameters.Encode()
 
-		token, err := getTokenForURL(msiEndpoint, client.httpClient)
-		println("Access token :: ", token.AccessToken)
-		return base.NewAuthResult(token, shared.Account{})
+	var msiEndpoint *url.URL
+	msiEndpoint, err := url.Parse(IMDSEndpoint)
+	if err != nil {
+		fmt.Println("Error creating URL: ", err)
+		return base.AuthResult{}, nil
+	}
+	msiParameters := msiEndpoint.Query()
+	msiParameters.Add("api-version", "2018-02-01")
+	msiParameters.Add("resource", resource)
+
+	if len(o.Claims) > 0 {
+		msiParameters.Add("claims", o.Claims)
 	}
 
-	// all the other options.
-	return base.AuthResult{}, nil
+	switch client.MiType.(type) {
+	case ClientID:
+		msiParameters.Add(MIQuerryParameterClientId, client.MiType.value())
+	case ResourceID:
+		msiParameters.Add(MIQuerryParameterResourceId, client.MiType.value())
+	case ObjectID:
+		msiParameters.Add(MIQuerryParameterObjectId, client.MiType.value())
+	case systemAssignedValue: // not adding anything
+	default:
+		return base.AuthResult{}, fmt.Errorf("Type not suported")
+
+	}
+
+	msiEndpoint.RawQuery = msiParameters.Encode()
+	token, err := getTokenForURL(msiEndpoint, client.httpClient)
+	if err != nil {
+		return base.AuthResult{}, fmt.Errorf("URL not formed")
+	}
+	println("Access token **  ", token.AccessToken)
+	return base.NewAuthResult(token, shared.Account{})
 }
 
 // Detects and returns the managed identity source available on the environment.
