@@ -34,7 +34,7 @@ const (
 const (
 	miQuerryParameterClientId   = "client_id"
 	miQuerryParameterObjectId   = "object_id"
-	miQuerryParameterResourceId = "mi_res_id"
+	miQuerryParameterResourceId = "msi_res_id"
 )
 
 // IMDS
