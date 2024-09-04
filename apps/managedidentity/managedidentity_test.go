@@ -32,13 +32,22 @@ func (*errorClient) Do(req *http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("expected no requests but received one for %s", req.URL.String())
 }
 
-type fakeClient struct{}
+type FakeClient struct {
+	responseType int
+}
 
-func (*fakeClient) CloseIdleConnections() {}
-func (*fakeClient) Do(req *http.Request) (*http.Response, error) {
-	w := http.Response{
-		StatusCode: http.StatusOK,
-		Body: io.NopCloser(strings.NewReader(`{
+func (c *FakeClient) CloseIdleConnections() {}
+func (c *FakeClient) Do(req *http.Request) (*http.Response, error) {
+	println(c.responseType)
+	w := makeResponse(c.responseType)
+	return &w, nil
+}
+
+func makeResponse(responseType int) http.Response {
+	if responseType == 1 {
+		return http.Response{
+			StatusCode: http.StatusOK,
+			Body: io.NopCloser(strings.NewReader(`{
       "access_token": "fakeToken",
       "refresh_token": "",
       "expires_in": "3599",
@@ -46,13 +55,18 @@ func (*fakeClient) Do(req *http.Request) (*http.Response, error) {
       "not_before": "1506480273",
       "token_type": "Bearer"
     }`)),
-		Header: make(http.Header),
+			Header: make(http.Header),
+		}
+	} else {
+		return http.Response{
+			StatusCode: http.StatusBadRequest,
+			Body:       io.NopCloser(strings.NewReader(`{}`)),
+			Header:     make(http.Header),
+		}
 	}
-	return &w, nil
 }
-
 func TestManagedIdentityIMDS_SAMISuccess(t *testing.T) {
-	fakeHTTPClient := fakeClient{}
+	fakeHTTPClient := FakeClient{responseType: 1}
 
 	client, err := fakeMIClient(SystemAssigned(), WithHTTPClient(&fakeHTTPClient))
 
@@ -63,7 +77,7 @@ func TestManagedIdentityIMDS_SAMISuccess(t *testing.T) {
 	result, err := client.AcquireToken(context.Background(), "fakeresource")
 
 	if err != nil {
-		t.Errorf("TestManagedIdentity: unexpected nil error from TestManagedIdentity")
+		t.Fatal("TestManagedIdentity: unexpected nil error from TestManagedIdentity")
 	}
 
 	expected := accesstokens.TokenResponse{
@@ -77,6 +91,22 @@ func TestManagedIdentityIMDS_SAMISuccess(t *testing.T) {
 	}
 
 }
+
+func TestManagedIdentityIMDS_SAMIHttpRequestFailure(t *testing.T) {
+	fakeHTTPClient := FakeClient{responseType: 2}
+
+	client, err := fakeMIClient(SystemAssigned(), WithHTTPClient(&fakeHTTPClient))
+
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.AcquireToken(context.Background(), "fakeresource"); err == nil {
+		t.Fatal("TestManagedIdentity: Should have returned error for incorrect http request.")
+	}
+
+}
+
 func TestManagedIdentityIMDS_SAMIError(t *testing.T) {
 	fakeHTTPClient := errorClient{}
 
@@ -87,7 +117,7 @@ func TestManagedIdentityIMDS_SAMIError(t *testing.T) {
 	}
 
 	if _, err := client.AcquireToken(context.Background(), "fakeresource"); err == nil {
-		t.Errorf("TestManagedIdentity: Should have returned error for incorrect http request.")
+		t.Fatal("TestManagedIdentity: Should have returned error for incorrect http request.")
 	}
 
 }
