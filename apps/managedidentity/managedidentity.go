@@ -16,6 +16,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
@@ -34,7 +35,7 @@ const (
 const (
 	miQuerryParameterClientId   = "client_id"
 	miQuerryParameterObjectId   = "object_id"
-	miQuerryParameterResourceId = "mi_res_id"
+	miQuerryParameterResourceId = "msi_res_id"
 )
 
 // IMDS
@@ -105,7 +106,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
-	opts := ClientOptions{ // work on this side where
+	opts := ClientOptions{
 		httpClient: shared.DefaultClient,
 	}
 
@@ -121,11 +122,58 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	return client, nil
 }
 
-func getTokenForURL(url *url.URL, httpClient ops.HTTPClient) (accesstokens.TokenResponse, error) {
-	req, err := http.NewRequest(http.MethodGet, url.String(), nil)
+func createIMDSAuthRequest(_ context.Context, id ID, resource string, claims string) (*http.Request, error) {
+	var msiEndpoint *url.URL
+	msiEndpoint, err := url.Parse(imdsEndpoint)
 	if err != nil {
-		return accesstokens.TokenResponse{}, err
+		return &http.Request{}, fmt.Errorf("Error creating URL as parsing the URL filed")
 	}
+
+	msiParameters := msiEndpoint.Query()
+	msiParameters.Add(apiVersionQuerryParameterName, "2018-02-01")
+
+	resource = removeSuffix(resource, "/.default")
+	print(resource)
+	msiParameters.Add(resourceQuerryParameterName, resource)
+
+	if len(claims) > 0 {
+		msiParameters.Add("claims", claims)
+	}
+
+	switch t := id.(type) {
+	case ClientID:
+		if len(string(t)) > 0 {
+			msiParameters.Add(miQuerryParameterClientId, string(t))
+		} else {
+			return &http.Request{}, fmt.Errorf("ClientId parameter is empty for %T", t)
+		}
+	case ResourceID:
+		if len(string(t)) > 0 {
+			msiParameters.Add(miQuerryParameterResourceId, string(t))
+		} else {
+			return &http.Request{}, fmt.Errorf("ResourceID parameter is empty for %T", t)
+		}
+	case ObjectID:
+		if len(string(t)) > 0 {
+			msiParameters.Add(miQuerryParameterObjectId, string(t))
+		} else {
+			return &http.Request{}, fmt.Errorf("ObjectID parameter is empty for %T", t)
+		}
+	case systemAssignedValue: // not adding anything
+	default:
+		return &http.Request{}, fmt.Errorf("unsupported type %T", id)
+	}
+
+	msiEndpoint.RawQuery = msiParameters.Encode()
+	fmt.Println(msiEndpoint)
+	req, err := http.NewRequest(http.MethodGet, msiEndpoint.String(), nil)
+	if err != nil {
+		return &http.Request{}, fmt.Errorf("Error creating request")
+	}
+	return req, nil
+}
+
+func getTokenForRequest(_ context.Context, req *http.Request, httpClient ops.HTTPClient) (accesstokens.TokenResponse, error) {
 	req.Header.Add(metaHTTPHeadderName, "true")
 
 	resp, err := httpClient.Do(req)
@@ -149,49 +197,32 @@ func getTokenForURL(url *url.URL, httpClient ops.HTTPClient) (accesstokens.Token
 		return accesstokens.TokenResponse{}, err
 	}
 	return r, nil
+}
 
+// RemoveSuffix removes the specified 'suffix' from 'str' if it exists.
+func removeSuffix(str, suffix string) string {
+	if strings.HasSuffix(str, suffix) {
+		return str[:len(str)-len(suffix)] // Remove the suffix if it exists
+	}
+	return str // Return the original string if suffix doesn't exist
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
-func (client Client) AcquireToken(context context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
 	o := AcquireTokenOptions{}
 
 	for _, option := range options {
 		option(&o)
 	}
-
-	var msiEndpoint *url.URL
-	msiEndpoint, err := url.Parse(imdsEndpoint)
+	req, err := createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
 	if err != nil {
 		fmt.Println("Error creating URL: ", err)
-		return base.AuthResult{}, nil
+		return base.AuthResult{}, fmt.Errorf("Error while creating request")
 	}
-	msiParameters := msiEndpoint.Query()
-	msiParameters.Add(apiVersionQuerryParameterName, "2018-02-01")
-	msiParameters.Add(resourceQuerryParameterName, resource)
-
-	if len(o.claims) > 0 {
-		msiParameters.Add("claims", o.claims)
-	}
-
-	switch client.miType.(type) {
-	case ClientID:
-		msiParameters.Add(miQuerryParameterClientId, client.miType.value())
-	case ResourceID:
-		msiParameters.Add(miQuerryParameterResourceId, client.miType.value())
-	case ObjectID:
-		msiParameters.Add(miQuerryParameterObjectId, client.miType.value())
-	case systemAssignedValue: // not adding anything
-	default:
-		return base.AuthResult{}, fmt.Errorf("unsupported type %T", client.miType)
-
-	}
-
-	msiEndpoint.RawQuery = msiParameters.Encode()
-	tokenResponse, err := getTokenForURL(msiEndpoint, client.httpClient)
+	tokenResponse, err := getTokenForRequest(ctx, req, client.httpClient)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
