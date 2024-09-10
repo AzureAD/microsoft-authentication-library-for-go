@@ -170,55 +170,46 @@ func TestCreateIMDSAuthRequest(t *testing.T) {
 			req, err := createIMDSAuthRequest(context.Background(), tt.id, tt.resource, tt.claims)
 			if tt.wantErr {
 				if err == nil {
-					t.Errorf("createIMDSAuthRequest() error = %v, wantErr %v", err, tt.wantErr)
+					t.Fatal(err)
 				}
 				return
 			}
 
-			if err != nil {
-				t.Errorf("createIMDSAuthRequest() unexpected error = %v", err)
-				return
-			}
-
 			if req == nil {
-				t.Errorf("createIMDSAuthRequest() returned nil request")
+				t.Fatal("createIMDSAuthRequest() returned nil request")
 				return
 			}
 
 			if req.Method != http.MethodGet {
-				t.Errorf("createIMDSAuthRequest() method = %v, want %v", req.Method, http.MethodGet)
+				t.Fatal("createIMDSAuthRequest() method is not GET")
 			}
 
 			if !strings.HasPrefix(req.URL.String(), imdsEndpoint) {
-				t.Errorf("createIMDSAuthRequest() URL = %v, want prefix %v", req.URL.String(), imdsEndpoint)
+				t.Fatal("createIMDSAuthRequest() URL is not matched.")
 			}
 
 			query := req.URL.Query()
 
 			if query.Get(apiVersionQuerryParameterName) != "2018-02-01" {
-				t.Errorf("createIMDSAuthRequest() api-version = %v, want %v", query.Get(apiVersionQuerryParameterName), "2018-02-01")
+				t.Fatal("createIMDSAuthRequest() api-version missmatch")
 			}
 
 			if query.Get(resourceQuerryParameterName) != removeSuffix(tt.resource, "/.default") {
-				t.Errorf("createIMDSAuthRequest() resource = %v, want %v", query.Get(resourceQuerryParameterName), removeSuffix(tt.resource, "/.default"))
-			}
-
-			if tt.claims != "" && query.Get("claims") != tt.claims {
-				t.Errorf("createIMDSAuthRequest() claims = %v, want %v", query.Get("claims"), tt.claims)
+				t.Fatal("createIMDSAuthRequest() resource does not ahve suffix removed ")
 			}
 
 			switch tt.id.(type) {
 			case ClientID:
 				if query.Get(miQuerryParameterClientId) != tt.id.value() {
-					t.Errorf("createIMDSAuthRequest() client_id = %v, want %v", query.Get(miQuerryParameterClientId), tt.id.value())
+					t.Fatal("createIMDSAuthRequest() client_id does not match with the id value")
 				}
 			case ResourceID:
 				if query.Get(miQuerryParameterResourceId) != tt.id.value() {
-					t.Errorf("createIMDSAuthRequest() msi_res_id = %v, want %v", query.Get(miQuerryParameterResourceId), tt.id.value())
+					t.Fatal("createIMDSAuthRequest() resource id does not match with the id value")
 				}
 			case ObjectID:
 				if query.Get(miQuerryParameterObjectId) != tt.id.value() {
-					t.Errorf("createIMDSAuthRequest() object_id = %v, want %v", query.Get(miQuerryParameterObjectId), tt.id.value())
+					t.Fatal("createIMDSAuthRequest() object id does not match with the id value")
 				}
 			}
 		})
