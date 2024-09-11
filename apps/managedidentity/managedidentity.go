@@ -150,7 +150,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	return client, nil
 }
 
-func createIMDSAuthRequest(_ context.Context, id ID, resource string, claims string) (*http.Request, error) {
+func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
 	var msiEndpoint *url.URL
 	msiEndpoint, err := url.Parse(imdsEndpoint)
 	if err != nil {
@@ -193,14 +193,14 @@ func createIMDSAuthRequest(_ context.Context, id ID, resource string, claims str
 	}
 
 	msiEndpoint.RawQuery = msiParameters.Encode()
-	req, err := http.NewRequest(http.MethodGet, msiEndpoint.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
 	if err != nil {
 		return nil, errors.New("error creating request")
 	}
 	return req, nil
 }
 
-func getTokenForRequest(ctx context.Context, req *http.Request, httpClient ops.HTTPClient) (accesstokens.TokenResponse, error) {
+func getTokenForRequest(req *http.Request, httpClient ops.HTTPClient) (accesstokens.TokenResponse, error) {
 	req.Header.Add(metaHTTPHeadderName, "true")
 	resp, err := httpClient.Do(req)
 	if err != nil {
