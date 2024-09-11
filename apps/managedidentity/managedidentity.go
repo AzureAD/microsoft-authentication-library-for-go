@@ -12,6 +12,7 @@ package managedidentity
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -22,6 +23,14 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+)
+
+const (
+	DefaultToIMDS Source = 0
+	AzureArc      Source = 1
+	ServiceFabric Source = 2
+	CloudShell    Source = 3
+	AppService    Source = 4
 )
 
 // General request querry parameter names
@@ -51,6 +60,25 @@ const (
 	// AzureArc represents the source to acquire token for managed identity is Azure Arc.
 	azureArc = 1
 )
+
+type Source int
+
+func (s Source) String() string {
+	switch s {
+	case DefaultToIMDS:
+		return "DefaultToIMDS"
+	case AzureArc:
+		return "AzureArc"
+	case ServiceFabric:
+		return "ServiceFabric"
+	case CloudShell:
+		return "CloudShell"
+	case AppService:
+		return "AppService"
+	default:
+		return fmt.Sprintf("UnknownSource(%d)", s)
+	}
+}
 
 type ID interface {
 	value() string
@@ -126,14 +154,14 @@ func createIMDSAuthRequest(_ context.Context, id ID, resource string, claims str
 	var msiEndpoint *url.URL
 	msiEndpoint, err := url.Parse(imdsEndpoint)
 	if err != nil {
-		return &http.Request{}, fmt.Errorf("Error creating URL as parsing the URL filed")
+		return nil, errors.New("error creating URL as parsing the URL filed")
 	}
 
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Add(apiVersionQuerryParameterName, "2018-02-01")
 
-	resource = removeSuffix(resource, "/.default")
-	print(resource)
+	resource = strings.TrimSuffix(resource, "/.default")
+
 	msiParameters.Add(resourceQuerryParameterName, resource)
 
 	if len(claims) > 0 {
@@ -145,43 +173,41 @@ func createIMDSAuthRequest(_ context.Context, id ID, resource string, claims str
 		if len(string(t)) > 0 {
 			msiParameters.Add(miQuerryParameterClientId, string(t))
 		} else {
-			return &http.Request{}, fmt.Errorf("ClientId parameter is empty for %T", t)
+			return nil, fmt.Errorf("clientId parameter is empty for %T", t)
 		}
 	case ResourceID:
 		if len(string(t)) > 0 {
 			msiParameters.Add(miQuerryParameterResourceId, string(t))
 		} else {
-			return &http.Request{}, fmt.Errorf("ResourceID parameter is empty for %T", t)
+			return nil, fmt.Errorf("resourceID parameter is empty for %T", t)
 		}
 	case ObjectID:
 		if len(string(t)) > 0 {
 			msiParameters.Add(miQuerryParameterObjectId, string(t))
 		} else {
-			return &http.Request{}, fmt.Errorf("ObjectID parameter is empty for %T", t)
+			return nil, fmt.Errorf("objectID parameter is empty for %T", t)
 		}
 	case systemAssignedValue: // not adding anything
 	default:
-		return &http.Request{}, fmt.Errorf("unsupported type %T", id)
+		return nil, fmt.Errorf("unsupported type %T", id)
 	}
 
 	msiEndpoint.RawQuery = msiParameters.Encode()
-	fmt.Println(msiEndpoint)
 	req, err := http.NewRequest(http.MethodGet, msiEndpoint.String(), nil)
 	if err != nil {
-		return &http.Request{}, fmt.Errorf("Error creating request")
+		return nil, errors.New("error creating request")
 	}
 	return req, nil
 }
 
-func getTokenForRequest(_ context.Context, req *http.Request, httpClient ops.HTTPClient) (accesstokens.TokenResponse, error) {
+func getTokenForRequest(ctx context.Context, req *http.Request, httpClient ops.HTTPClient) (accesstokens.TokenResponse, error) {
 	req.Header.Add(metaHTTPHeadderName, "true")
-
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return accesstokens.TokenResponse{}, fmt.Errorf("Error code was non Ok %T ", resp.StatusCode)
+		return accesstokens.TokenResponse{}, fmt.Errorf("failed to authenticate with status code %d ", resp.StatusCode)
 	}
 	// Pull out response body
 	responseBytes, err := io.ReadAll(resp.Body)
@@ -199,14 +225,6 @@ func getTokenForRequest(_ context.Context, req *http.Request, httpClient ops.HTT
 	return r, nil
 }
 
-// RemoveSuffix removes the specified 'suffix' from 'str' if it exists.
-func removeSuffix(str, suffix string) string {
-	if strings.HasSuffix(str, suffix) {
-		return str[:len(str)-len(suffix)] // Remove the suffix if it exists
-	}
-	return str // Return the original string if suffix doesn't exist
-}
-
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
@@ -219,8 +237,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	}
 	req, err := createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
 	if err != nil {
-		fmt.Println("Error creating URL: ", err)
-		return base.AuthResult{}, fmt.Errorf("Error while creating request")
+		return base.AuthResult{}, errors.New("error while creating request")
 	}
 	tokenResponse, err := getTokenForRequest(ctx, req, client.httpClient)
 	if err != nil {
