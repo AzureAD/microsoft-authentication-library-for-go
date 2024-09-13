@@ -12,13 +12,13 @@ package managedidentity
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/url"
 	"strings"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -26,6 +26,7 @@ import (
 )
 
 const (
+	// DefaultToIMDS indicates that the source is defaulted to IMDS when no environment variables are set.
 	DefaultToIMDS Source = 0
 	AzureArc      Source = 1
 	ServiceFabric Source = 2
@@ -51,14 +52,6 @@ const (
 const (
 	imdsEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
 	imdsAPIVersion = "2018-02-01"
-)
-
-const (
-	// DefaultToIMDS indicates that the source is defaulted to IMDS since no environment variables are set.
-	defaultToIMDS = 0
-
-	// AzureArc represents the source to acquire token for managed identity is Azure Arc.
-	azureArc = 1
 )
 
 type Source int
@@ -114,7 +107,7 @@ type ClientOption func(o *ClientOptions)
 
 type AcquireTokenOption func(o *AcquireTokenOptions)
 
-// WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
+// WithClaims sets additional claims to request for the token, such as those required by token revocation or conditional access policies.
 // Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
 func WithClaims(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
@@ -141,7 +134,23 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
-
+	switch t := id.(type) {
+	case ClientID:
+		if len(string(t)) == 0 {
+			return Client{}, fmt.Errorf("clientId parameter is empty for %T", t)
+		}
+	case ResourceID:
+		if len(string(t)) == 0 {
+			return Client{}, fmt.Errorf("resourceID parameter is empty for %T", t)
+		}
+	case ObjectID:
+		if len(string(t)) == 0 {
+			return Client{}, fmt.Errorf("objectID parameter is empty for %T", t)
+		}
+	case systemAssignedValue:
+	default:
+		return Client{}, fmt.Errorf("unsupported type %T", id)
+	}
 	client := Client{
 		miType:     id,
 		httpClient: opts.httpClient,
@@ -154,14 +163,11 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	var msiEndpoint *url.URL
 	msiEndpoint, err := url.Parse(imdsEndpoint)
 	if err != nil {
-		return nil, errors.New("error creating URL as parsing the URL filed")
+		return nil, fmt.Errorf("error creating URL \n %s", err.Error())
 	}
-
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Add(apiVersionQuerryParameterName, "2018-02-01")
-
 	resource = strings.TrimSuffix(resource, "/.default")
-
 	msiParameters.Add(resourceQuerryParameterName, resource)
 
 	if len(claims) > 0 {
@@ -170,23 +176,11 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 
 	switch t := id.(type) {
 	case ClientID:
-		if len(string(t)) > 0 {
-			msiParameters.Add(miQuerryParameterClientId, string(t))
-		} else {
-			return nil, fmt.Errorf("clientId parameter is empty for %T", t)
-		}
+		msiParameters.Add(miQuerryParameterClientId, string(t))
 	case ResourceID:
-		if len(string(t)) > 0 {
-			msiParameters.Add(miQuerryParameterResourceId, string(t))
-		} else {
-			return nil, fmt.Errorf("resourceID parameter is empty for %T", t)
-		}
+		msiParameters.Add(miQuerryParameterResourceId, string(t))
 	case ObjectID:
-		if len(string(t)) > 0 {
-			msiParameters.Add(miQuerryParameterObjectId, string(t))
-		} else {
-			return nil, fmt.Errorf("objectID parameter is empty for %T", t)
-		}
+		msiParameters.Add(miQuerryParameterObjectId, string(t))
 	case systemAssignedValue: // not adding anything
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)
@@ -195,28 +189,43 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	msiEndpoint.RawQuery = msiParameters.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
 	if err != nil {
-		return nil, errors.New("error creating request")
+		return nil, fmt.Errorf("error creating http request %s", err)
 	}
+	req.Header.Add(metaHTTPHeadderName, "true")
 	return req, nil
 }
 
-func getTokenForRequest(req *http.Request, httpClient ops.HTTPClient) (accesstokens.TokenResponse, error) {
-	req.Header.Add(metaHTTPHeadderName, "true")
-	resp, err := httpClient.Do(req)
+func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
+	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	if resp.StatusCode != http.StatusOK {
-		return accesstokens.TokenResponse{}, fmt.Errorf("failed to authenticate with status code %d ", resp.StatusCode)
-	}
-	// Pull out response body
 	responseBytes, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-
-	// Unmarshall response body into struct
+	switch resp.StatusCode {
+	case 200, 201:
+	default:
+		sd := strings.TrimSpace(string(responseBytes))
+		if sd != "" {
+			return accesstokens.TokenResponse{}, errors.CallErr{
+				Req:  req,
+				Resp: resp,
+				Err: fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s",
+					req.URL.String(),
+					req.Method,
+					resp.StatusCode,
+					sd),
+			}
+		}
+		return accesstokens.TokenResponse{}, errors.CallErr{
+			Req:  req,
+			Resp: resp,
+			Err:  fmt.Errorf("http call(%s)(%s) error: reply status code was %d", req.URL.String(), req.Method, resp.StatusCode),
+		}
+	}
 	var r accesstokens.TokenResponse
 	err = json.Unmarshal(responseBytes, &r)
 	if err != nil {
@@ -237,9 +246,9 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	}
 	req, err := createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
 	if err != nil {
-		return base.AuthResult{}, errors.New("error while creating request")
+		return base.AuthResult{}, err
 	}
-	tokenResponse, err := getTokenForRequest(ctx, req, client.httpClient)
+	tokenResponse, err := client.getTokenForRequest(req)
 	if err != nil {
 		return base.AuthResult{}, err
 	}

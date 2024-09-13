@@ -14,6 +14,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 )
@@ -74,7 +75,7 @@ func (*fakeClient) Do(req *http.Request) (*http.Response, error) {
 func (e *errorClient) Do(req *http.Request) (*http.Response, error) {
 	w := http.Response{
 		StatusCode: e.errResponse.StatusCode,
-		Body:       io.NopCloser(strings.NewReader(makeResponseWithErrorData(e.errResponse))),
+		Body:       io.NopCloser(strings.NewReader(e.errResponse.Message)),
 		Header:     make(http.Header),
 	}
 	return &w, nil
@@ -98,36 +99,6 @@ func makeResponseWithErrorData(errRsp ErrorResponse) string {
 		StatusCode:    errRsp.StatusCode,
 		Message:       errRsp.Message,
 		CorrelationID: errRsp.CorrelationID,
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return string(jsonResponse)
-}
-
-func getMsiErrorResponse() string {
-	response := ErrorResponse{
-		StatusCode:    500,
-		Message:       "An unexpected error occurred while fetching the AAD Token.",
-		CorrelationID: "7d0c9763-ff1d-4842-a3f3-6d49e64f4513",
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return string(jsonResponse)
-}
-
-func getMsiErrorResponseNotFound() string {
-	response := ErrorResponse{
-		StatusCode:    500,
-		Message:       "An unexpected error occurred while fetching the AAD Token.",
-		CorrelationID: "7d0c9763-ff1d-4842-a3f3-6d49e64f4513",
-	}
-	jsonResponse, _ := json.Marshal(response)
-	return string(jsonResponse)
-}
-
-func getMsiErrorResponseNoRetry() string {
-	response := ErrorResponse{
-		StatusCode:    123,
-		Message:       "Not one of the retryable error responses",
-		CorrelationID: "7d0c9763-ff1d-4842-a3f3-6d49e64f4513",
 	}
 	jsonResponse, _ := json.Marshal(response)
 	return string(jsonResponse)
@@ -212,33 +183,39 @@ func createResourceData() []resourceTestData {
 
 func Test_SystemAssigned_Returns_Token_Failure(t *testing.T) {
 	testCases := []ErrorResponse{
-		{StatusCode: 404, Message: "IMDS service not available", CorrelationID: "121212"},
-		{StatusCode: 501, Message: "Service error 1", CorrelationID: "121212"},
-		{StatusCode: 503, Message: "Service error 2", CorrelationID: "121212"},
-		{StatusCode: 400, Message: "invalid id", CorrelationID: "121212"},
+		{StatusCode: http.StatusNotFound, Message: ``, CorrelationID: "121212"},
+		{StatusCode: http.StatusNotImplemented, Message: ``, CorrelationID: "121212"},
+		{StatusCode: http.StatusServiceUnavailable, Message: ``, CorrelationID: "121212"},
+		{StatusCode: http.StatusBadRequest,
+			Message:       `{"error": "invalid_request", "error_description": "Identity not found"}`,
+			CorrelationID: "121212",
+		},
 	}
 
 	for _, testCase := range testCases {
 		t.Run(strconv.Itoa(testCase.StatusCode), func(t *testing.T) {
 			fakeErrorClient := errorClient{errResponse: testCase}
 			client, err := fakeMIClient(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
-
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			resp, err := client.AcquireToken(context.Background(), resource)
-
-			if resp.AccessToken != "" {
-				t.Fatalf("testManagedIdentity: accesstoken should be nil")
-			}
 			if err == nil {
 				t.Fatalf("testManagedIdentity: Should have encountered the error")
 			}
-			if err.Error() != fmt.Errorf("failed to authenticate with status code %d ", testCase.StatusCode).Error() {
-				t.Fatalf(`unexpected error "%s"`, err)
-
+			switch e := err.(type) {
+			case errors.CallErr:
+				if actual := err.Error(); !strings.Contains(e.Error(), testCase.Message) {
+					t.Fatalf("testManagedIdentity: expected response body in error, got %q", actual)
+				}
+				if e.Resp.StatusCode != testCase.StatusCode {
+					t.Fatal("testManagedIdentity: got unexpected status code.")
+				}
 			}
+			if resp.AccessToken != "" {
+				t.Fatalf("testManagedIdentity: accesstoken should be nil")
+			}
+
 		})
 	}
 }
@@ -276,6 +253,65 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 	}
 }
 
+func TestCreatingIMDSClient(t *testing.T) {
+	tests := []struct {
+		name    string
+		id      ID
+		wantErr bool
+	}{
+		{
+			name: "System Assigned",
+			id:   SystemAssigned(),
+		},
+		{
+			name: "Client ID",
+			id:   ClientID("test-client-id"),
+		},
+		{
+			name: "Resource ID",
+			id:   ResourceID("test-resource-id"),
+		},
+		{
+			name: "Object ID",
+			id:   ObjectID("test-object-id"),
+		},
+		{
+			name:    "Empty Client ID",
+			id:      ClientID(""),
+			wantErr: true,
+		},
+		{
+			name:    "Empty Resource ID",
+			id:      ResourceID(""),
+			wantErr: true,
+		},
+		{
+			name:    "Empty Object ID",
+			id:      ObjectID(""),
+			wantErr: true,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := New(tt.id)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("client New() should return a error but did not.")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal("client New() error while creating client")
+			} else {
+				if client.miType.value() != tt.id.value() {
+					t.Fatal("client New() did not assign a correct value to type.")
+				}
+			}
+		})
+	}
+
+}
 func TestCreateIMDSAuthRequest(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -288,69 +324,36 @@ func TestCreateIMDSAuthRequest(t *testing.T) {
 			name:     "System Assigned",
 			id:       SystemAssigned(),
 			resource: "https://management.azure.com",
-			claims:   "",
-			wantErr:  false,
 		},
 		{
 			name:     "System Assigned",
 			id:       SystemAssigned(),
 			resource: "https://management.azure.com/.default",
-			claims:   "",
-			wantErr:  false,
 		},
 		{
 			name:     "Client ID",
 			id:       ClientID("test-client-id"),
 			resource: "https://storage.azure.com",
-			claims:   "",
-			wantErr:  false,
 		},
 		{
 			name:     "Resource ID",
 			id:       ResourceID("test-resource-id"),
 			resource: "https://vault.azure.net",
-			claims:   "",
-			wantErr:  false,
 		},
 		{
 			name:     "Object ID",
 			id:       ObjectID("test-object-id"),
 			resource: "https://graph.microsoft.com",
-			claims:   "",
-			wantErr:  false,
 		},
 		{
 			name:     "With Claims",
 			id:       SystemAssigned(),
 			resource: "https://management.azure.com",
 			claims:   "test-claims",
-			wantErr:  false,
-		},
-		{
-			name:     "Empty Client ID",
-			id:       ClientID(""),
-			resource: "https://management.azure.com",
-			claims:   "",
-			wantErr:  true,
-		},
-		{
-			name:     "Empty Resource ID",
-			id:       ResourceID(""),
-			resource: "https://management.azure.com",
-			claims:   "",
-			wantErr:  true,
-		},
-		{
-			name:     "Empty Object ID",
-			id:       ObjectID(""),
-			resource: "https://management.azure.com",
-			claims:   "",
-			wantErr:  true,
 		},
 	}
 
 	for _, tt := range tests {
-		t.Log("0------")
 		t.Run(tt.name, func(t *testing.T) {
 			req, err := createIMDSAuthRequest(context.Background(), tt.id, tt.resource, tt.claims)
 			if tt.wantErr {
@@ -359,44 +362,43 @@ func TestCreateIMDSAuthRequest(t *testing.T) {
 				}
 				return
 			}
-
 			if req == nil {
 				t.Fatal("createIMDSAuthRequest() returned nil request")
 				return
 			}
-
 			if req.Method != http.MethodGet {
 				t.Fatal("createIMDSAuthRequest() method is not GET")
 			}
-
 			if !strings.HasPrefix(req.URL.String(), imdsEndpoint) {
 				t.Fatal("createIMDSAuthRequest() URL is not matched.")
 			}
-
 			query := req.URL.Query()
 
 			if query.Get(apiVersionQuerryParameterName) != "2018-02-01" {
 				t.Fatal("createIMDSAuthRequest() api-version missmatch")
 			}
-
 			if query.Get(resourceQuerryParameterName) != strings.TrimSuffix(tt.resource, "/.default") {
 				t.Fatal("createIMDSAuthRequest() resource does not ahve suffix removed ")
 			}
-
-			switch tt.id.(type) {
+			switch i := tt.id.(type) {
 			case ClientID:
-				if query.Get(miQuerryParameterClientId) != tt.id.value() {
-					t.Fatal("createIMDSAuthRequest() client_id does not match with the id value")
+				if query.Get(miQuerryParameterClientId) != i.value() {
+					t.Fatal("createIMDSAuthRequest() resource client-id is incorrect")
 				}
 			case ResourceID:
-				if query.Get(miQuerryParameterResourceId) != tt.id.value() {
-					t.Fatal("createIMDSAuthRequest() resource id does not match with the id value")
+				if query.Get(miQuerryParameterResourceId) != i.value() {
+					t.Fatal("createIMDSAuthRequest() resource resource-id is incorrect")
 				}
 			case ObjectID:
-				if query.Get(miQuerryParameterObjectId) != tt.id.value() {
-					t.Fatal("createIMDSAuthRequest() object id does not match with the id value")
+				if query.Get(miQuerryParameterObjectId) != i.value() {
+					t.Fatal("createIMDSAuthRequest() resource objectiid is incorrect")
 				}
+			case systemAssignedValue: // not adding anything
+			default:
+				t.Fatal("createIMDSAuthRequest() unsupported type")
+
 			}
+
 		})
 	}
 }
