@@ -144,7 +144,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 	testCases := createResourceData()
 	for _, testCase := range testCases {
 
-		t.Run(testCase.source.String(), func(t *testing.T) {
+		t.Run(string(testCase.source), func(t *testing.T) {
 			var url string
 			mockClient := mock.Client{}
 			mockClient.AppendCustomResponse(http.StatusOK, mock.WithBody(getSuccessfulResponse(resource)), mock.WithCallback(func(r *http.Request) { url = r.URL.String() }))
