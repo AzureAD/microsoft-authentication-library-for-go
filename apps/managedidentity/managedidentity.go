@@ -27,11 +27,11 @@ import (
 
 const (
 	// DefaultToIMDS indicates that the source is defaulted to IMDS when no environment variables are set.
-	DefaultToIMDS Source = 0
-	AzureArc      Source = 1
-	ServiceFabric Source = 2
-	CloudShell    Source = 3
-	AppService    Source = 4
+	DefaultToIMDS Source = "DefaultToIMDS"
+	AzureArc      Source = "AzureArc"
+	ServiceFabric Source = "ServiceFabric"
+	CloudShell    Source = "CloudShell"
+	AppService    Source = "AppService"
 )
 
 // General request querry parameter names
@@ -54,24 +54,7 @@ const (
 	imdsAPIVersion = "2018-02-01"
 )
 
-type Source int
-
-func (s Source) String() string {
-	switch s {
-	case DefaultToIMDS:
-		return "DefaultToIMDS"
-	case AzureArc:
-		return "AzureArc"
-	case ServiceFabric:
-		return "ServiceFabric"
-	case CloudShell:
-		return "CloudShell"
-	case AppService:
-		return "AppService"
-	default:
-		return fmt.Sprintf("UnknownSource(%d)", s)
-	}
-}
+type Source string
 
 type ID interface {
 	value() string
@@ -93,6 +76,7 @@ func SystemAssigned() ID {
 type Client struct {
 	httpClient ops.HTTPClient
 	miType     ID
+	source     Source
 }
 
 type ClientOptions struct {
@@ -206,7 +190,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 		return accesstokens.TokenResponse{}, err
 	}
 	switch resp.StatusCode {
-	case 200, 201:
+	case http.StatusOK, http.StatusAccepted:
 	default:
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
@@ -228,10 +212,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	}
 	var r accesstokens.TokenResponse
 	err = json.Unmarshal(responseBytes, &r)
-	if err != nil {
-		return accesstokens.TokenResponse{}, err
-	}
-	return r, nil
+	return r, err
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.

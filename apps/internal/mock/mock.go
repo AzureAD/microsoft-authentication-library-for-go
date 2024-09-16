@@ -59,6 +59,14 @@ func (c *Client) AppendResponse(opts ...responseOption) {
 	c.resp = append(c.resp, r)
 }
 
+func (c *Client) AppendCustomResponse(status int, opts ...responseOption) {
+	r := response{code: status, headers: http.Header{}}
+	for _, o := range opts {
+		o.apply(&r)
+	}
+	c.resp = append(c.resp, r)
+}
+
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	if len(c.resp) == 0 {
 		panic(fmt.Sprintf(`no response for "%s"`, req.URL.String()))

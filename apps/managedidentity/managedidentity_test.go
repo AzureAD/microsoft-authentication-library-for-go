@@ -5,31 +5,23 @@ package managedidentity
 import (
 	"context"
 	"encoding/json"
-	"fmt"
-	"io"
 	"net/http"
-	"net/url"
 	"strconv"
 	"strings"
 	"testing"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
-	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
 const (
 	// test Resources
 	resource              = "https://demo.azure.com"
 	resourceDefaultSuffix = "https://demo.azure.com/.default"
-)
 
-type HttpRequest struct {
-	Source   Source
-	Resource string
-	Identity ID
-}
+	token = "fakeToken"
+)
 
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
@@ -39,139 +31,54 @@ type SuccessfulResponse struct {
 	ClientID    string `json:"client_id"`
 }
 
-type ErrorResponse struct {
-	StatusCode    int    `json:"statusCode"`
-	Message       string `json:"message"`
-	CorrelationID string `json:"correlationId,omitempty"`
+type ErrorRespone struct {
+	Err  string `json:"error"`
+	Desc string `json:"error_description"`
 }
 
-type fakeClient struct{}
-type errorClient struct {
-	errResponse ErrorResponse
+type response struct {
+	body     []byte
+	callback func(*http.Request)
+	code     int
 }
 
-func fakeMIClient(mangedIdentityId ID, options ...ClientOption) (Client, error) {
-	fakeClient, err := New(mangedIdentityId, options...)
-
-	if err != nil {
-		return Client{}, err
-	}
-
-	return fakeClient, nil
-}
-
-func (*fakeClient) CloseIdleConnections()  {}
-func (*errorClient) CloseIdleConnections() {}
-
-func (*fakeClient) Do(req *http.Request) (*http.Response, error) {
-	w := http.Response{
-		StatusCode: http.StatusOK,
-		Body:       io.NopCloser(strings.NewReader(getSuccessfulResponse(resource))),
-		Header:     make(http.Header),
-	}
-	return &w, nil
-}
-
-func (e *errorClient) Do(req *http.Request) (*http.Response, error) {
-	w := http.Response{
-		StatusCode: e.errResponse.StatusCode,
-		Body:       io.NopCloser(strings.NewReader(e.errResponse.Message)),
-		Header:     make(http.Header),
-	}
-	return &w, nil
-}
-
-func getSuccessfulResponse(resource string) string {
+func getSuccessfulResponse(resource string) []byte {
 	expiresOn := time.Now().Add(1 * time.Hour).Unix()
 	response := SuccessfulResponse{
-		AccessToken: "fakeToken",
+		AccessToken: token,
 		ExpiresOn:   expiresOn,
 		Resource:    resource,
 		TokenType:   "Bearer",
 		ClientID:    "client_id",
 	}
 	jsonResponse, _ := json.Marshal(response)
-	return string(jsonResponse)
+	return jsonResponse
 }
 
-func makeResponseWithErrorData(errRsp ErrorResponse) string {
-	response := ErrorResponse{
-		StatusCode:    errRsp.StatusCode,
-		Message:       errRsp.Message,
-		CorrelationID: errRsp.CorrelationID,
+func makeResponseWithErrorData(err string, desc string) []byte {
+	responseBody := ErrorRespone{
+		Err:  err,
+		Desc: desc,
 	}
-	jsonResponse, _ := json.Marshal(response)
-	return string(jsonResponse)
-}
-
-func computeUri(endpoint string, queryParameters map[string][]string) string {
-	if len(queryParameters) == 0 {
-		return endpoint
+	if len(err) == 0 && len(desc) == 0 {
+		jsonResponse, _ := json.Marshal(responseBody)
+		return jsonResponse
 	}
-
-	queryString := url.Values{}
-	for key, values := range queryParameters {
-		for _, value := range values {
-			queryString.Add(key, value)
-		}
-	}
-
-	return endpoint + "?" + queryString.Encode()
-}
-
-func expectedRequest(source Source, resource string, id ID) (*http.Request, error) {
-	return expectedRequestWithId(source, resource, id)
-}
-
-func expectedRequestWithId(_ Source, resource string, id ID) (*http.Request, error) {
-	var endpoint string
-	headers := http.Header{}
-	queryParameters := make(map[string][]string)
-
-	//check with source when added different sources.
-	endpoint = imdsEndpoint
-	queryParameters["api-version"] = []string{"2018-02-01"}
-	queryParameters["resource"] = []string{resource}
-	headers.Add("Metadata", "true")
-
-	switch id.(type) {
-	case ClientID:
-		queryParameters[miQuerryParameterClientId] = []string{id.value()}
-	case ResourceID:
-		queryParameters[miQuerryParameterResourceId] = []string{id.value()}
-	case ObjectID:
-		queryParameters[miQuerryParameterObjectId] = []string{id.value()}
-	case systemAssignedValue:
-		// not adding anything
-	default:
-		return nil, fmt.Errorf("Type not supported")
-	}
-
-	uri, err := url.Parse(computeUri(endpoint, queryParameters))
-	if err != nil {
-		return nil, err
-	}
-
-	req := &http.Request{
-		Method: "GET",
-		URL:    uri,
-		Header: headers,
-	}
-
-	return req, nil
-}
-
-func ExpectedResponse(statusCode int, response string) http.Response {
-	return http.Response{
-		StatusCode: statusCode,
-		Body:       io.NopCloser(strings.NewReader(response)),
-	}
+	jsonResponse, _ := json.Marshal(responseBody)
+	return jsonResponse
 }
 
 type resourceTestData struct {
 	source   Source
 	endpoint string
 	resource string
+}
+
+type errorTestData struct {
+	code          int
+	err           string
+	desc          string
+	correlationid string
 }
 
 func createResourceData() []resourceTestData {
@@ -181,21 +88,32 @@ func createResourceData() []resourceTestData {
 	}
 }
 
-func Test_SystemAssigned_Returns_Token_Failure(t *testing.T) {
-	testCases := []ErrorResponse{
-		{StatusCode: http.StatusNotFound, Message: ``, CorrelationID: "121212"},
-		{StatusCode: http.StatusNotImplemented, Message: ``, CorrelationID: "121212"},
-		{StatusCode: http.StatusServiceUnavailable, Message: ``, CorrelationID: "121212"},
-		{StatusCode: http.StatusBadRequest,
-			Message:       `{"error": "invalid_request", "error_description": "Identity not found"}`,
-			CorrelationID: "121212",
+func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
+	testCases := []errorTestData{
+		{code: http.StatusNotFound,
+			err:           "",
+			desc:          "",
+			correlationid: "121212"},
+		{code: http.StatusNotImplemented,
+			err:           "",
+			desc:          "",
+			correlationid: "121212"},
+		{code: http.StatusServiceUnavailable,
+			err:           "",
+			desc:          "",
+			correlationid: "121212"},
+		{code: http.StatusBadRequest,
+			err:           "invalid_request",
+			desc:          "Identity not found",
+			correlationid: "121212",
 		},
 	}
 
 	for _, testCase := range testCases {
-		t.Run(strconv.Itoa(testCase.StatusCode), func(t *testing.T) {
-			fakeErrorClient := errorClient{errResponse: testCase}
-			client, err := fakeMIClient(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
+		t.Run(strconv.Itoa(testCase.code), func(t *testing.T) {
+			fakeErrorClient := mock.Client{}
+			fakeErrorClient.AppendCustomResponse(testCase.code, mock.WithBody(makeResponseWithErrorData(testCase.err, testCase.desc)))
+			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -203,51 +121,47 @@ func Test_SystemAssigned_Returns_Token_Failure(t *testing.T) {
 			if err == nil {
 				t.Fatalf("testManagedIdentity: Should have encountered the error")
 			}
-			switch e := err.(type) {
-			case errors.CallErr:
-				if actual := err.Error(); !strings.Contains(e.Error(), testCase.Message) {
-					t.Fatalf("testManagedIdentity: expected response body in error, got %q", actual)
+			var callErr errors.CallErr
+			if errors.As(err, &callErr) {
+				callErr = err.(errors.CallErr)
+				if !strings.Contains(err.Error(), testCase.err) {
+					t.Fatalf("testManagedIdentity: expected message '%s' in error, got %q", testCase.err, callErr.Error())
 				}
-				if e.Resp.StatusCode != testCase.StatusCode {
-					t.Fatal("testManagedIdentity: got unexpected status code.")
+				if callErr.Resp.StatusCode != testCase.code {
+					t.Fatalf("testManagedIdentity: expected status code %d, got %d", testCase.code, callErr.Resp.StatusCode)
 				}
+			} else {
+				t.Fatalf("testManagedIdentity: expected error of type %T, got %T", callErr.Error(), err)
 			}
 			if resp.AccessToken != "" {
 				t.Fatalf("testManagedIdentity: accesstoken should be nil")
 			}
-
 		})
 	}
 }
 
 func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 	testCases := createResourceData()
-
 	for _, testCase := range testCases {
 
 		t.Run(testCase.source.String(), func(t *testing.T) {
-			fakeHTTPClient := fakeClient{}
-			client, err := fakeMIClient(SystemAssigned(), WithHTTPClient(&fakeHTTPClient))
+			var url string
+			mockClient := mock.Client{}
+			mockClient.AppendCustomResponse(http.StatusOK, mock.WithBody(getSuccessfulResponse(resource)), mock.WithCallback(func(r *http.Request) { url = r.URL.String() }))
+			client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
 
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
-
+			if !strings.HasPrefix(url, testCase.endpoint) {
+				t.Fatalf("TestManagedIdentity: URL request is not on %s fgot %s", testCase.endpoint, url)
+			}
 			if err != nil {
-				t.Errorf("TestManagedIdentity: unexpected nil error from TestManagedIdentity")
+				t.Fatalf("TestManagedIdentity: unexpected nil error from TestManagedIdentity %s", err.Error())
 			}
-			var tokenScope = []string{"the_scope"}
-			expected := accesstokens.TokenResponse{
-				AccessToken:   "fakeToken",
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-				TokenType:     "TokenType",
-			}
-			if result.AccessToken != expected.AccessToken {
-				t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
+			if result.AccessToken != token {
+				t.Fatalf("TestManagedIdentity: wanted %q, got %q", token, result.AccessToken)
 			}
 		})
 	}
