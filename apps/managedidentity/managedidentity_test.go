@@ -112,7 +112,7 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(strconv.Itoa(testCase.code), func(t *testing.T) {
 			fakeErrorClient := mock.Client{}
-			fakeErrorClient.AppendResponse(mock.WithHttpStatusCode(testCase.code),
+			fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(testCase.code),
 				mock.WithBody(makeResponseWithErrorData(testCase.err, testCase.desc)))
 			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
 			if err != nil {
@@ -148,7 +148,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			var url string
 			mockClient := mock.Client{}
-			mockClient.AppendResponse(mock.WithHttpStatusCode(http.StatusOK), mock.WithBody(getSuccessfulResponse(resource)), mock.WithCallback(func(r *http.Request) { url = r.URL.String() }))
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(getSuccessfulResponse(resource)), mock.WithCallback(func(r *http.Request) { url = r.URL.String() }))
 			client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
 
 			if err != nil {
