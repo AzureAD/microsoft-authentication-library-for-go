@@ -46,6 +46,13 @@ func WithCallback(callback func(*http.Request)) responseOption {
 	})
 }
 
+// WithCallback sets a callback to invoke before returning the response.
+func WithHttpStatusCode(statusCode int) responseOption {
+	return respOpt(func(r *response) {
+		r.code = statusCode
+	})
+}
+
 // Client is a mock HTTP client that returns a sequence of responses. Use AppendResponse to specify the sequence.
 type Client struct {
 	resp []response
@@ -53,14 +60,6 @@ type Client struct {
 
 func (c *Client) AppendResponse(opts ...responseOption) {
 	r := response{code: http.StatusOK, headers: http.Header{}}
-	for _, o := range opts {
-		o.apply(&r)
-	}
-	c.resp = append(c.resp, r)
-}
-
-func (c *Client) AppendCustomResponse(status int, opts ...responseOption) {
-	r := response{code: status, headers: http.Header{}}
 	for _, o := range opts {
 		o.apply(&r)
 	}
