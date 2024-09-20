@@ -284,8 +284,8 @@ func TestCreateIMDSAuthRequest(t *testing.T) {
 			if req.Method != http.MethodGet {
 				t.Fatal("createIMDSAuthRequest() method is not GET")
 			}
-			if !strings.HasPrefix(req.URL.String(), imdsEndpoint) {
-				t.Fatal("createIMDSAuthRequest() URL is not matched.")
+			if got := req.URL.String(); !strings.HasPrefix(got, imdsEndpoint) {
+				t.Fatalf("wanted %q, got %q", imdsEndpoint, got)
 			}
 			query := req.URL.Query()
 
