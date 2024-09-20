@@ -12,9 +12,9 @@ func RunManagedIdentity() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	temp, err := miSystemAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
+	result, err := miSystemAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
 	if err != nil {
 		println(err.Error())
 	}
-	fmt.Println("token : ", temp.AccessToken)
+	fmt.Println("token : ", result.ExpiresOn)
 }
