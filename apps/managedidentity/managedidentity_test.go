@@ -279,7 +279,6 @@ func TestCreateIMDSAuthRequest(t *testing.T) {
 			}
 			if req == nil {
 				t.Fatal("createIMDSAuthRequest() returned nil request")
-				return
 			}
 			if req.Method != http.MethodGet {
 				t.Fatal("createIMDSAuthRequest() method is not GET")
