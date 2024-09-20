@@ -81,13 +81,6 @@ type errorTestData struct {
 	correlationid string
 }
 
-func createResourceData() []resourceTestData {
-	return []resourceTestData{
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix},
-	}
-}
-
 func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 	testCases := []errorTestData{
 		{code: http.StatusNotFound,
@@ -142,7 +135,10 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 }
 
 func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
-	testCases := createResourceData()
+	testCases := []resourceTestData{
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix},
+	}
 	for _, testCase := range testCases {
 
 		t.Run(string(testCase.source), func(t *testing.T) {
