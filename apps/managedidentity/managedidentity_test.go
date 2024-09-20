@@ -42,7 +42,7 @@ type response struct {
 	code     int
 }
 
-func getSuccessfulResponse(resource string) []byte {
+func getSuccessfulResponse(resource string) ([]byte, error) {
 	expiresOn := time.Now().Add(1 * time.Hour).Unix()
 	response := SuccessfulResponse{
 		AccessToken: token,
@@ -51,21 +51,21 @@ func getSuccessfulResponse(resource string) []byte {
 		TokenType:   "Bearer",
 		ClientID:    "client_id",
 	}
-	jsonResponse, _ := json.Marshal(response)
-	return jsonResponse
+	jsonResponse, err := json.Marshal(response)
+	return jsonResponse, err
 }
 
-func makeResponseWithErrorData(err string, desc string) []byte {
+func makeResponseWithErrorData(err string, desc string) ([]byte, error) {
 	responseBody := ErrorRespone{
 		Err:  err,
 		Desc: desc,
 	}
 	if len(err) == 0 && len(desc) == 0 {
-		jsonResponse, _ := json.Marshal(responseBody)
-		return jsonResponse
+		jsonResponse, error := json.Marshal(responseBody)
+		return jsonResponse, error
 	}
-	jsonResponse, _ := json.Marshal(responseBody)
-	return jsonResponse
+	jsonResponse, error := json.Marshal(responseBody)
+	return jsonResponse, error
 }
 
 type resourceTestData struct {
@@ -105,8 +105,12 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(strconv.Itoa(testCase.code), func(t *testing.T) {
 			fakeErrorClient := mock.Client{}
+			responseBody, err := makeResponseWithErrorData(testCase.err, testCase.desc)
+			if err != nil {
+				t.Fatalf("TestManagedIdentity: Error while forming json response : %s", err.Error())
+			}
 			fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(testCase.code),
-				mock.WithBody(makeResponseWithErrorData(testCase.err, testCase.desc)))
+				mock.WithBody(responseBody))
 			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
 			if err != nil {
 				t.Fatal(err)
@@ -144,7 +148,11 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			var url string
 			mockClient := mock.Client{}
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(getSuccessfulResponse(resource)), mock.WithCallback(func(r *http.Request) { url = r.URL.String() }))
+			responseBody, err := getSuccessfulResponse(resource)
+			if err != nil {
+				t.Fatalf("TestManagedIdentity: Error while forming json response : %s", err.Error())
+			}
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) { url = r.URL.String() }))
 			client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
 
 			if err != nil {
