@@ -46,7 +46,7 @@ func WithCallback(callback func(*http.Request)) responseOption {
 	})
 }
 
-// WithCallback sets a callback to invoke before returning the response.
+// WithHTTPStatusCode sets the HTTP statusCode of response to the specified value.
 func WithHTTPStatusCode(statusCode int) responseOption {
 	return respOpt(func(r *response) {
 		r.code = statusCode

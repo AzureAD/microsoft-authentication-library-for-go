@@ -32,24 +32,18 @@ const (
 	ServiceFabric Source = "ServiceFabric"
 	CloudShell    Source = "CloudShell"
 	AppService    Source = "AppService"
-)
 
-// General request querry parameter names
-const (
-	metaHTTPHeadderName           = "Metadata"
+	// General request querry parameter names
+	metaHTTPHeaderName            = "Metadata"
 	apiVersionQuerryParameterName = "api-version"
 	resourceQuerryParameterName   = "resource"
-)
 
-// UAMI querry parameter name
-const (
-	miQuerryParameterClientId   = "client_id"
-	miQuerryParameterObjectId   = "object_id"
-	miQuerryParameterResourceId = "msi_res_id"
-)
+	// UAMI querry parameter name
+	miQueryParameterClientId   = "client_id"
+	miQueryParameterObjectId   = "object_id"
+	miQueryParameterResourceId = "msi_res_id"
 
-// IMDS
-const (
+	// IMDS
 	imdsEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
 	imdsAPIVersion = "2018-02-01"
 )
@@ -61,14 +55,14 @@ type ID interface {
 }
 
 type systemAssignedValue string // its private for a reason to make the input consistent.
-type ClientID string
-type ObjectID string
-type ResourceID string
+type UserAssignedClientID string
+type UserAssignedObjectID string
+type UserAssignedResourceID string
 
-func (s systemAssignedValue) value() string { return string(s) }
-func (c ClientID) value() string            { return string(c) }
-func (o ObjectID) value() string            { return string(o) }
-func (r ResourceID) value() string          { return string(r) }
+func (s systemAssignedValue) value() string    { return string(s) }
+func (c UserAssignedClientID) value() string   { return string(c) }
+func (o UserAssignedObjectID) value() string   { return string(o) }
+func (r UserAssignedResourceID) value() string { return string(r) }
 func SystemAssigned() ID {
 	return systemAssignedValue("")
 }
@@ -107,7 +101,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 }
 
 // Client to be used to acquire tokens for managed identity.
-// ID: [SystemAssigned()], [ClientID("clientID")], [ResourceID("resourceID")], [ObjectID("objectID")]
+// ID: [SystemAssigned()], [UserAssignedClientID("clientID")], [UserAssignedResourceID("resourceID")], [UserAssignedObjectID("objectID")]
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
@@ -119,17 +113,17 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		option(&opts)
 	}
 	switch t := id.(type) {
-	case ClientID:
+	case UserAssignedClientID:
 		if len(string(t)) == 0 {
-			return Client{}, fmt.Errorf("clientId parameter is empty for %T", t)
+			return Client{}, fmt.Errorf("empty %T", t)
 		}
-	case ResourceID:
+	case UserAssignedResourceID:
 		if len(string(t)) == 0 {
-			return Client{}, fmt.Errorf("resourceID parameter is empty for %T", t)
+			return Client{}, fmt.Errorf("empty %T", t)
 		}
-	case ObjectID:
+	case UserAssignedObjectID:
 		if len(string(t)) == 0 {
-			return Client{}, fmt.Errorf("objectID parameter is empty for %T", t)
+			return Client{}, fmt.Errorf("empty %T", t)
 		}
 	case systemAssignedValue:
 	default:
@@ -147,24 +141,24 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	var msiEndpoint *url.URL
 	msiEndpoint, err := url.Parse(imdsEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("error creating URL \n %s", err.Error())
+		return nil, fmt.Errorf("couldn't parse %q: %s", imdsEndpoint, err)
 	}
 	msiParameters := msiEndpoint.Query()
-	msiParameters.Add(apiVersionQuerryParameterName, "2018-02-01")
+	msiParameters.Set(apiVersionQuerryParameterName, "2018-02-01")
 	resource = strings.TrimSuffix(resource, "/.default")
-	msiParameters.Add(resourceQuerryParameterName, resource)
+	msiParameters.Set(resourceQuerryParameterName, resource)
 
 	if len(claims) > 0 {
-		msiParameters.Add("claims", claims)
+		msiParameters.Set("claims", claims)
 	}
 
 	switch t := id.(type) {
-	case ClientID:
-		msiParameters.Add(miQuerryParameterClientId, string(t))
-	case ResourceID:
-		msiParameters.Add(miQuerryParameterResourceId, string(t))
-	case ObjectID:
-		msiParameters.Add(miQuerryParameterObjectId, string(t))
+	case UserAssignedClientID:
+		msiParameters.Set(miQueryParameterClientId, string(t))
+	case UserAssignedResourceID:
+		msiParameters.Set(miQueryParameterResourceId, string(t))
+	case UserAssignedObjectID:
+		msiParameters.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue: // not adding anything
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)
@@ -175,7 +169,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	if err != nil {
 		return nil, fmt.Errorf("error creating http request %s", err)
 	}
-	req.Header.Add(metaHTTPHeadderName, "true")
+	req.Header.Set(metaHTTPHeaderName, "true")
 	return req, nil
 }
 

@@ -14,7 +14,7 @@ func RunManagedIdentity() {
 	}
 	result, err := miSystemAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
 	if err != nil {
-		println(err.Error())
+		fmt.Println(err)
 	}
-	fmt.Println("token : ", result.ExpiresOn)
+	fmt.Println("token expire at : ", result.ExpiresOn)
 }
