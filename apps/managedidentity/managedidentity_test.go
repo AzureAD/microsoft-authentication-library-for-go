@@ -177,7 +177,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				}
 			case UserAssignedObjectID:
 				if query.Get(miQueryParameterObjectId) != i.value() {
-					t.Fatalf("resource objectiid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
+					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
 			}
 			if err != nil {
@@ -241,38 +241,38 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				return
 			}
 			if req == nil {
-				t.Fatal("createIMDSAuthRequest() returned nil request")
+				t.Fatal("returned nil request")
 			}
 			if req.Method != http.MethodGet {
-				t.Fatal("createIMDSAuthRequest() method is not GET")
+				t.Fatalf("method is wannted GET, got %s", req.Method)
 			}
 			if got := req.URL.String(); !strings.HasPrefix(got, imdsEndpoint) {
 				t.Fatalf("wanted %q, got %q", imdsEndpoint, got)
 			}
 			query := req.URL.Query()
 
-			if query.Get(apiVersionQuerryParameterName) != "2018-02-01" {
-				t.Fatal("createIMDSAuthRequest() api-version missmatch")
+			if query.Get(apiVersionQuerryParameterName) != imdsAPIVersion {
+				t.Fatalf("api-version not on %s got %s", imdsAPIVersion, query.Get(apiVersionQuerryParameterName))
 			}
 			if query.Get(resourceQuerryParameterName) != strings.TrimSuffix(tt.resource, "/.default") {
-				t.Fatal("createIMDSAuthRequest() resource does not ahve suffix removed ")
+				t.Fatal("resource does not have suffix removed")
 			}
 			switch i := tt.id.(type) {
 			case UserAssignedClientID:
 				if query.Get(miQueryParameterClientId) != i.value() {
-					t.Fatal("createIMDSAuthRequest() resource client-id is incorrect")
+					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
 				}
 			case UserAssignedResourceID:
 				if query.Get(miQueryParameterResourceId) != i.value() {
-					t.Fatal("createIMDSAuthRequest() resource resource-id is incorrect")
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
 				}
 			case UserAssignedObjectID:
 				if query.Get(miQueryParameterObjectId) != i.value() {
-					t.Fatal("createIMDSAuthRequest() resource objectiid is incorrect")
+					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
 			case systemAssignedValue: // not adding anything
 			default:
-				t.Fatal("createIMDSAuthRequest() unsupported type")
+				t.Fatal(" unsupported type")
 
 			}
 

@@ -144,7 +144,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 		return nil, fmt.Errorf("couldn't parse %q: %s", imdsEndpoint, err)
 	}
 	msiParameters := msiEndpoint.Query()
-	msiParameters.Set(apiVersionQuerryParameterName, "2018-02-01")
+	msiParameters.Set(apiVersionQuerryParameterName, imdsAPIVersion)
 	resource = strings.TrimSuffix(resource, "/.default")
 	msiParameters.Set(resourceQuerryParameterName, resource)
 
