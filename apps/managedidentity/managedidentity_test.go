@@ -34,7 +34,7 @@ type ErrorRespone struct {
 	Desc string `json:"error_description"`
 }
 
-func getSuccessfulResponse(resource string, miType ID) ([]byte, error) {
+func getSuccessfulResponse(resource string) ([]byte, error) {
 	expiresOn := time.Now().Add(1 * time.Hour).Unix()
 	response := SuccessfulResponse{
 		AccessToken: token,
@@ -136,7 +136,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			url := testCase.endpoint
 			mockClient := mock.Client{}
-			responseBody, err := getSuccessfulResponse(resource, testCase.miType)
+			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
 			}
