@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 	"testing"
 	"time"
@@ -129,26 +130,55 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 	testCases := []resourceTestData{
 		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: SystemAssigned()},
 		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned()},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedClientID("asd")},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: UserAssignedClientID("clientId")},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId")},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId")},
 	}
 	for _, testCase := range testCases {
 
 		t.Run(string(testCase.source), func(t *testing.T) {
-			url := testCase.endpoint
+			var localUrl *url.URL
 			mockClient := mock.Client{}
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
 			}
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody))
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				localUrl = r.URL
+			}))
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 
 			if err != nil {
 				t.Fatal(err)
 			}
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
-			if !strings.HasPrefix(url, testCase.endpoint) {
-				t.Fatalf("url request is not on %s got %s", testCase.endpoint, url)
+			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
+				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
+			}
+			if !strings.Contains(localUrl.String(), testCase.miType.value()) {
+				t.Fatalf("url request does not contain the %s got %s", testCase.endpoint, localUrl)
+			}
+			query := localUrl.Query()
+
+			if query.Get(apiVersionQuerryParameterName) != imdsAPIVersion {
+				t.Fatalf("api-version not on %s got %s", imdsAPIVersion, query.Get(apiVersionQuerryParameterName))
+			}
+			if query.Get(resourceQuerryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
+				t.Fatal("suffix /.default was not removed.")
+			}
+			switch i := testCase.miType.(type) {
+			case UserAssignedClientID:
+				if query.Get(miQueryParameterClientId) != i.value() {
+					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
+				}
+			case UserAssignedResourceID:
+				if query.Get(miQueryParameterResourceId) != i.value() {
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
+				}
+			case UserAssignedObjectID:
+				if query.Get(miQueryParameterObjectId) != i.value() {
+					t.Fatalf("resource objectiid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
+				}
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -156,8 +186,99 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
 			}
+
 		})
 	}
+
+	// Testing createIMDSAuthRequest
+	tests := []struct {
+		name     string
+		id       ID
+		resource string
+		claims   string
+		wantErr  bool
+	}{
+		{
+			name:     "System Assigned",
+			id:       SystemAssigned(),
+			resource: "https://management.azure.com",
+		},
+		{
+			name:     "System Assigned",
+			id:       SystemAssigned(),
+			resource: "https://management.azure.com/.default",
+		},
+		{
+			name:     "Client ID",
+			id:       UserAssignedClientID("test-client-id"),
+			resource: "https://storage.azure.com",
+		},
+		{
+			name:     "Resource ID",
+			id:       UserAssignedResourceID("test-resource-id"),
+			resource: "https://vault.azure.net",
+		},
+		{
+			name:     "Object ID",
+			id:       UserAssignedObjectID("test-object-id"),
+			resource: "https://graph.microsoft.com",
+		},
+		{
+			name:     "With Claims",
+			id:       SystemAssigned(),
+			resource: "https://management.azure.com",
+			claims:   "test-claims",
+		},
+	}
+	// testing IMDSAuthRequest Creation method.
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			req, err := createIMDSAuthRequest(context.Background(), tt.id, tt.resource, tt.claims)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal(err)
+				}
+				return
+			}
+			if req == nil {
+				t.Fatal("createIMDSAuthRequest() returned nil request")
+			}
+			if req.Method != http.MethodGet {
+				t.Fatal("createIMDSAuthRequest() method is not GET")
+			}
+			if got := req.URL.String(); !strings.HasPrefix(got, imdsEndpoint) {
+				t.Fatalf("wanted %q, got %q", imdsEndpoint, got)
+			}
+			query := req.URL.Query()
+
+			if query.Get(apiVersionQuerryParameterName) != "2018-02-01" {
+				t.Fatal("createIMDSAuthRequest() api-version missmatch")
+			}
+			if query.Get(resourceQuerryParameterName) != strings.TrimSuffix(tt.resource, "/.default") {
+				t.Fatal("createIMDSAuthRequest() resource does not ahve suffix removed ")
+			}
+			switch i := tt.id.(type) {
+			case UserAssignedClientID:
+				if query.Get(miQueryParameterClientId) != i.value() {
+					t.Fatal("createIMDSAuthRequest() resource client-id is incorrect")
+				}
+			case UserAssignedResourceID:
+				if query.Get(miQueryParameterResourceId) != i.value() {
+					t.Fatal("createIMDSAuthRequest() resource resource-id is incorrect")
+				}
+			case UserAssignedObjectID:
+				if query.Get(miQueryParameterObjectId) != i.value() {
+					t.Fatal("createIMDSAuthRequest() resource objectiid is incorrect")
+				}
+			case systemAssignedValue: // not adding anything
+			default:
+				t.Fatal("createIMDSAuthRequest() unsupported type")
+
+			}
+
+		})
+	}
+
 }
 
 func TestCreatingIMDSClient(t *testing.T) {
@@ -210,10 +331,9 @@ func TestCreatingIMDSClient(t *testing.T) {
 			}
 			if err != nil {
 				t.Fatal(err)
-			} else {
-				if client.miType.value() != tt.id.value() {
-					t.Fatal("client New() did not assign a correct value to type.")
-				}
+			}
+			if client.miType.value() != tt.id.value() {
+				t.Fatal("client New() did not assign a correct value to type.")
 			}
 		})
 	}
