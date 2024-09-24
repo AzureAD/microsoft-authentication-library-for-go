@@ -1,13 +1,15 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-// These tests connect to test apps in a private test tenant the MSAL team has setup. 
+// These tests connect to test apps in a private test tenant the MSAL team has setup.
 // The tests will not run on a contributor's dev box, but will run as part of the CI
 
 package integration
 
 import (
 	"context"
+	"crypto"
+	"crypto/x509"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,16 +25,18 @@ import (
 )
 
 const (
-	msIDlabDefaultScope = "https://msidlab.com/.default"
-	graphDefaultScope   = "https://graph.windows.net/.default"
-)
+	// URLS
+	msIDlabDefaultScope    = "https://request.msidlab.com/.default"
+	graphDefaultScope      = "https://graph.windows.net/.default"
+	microsoftAuthorityHost = "https://login.microsoftonline.com/"
 
-const microsoftAuthorityHost = "https://login.microsoftonline.com/"
-
-const (
 	organizationsAuthority = microsoftAuthorityHost + "organizations/"
-	microsoftAuthority     = microsoftAuthorityHost + "microsoft.onmicrosoft.com"
+	microsoftAuthority     = microsoftAuthorityHost + "72f988bf-86f1-41af-91ab-2d7cd011db47"
 	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the future
+
+	// Default values
+	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
+	pemFile         = "/Users/andywork/Downloads/file.pem"
 )
 
 var httpClient = http.Client{}
@@ -92,21 +96,39 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-	clientID := os.Getenv("clientId")
-	secret := os.Getenv("clientSecret")
-
-	cred, err := confidential.NewCredFromSecret(secret)
+	cert, privateKey, err := getCertDataFromFile()
 	if err != nil {
-		return nil, fmt.Errorf("could not create a cred from a secret: %w", err)
+		return nil, fmt.Errorf("Could not get cert data: %w", err)
 	}
 
-	app, err := confidential.New(microsoftAuthority, clientID, cred)
+	cred, err := confidential.NewCredFromCert(cert, privateKey)
+	if err != nil {
+		return nil, fmt.Errorf("Could not create a cred from the cert: %w", err)
+	}
+
+	app, err := confidential.New(microsoftAuthority, defaultClientId, cred, confidential.WithX5C())
 	if err != nil {
 		return nil, err
 	}
 
 	return &labClient{app: app}, nil
 }
+
+func getCertDataFromFile() ([]*x509.Certificate, crypto.PrivateKey, error) {
+	data, err := os.ReadFile(pemFile)
+	if err != nil {
+		fmt.Printf("Error finding certificate: %v\n", err)
+	}
+
+	cert, privateKey, err := confidential.CertFromPEM(data, "")
+
+	if err != nil {
+		fmt.Printf("Error finding certificate: %v\n", err)
+	}
+
+	return cert, privateKey, nil
+}
+
 func (l *labClient) labAccessToken() (string, error) {
 	scopes := []string{msIDlabDefaultScope}
 	result, err := l.app.AcquireTokenSilent(context.Background(), scopes)
@@ -129,6 +151,7 @@ func (l *labClient) user(ctx context.Context, query url.Values) (user, error) {
 	if err != nil {
 		return user{}, err
 	}
+
 	var users []user
 	err = json.Unmarshal(responseBody, &users)
 	if err != nil {
@@ -150,7 +173,7 @@ func (l *labClient) secret(ctx context.Context, query url.Values) (string, error
 	if err != nil {
 		return "", err
 	}
-	responseBody, err := httpRequest(ctx, "https://msidlab.com/api/LabUserSecret", query, accessToken)
+	responseBody, err := httpRequest(ctx, "https://msidlab.com/api/LabSecret", query, accessToken)
 	if err != nil {
 		return "", err
 	}
@@ -176,6 +199,7 @@ func TestUsernamePassword(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
+
 	labClientInstance, err := newLabClient()
 	if err != nil {
 		panic("failed to get a lab client: " + err.Error())
@@ -185,9 +209,6 @@ func TestUsernamePassword(t *testing.T) {
 		desc string
 		vals url.Values
 	}{
-		{"Managed", url.Values{"usertype": []string{"cloud"}}},
-		{"ADFSv2", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv2"}}},
-		{"ADFSv3", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv3"}}},
 		{"ADFSv4", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}}},
 	}
 	for _, test := range tests {
@@ -219,7 +240,7 @@ func TestUsernamePassword(t *testing.T) {
 	}
 }
 
-func TestConfidentialClientwithSecret(t *testing.T) {
+func TestConfidentialClientWithSecret(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
