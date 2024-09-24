@@ -25,7 +25,6 @@ const (
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresOn   int64  `json:"expires_on"`
-	ExpiresIn   int64  `json:"expires_in"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
 }
@@ -43,7 +42,6 @@ func getSuccessfulResponse(resource string, miType ID) ([]byte, error) {
 		Resource:    resource,
 		TokenType:   "Bearer",
 	}
-
 	jsonResponse, err := json.Marshal(response)
 	return jsonResponse, err
 }
