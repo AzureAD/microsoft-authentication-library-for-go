@@ -5,7 +5,6 @@ package managedidentity
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 	"testing"
@@ -29,9 +28,6 @@ type SuccessfulResponse struct {
 	ExpiresIn   int64  `json:"expires_in"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
-	ClientID    string `json:"client_id"`
-	ObjectID    string `json:"object_id"`
-	ResourceID  string `json:"msi_res_id"`
 }
 
 type ErrorRespone struct {
@@ -41,43 +37,13 @@ type ErrorRespone struct {
 
 func getSuccessfulResponse(resource string, miType ID) ([]byte, error) {
 	expiresOn := time.Now().Add(1 * time.Hour).Unix()
-	var response SuccessfulResponse
-	switch miType.(type) {
-	case UserAssignedClientID:
-		response = SuccessfulResponse{
-			AccessToken: token,
-			ExpiresOn:   expiresOn,
-			Resource:    resource,
-			TokenType:   "Bearer",
-			ClientID:    "client_id",
-		}
-	case UserAssignedResourceID:
-		response = SuccessfulResponse{
-			AccessToken: token,
-			ExpiresOn:   expiresOn,
-			Resource:    resource,
-			TokenType:   "Bearer",
-			ResourceID:  "msi_res_id",
-		}
-	case UserAssignedObjectID:
-		response = SuccessfulResponse{
-			AccessToken: token,
-			ExpiresOn:   expiresOn,
-			Resource:    resource,
-			TokenType:   "Bearer",
-			ObjectID:    "object_id",
-		}
-	case systemAssignedValue:
-		response = SuccessfulResponse{
-			AccessToken: token,
-			ExpiresOn:   expiresOn,
-			Resource:    resource,
-			TokenType:   "Bearer",
-			ObjectID:    "object_id",
-		}
-	default:
-		return nil, fmt.Errorf("unsupported type %T", miType)
+	response := SuccessfulResponse{
+		AccessToken: token,
+		ExpiresOn:   expiresOn,
+		Resource:    resource,
+		TokenType:   "Bearer",
 	}
+
 	jsonResponse, err := json.Marshal(response)
 	return jsonResponse, err
 }
