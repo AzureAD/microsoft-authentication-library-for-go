@@ -36,7 +36,7 @@ const (
 
 	// Default values
 	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
-	pemFile         = "/Users/andywork/Downloads/file.pem"
+	pemFile         = "Insert path to pem file here"
 )
 
 var httpClient = http.Client{}
