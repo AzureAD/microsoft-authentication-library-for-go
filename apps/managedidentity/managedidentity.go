@@ -101,7 +101,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 }
 
 // Client to be used to acquire tokens for managed identity.
-// ID: [SystemAssigned()], [UserAssignedClientID("clientID")], [UserAssignedResourceID("resourceID")], [UserAssignedObjectID("objectID")]
+// ID: [SystemAssigned], [UserAssignedClientID], [UserAssignedResourceID], [UserAssignedObjectID]
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
