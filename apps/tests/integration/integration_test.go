@@ -29,16 +29,14 @@ const (
 	msIDlabDefaultScope    = "https://request.msidlab.com/.default"
 	graphDefaultScope      = "https://graph.windows.net/.default"
 	microsoftAuthorityHost = "https://login.microsoftonline.com/"
-	labSecretUrl           = "https://msidlab.com/api/LabSecret"
 
 	organizationsAuthority = microsoftAuthorityHost + "organizations/"
 	microsoftAuthority     = microsoftAuthorityHost + "72f988bf-86f1-41af-91ab-2d7cd011db47"
 	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the future
 
 	// Default values
-	certificateAlias = "LabAuth.MSIDLab.com"
-	defaultClientId  = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
-	pemFile          = "Insert path to your pem file here"
+	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
+	pemFile         = "Insert path to your pem file here"
 )
 
 var httpClient = http.Client{}
