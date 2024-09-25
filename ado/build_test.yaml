@@ -35,15 +35,14 @@ steps:
       SecretsFilter: "LabAuth" # string. Required. Specifies the secret to download. Use '*' for all secrets.
       #RunAsPreJob: false # boolean. Make secrets available to whole job. Default: false.
 
-  - script: |
-      echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
-      sudo apt-get install -y libnss3-tools openssl
-      mkdir -p ~/.pki/nssdb
-      certutil -N -d sql:$HOME/.pki/nssdb --empty-password
-      openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes
-      certutil -A -d sql:$HOME/.pki/nssdb -n "labCert" -t "P,," -i $(Build.SourcesDirectory)/cert.pem
+  - task: Bash@3
+    displayName: Installing certificate
+    inputs:
+      targetType: inline
+      script: |
+        echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
+        openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:''
 
-    displayName: "Install Keyvault Secrets"
   - task: Go@0
     inputs:
       command: "test"
