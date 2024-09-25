@@ -1,5 +1,5 @@
 trigger:
-  - 4gust/keyvault-labauth
+  - main
 
 pool:
   vmImage: "ubuntu-latest"
@@ -20,20 +20,18 @@ steps:
       arguments: "./apps/..."
       workingDirectory: "$(System.DefaultWorkingDirectory)"
     displayName: "Build"
-  # - task: Go@0
-  #   inputs:
-  #     command: "test"
-  #     arguments: "-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/..."
-  #     workingDirectory: "$(System.DefaultWorkingDirectory)"
-  #   displayName: "Run Unit Tests"
+  - task: Go@0
+    inputs:
+      command: "test"
+      arguments: "-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/..."
+      workingDirectory: "$(System.DefaultWorkingDirectory)"
+    displayName: "Run Unit Tests"
   - task: AzureKeyVault@2
     displayName: "Connect to Key Vault"
     inputs:
-      azureSubscription: "AuthSdkResourceManager" # string. Workload identity service connection to use managed identity authentication
-      KeyVaultName: "msidlabs" # string. Required. The name of the Key Vault containing the secrets.
-      #setting secrets filter to fetch only MSIDLABCertificate cert from the vault
-      SecretsFilter: "LabAuth" # string. Required. Specifies the secret to download. Use '*' for all secrets.
-      #RunAsPreJob: false # boolean. Make secrets available to whole job. Default: false.
+      azureSubscription: "AuthSdkResourceManager"
+      KeyVaultName: "msidlabs"
+      SecretsFilter: "LabAuth"
 
   - task: Bash@3
     displayName: Installing certificate
