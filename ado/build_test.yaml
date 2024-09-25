@@ -1,68 +1,52 @@
-trigger: 
- - main
+trigger:
+  - 4gust/keyvault-labauth
 
 pool:
-   vmImage: 'ubuntu-latest'
+  vmImage: "ubuntu-latest"
 
-steps: 
-- task: GoTool@0
-  inputs:
-    version: '1.22.3'
-- task: Go@0
-  inputs:
-    command: 'get'
-    arguments: '-d -v -t -d ./...'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
-  displayName: "Install dependencies"
-- task: Go@0
-  inputs:
-    command: 'build'
-    arguments: './apps/...'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
-  displayName: "Build"
-# - task: Go@0
-#   inputs:       
-#     command: 'test'
-#     arguments: '-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/...'
-#     workingDirectory: '$(System.DefaultWorkingDirectory)'
-#   displayName: "Run Unit Tests"
+steps:
+  - task: GoTool@0
+    inputs:
+      version: "1.22.3"
+  - task: Go@0
+    inputs:
+      command: "get"
+      arguments: "-d -v -t -d ./..."
+      workingDirectory: "$(System.DefaultWorkingDirectory)"
+    displayName: "Install dependencies"
+  - task: Go@0
+    inputs:
+      command: "build"
+      arguments: "./apps/..."
+      workingDirectory: "$(System.DefaultWorkingDirectory)"
+    displayName: "Build"
+  # - task: Go@0
+  #   inputs:
+  #     command: "test"
+  #     arguments: "-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/..."
+  #     workingDirectory: "$(System.DefaultWorkingDirectory)"
+  #   displayName: "Run Unit Tests"
+  - task: AzureKeyVault@2
+    displayName: "Connect to Key Vault"
+    inputs:
+      azureSubscription: "AuthSdkResourceManager" # string. Workload identity service connection to use managed identity authentication
+      KeyVaultName: "msidlabs" # string. Required. The name of the Key Vault containing the secrets.
+      #setting secrets filter to fetch only MSIDLABCertificate cert from the vault
+      SecretsFilter: "LabAuth" # string. Required. Specifies the secret to download. Use '*' for all secrets.
+      #RunAsPreJob: false # boolean. Make secrets available to whole job. Default: false.
 
-- task: AzureKeyVault@2
-  displayName: 'Connect to Key Vault'
-  inputs:
-    azureSubscription: 'AuthSdkResourceManager' # string. Workload identity service connection to use managed identity authentication
-    KeyVaultName: 'msidlabs' # string. Required. The name of the Key Vault containing the secrets.
-    #setting secrets filter to fetch only MSIDLABCertificate cert from the vault
-    SecretsFilter: 'LabAuth' # string. Required. Specifies the secret to download. Use '*' for all secrets.
-    #RunAsPreJob: false # boolean. Make secrets available to whole job. Default: false.
+  - script: |
+      echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
+      sudo apt-get install -y libnss3-tools openssl
+      mkdir -p ~/.pki/nssdb
+      certutil -N -d sql:$HOME/.pki/nssdb --empty-password
+      openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes
+      certutil -A -d sql:$HOME/.pki/nssdb -n "labCert" -t "P,," -i $(Build.SourcesDirectory)/cert.pem
 
-# - powershell: |
-#    $kvSecretBytes = [System.Convert]::FromBase64String('$(LabAuth)')
-#    $certCollection = New-Object System.Security.Cryptography.X509Certificates.X509Certificate2Collection
-#    $certCollection.Import($kvSecretBytes, $null, [System.Security.Cryptography.X509Certificates.X509KeyStorageFlags]::Exportable)
-
-#    $protectedCertificateBytes = $certCollection.Export([System.Security.Cryptography.X509Certificates.X509ContentType]::Pkcs12)
-#    $pfxPath = '$(Build.SourcesDirectory)' + "\TestCert.pfx"
-#    [System.IO.File]::WriteAllBytes($pfxPath, $protectedCertificateBytes)
-
-#    Import-PfxCertificate -FilePath $pfxPath -CertStoreLocation Cert:\LocalMachine\My
-
-#   displayName: 'Install Keyvault Secrets'
-  
-- script: |
-    echo $(LabAuth) | base64 -d > cert.pfx
-    sudo apt-get install -y libnss3-tools openssl
-    mkdir -p ~/.pki/nssdb
-    certutil -N -d sql:$HOME/.pki/nssdb --empty-password
-    openssl pkcs12 -in cert.pfx -out cert.pem -nodes
-    certutil -A -d sql:$HOME/.pki/nssdb -n "labCert" -t "P,," -i cert.pem
-  displayName: 'Install Keyvault Secrets'
-
-- task: Go@0
-  inputs:       
-    command: 'test'
-    arguments: '-race ./apps/tests/integration/...'
-    workingDirectory: '$(System.DefaultWorkingDirectory)'
-  displayName: "Run Integration Tests"
-  
-
+    displayName: "Install Keyvault Secrets"
+  - task: Go@0
+    inputs:
+      command: "test"
+      arguments: "-race ./apps/tests/integration/..."
+      workingDirectory: "$(System.DefaultWorkingDirectory)"
+    displayName: "Run Integration Tests"
