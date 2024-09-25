@@ -51,8 +51,11 @@ steps:
   
 - script: |
     echo $(LabAuth) | base64 -d > cert.pfx
-    sudo apt-get install -y libnss3-tools
-    pk12util -i cert.pfx -d sql:/etc/pki/nssdb -W ""
+    sudo apt-get install -y libnss3-tools openssl
+    mkdir -p ~/.pki/nssdb
+    certutil -N -d sql:$HOME/.pki/nssdb --empty-password
+    openssl pkcs12 -in cert.pfx -out cert.pem -nodes
+    certutil -A -d sql:$HOME/.pki/nssdb -n "labCert" -t "P,," -i cert.pem
   displayName: 'Install Keyvault Secrets'
 
 - task: Go@0
