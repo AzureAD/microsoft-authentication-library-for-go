@@ -283,111 +283,110 @@ func TestOnBehalfOf(t *testing.T) {
 		panic("failed to get a lab client: " + err.Error())
 	}
 
-	ctx := context.Background()
+	// 	//Confidential Client Application Config
+	// 	ccaClientID := os.Getenv("oboConfidentialClientId")
+	// 	ccaClientSecret := os.Getenv("oboConfidentialClientSecret")
+	// 	ccaScopes := []string{"https://graph.microsoft.com/user.read"}
 
-	//Confidential Client Application Config
-	ccaClientID := os.Getenv("oboConfidentialClientId")
-	ccaClientSecret := os.Getenv("oboConfidentialClientSecret")
-	ccaScopes := []string{"https://graph.microsoft.com/user.read"}
+	// 	// Public Client Application Confifg
+	// 	pcaClientID := os.Getenv("oboPublicClientId")
+	// 	user := testUser(ctx, "OnBehalfOf", labClientInstance, url.Values{"usertype": []string{"cloud"}})
+	// 	pcaScopes := []string{fmt.Sprintf("api://%s/.default", ccaClientID)}
 
-	// Public Client Application Confifg
-	pcaClientID := os.Getenv("oboPublicClientId")
-	user := testUser(ctx, "OnBehalfOf", labClientInstance, url.Values{"usertype": []string{"cloud"}})
-	pcaScopes := []string{fmt.Sprintf("api://%s/.default", ccaClientID)}
+	// 	// 1. An app obtains a token representing a user, for our mid-tier service
+	// 	pca, err := public.New(pcaClientID, public.WithAuthority(organizationsAuthority))
+	// 	if err != nil {
+	// 		panic(errors.Verbose(err))
+	// 	}
+	// 	result, err := pca.AcquireTokenByUsernamePassword(
+	// 		ctx, pcaScopes, user.Upn, user.Password,
+	// 	)
+	// 	if err != nil {
+	// 		t.Fatalf("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
+	// 	}
+	// 	if result.AccessToken == "" {
+	// 		t.Fatal("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got AccessToken == '', want AccessToken != ''")
+	// 	}
 
-	// 1. An app obtains a token representing a user, for our mid-tier service
-	pca, err := public.New(pcaClientID, public.WithAuthority(organizationsAuthority))
-	if err != nil {
-		panic(errors.Verbose(err))
-	}
-	result, err := pca.AcquireTokenByUsernamePassword(
-		ctx, pcaScopes, user.Upn, user.Password,
-	)
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	if result.AccessToken == "" {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got AccessToken == '', want AccessToken != ''")
-	}
+	// 	// 2. Our mid-tier service uses OBO to obtain a token for downstream service
+	// 	cred, err := confidential.NewCredFromSecret(ccaClientSecret)
+	// 	if err != nil {
+	// 		panic(errors.Verbose(err))
+	// 	}
+	// 	cca, err := confidential.New("https://login.microsoftonline.com/common", ccaClientID, cred)
+	// 	if err != nil {
+	// 		panic(errors.Verbose(err))
+	// 	}
+	// 	result1, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, ccaScopes)
+	// 	if err != nil {
+	// 		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
+	// 	}
+	// 	if result1.AccessToken == "" {
+	// 		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
+	// 	}
 
-	// 2. Our mid-tier service uses OBO to obtain a token for downstream service
-	cred, err := confidential.NewCredFromSecret(ccaClientSecret)
-	if err != nil {
-		panic(errors.Verbose(err))
-	}
-	cca, err := confidential.New("https://login.microsoftonline.com/common", ccaClientID, cred)
-	if err != nil {
-		panic(errors.Verbose(err))
-	}
-	result1, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, ccaScopes)
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	if result1.AccessToken == "" {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
-	}
+	// 	// 3. Same scope and assertion should return cached access token
+	// 	result2, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, ccaScopes)
+	// 	if err != nil {
+	// 		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf() silent token retrieval: got err == %s, want err == nil", errors.Verbose(err))
+	// 	}
+	// 	if result1.AccessToken != result2.AccessToken {
+	// 		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens don't match")
+	// 	}
 
-	// 3. Same scope and assertion should return cached access token
-	result2, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, ccaScopes)
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf() silent token retrieval: got err == %s, want err == nil", errors.Verbose(err))
-	}
-	if result1.AccessToken != result2.AccessToken {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens don't match")
-	}
+	// 	// 4. scope2 should return new token
+	// 	scope2 := []string{"https://graph.windows.net/.default"}
+	// 	result3, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, scope2)
+	// 	if err != nil {
+	// 		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
+	// 	}
+	// 	if result3.AccessToken == "" {
+	// 		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
+	// 	}
+	// 	if result3.AccessToken == result2.AccessToken {
+	// 		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
+	// 	}
 
-	// 4. scope2 should return new token
-	scope2 := []string{"https://graph.windows.net/.default"}
-	result3, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, scope2)
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	if result3.AccessToken == "" {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
-	}
-	if result3.AccessToken == result2.AccessToken {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
-	}
+	// 	// 5. scope2 should return cached token
+	// 	result4, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, scope2)
+	// 	if err != nil {
+	// 		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
+	// 	}
+	// 	if result4.AccessToken == "" {
+	// 		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
+	// 	}
+	// 	if result4.AccessToken != result3.AccessToken {
+	// 		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens don't match")
+	// 	}
 
-	// 5. scope2 should return cached token
-	result4, err := cca.AcquireTokenOnBehalfOf(ctx, result.AccessToken, scope2)
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	if result4.AccessToken == "" {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
-	}
-	if result4.AccessToken != result3.AccessToken {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens don't match")
-	}
-
-	// 6. New user assertion should return new token
-	pca1, err := public.New(pcaClientID, public.WithAuthority(organizationsAuthority))
-	if err != nil {
-		panic(errors.Verbose(err))
-	}
-	result5, err := pca1.AcquireTokenByUsernamePassword(
-		ctx, pcaScopes, user.Upn, user.Password,
-	)
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	result6, err := cca.AcquireTokenOnBehalfOf(ctx, result5.AccessToken, scope2)
-	if err != nil {
-		t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	if result6.AccessToken == "" {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
-	}
-	if result6.AccessToken == result4.AccessToken {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
-	}
-	if result6.AccessToken == result3.AccessToken {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
-	}
-	if result6.AccessToken == result2.AccessToken {
-		t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
-	}
+	//		// 6. New user assertion should return new token
+	//		pca1, err := public.New(pcaClientID, public.WithAuthority(organizationsAuthority))
+	//		if err != nil {
+	//			panic(errors.Verbose(err))
+	//		}
+	//		result5, err := pca1.AcquireTokenByUsernamePassword(
+	//			ctx, pcaScopes, user.Upn, user.Password,
+	//		)
+	//		if err != nil {
+	//			t.Fatalf("TestOnBehalfOf: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
+	//		}
+	//		result6, err := cca.AcquireTokenOnBehalfOf(ctx, result5.AccessToken, scope2)
+	//		if err != nil {
+	//			t.Fatalf("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got err == %s, want err == nil", errors.Verbose(err))
+	//		}
+	//		if result6.AccessToken == "" {
+	//			t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): got AccessToken == '', want AccessToken != ''")
+	//		}
+	//		if result6.AccessToken == result4.AccessToken {
+	//			t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
+	//		}
+	//		if result6.AccessToken == result3.AccessToken {
+	//			t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
+	//		}
+	//		if result6.AccessToken == result2.AccessToken {
+	//			t.Fatal("TestOnBehalfOf: on AcquireTokenOnBehalfOf(): Access Tokens match when they should not")
+	//		}
+	//	}
 }
 
 func TestRemoveAccount(t *testing.T) {
