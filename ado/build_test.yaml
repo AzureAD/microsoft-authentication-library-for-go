@@ -32,7 +32,6 @@ steps:
       azureSubscription: "AuthSdkResourceManager"
       KeyVaultName: "msidlabs"
       SecretsFilter: "LabAuth"
-
   - task: Bash@3
     displayName: Installing certificate
     inputs:

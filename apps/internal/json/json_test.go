@@ -41,7 +41,7 @@ type StructE struct {
 	AdditionalFields map[string]interface{}
 }
 
-func TestUnmarshal(t *testing.T) {
+func TestUnmarshalRoundTrip(t *testing.T) {
 	now := time.Now()
 	nowJSON, err := now.MarshalJSON()
 	if err != nil {
@@ -147,6 +147,21 @@ func TestUnmarshal(t *testing.T) {
 		}
 		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, test.got); diff != "" {
 			t.Errorf("TestUnmarshal(%s): -want/+got:\n%s", test.desc, diff)
+			continue
+		}
+		b, err := Marshal(test.got)
+		if err != nil {
+			t.Errorf("TestUnmarshal(%s): Marshal failed: %s", test.desc, err)
+			continue
+		}
+		err = Unmarshal(b, test.got)
+		if err != nil {
+			t.Errorf("TestUnmarshal(%s): Unmarshal round trip failed: %s", test.desc, err)
+			continue
+		}
+		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, test.got); diff != "" {
+			t.Errorf("TestUnmarshal(%s): Round trip failed. -want/+got:\n%s", test.desc, diff)
+			continue
 		}
 	}
 }
