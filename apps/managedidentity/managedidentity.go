@@ -70,7 +70,7 @@ func SystemAssigned() ID {
 type Client struct {
 	httpClient ops.HTTPClient
 	miType     ID
-	source     Source
+	// source     Source reenable when required in future sources
 }
 
 type ClientOptions struct {
