@@ -255,7 +255,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				case "password":
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(test.tenant))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if err != nil {
 					if test.expectError {
@@ -620,7 +620,7 @@ func TestWithClaims(t *testing.T) {
 					client.base.Token.WSTrust = fake.WSTrust{SamlTokenInfo: wstrust.SamlTokenInfo{AssertionType: "urn:ietf:params:oauth:grant-type:saml1_1-bearer"}}
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithClaims(test.claims))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if method == "devicecode" && err == nil {
 					// complete the device code flow
@@ -910,7 +910,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 			case "password":
 				ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithAuthenticationScheme(authScheme))
 			default:
-				t.Fatalf("test bug: no test for " + testCase.name)
+				t.Fatalf("test bug: no test for %s", testCase.name)
 			}
 
 			// validate that the token is created correctly

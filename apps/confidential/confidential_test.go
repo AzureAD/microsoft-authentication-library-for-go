@@ -34,6 +34,7 @@ import (
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
+type contextKey struct{}
 
 func (*errorClient) Do(req *http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("expected no requests but received one for %s", req.URL.String())
@@ -212,7 +213,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 
 func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
-	key := struct{}{}
+	key := contextKey{}
 	ctx := context.WithValue(context.Background(), key, true)
 	getAssertion := func(c context.Context, o AssertionRequestOptions) (string, error) {
 		if v := c.Value(key); v == nil || !v.(bool) {
@@ -631,7 +632,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	expectedToken := "expected token"
 	called := false
 	expiresIn := 4200
-	key := struct{}{}
+	key := contextKey{}
 	ctx := context.WithValue(context.Background(), key, true)
 	cred := NewCredFromTokenProvider(func(c context.Context, tp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
 		if called {
@@ -887,7 +888,7 @@ func TestWithClaims(t *testing.T) {
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithClaims(test.claims))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -997,7 +998,7 @@ func TestWithTenantID(t *testing.T) {
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if err != nil {
 					if test.expectError {
