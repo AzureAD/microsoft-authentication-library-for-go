@@ -46,6 +46,13 @@ func WithCallback(callback func(*http.Request)) responseOption {
 	})
 }
 
+// WithHTTPStatusCode sets the HTTP statusCode of response to the specified value.
+func WithHTTPStatusCode(statusCode int) responseOption {
+	return respOpt(func(r *response) {
+		r.code = statusCode
+	})
+}
+
 // Client is a mock HTTP client that returns a sequence of responses. Use AppendResponse to specify the sequence.
 type Client struct {
 	resp []response

@@ -11,127 +11,221 @@ package managedidentity
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
-	"sync"
+	"io"
+	"net/http"
+	"net/url"
+	"strings"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 const (
-	// DefaultToIMDS indicates that the source is defaulted to IMDS since no environment variables are set.
-	DefaultToIMDS = 0
+	// DefaultToIMDS indicates that the source is defaulted to IMDS when no environment variables are set.
+	DefaultToIMDS Source = "DefaultToIMDS"
+	AzureArc      Source = "AzureArc"
+	ServiceFabric Source = "ServiceFabric"
+	CloudShell    Source = "CloudShell"
+	AppService    Source = "AppService"
 
-	// AzureArc represents the source to acquire token for managed identity is Azure Arc.
-	AzureArc = 1
+	// General request querry parameter names
+	metaHTTPHeaderName            = "Metadata"
+	apiVersionQuerryParameterName = "api-version"
+	resourceQuerryParameterName   = "resource"
+
+	// UAMI querry parameter name
+	miQueryParameterClientId   = "client_id"
+	miQueryParameterObjectId   = "object_id"
+	miQueryParameterResourceId = "msi_res_id"
+
+	// IMDS
+	imdsEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
+	imdsAPIVersion = "2018-02-01"
 )
 
-// Client is a client that provides access to Managed Identity token calls.
-type Client struct {
-	AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New(). also may remove from here
-	cacheAccessorMu *sync.RWMutex
-	// base                ops.HTTPClient
-	// managedIdentityType Type
-	// Token    			*oauth.Client
-	// pmanager manager 	// todo :  expose the manager from base.
-	// cacheAccessor   		cache.ExportReplace
-}
-
-// clientOptions are optional settings for New(). These options are set using various functions
-// returning Option calls.
-type clientOptions struct {
-	claims     string // bypasses cache, does nothing else
-	httpClient ops.HTTPClient
-	// disableInstanceDiscovery bool // always false
-	// clientId     string
-}
-
-type withClaimsOption struct{ Claims string }
-type withHTTPClientOption struct{ HttpClient ops.HTTPClient }
-
-// Option is an optional argument to New().
-type Option interface{ apply(*clientOptions) }
-type ClientOption interface{ ClientOption() }
-type AcquireTokenOption interface{ AcquireTokenOption() }
-
-// Source represents the managed identity sources supported.
-type Source int
-
-type systemAssignedValue string
+type Source string
 
 type ID interface {
 	value() string
 }
 
+type systemAssignedValue string // its private for a reason to make the input consistent.
+type UserAssignedClientID string
+type UserAssignedObjectID string
+type UserAssignedResourceID string
+
+func (s systemAssignedValue) value() string    { return string(s) }
+func (c UserAssignedClientID) value() string   { return string(c) }
+func (o UserAssignedObjectID) value() string   { return string(o) }
+func (r UserAssignedResourceID) value() string { return string(r) }
 func SystemAssigned() ID {
 	return systemAssignedValue("")
 }
 
-type ClientID string
-type ObjectID string
-type ResourceID string
+type Client struct {
+	httpClient ops.HTTPClient
+	miType     ID
+	source     Source
+}
 
-func (s systemAssignedValue) value() string { return string(s) }
-func (c ClientID) value() string            { return string(c) }
-func (o ObjectID) value() string            { return string(o) }
-func (r ResourceID) value() string          { return string(r) }
+type ClientOptions struct {
+	httpClient ops.HTTPClient
+}
 
-func (w withClaimsOption) AcquireTokenOption()           {}
-func (w withHTTPClientOption) AcquireTokenOption()       {}
-func (w withHTTPClientOption) apply(opts *clientOptions) { opts.httpClient = w.HttpClient }
+type AcquireTokenOptions struct {
+	claims string
+}
 
-// WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
+type ClientOption func(o *ClientOptions)
+
+type AcquireTokenOption func(o *AcquireTokenOptions)
+
+// WithClaims sets additional claims to request for the token, such as those required by token revocation or conditional access policies.
 // Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
 func WithClaims(claims string) AcquireTokenOption {
-	return withClaimsOption{Claims: claims}
+	return func(o *AcquireTokenOptions) {
+		o.claims = claims
+	}
 }
 
 // WithHTTPClient allows for a custom HTTP client to be set.
-func WithHTTPClient(httpClient ops.HTTPClient) Option {
-	return withHTTPClientOption{HttpClient: httpClient}
+func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
+	return func(o *ClientOptions) {
+		o.httpClient = httpClient
+	}
 }
 
 // Client to be used to acquire tokens for managed identity.
-// ID: [SystemAssigned()], [ClientID("clientID")], [ResourceID("resourceID")], [ObjectID("objectID")]
+// ID: [SystemAssigned], [UserAssignedClientID], [UserAssignedResourceID], [UserAssignedObjectID]
 //
 // Options: [WithHTTPClient]
-func New(id ID, options ...Option) (Client, error) {
-	fmt.Println("idType: ", id.value())
-
-	opts := clientOptions{
-		claims: "claims",
+func New(id ID, options ...ClientOption) (Client, error) {
+	opts := ClientOptions{
+		httpClient: shared.DefaultClient,
 	}
 
 	for _, option := range options {
-		option.apply(&opts)
+		option(&opts)
+	}
+	switch t := id.(type) {
+	case UserAssignedClientID:
+		if len(string(t)) == 0 {
+			return Client{}, fmt.Errorf("empty %T", t)
+		}
+	case UserAssignedResourceID:
+		if len(string(t)) == 0 {
+			return Client{}, fmt.Errorf("empty %T", t)
+		}
+	case UserAssignedObjectID:
+		if len(string(t)) == 0 {
+			return Client{}, fmt.Errorf("empty %T", t)
+		}
+	case systemAssignedValue:
+	default:
+		return Client{}, fmt.Errorf("unsupported type %T", id)
+	}
+	client := Client{
+		miType:     id,
+		httpClient: opts.httpClient,
 	}
 
-	authInfo, err := authority.NewInfoFromAuthorityURI("authorityURI", true, false)
+	return client, nil
+}
+
+func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
+	var msiEndpoint *url.URL
+	msiEndpoint, err := url.Parse(imdsEndpoint)
 	if err != nil {
-		return Client{}, err
+		return nil, fmt.Errorf("couldn't parse %q: %s", imdsEndpoint, err)
+	}
+	msiParameters := msiEndpoint.Query()
+	msiParameters.Set(apiVersionQuerryParameterName, imdsAPIVersion)
+	resource = strings.TrimSuffix(resource, "/.default")
+	msiParameters.Set(resourceQuerryParameterName, resource)
+
+	if len(claims) > 0 {
+		msiParameters.Set("claims", claims)
 	}
 
-	authParams := authority.NewAuthParams(id.value(), authInfo)
-	client := Client{ // Note: Hey, don't even THINK about making Base into *Base. See "design notes" in public.go and confidential.go
-		AuthParams:      authParams,
-		cacheAccessorMu: &sync.RWMutex{},
-		// manager:         storage.New(token),
-		// pmanager:        storage.NewPartitionedManager(token),
+	switch t := id.(type) {
+	case UserAssignedClientID:
+		msiParameters.Set(miQueryParameterClientId, string(t))
+	case UserAssignedResourceID:
+		msiParameters.Set(miQueryParameterResourceId, string(t))
+	case UserAssignedObjectID:
+		msiParameters.Set(miQueryParameterObjectId, string(t))
+	case systemAssignedValue: // not adding anything
+	default:
+		return nil, fmt.Errorf("unsupported type %T", id)
 	}
 
-	return client, err
+	msiEndpoint.RawQuery = msiParameters.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating http request %s", err)
+	}
+	req.Header.Set(metaHTTPHeaderName, "true")
+	return req, nil
+}
+
+func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
+	resp, err := client.httpClient.Do(req)
+	if err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
+	responseBytes, err := io.ReadAll(resp.Body)
+	defer resp.Body.Close()
+	if err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusAccepted:
+	default:
+		sd := strings.TrimSpace(string(responseBytes))
+		if sd != "" {
+			return accesstokens.TokenResponse{}, errors.CallErr{
+				Req:  req,
+				Resp: resp,
+				Err: fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s",
+					req.URL.String(),
+					req.Method,
+					resp.StatusCode,
+					sd),
+			}
+		}
+		return accesstokens.TokenResponse{}, errors.CallErr{
+			Req:  req,
+			Resp: resp,
+			Err:  fmt.Errorf("http call(%s)(%s) error: reply status code was %d", req.URL.String(), req.Method, resp.StatusCode),
+		}
+	}
+	var r accesstokens.TokenResponse
+	err = json.Unmarshal(responseBytes, &r)
+	return r, err
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
-func (client Client) AcquireToken(context context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
-	return base.AuthResult{}, nil
-}
+func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	o := AcquireTokenOptions{}
 
-// Detects and returns the managed identity source available on the environment.
-func GetSource() Source {
-	return DefaultToIMDS
+	for _, option := range options {
+		option(&o)
+	}
+	req, err := createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := client.getTokenForRequest(req)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return base.NewAuthResult(tokenResponse, shared.Account{})
 }
