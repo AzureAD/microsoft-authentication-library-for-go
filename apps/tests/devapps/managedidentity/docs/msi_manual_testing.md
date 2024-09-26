@@ -1,32 +1,8 @@
-# Running the IMDS Source
+# Running Managed Identity Sources
 
-This file will talk you through the steps required to run the IMDS Managed Identity Source locally
+This file will talk you through the steps required to run the each of the Managed Identity Sources locally
 
-## Files to Modify
-
-Firstly, to run IMDS locally, we need to change some files.
-
-1. Comment out everything in `client_certificate_sample.go` besides `package main`
-2. In `sample_utils.go`, replace the Config struct with this
-
-```
-type Config struct {
-    ClientID      string   `json:"client_id"`
-    Authority     string   `json:"authority"`
-    Scopes        []string `json:"scopes"`
-    Username      string   `json:"username"`
-    Password      string   `json:"password"`
-    RedirectURI   string   `json:"redirect_uri"`
-    CodeChallenge string   `json:"code_challenge"`
-    // CodeChallengeMethod string   `json:"code_challenge_method"`
-    // State               string   `json:"state"`
-    ClientSecret string `json:"client_secret"`
-    // Thumbprint          string   `json:"thumbprint"`
-    // PemData             string   `json:"pem_file"`
-}
-```
-
-## Setup Virtual Environment and Run Tests
+## Setup Virtual Environment and Run Tests for IMDS
 
 To test locally we will require a virtual machine, which we can set up in [Azure](https://portal.azure.com/?feature.tokencaching=true&feature.internalgraphapiversion=true#home)
 The next few steps will go over each step of the process, from creating resource groups to managed identity
@@ -54,6 +30,7 @@ Next, we need to set up a Virtual Machine for IMDS to run on. Make sure you are 
 5. Create a name for your Virtual Machine, such as ***'go-lang-machine'***
 6. Select the region, such as West Europe
 7. Most of the options can be kept the same
+
 ```
 - Availability Options = Availability Zone
 - Zone Options = Self Selected Zone
@@ -69,6 +46,7 @@ Next, we need to set up a Virtual Machine for IMDS to run on. Make sure you are 
 - Public Inbound Ports = Allow Selected Ports
 - Select Inbound Ports = SSH(22)
 ```
+
 8. For username, enter whatever you want, for example ***'go-lang-machine'***
 9. For Key Pair Name, set it to whatever you want, i.e ***'go-lang-machine-key'***
 10. At the bottom of the screen click on **'Review + Create'**
@@ -98,17 +76,12 @@ In this example it is done using Mac, if using Windows just make the required ad
 11. Clone our library by calling `git clone https://github.com/AzureAD/microsoft-authentication-library-for-go.git`
 12. **cd** into `microsoft-authentication-library-for-go/`
 13. Change to whatever branch you want to test on i.e `git switch YOUR_BRANCH_NAME`
-14. **cd** into `apps/tests/devapps/`
-15. Perform an update with this command `sudo apt-get update`
-16. Install go via `sudo apt-get install golang`, it might ask are you sure you want to install, say yes
-17. In your local machine terminal, run the following command:
-
-```
-rsync -avz -e "ssh -i PATH_TO_YOUR_PEM_FILE.pem" PATH_TO_THE_GO_LIB/microsoft-authentication-library-for-go/VIRTUAL-MACHINE-NAME@PUBLIC-IP-ADDRESS:/home/VIRTUAL-MACHINE-NAME/PATH_TO_GO_LIB/microsoft-authentication-library-for-go && ssh -i PATH_TO_YOUR_PEM_FILE.pem VIRTUAL-MACHINE-NAME@PUBLIC-IP-ADDRESS 'cd microsoft-authentication-library-for-go/apps/tests/devapps && go run .'
-```
-
-16. You should see any changes be commited to the SSH instance of the library, and receive some error along the lines of **"Identity not found"**
-17. The next steps will talk through running System Assigned and User Assigned
+14. Perform an update with this command `sudo apt-get update`
+15. Install go via `sudo apt-get install golang`, it might ask are you sure you want to install, say yes
+16. **cd** into `apps/tests/devapps/managedidentity`
+17. Run `go run managedidentity_sample.go`
+18. You should see any changes be committed to the SSH instance of the library, and receive some error along the lines of **"Identity not found"**
+19. The next steps will talk through running System Assigned and User Assigned
 
 ### Run System Assigned Test
 
@@ -119,7 +92,7 @@ rsync -avz -e "ssh -i PATH_TO_YOUR_PEM_FILE.pem" PATH_TO_THE_GO_LIB/microsoft-au
 5. Click Save and then Yes
 6. Wait for it to finish
 7. When done, run the command from step 15 in **'Setup Local Machine'**
-8. You should see **'token expire at :  some expiry date'**, where **'some expiry date'** is an expiry that is not all 0's, i.e 
+8. You should see **'token expire at :  some expiry date'**, where **'some expiry date'** is an expiry that is not all 0's, i.e
 `2024-09-26 22:05:11.532734044 +0000 UTC m=+86400.490900710`
 
 ### Run User Assigned Test
@@ -143,7 +116,6 @@ rsync -avz -e "ssh -i PATH_TO_YOUR_PEM_FILE.pem" PATH_TO_THE_GO_LIB/microsoft-au
 17. Copy the client ID
 18. In your local instance of **'microsoft-authentication-library-for-go'**, open `managedidentity_sample.go`
 19. Change the following:
-
 ```
 'miSystemAssigned, err := mi.New(mi.SystemAssigned())' 
 ```
@@ -151,12 +123,16 @@ to be
 ```
 'miUserAssigned, err := mi.New(mi.UserAssignedClientID(CLIENT_ID_YOU_COPIED))'
 ```
-
 20. Update anything that was previously `miSystemAssigned`, to be `miUserAssigned`
 21. Run the command from step 15 in **'Setup Local Machine'**
-22. You should see **'token expire at :  some expiry date'**, where **'some expiry date'** is an expiry that is not all 0's, i.e 
+22. You should see **'token expire at :  some expiry date'**, where **'some expiry date'** is an expiry that is not all 0's, i.e
 `2024-09-26 22:05:11.532734044 +0000 UTC m=+86400.490900710`
 
-## More information on the SSH command
+## Useful command for local testing
 
 This command first synchronizes the local microsoft-authentication-library-for-go directory (including code changes), with the corresponding directory on a remote virtual machine using rsync. After the synchronization, it connects to the remote machine via SSH and runs the go application in the correct directory.
+This is useful when the developer is not working on the server machine itself
+
+```
+rsync -avz -e "ssh -i PATH_TO_YOUR_PEM_FILE.pem" PATH_TO_THE_GO_LIB/microsoft-authentication-library-for-go/VIRTUAL-MACHINE-NAME@PUBLIC-IP-ADDRESS:/home/VIRTUAL-MACHINE-NAME/PATH_TO_GO_LIB/microsoft-authentication-library-for-go && ssh -i PATH_TO_YOUR_PEM_FILE.pem VIRTUAL-MACHINE-NAME@PUBLIC-IP-ADDRESS 'cd microsoft-authentication-library-for-go/apps/tests/devapps/managedidentity && go run managedidentity_sample.go'
+```
