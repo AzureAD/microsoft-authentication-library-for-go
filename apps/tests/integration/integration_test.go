@@ -240,6 +240,7 @@ func TestUsernamePassword(t *testing.T) {
 	}
 }
 
+// TODO: update this at a later date, see issue https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/513
 func TestConfidentialClientWithSecret(t *testing.T) {
 	t.Skip("Skipping test until fix")
 	if testing.Short() {
@@ -273,6 +274,7 @@ func TestConfidentialClientWithSecret(t *testing.T) {
 	}
 }
 
+// TODO: update this at a later date, see issue https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/513
 func TestOnBehalfOf(t *testing.T) {
 	t.Skip("Skipping test until fix")
 	if testing.Short() {
