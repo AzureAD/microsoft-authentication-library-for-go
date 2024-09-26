@@ -240,7 +240,7 @@ func TestUsernamePassword(t *testing.T) {
 	}
 }
 
-// todo update this at a later date
+// TODO: update this at a later date, see issue https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/513
 func TestConfidentialClientWithSecret(t *testing.T) {
 	t.Skip("skipping integration test until it is fixed")
 
@@ -276,7 +276,7 @@ func TestConfidentialClientWithSecret(t *testing.T) {
 
 }
 
-// todo update this at a later date
+// TODO: update this at a later date, see issue https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/513
 func TestOnBehalfOf(t *testing.T) {
 	t.Skip("skipping integration test until it is fixed")
 
