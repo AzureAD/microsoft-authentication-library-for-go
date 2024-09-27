@@ -5,9 +5,10 @@
 package local
 
 import (
+	"bytes"
 	"context"
 	"fmt"
-	"html/template" // must be html/template, and not text/template to have injection protection
+	"html"
 	"net"
 	"net/http"
 	"strconv"
@@ -42,13 +43,14 @@ var failPage = []byte(`
 </html>
 `)
 
-// code is the html template variable name,
-// which matches the Result Code variable
-const code string = "Code"
-
-// err is the html template variable name
-// which matches the Result Err variable
-const err string = "Err"
+var (
+	// code is the html template variable name,
+	// which matches the Result Code variable
+	code = []byte("{{.Code}}")
+	// err is the html template variable name
+	// which matches the Result Err variable
+	err = []byte("{{.Err}}")
+)
 
 // Result is the result from the redirect.
 type Result struct {
@@ -164,17 +166,21 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 	if headerErr != "" {
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		failPageTemplate, err := template.New("failPage").Parse(string(s.errorPage)) // html template will be injection safe
-		if err != nil {
-			s.error(w, http.StatusInternalServerError, "error parsing template")
+
+		errDesc := q.Get("error_description")
+		errorDesc := fmt.Errorf(errDesc)
+
+		if bytes.Contains(s.errorPage, code) {
+			s.errorPage = bytes.Replace(s.errorPage, code, []byte(html.EscapeString(headerErr)), 1) // provides XSS protection
 		}
 
-		errDesc := fmt.Errorf(q.Get("error_description"))
-		err = failPageTemplate.Execute(w, Result{Code: headerErr, Err: errDesc}) // escapes html entities
-		if err != nil {
-			s.error(w, http.StatusInternalServerError, "error rendering page")
+		if bytes.Contains(s.errorPage, err) {
+			s.errorPage = bytes.Replace(s.errorPage, err, []byte(html.EscapeString(errDesc)), 1) // provides XSS protection
 		}
-		s.putResult(Result{Err: errDesc})
+
+		_, _ = w.Write(s.errorPage)
+
+		s.putResult(Result{Err: errorDesc})
 		return
 	}
 
