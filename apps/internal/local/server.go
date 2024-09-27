@@ -168,7 +168,6 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
 
 		errDesc := q.Get("error_description")
-		errorDesc := fmt.Errorf(errDesc)
 
 		if bytes.Contains(s.errorPage, code) {
 			s.errorPage = bytes.Replace(s.errorPage, code, []byte(html.EscapeString(headerErr)), 1) // provides XSS protection
@@ -180,6 +179,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 
 		_, _ = w.Write(s.errorPage)
 
+		errorDesc := fmt.Errorf(errDesc)
 		s.putResult(Result{Err: errorDesc})
 		return
 	}
