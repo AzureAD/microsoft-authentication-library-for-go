@@ -52,7 +52,6 @@ const (
 	imdsAPIVersion = "2018-02-01"
 
 	// Azure Arc
-	azureArcEndpoint         = "http://localhost:40342/metadata/identity/oauth2/token"
 	azureArcAPIVersion       = "2020-06-01"
 	azureArcFileExtension    = ".key"
 	azureArcMaxFileSizeBytes = 4096
@@ -309,18 +308,15 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
 	var msiEndpoint *url.URL
-	var err error
 
-	if envEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
-		msiEndpoint, err = url.Parse(envEndpoint)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
-		}
-	} else {
-		msiEndpoint, err = url.Parse(azureArcEndpoint)
-		if err != nil {
-			return nil, fmt.Errorf("couldn't parse %q: %s", azureArcEndpoint, err)
-		}
+	envEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar)
+	if !ok {
+		return nil, fmt.Errorf("could not find environment variable: %s", IdentityEndpointEnvVar)
+	}
+
+	msiEndpoint, err := url.Parse(envEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
 	}
 
 	msiParameters := msiEndpoint.Query()
