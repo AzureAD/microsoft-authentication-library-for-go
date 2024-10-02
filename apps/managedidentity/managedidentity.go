@@ -174,6 +174,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
+
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -191,6 +192,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
+
 	client := Client{
 		miType:     id,
 		httpClient: opts.httpClient,
@@ -198,6 +200,75 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	}
 
 	return client, nil
+}
+
+// Detects and returns the managed identity source available on the environment.
+func GetSource(id ID) (Source, error) {
+	if _, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
+		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
+			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
+				if id != nil {
+					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric.String(), getSourceError)
+				}
+				return ServiceFabric, nil
+			} else {
+				return AppService, nil
+			}
+		} else if _, ok := os.LookupEnv(ArcIMDSEnvVar); ok {
+			if _, ok := id.(systemAssignedValue); !ok {
+				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc.String(), getSourceError)
+			}
+
+			return AzureArc, nil
+		}
+	} else if _, ok := os.LookupEnv(MsiEndpointEnvVar); ok {
+		return CloudShell, nil
+	}
+
+	return DefaultToIMDS, nil
+}
+
+// Acquires tokens from the configured managed identity on an azure resource.
+//
+// Resource: scopes application is requesting access to
+// Options: [WithClaims]
+func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	o := AcquireTokenOptions{}
+	var req *http.Request
+	var err error
+
+	for _, option := range options {
+		option(&o)
+	}
+	var tokenResponse accesstokens.TokenResponse
+	switch client.source {
+	case AzureArc:
+		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+
+		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
+		// this is done when we get a 401 response, which will be handled by the response handler
+		tokenResponse, err = client.getTokenForRequest(ctx, req, client.handleAzureArcResponse)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+	default:
+		req, err = createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+
+		tokenResponse, err = client.getTokenForRequest(ctx, req, nil)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+
+	}
+
+	return base.NewAuthResult(tokenResponse, shared.Account{})
+
 }
 
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
@@ -238,10 +309,20 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
 	var msiEndpoint *url.URL
-	msiEndpoint, err := url.Parse(imdsEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't parse %q: %s", azureArcEndpoint, err)
+	var err error
+
+	if envEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
+		msiEndpoint, err = url.Parse(envEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
+		}
+	} else {
+		msiEndpoint, err = url.Parse(azureArcEndpoint)
+		if err != nil {
+			return nil, fmt.Errorf("couldn't parse %q: %s", azureArcEndpoint, err)
+		}
 	}
+
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
 	resource = strings.TrimSuffix(resource, "/.default")
@@ -347,7 +428,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, fmt.Errorf("could not read %s: %s", p, err)
 		}
 
-		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), azureArcEndpoint, claims)
+		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), "https://management.azure.com/", claims)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("error creating http request %s", err)
 		}
@@ -357,73 +438,4 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 	}
 
 	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %s", response.Status)
-}
-
-// Detects and returns the managed identity source available on the environment.
-func GetSource(id ID) (Source, error) {
-	if _, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
-		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
-			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
-				if id != nil {
-					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric.String(), getSourceError)
-				}
-				return ServiceFabric, nil
-			} else {
-				return AppService, nil
-			}
-		} else if _, ok := os.LookupEnv(ArcIMDSEnvVar); ok {
-			if _, ok := id.(systemAssignedValue); !ok {
-				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc.String(), getSourceError)
-			}
-
-			return AzureArc, nil
-		}
-	} else if _, ok := os.LookupEnv(MsiEndpointEnvVar); ok {
-		return CloudShell, nil
-	}
-
-	return DefaultToIMDS, nil
-}
-
-// Acquires tokens from the configured managed identity on an azure resource.
-//
-// Resource: scopes application is requesting access to
-// Options: [WithClaims]
-func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
-	o := AcquireTokenOptions{}
-	var req *http.Request
-	var err error
-
-	for _, option := range options {
-		option(&o)
-	}
-	var tokenResponse accesstokens.TokenResponse
-	switch client.source {
-	case AzureArc:
-		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-
-		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
-		// this is done when we get a 401 response, which will be handled by the response handler
-		tokenResponse, err = client.getTokenForRequest(ctx, req, client.handleAzureArcResponse)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-	default:
-		req, err = createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-
-		tokenResponse, err = client.getTokenForRequest(ctx, req, nil)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-
-	}
-
-	return base.NewAuthResult(tokenResponse, shared.Account{})
-
 }
