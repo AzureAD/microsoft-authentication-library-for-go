@@ -119,6 +119,21 @@ func getSecretFromAzureVault() {
 	println(fmt.Sprintf("The secret, %s, has a value of: %s", secretName, string(body)))
 }
 
+func runAzureArcSystemAssigned() {
+	// os.Setenv(mi.IdentityEndpointEnvVar, "identityEndpointVar")
+	// os.Setenv(mi.ArcIMDSEnvVar, "imdsEnvVar") // present by default on VM
+
+	miAzureArc, err := mi.New(mi.SystemAssigned())
+	if err != nil {
+		fmt.Println(err)
+	}
+	result, err := miAzureArc.AcquireToken(context.Background(), "https://management.azure.com/")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("token expire at : ", result.ExpiresOn)
+}
+
 func main() {
 	var exampleType string
 	fmt.Println("Enter the example type (1-9):")

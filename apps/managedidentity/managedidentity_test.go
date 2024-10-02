@@ -35,6 +35,31 @@ const (
 	errorFormingJsonResponse = "error while forming json response : %s"
 )
 
+type mockEnvironmentVariables struct {
+	vars map[string]string
+}
+
+type sourceTestData struct {
+	source         Source
+	endpoint       string
+	expectedSource Source
+	miType         ID
+}
+
+type resourceTestData struct {
+	source   Source
+	endpoint string
+	resource string
+	miType   ID
+}
+
+type errorTestData struct {
+	code          int
+	err           string
+	desc          string
+	correlationID string
+}
+
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int64  `json:"expires_in"`
@@ -69,10 +94,175 @@ func makeResponseWithErrorData(err string, desc string) ([]byte, error) {
 	return jsonResponse, e
 }
 
-func createMockFile(t *testing.T, path string, size int64) {
-	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
-		t.Fatalf("failed to create directory: %v", err)
+func setEnvVars(t *testing.T, source Source) {
+	switch source {
+	case AzureArc:
+		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
+		t.Setenv(ArcIMDSEnvVar, "arcIMDSEnvVar value")
+	case AppService:
+		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
+		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
+	case CloudShell:
+		t.Setenv(MsiEndpointEnvVar, "msiEndpointEnvVar value")
+	case ServiceFabric:
+		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
+		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
+		t.Setenv(IdentityServerThumbprintEnvVar, "identityServerThumbprintEnvVar value")
+	}
+}
+
+func unsetEnvVars() {
+	os.Unsetenv(IdentityEndpointEnvVar)
+	os.Unsetenv(IdentityHeaderEnvVar)
+	os.Unsetenv(IdentityServerThumbprintEnvVar)
+	os.Unsetenv(ArcIMDSEnvVar)
+	os.Unsetenv(MsiEndpointEnvVar)
+}
+
+func environmentVariablesHelper(source Source, endpoint string) *mockEnvironmentVariables {
+	vars := map[string]string{
+		"Source": source.String(),
+	}
+
+	switch source {
+	case AppService:
+		vars[IdentityEndpointEnvVar] = endpoint
+		vars[IdentityHeaderEnvVar] = "secret"
+	case DefaultToIMDS:
+		vars[ArcIMDSEnvVar] = endpoint
+	case ServiceFabric:
+		vars[IdentityEndpointEnvVar] = endpoint
+		vars[IdentityHeaderEnvVar] = "secret"
+		vars[IdentityServerThumbprintEnvVar] = "thumbprint"
+	case CloudShell:
+		vars[MsiEndpointEnvVar] = endpoint
+	case AzureArc:
+		vars[IdentityEndpointEnvVar] = endpoint
+		vars[ArcIMDSEnvVar] = endpoint
+	}
+
+	return &mockEnvironmentVariables{vars: vars}
+}
+
+func Test_Get_Source(t *testing.T) {
+	// todo update as required
+	testCases := []sourceTestData{
+		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: SystemAssigned()},
+		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: UserAssignedClientID("clientId")},
+		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
+		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
+		{source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.source.String(), func(t *testing.T) {
+			unsetEnvVars()
+			setEnvVars(t, testCase.source)
+
+			actualSource, err := GetSource(testCase.miType)
+
+			if err != nil {
+				if fmt.Sprintf("%s %s", testCase.source, getSourceError) == err.Error() {
+					return
+				} else {
+					t.Fatalf("expected error but got nil")
+				}
+			} else {
+				if actualSource != testCase.expectedSource {
+					t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
+				}
+			}
+		})
+	}
+}
+
+func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
+	testCases := []resourceTestData{
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: SystemAssigned()},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned()},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: UserAssignedClientID("clientId")},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId")},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId")},
+		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned()},
+		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned()},
+	}
+	for _, testCase := range testCases {
+
+		t.Run(string(testCase.source), func(t *testing.T) {
+			var localUrl *url.URL
+			mockClient := mock.Client{}
+			responseBody, err := getSuccessfulResponse(resource)
+			if err != nil {
+				t.Fatalf("error while forming json response : %s", err.Error())
+			}
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				localUrl = r.URL
+			}))
+			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := client.AcquireToken(context.Background(), testCase.resource)
+			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
+				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
+			}
+			if !strings.Contains(localUrl.String(), testCase.miType.value()) {
+				t.Fatalf("url request does not contain the %s got %s", testCase.endpoint, localUrl)
+			}
+			query := localUrl.Query()
+
+			if query.Get(apiVersionQueryParameterName) != imdsAPIVersion {
+				t.Fatalf("api-version not on %s got %s", imdsAPIVersion, query.Get(apiVersionQueryParameterName))
+			}
+			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
+				t.Fatal("suffix /.default was not removed.")
+			}
+			switch i := testCase.miType.(type) {
+			case UserAssignedClientID:
+				if query.Get(miQueryParameterClientId) != i.value() {
+					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
+				}
+			case UserAssignedResourceID:
+				if query.Get(miQueryParameterResourceId) != i.value() {
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
+				}
+			case UserAssignedObjectID:
+				if query.Get(miQueryParameterObjectId) != i.value() {
+					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.AccessToken != token {
+				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+			}
+
+		})
+	}
+}
+
+func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
+	testCases := []errorTestData{
+		{code: http.StatusNotFound,
+			err:           "",
+			desc:          "",
+			correlationID: "121212"},
+		{code: http.StatusNotImplemented,
+			err:           "",
+			desc:          "",
+			correlationID: "121212"},
+		{code: http.StatusServiceUnavailable,
+			err:           "",
+			desc:          "",
+			correlationID: "121212"},
+		{code: http.StatusBadRequest,
+			err:           "invalid_request",
+			desc:          "Identity not found",
+			correlationID: "121212",
+		},
 	}
 
 	f, err := os.Create(path)
