@@ -110,7 +110,7 @@ func setEnvironmentVariablesIfRequired(source mi.Source) {
 }
 
 func main() {
-	exampleType := "5"
+	exampleType := "6"
 
 	if exampleType == "1" {
 		runIMDSSystemAssigned()
