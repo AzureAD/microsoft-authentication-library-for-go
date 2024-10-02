@@ -31,12 +31,29 @@ func runIMDSUserAssigned() {
 	fmt.Println("token expire at : ", result.ExpiresOn)
 }
 
+func runAzureArcSystemAssigned() {
+	// os.Setenv(mi.IdentityEndpointEnvVar, "identityEndpointVar")
+	// os.Setenv(mi.ArcIMDSEnvVar, "imdsEnvVar") // present by default on VM
+
+	miAzureArc, err := mi.New(mi.SystemAssigned())
+	if err != nil {
+		fmt.Println(err)
+	}
+	result, err := miAzureArc.AcquireToken(context.Background(), "https://management.azure.com/")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("token expire at : ", result.ExpiresOn)
+}
+
 func main() {
-	exampleType := "1"
+	exampleType := "3"
 
 	if exampleType == "1" {
 		runIMDSSystemAssigned()
 	} else if exampleType == "2" {
 		runIMDSUserAssigned()
+	} else if exampleType == "3" {
+		runAzureArcSystemAssigned()
 	}
 }

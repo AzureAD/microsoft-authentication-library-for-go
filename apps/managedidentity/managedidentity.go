@@ -16,6 +16,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"os"
+	"path/filepath"
+	"runtime"
 	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -33,12 +36,13 @@ const (
 	CloudShell    Source = "CloudShell"
 	AppService    Source = "AppService"
 
-	// General request querry parameter names
-	metaHTTPHeaderName            = "Metadata"
-	apiVersionQuerryParameterName = "api-version"
-	resourceQuerryParameterName   = "resource"
+	// General request query parameter names
+	metaHTTPHeaderName           = "Metadata"
+	apiVersionQueryParameterName = "api-version"
+	resourceQueryParameterName   = "resource"
+	wwwAuthenticateHeaderName    = "WWW-Authenticate"
 
-	// UAMI querry parameter name
+	// UAMI query parameter name
 	miQueryParameterClientId   = "client_id"
 	miQueryParameterObjectId   = "object_id"
 	miQueryParameterResourceId = "msi_res_id"
@@ -46,7 +50,43 @@ const (
 	// IMDS
 	imdsEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
 	imdsAPIVersion = "2018-02-01"
+
+	// Azure Arc
+	azureArcEndpoint         = "http://localhost:40342/metadata/identity/oauth2/token"
+	azureArcAPIVersion       = "2019-11-01"
+	azureArcFileExtension    = ".key"
+	azureArcMaxFileSizeBytes = 4096
+	linuxPath                = "/var/opt/azcmagent/tokens/"
+
+	// Environment Variables
+	IdentityEndpointEnvVar              = "IDENTITY_ENDPOINT"
+	IdentityHeaderEnvVar                = "IDENTITY_HEADER"
+	AzurePodIdentityAuthorityHostEnvVar = "AZURE_POD_IDENTITY_AUTHORITY_HOST"
+	ArcIMDSEnvVar                       = "IMDS_ENDPOINT"
+	MsiEndpointEnvVar                   = "MSI_ENDPOINT"
+	IdentityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
+
+	//Errors
+	getSourceError = "API doesn't support specifying a user-assigned managed identity at runtime"
 )
+
+// arcKeyDirectory returns the directory expected to contain Azure Arc keys
+var arcKeyDirectory = func() (string, error) {
+	switch runtime.GOOS {
+	case "linux":
+		return linuxPath, nil
+	case "windows":
+		pd := os.Getenv("ProgramData")
+		if pd == "" {
+			return "", errors.New("environment variable ProgramData has no value")
+		}
+		return filepath.Join(pd, "AzureConnectedMachineAgent", "Tokens"), nil
+	default:
+		return "", fmt.Errorf("unsupported OS %q", runtime.GOOS)
+	}
+}
+
+type responseHandler func(*http.Response, context.Context, string) (accesstokens.TokenResponse, error)
 
 type Source string
 
@@ -67,10 +107,27 @@ func SystemAssigned() ID {
 	return systemAssignedValue("")
 }
 
+func (s Source) String() string {
+	switch s {
+	case DefaultToIMDS:
+		return "DefaultToIMDS"
+	case AzureArc:
+		return "AzureArc"
+	case ServiceFabric:
+		return "ServiceFabric"
+	case CloudShell:
+		return "CloudShell"
+	case AppService:
+		return "AppService"
+	default:
+		return "Unknown Source"
+	}
+}
+
 type Client struct {
 	httpClient ops.HTTPClient
 	miType     ID
-	// source     Source reenable when required in future sources
+	source     Source
 }
 
 type ClientOptions struct {
@@ -105,6 +162,11 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
+	source, err := GetSource(id)
+	if err != nil {
+		return Client{}, err
+	}
+
 	opts := ClientOptions{
 		httpClient: shared.DefaultClient,
 	}
@@ -132,6 +194,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	client := Client{
 		miType:     id,
 		httpClient: opts.httpClient,
+		source:     source,
 	}
 
 	return client, nil
@@ -144,9 +207,9 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 		return nil, fmt.Errorf("couldn't parse %q: %s", imdsEndpoint, err)
 	}
 	msiParameters := msiEndpoint.Query()
-	msiParameters.Set(apiVersionQuerryParameterName, imdsAPIVersion)
+	msiParameters.Set(apiVersionQueryParameterName, imdsAPIVersion)
 	resource = strings.TrimSuffix(resource, "/.default")
-	msiParameters.Set(resourceQuerryParameterName, resource)
+	msiParameters.Set(resourceQueryParameterName, resource)
 
 	if len(claims) > 0 {
 		msiParameters.Set("claims", claims)
@@ -173,16 +236,49 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	return req, nil
 }
 
-func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
+func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
+	var msiEndpoint *url.URL
+	msiEndpoint, err := url.Parse(azureArcEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't parse %q: %s", azureArcEndpoint, err)
+	}
+	msiParameters := msiEndpoint.Query()
+	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
+	resource = strings.TrimSuffix(resource, "/.default")
+	msiParameters.Set(resourceQueryParameterName, resource)
+
+	if len(claims) > 0 {
+		msiParameters.Set("claims", claims)
+	}
+
+	switch id.(type) {
+	case systemAssignedValue: // not adding anything
+	default:
+		return nil, fmt.Errorf("unsupported type %T", id)
+	}
+
+	msiEndpoint.RawQuery = msiParameters.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating http request %s", err)
+	}
+	req.Header.Set(metaHTTPHeaderName, "true")
+	return req, nil
+}
+
+func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
+
 	responseBytes, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
+
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
+
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusAccepted:
 	default:
@@ -204,9 +300,88 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 			Err:  fmt.Errorf("http call(%s)(%s) error: reply status code was %d", req.URL.String(), req.Method, resp.StatusCode),
 		}
 	}
+
 	var r accesstokens.TokenResponse
+	if resHandler != nil {
+		return resHandler(resp, ctx, r.Claims)
+	}
 	err = json.Unmarshal(responseBytes, &r)
+
 	return r, err
+}
+
+func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Context, claims string) (accesstokens.TokenResponse, error) {
+	if response.StatusCode == http.StatusUnauthorized {
+		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
+
+		if len(wwwAuthenticateHeader) == 0 {
+			return accesstokens.TokenResponse{}, fmt.Errorf("HIMDS response has no WWW-Authenticate header")
+		}
+
+		// the WWW-Authenticate header is expected in the following format: Basic realm=/some/file/path.key
+		_, p, found := strings.Cut(wwwAuthenticateHeader, "=")
+		if !found {
+			return accesstokens.TokenResponse{}, fmt.Errorf("unexpected WWW-Authenticate header from HIMDS: %s", wwwAuthenticateHeader)
+		}
+
+		expected, err := arcKeyDirectory()
+		if err != nil {
+			return accesstokens.TokenResponse{}, err
+		}
+
+		if filepath.Dir(p) != expected || !strings.HasSuffix(p, azureArcFileExtension) {
+			return accesstokens.TokenResponse{}, fmt.Errorf("unexpected file path from HIMDS service: %s", p)
+		}
+		f, err := os.Stat(p)
+		if err != nil {
+			return accesstokens.TokenResponse{}, fmt.Errorf("could not stat: %s %s", p, err)
+		}
+
+		if s := f.Size(); s > azureArcMaxFileSizeBytes {
+			return accesstokens.TokenResponse{}, fmt.Errorf("key is too large (%d bytes)", s)
+		}
+
+		key, err := os.ReadFile(p)
+		if err != nil {
+			return accesstokens.TokenResponse{}, fmt.Errorf("could not read %s: %s", p, err)
+		}
+
+		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), azureArcEndpoint, claims)
+		if err != nil {
+			return accesstokens.TokenResponse{}, fmt.Errorf("error creating http request %s", err)
+		}
+
+		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", string(key)))
+		return c.getTokenForRequest(ctx, req, nil)
+	}
+
+	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %s", response.Status)
+}
+
+// Detects and returns the managed identity source available on the environment.
+func GetSource(id ID) (Source, error) {
+	if _, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
+		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
+			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
+				if id != nil {
+					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric.String(), getSourceError)
+				}
+				return ServiceFabric, nil
+			} else {
+				return AppService, nil
+			}
+		} else if _, ok := os.LookupEnv(ArcIMDSEnvVar); ok {
+			if _, ok := id.(systemAssignedValue); !ok {
+				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc.String(), getSourceError)
+			}
+
+			return AzureArc, nil
+		}
+	} else if _, ok := os.LookupEnv(MsiEndpointEnvVar); ok {
+		return CloudShell, nil
+	}
+
+	return DefaultToIMDS, nil
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.
@@ -215,17 +390,37 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 // Options: [WithClaims]
 func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
 	o := AcquireTokenOptions{}
+	var req *http.Request
+	var err error
 
 	for _, option := range options {
 		option(&o)
 	}
-	req, err := createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	tokenResponse, err := client.getTokenForRequest(req)
-	if err != nil {
-		return base.AuthResult{}, err
+	var tokenResponse accesstokens.TokenResponse
+	switch client.source {
+	case AzureArc:
+		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
+		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
+		if err != nil {
+			return base.AuthResult{}, fmt.Errorf("failed to retrieve secret key from the identity endpoint: %v", err)
+		}
+
+		tokenResponse, err = client.getTokenForRequest(ctx, req, client.handleAzureArcResponse)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+	default:
+		req, err = createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+
+		tokenResponse, err = client.getTokenForRequest(ctx, req, nil)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+
 	}
 	return base.NewAuthResult(tokenResponse, shared.Account{})
+
 }
