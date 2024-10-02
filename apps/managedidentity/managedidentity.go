@@ -53,7 +53,7 @@ const (
 
 	// Azure Arc
 	azureArcEndpoint         = "http://localhost:40342/metadata/identity/oauth2/token"
-	azureArcAPIVersion       = "2019-11-01"
+	azureArcAPIVersion       = "2020-06-01"
 	azureArcFileExtension    = ".key"
 	azureArcMaxFileSizeBytes = 4096
 	linuxPath                = "/var/opt/azcmagent/tokens/"
@@ -238,7 +238,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
 	var msiEndpoint *url.URL
-	msiEndpoint, err := url.Parse(azureArcEndpoint)
+	msiEndpoint, err := url.Parse(imdsEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", azureArcEndpoint, err)
 	}
