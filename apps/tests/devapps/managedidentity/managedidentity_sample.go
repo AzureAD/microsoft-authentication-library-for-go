@@ -119,9 +119,32 @@ func getSecretFromAzureVault() {
 	println(fmt.Sprintf("The secret, %s, has a value of: %s", secretName, string(body)))
 }
 
+func runIMDSUserAssignedObjectID() {
+	miUserAssigned, err := mi.New(mi.UserAssignedObjectID("YOUR_MANAGED_IDENTITY_CLIENT_ID"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	result, err := miUserAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("token expire at : ", result.ExpiresOn)
+}
+
+func runIMDSUserAssignedResourceID() {
+	miUserAssigned, err := mi.New(mi.UserAssignedResourceID("YOUR_MANAGED_IDENTITY_CLIENT_ID"))
+	if err != nil {
+		fmt.Println(err)
+	}
+	result, err := miUserAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
+	if err != nil {
+		fmt.Println(err)
+	}
+	fmt.Println("token expire at : ", result.ExpiresOn)
+}
+
 func runAzureArcSystemAssigned() {
-	// os.Setenv(mi.IdentityEndpointEnvVar, "identityEndpointVar")
-	// os.Setenv(mi.ArcIMDSEnvVar, "imdsEnvVar") // present by default on VM
+	setEnvironmentVariablesIfRequired(mi.AzureArc)
 
 	miAzureArc, err := mi.New(mi.SystemAssigned())
 	if err != nil {
@@ -132,6 +155,43 @@ func runAzureArcSystemAssigned() {
 		fmt.Println(err)
 	}
 	fmt.Println("token expire at : ", result.ExpiresOn)
+}
+
+func runAzureArcUserAssignedClientID() {
+	setEnvironmentVariablesIfRequired(mi.AzureArc)
+
+	_, err := mi.New(mi.UserAssignedClientID("This should fail"))
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func runAzureArcUserAssignedObjectID() {
+	setEnvironmentVariablesIfRequired(mi.AzureArc)
+
+	_, err := mi.New(mi.UserAssignedObjectID("This should fail"))
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func runAzureArcUserAssignedResourceID() {
+	setEnvironmentVariablesIfRequired(mi.AzureArc)
+
+	_, err := mi.New(mi.UserAssignedResourceID("This should fail"))
+	if err != nil {
+		fmt.Println(err)
+	}
+}
+
+func setEnvironmentVariablesIfRequired(source mi.Source) {
+	if isLocalTest {
+		switch source {
+		case mi.AzureArc:
+			os.Setenv(mi.IdentityEndpointEnvVar, "identityEndpointVar")
+			os.Setenv(mi.ArcIMDSEnvVar, "imdsEnvVar")
+		}
+	}
 }
 
 func main() {
