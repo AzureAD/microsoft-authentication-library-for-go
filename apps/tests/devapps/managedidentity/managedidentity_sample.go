@@ -8,7 +8,7 @@ import (
 	mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
 
-var isLocalTest = true
+var isLocalTest = false
 
 func runIMDSSystemAssigned() {
 	miSystemAssigned, err := mi.New(mi.SystemAssigned())
