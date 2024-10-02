@@ -267,6 +267,8 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, clai
 }
 
 func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
+	var r accesstokens.TokenResponse
+
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
@@ -280,6 +282,10 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 	}
 
 	switch resp.StatusCode {
+	case http.StatusUnauthorized:
+		if resHandler != nil {
+			return resHandler(resp, ctx, r.Claims)
+		}
 	case http.StatusOK, http.StatusAccepted:
 	default:
 		sd := strings.TrimSpace(string(responseBytes))
@@ -301,12 +307,7 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 		}
 	}
 
-	var r accesstokens.TokenResponse
-	if resHandler != nil {
-		return resHandler(resp, ctx, r.Claims)
-	}
 	err = json.Unmarshal(responseBytes, &r)
-
 	return r, err
 }
 
@@ -399,12 +400,13 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	var tokenResponse accesstokens.TokenResponse
 	switch client.source {
 	case AzureArc:
-		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
 		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
 		if err != nil {
-			return base.AuthResult{}, fmt.Errorf("failed to retrieve secret key from the identity endpoint: %v", err)
+			return base.AuthResult{}, err
 		}
 
+		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
+		// this is done when we get a 401 response, which will be handled by the response handler
 		tokenResponse, err = client.getTokenForRequest(ctx, req, client.handleAzureArcResponse)
 		if err != nil {
 			return base.AuthResult{}, err
@@ -421,6 +423,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		}
 
 	}
+
 	return base.NewAuthResult(tokenResponse, shared.Account{})
 
 }
