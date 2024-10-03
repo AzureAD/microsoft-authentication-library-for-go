@@ -121,7 +121,7 @@ func unsetEnvVars() {
 
 func environmentVariablesHelper(source Source, endpoint string) *mockEnvironmentVariables {
 	vars := map[string]string{
-		"Source": source.String(),
+		"Source": string(source),
 	}
 
 	switch source {
@@ -147,16 +147,16 @@ func environmentVariablesHelper(source Source, endpoint string) *mockEnvironment
 func Test_Get_Source(t *testing.T) {
 	// todo update as required
 	testCases := []sourceTestData{
-		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: SystemAssigned()},
-		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: UserAssignedClientID("clientId")},
-		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
-		{source: AzureArc, endpoint: azureArcEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
+		{source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: SystemAssigned()},
+		{source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedClientID("clientId")},
+		{source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
+		{source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
 		{source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 		{source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 	}
 
 	for _, testCase := range testCases {
-		t.Run(testCase.source.String(), func(t *testing.T) {
+		t.Run(string(testCase.source), func(t *testing.T) {
 			unsetEnvVars()
 			setEnvVars(t, testCase.source)
 
