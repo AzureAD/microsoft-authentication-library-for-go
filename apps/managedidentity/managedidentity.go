@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -371,12 +370,13 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-
+		println("Got a 401 response, handling it")
 		if resHandler != nil {
 			return resHandler(resp, ctx, r.Claims)
 		}
 	case http.StatusOK, http.StatusAccepted:
 	default:
+		println("Got 200 or 202 response")
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
 			return accesstokens.TokenResponse{}, errors.CallErr{
@@ -464,7 +464,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		}
 
 		// Attempt to read the contents of the secret file
-		secret, err := ioutil.ReadFile(secretFilePath)
+		secret, err := os.ReadFile(secretFilePath)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("unable to read the secret file")
 		}
