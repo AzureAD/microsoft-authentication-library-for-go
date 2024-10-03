@@ -187,27 +187,37 @@ func New(id ID, options ...ClientOption) (Client, error) {
 
 // Detects and returns the managed identity source available on the environment.
 func GetSource(id ID) (Source, error) {
+	println("GetSource: 1")
 	if _, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
+		println("GetSource: 2")
 		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
+			println("GetSource: 3")
 			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
+				println("GetSource: 4")
 				if id != nil {
+					println("GetSource: 5")
 					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric, getSourceError)
 				}
+				println("GetSource: 6")
 				return ServiceFabric, nil
 			} else {
+				println("GetSource: 7")
 				return AppService, nil
 			}
 		} else if _, ok := os.LookupEnv(ArcIMDSEnvVar); ok {
+			println("GetSource: 8")
 			if _, ok := id.(systemAssignedValue); !ok {
+				println("GetSource: 9")
 				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
 			}
-
+			println("GetSource: 10")
 			return AzureArc, nil
 		}
 	} else if _, ok := os.LookupEnv(MsiEndpointEnvVar); ok {
+		println("GetSource: 11")
 		return CloudShell, nil
 	}
-
+	println("GetSource: 12")
 	return DefaultToIMDS, nil
 }
 
