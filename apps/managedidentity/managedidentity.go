@@ -56,7 +56,7 @@ const (
 	azureArcAPIVersion       = "2020-06-01"
 	azureArcFileExtension    = ".key"
 	azureArcMaxFileSizeBytes = 4096
-	linuxPath                = "/var/opt/azcmagent/tokens/"
+	linuxPath                = "/opt/azcmagent/bin/himds"
 
 	// Environment Variables
 	IdentityEndpointEnvVar              = "IDENTITY_ENDPOINT"
@@ -357,6 +357,7 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
+
 		if resHandler != nil {
 			return resHandler(resp, ctx, r.Claims)
 		}
