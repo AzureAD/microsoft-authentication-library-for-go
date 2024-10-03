@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
@@ -40,7 +41,7 @@ const (
 	metaHTTPHeaderName           = "Metadata"
 	apiVersionQueryParameterName = "api-version"
 	resourceQueryParameterName   = "resource"
-	wwwAuthenticateHeaderName    = "WWW-Authenticate"
+	wwwAuthenticateHeaderName    = "www-authenticate"
 
 	// UAMI query parameter name
 	miQueryParameterClientId   = "client_id"
@@ -52,11 +53,14 @@ const (
 	imdsAPIVersion = "2018-02-01"
 
 	// Azure Arc
-	azureArcEndpoint         = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
-	azureArcAPIVersion       = "2020-06-01"
-	azureArcFileExtension    = ".key"
-	azureArcMaxFileSizeBytes = 4096
-	linuxPath                = "/opt/azcmagent/bin/himds"
+	azureArcEndpoint               = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
+	azureArcAPIVersion             = "2020-06-01"
+	azureArcFileExtension          = ".key"
+	azureArcMaxFileSizeBytes int64 = 4096
+	linuxSupportedPath             = "/var/opt/azcmagent/tokens/"
+	linuxAzureArcFilePath          = "/opt/azcmagent/bin/himds"
+	windowsTokenPath               = "\\AzureConnectedMachineAgent\\Tokens\\"
+	WindowsHimdsPath               = "\\AzureConnectedMachineAgent\\himds.exe"
 
 	// Environment Variables
 	IdentityEndpointEnvVar              = "IDENTITY_ENDPOINT"
@@ -70,17 +74,27 @@ const (
 	getSourceError = "API doesn't support specifying a user-assigned managed identity at runtime"
 )
 
+var supportedAzureArcPlatforms = map[string]string{
+	"windows": fmt.Sprintf("%s\\AzureConnectedMachineAgent\\Tokens\\", os.Getenv("ProgramData")),
+	"linux":   "/var/opt/azcmagent/tokens/",
+}
+
+var azureArcFileDetection = map[string]string{
+	"windows": fmt.Sprintf("%s\\AzureConnectedMachineAgent\\himds.exe", os.Getenv("ProgramFiles")),
+	"linux":   "/opt/azcmagent/bin/himds",
+}
+
 // arcKeyDirectory returns the directory expected to contain Azure Arc keys
 var arcKeyDirectory = func() (string, error) {
 	switch runtime.GOOS {
 	case "linux":
-		return linuxPath, nil
+		return linuxSupportedPath, nil
 	case "windows":
 		pd := os.Getenv("ProgramData")
 		if pd == "" {
 			return "", errors.New("environment variable ProgramData has no value")
 		}
-		return filepath.Join(pd, "AzureConnectedMachineAgent", "Tokens"), nil
+		return filepath.Join(pd, windowsTokenPath), nil
 	default:
 		return "", fmt.Errorf("unsupported OS %q", runtime.GOOS)
 	}
@@ -389,47 +403,106 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Context, claims string) (accesstokens.TokenResponse, error) {
 	if response.StatusCode == http.StatusUnauthorized {
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
+		platform := runtime.GOOS
 
 		if len(wwwAuthenticateHeader) == 0 {
-			return accesstokens.TokenResponse{}, fmt.Errorf("HIMDS response has no WWW-Authenticate header")
+			return accesstokens.TokenResponse{}, fmt.Errorf("response has no www-authenticate header")
 		}
 
 		// the WWW-Authenticate header is expected in the following format: Basic realm=/some/file/path.key
-		_, p, found := strings.Cut(wwwAuthenticateHeader, "=")
-		if !found {
-			return accesstokens.TokenResponse{}, fmt.Errorf("unexpected WWW-Authenticate header from HIMDS: %s", wwwAuthenticateHeader)
+		// _, p, found := strings.Cut(wwwAuthenticateHeader, "=")
+		// if !found {
+		// 	return accesstokens.TokenResponse{}, fmt.Errorf("unexpected WWW-Authenticate header from HIMDS: %s", wwwAuthenticateHeader)
+		// }
+		if !strings.Contains(wwwAuthenticateHeader, "Basic realm=") {
+			return accesstokens.TokenResponse{}, fmt.Errorf("www-authenticate header is in an unsupported format")
 		}
 
-		expected, err := arcKeyDirectory()
+		var secretFilePath string
+
+		// split the header to get the secret file path
+		parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
+		if len(parts) > 1 {
+			secretFilePath = parts[1]
+		} else {
+			return accesstokens.TokenResponse{}, fmt.Errorf("Basic realm= not found in the string")
+		}
+
+		// check if the platform is supported
+		if _, ok := supportedAzureArcPlatforms[platform]; !ok {
+			return accesstokens.TokenResponse{}, fmt.Errorf("platform not supported")
+		}
+
+		// get the expected Windows or Linux file path
+		expectedSecretFilePath, ok := supportedAzureArcPlatforms[platform]
+		if !ok {
+			return accesstokens.TokenResponse{}, fmt.Errorf("error getting expected secret file path")
+		}
+
+		// check that the file in the file path is a .key file
+		fileName := filepath.Base(secretFilePath)
+		if !strings.HasSuffix(fileName, azureArcFileExtension) {
+			return accesstokens.TokenResponse{}, fmt.Errorf("invalid file extension")
+		}
+
+		// check that file path from header matches the expected file path for the platform
+		if expectedSecretFilePath+fileName != secretFilePath {
+			return accesstokens.TokenResponse{}, fmt.Errorf("invalid file path")
+		}
+
+		// Attempt to get the secret file's size, in bytes,
+		fileInfo, err := os.Stat(secretFilePath)
 		if err != nil {
-			return accesstokens.TokenResponse{}, err
+			return accesstokens.TokenResponse{}, fmt.Errorf("unable to read secret file")
 		}
 
-		if filepath.Dir(p) != expected || !strings.HasSuffix(p, azureArcFileExtension) {
-			return accesstokens.TokenResponse{}, fmt.Errorf("unexpected file path from HIMDS service: %s", p)
+		secretFileSize := fileInfo.Size()
+
+		// Throw an error if the secret file's size is greater than 4096 bytes
+		if secretFileSize > azureArcMaxFileSizeBytes {
+			return accesstokens.TokenResponse{}, fmt.Errorf("invalid secret")
 		}
 
-		f, err := os.Stat(p)
+		// Attempt to read the contents of the secret file
+		secret, err := ioutil.ReadFile(secretFilePath)
 		if err != nil {
-			return accesstokens.TokenResponse{}, fmt.Errorf("could not stat: %s %s", p, err)
+			return accesstokens.TokenResponse{}, fmt.Errorf("unable to read the secret file")
 		}
 
-		if s := f.Size(); s > azureArcMaxFileSizeBytes {
-			return accesstokens.TokenResponse{}, fmt.Errorf("key is too large (%d bytes)", s)
-		}
+		authHeaderValue := fmt.Sprintf("Basic %s", string(secret))
 
-		key, err := os.ReadFile(p)
-		if err != nil {
-			return accesstokens.TokenResponse{}, fmt.Errorf("could not read %s: %s", p, err)
-		}
+		println("Adding auth header to the request")
 
 		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), "https://management.azure.com/", claims)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("error creating http request %s", err)
 		}
 
-		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", string(key)))
+		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", string(authHeaderValue)))
+
 		return c.getTokenForRequest(ctx, req, nil)
+		// expected, err := arcKeyDirectory()
+		// if err != nil {
+		// 	return accesstokens.TokenResponse{}, err
+		// }
+
+		// if filepath.Dir(p) != expected || !strings.HasSuffix(p, azureArcFileExtension) {
+		// 	return accesstokens.TokenResponse{}, fmt.Errorf("unexpected file path from HIMDS service: %s", p)
+		// }
+
+		// f, err := os.Stat(p)
+		// if err != nil {
+		// 	return accesstokens.TokenResponse{}, fmt.Errorf("could not stat: %s %s", p, err)
+		// }
+
+		// if s := f.Size(); s > azureArcMaxFileSizeBytes {
+		// 	return accesstokens.TokenResponse{}, fmt.Errorf("key is too large (%d bytes)", s)
+		// }
+
+		// key, err := os.ReadFile(p)
+		// if err != nil {
+		// 	return accesstokens.TokenResponse{}, fmt.Errorf("could not read %s: %s", p, err)
+		// }
 	}
 
 	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %s", response.Status)
