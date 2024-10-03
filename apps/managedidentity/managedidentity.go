@@ -106,23 +106,6 @@ func SystemAssigned() ID {
 	return systemAssignedValue("")
 }
 
-func (s Source) String() string {
-	switch s {
-	case DefaultToIMDS:
-		return "DefaultToIMDS"
-	case AzureArc:
-		return "AzureArc"
-	case ServiceFabric:
-		return "ServiceFabric"
-	case CloudShell:
-		return "CloudShell"
-	case AppService:
-		return "AppService"
-	default:
-		return "Unknown Source"
-	}
-}
-
 type Client struct {
 	httpClient ops.HTTPClient
 	miType     ID
@@ -207,7 +190,7 @@ func GetSource(id ID) (Source, error) {
 		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
 			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
 				if id != nil {
-					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric.String(), getSourceError)
+					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric, getSourceError)
 				}
 				return ServiceFabric, nil
 			} else {
@@ -215,7 +198,7 @@ func GetSource(id ID) (Source, error) {
 			}
 		} else if _, ok := os.LookupEnv(ArcIMDSEnvVar); ok {
 			if _, ok := id.(systemAssignedValue); !ok {
-				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc.String(), getSourceError)
+				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
 			}
 
 			return AzureArc, nil
@@ -240,6 +223,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		option(&o)
 	}
 	var tokenResponse accesstokens.TokenResponse
+
 	switch client.source {
 	case AzureArc:
 		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
@@ -328,9 +312,7 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, clai
 		msiParameters.Set("claims", claims)
 	}
 
-	switch id.(type) {
-	case systemAssignedValue: // not adding anything
-	default:
+	if _, ok := id.(systemAssignedValue); !ok {
 		return nil, fmt.Errorf("unsupported type %T", id)
 	}
 
@@ -410,6 +392,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		if filepath.Dir(p) != expected || !strings.HasSuffix(p, azureArcFileExtension) {
 			return accesstokens.TokenResponse{}, fmt.Errorf("unexpected file path from HIMDS service: %s", p)
 		}
+
 		f, err := os.Stat(p)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("could not stat: %s %s", p, err)
