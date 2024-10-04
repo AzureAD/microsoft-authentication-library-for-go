@@ -143,6 +143,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
+	println("Creating managed identity client")
 	source, err := GetSource(id)
 	if err != nil {
 		return Client{}, err
@@ -184,6 +185,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 
 // Detects and returns the managed identity source available on the environment.
 func GetSource(id ID) (Source, error) {
+	println("Detecting managed identity source")
 	if identityEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
 		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
 			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
@@ -215,6 +217,7 @@ func GetSource(id ID) (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	println("Acquiring token")
 	o := AcquireTokenOptions{}
 	var req *http.Request
 	var err error
@@ -225,6 +228,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	var tokenResponse accesstokens.TokenResponse
 	switch client.source {
 	case AzureArc:
+		println("Acquiring token from AzureArc")
 		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
 		if err != nil {
 			return base.AuthResult{}, err
@@ -290,6 +294,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 }
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
+	println("creating azurearc auth request")
 	identityEndpoint, _ := getAzureArcEnvironmentVariables()
 	var msiEndpoint *url.URL
 
@@ -353,11 +358,14 @@ func getAzureArcEnvironmentVariables() (string, string) {
 	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
 
 	if identityEndpoint == "" || imdsEndpoint == "" {
+		println("[Managed Identity] Azure Arc managed identity environment variables are not set.")
 		platform := os.Getenv("GOOS")
 		fileDetectionPath, exists := azureArcFileDetection[platform]
 
 		if exists {
+			println("fileDetectionPath: ", fileDetectionPath)
 			if _, err := os.Stat(fileDetectionPath); err == nil {
+				println("no error finding path so setting identityEndpoint and imdsEndpoint: ", azureArcEndpoint, himdsExecutableHelperString)
 				identityEndpoint = azureArcEndpoint
 				imdsEndpoint = himdsExecutableHelperString
 			}
@@ -368,6 +376,7 @@ func getAzureArcEnvironmentVariables() (string, string) {
 }
 
 func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string) bool {
+	println("validateAzureArcEnvironment")
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		println("[Managed Identity] Azure Arc managed identity is available through environment variables.")
 		return true
@@ -408,6 +417,7 @@ func fileExists(path string) bool {
 // }
 
 func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
+	println("getting token for request")
 	var r accesstokens.TokenResponse
 
 	resp, err := client.httpClient.Do(req)
@@ -425,10 +435,12 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
 		if resHandler != nil {
+			println("401 received, response handler is not nil so entering")
 			return resHandler(resp, ctx, r.Claims)
 		}
 	case http.StatusOK, http.StatusAccepted:
 	default:
+		println("status code ok")
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
 			return accesstokens.TokenResponse{}, errors.CallErr{
@@ -454,6 +466,7 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 
 func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Context, claims string) (accesstokens.TokenResponse, error) {
 	if response.StatusCode == http.StatusUnauthorized {
+		println("handling azure arc response")
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 		platform := runtime.GOOS
 
