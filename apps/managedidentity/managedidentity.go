@@ -18,10 +18,14 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -46,6 +50,9 @@ const (
 	// IMDS
 	imdsEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
 	imdsAPIVersion = "2018-02-01"
+
+	//system assigned managed identity
+	systemAssignedManagedIdentity = "system_assigned_managed_identity"
 )
 
 type Source string
@@ -64,13 +71,20 @@ func (c UserAssignedClientID) value() string   { return string(c) }
 func (o UserAssignedObjectID) value() string   { return string(o) }
 func (r UserAssignedResourceID) value() string { return string(r) }
 func SystemAssigned() ID {
-	return systemAssignedValue("")
+	return systemAssignedValue(systemAssignedManagedIdentity)
 }
 
 type Client struct {
 	httpClient ops.HTTPClient
 	miType     ID
 	// source     Source reenable when required in future sources
+	cacheManager manager
+}
+
+type manager interface {
+	cache.Serializer
+	Read(context.Context, authority.AuthParams) (storage.TokenResponse, error)
+	Write(authority.AuthParams, accesstokens.TokenResponse) (shared.Account, error)
 }
 
 type ClientOptions struct {
@@ -108,7 +122,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	opts := ClientOptions{
 		httpClient: shared.DefaultClient,
 	}
-
 	for _, option := range options {
 		option(&opts)
 	}
@@ -129,11 +142,12 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
+	token := oauth.New(http.DefaultClient)
 	client := Client{
-		miType:     id,
-		httpClient: opts.httpClient,
+		miType:       id,
+		httpClient:   opts.httpClient,
+		cacheManager: storage.New(token),
 	}
-
 	return client, nil
 }
 
@@ -223,9 +237,46 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
+
+	m := client.cacheManager
+	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, false)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+
+	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
+	storageTokenResponse, err := m.Read(ctx, fakeAuthParams)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	// ignore cached access tokens when given claims
+	if o.claims == "" {
+		ar, err := base.AuthResultFromStorage(storageTokenResponse)
+		if err == nil {
+			ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			return ar, err
+		}
+	}
 	tokenResponse, err := client.getTokenForRequest(req)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return base.NewAuthResult(tokenResponse, shared.Account{})
+	return client.AuthResultFromToken(ctx, fakeAuthParams, tokenResponse, true)
+}
+
+func (c Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (base.AuthResult, error) {
+	if !cacheWrite {
+		return base.NewAuthResult(token, shared.Account{})
+	}
+	var m manager = c.cacheManager
+	account, err := m.Write(authParams, token)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	ar, err := base.NewAuthResult(token, account)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	return ar, err
 }

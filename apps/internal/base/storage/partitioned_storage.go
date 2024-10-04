@@ -91,6 +91,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
+	resource := tokenResponse.Resource
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	userAssertionHash := authParameters.AssertionHash()
 	cachedAt := time.Now()
@@ -120,6 +121,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			tokenResponse.AccessToken,
 			tokenResponse.TokenType,
 			authnSchemeKeyID,
+			resource,
 		)
 		if authParameters.AuthorizationType == authority.ATOnBehalfOf {
 			accessToken.UserAssertionHash = userAssertionHash // get Hash method on this
