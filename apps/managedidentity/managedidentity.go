@@ -527,7 +527,13 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 
 		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", string(authHeaderValue)))
 
-		println("Making request to get token from response, url: ", req.URL.String())
+		println("Request Headers:")
+		for name, values := range req.Header {
+			for _, value := range values {
+				println("%s: %s\n", name, value)
+			}
+		}
+
 		return c.getTokenForRequest(ctx, req, nil)
 	}
 
