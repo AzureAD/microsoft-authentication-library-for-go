@@ -65,7 +65,7 @@ func runAzureArcSystemAssigned() {
 	if err != nil {
 		fmt.Println(err)
 	}
-	result, err := miAzureArc.AcquireToken(context.Background(), "https://management.azure.com/")
+	result, err := miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
 	if err != nil {
 		fmt.Println(err)
 	}
