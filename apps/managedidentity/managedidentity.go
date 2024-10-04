@@ -194,18 +194,12 @@ func GetSource(id ID) (Source, error) {
 
 	if identityEndpoint != "" && identityHeader != "" {
 		if identityServerThumbprint != "" {
-			if id != nil {
-				return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric, getSourceError)
-			}
 			return ServiceFabric, nil
 		}
 		return AppService, nil
 	} else if msiEndpoint != "" {
 		return CloudShell, nil
 	} else if validateAzureArcEnvironment(identityEndpoint, imdsEndpoint) {
-		if id != nil {
-			return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
-		}
 		return AzureArc, nil
 	}
 
