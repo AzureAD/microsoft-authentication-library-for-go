@@ -75,28 +75,35 @@ func runAzureArcSystemAssigned() {
 func runAzureArcUserAssignedClientID() {
 	setEnvironmentVariablesIfRequired(mi.AzureArc)
 
-	_, err := mi.New(mi.UserAssignedClientID("This should fail"))
+	miAzureArc, err := mi.New(mi.UserAssignedClientID("This should fail"))
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
 }
 
 func runAzureArcUserAssignedObjectID() {
 	setEnvironmentVariablesIfRequired(mi.AzureArc)
 
-	_, err := mi.New(mi.UserAssignedObjectID("This should fail"))
+	miAzureArc, err := mi.New(mi.UserAssignedObjectID("This should fail"))
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
 }
 
 func runAzureArcUserAssignedResourceID() {
 	setEnvironmentVariablesIfRequired(mi.AzureArc)
 
-	_, err := mi.New(mi.UserAssignedResourceID("This should fail"))
+	miAzureArc, err := mi.New(mi.UserAssignedResourceID("This should fail"))
 	if err != nil {
 		fmt.Println(err)
 	}
+
+	miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
+
 }
 
 func setEnvironmentVariablesIfRequired(source mi.Source) {

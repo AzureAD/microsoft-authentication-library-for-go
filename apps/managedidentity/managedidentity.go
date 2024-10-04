@@ -75,13 +75,13 @@ const (
 )
 
 var supportedAzureArcPlatforms = map[string]string{
-	"windows": fmt.Sprintf("%s\\AzureConnectedMachineAgent\\Tokens\\", os.Getenv("ProgramData")),
-	"linux":   "/var/opt/azcmagent/tokens/",
+	"windows": fmt.Sprintf("%s%s", os.Getenv("ProgramData"), windowsTokenPath),
+	"linux":   linuxSupportedPath,
 }
 
 var azureArcFileDetection = map[string]string{
-	"windows": fmt.Sprintf("%s\\AzureConnectedMachineAgent\\himds.exe", os.Getenv("ProgramFiles")),
-	"linux":   "/opt/azcmagent/bin/himds",
+	"windows": fmt.Sprintf("%s%s", os.Getenv("ProgramFiles"), windowsHimdsPath),
+	"linux":   linuxAzureArcFilePath,
 }
 
 type responseHandler func(*http.Response, context.Context, string) (accesstokens.TokenResponse, error)
@@ -155,7 +155,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
-
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -185,36 +184,29 @@ func New(id ID, options ...ClientOption) (Client, error) {
 
 // Detects and returns the managed identity source available on the environment.
 func GetSource(id ID) (Source, error) {
-	if endpoint, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
-		println("GetSource 2: %s", endpoint)
+	if identityEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
 		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
-			println("GetSource: 3")
 			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
-				println("GetSource: 4")
 				if id != nil {
-					println("GetSource: 5")
 					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric, getSourceError)
 				}
-				println("GetSource: 6")
 				return ServiceFabric, nil
 			} else {
-				println("GetSource: 7")
 				return AppService, nil
 			}
-		} else if arcImds, ok := os.LookupEnv(ArcIMDSEnvVar); ok {
-			println("GetSource 8: %s", arcImds)
-			if _, ok := id.(systemAssignedValue); !ok {
-				println("GetSource: 9")
+		} else if ok := validateAzureArcEnvironment(identityEndpoint, os.Getenv(ArcIMDSEnvVar)); ok {
+			if !ok {
+				println("[Managed Identity] AzureArc managed identity is not available, defaulting to IMDS")
 				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
 			}
-			println("GetSource: 10")
+			// if _, ok := id.(systemAssignedValue); !ok {
+			// 	return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
+			// }
 			return AzureArc, nil
 		}
 	} else if _, ok := os.LookupEnv(MsiEndpointEnvVar); ok {
-		println("GetSource: 11")
 		return CloudShell, nil
 	}
-	println("GetSource: 12")
 	return DefaultToIMDS, nil
 }
 
@@ -231,7 +223,6 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		option(&o)
 	}
 	var tokenResponse accesstokens.TokenResponse
-
 	switch client.source {
 	case AzureArc:
 		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
@@ -299,35 +290,36 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 }
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
-	identityEndpoint, imdsEndpoint := getAzureArcEnvironmentVariables()
+	identityEndpoint, _ := getAzureArcEnvironmentVariables()
 	var msiEndpoint *url.URL
-	// var err error
 
-	if identityEndpoint == "" || imdsEndpoint == "" {
-		return nil, fmt.Errorf("[Managed Identity] AzureArc managed identity is unavailable through environment variables because one or both of IDENTITY_ENDPOINT and IMDS_ENDPOINT are not defined. AzureArc managed identity is also unavailable through file detection")
+	if identityEndpoint == "" {
+		identityEndpoint = azureArcEndpoint
+		println("AzureArc was detected through file based detection but the environment variables were not found. Defaulting to known azure arc endpoint.")
 	}
+
+	println("AzureArc managed identity is available")
 
 	// Check if the imds endpoint is set to the default for file detection
-	if imdsEndpoint == himdsExecutableHelperString {
-		println(fmt.Sprintf("[Managed Identity] AzureArc managed identity is available through file detection. Defaulting to known AzureArc endpoint: %s. Creating AzureArc managed identity.", azureArcEndpoint))
-	} else {
-		// Both the identity and imds endpoints are defined without file detection; validate them
-		validatedIdentityEndpoint, identityErr := getValidatedEnvVariableUrlString(IdentityEndpointEnvVar, identityEndpoint, string(AzureArc))
-		if identityErr != nil {
-			return nil, identityErr
-		}
+	// if imdsEndpoint == himdsExecutableHelperString {
+	// 	println(fmt.Sprintf("AzureArc managed identity is available through file detection. Defaulting to known AzureArc endpoint: %s. Creating AzureArc managed identity.", azureArcEndpoint))
+	// } else {
+	// 	// Both the identity and imds endpoints are defined without file detection; validate them
+	// 	validatedIdentityEndpoint, identityErr := getValidatedEnvVariableUrlString(IdentityEndpointEnvVar, identityEndpoint)
+	// 	if identityErr != nil {
+	// 		return nil, identityErr
+	// 	}
 
-		validatedIdentityEndpoint = strings.TrimSuffix(validatedIdentityEndpoint, "/")
+	// 	validatedIdentityEndpoint = strings.TrimSuffix(validatedIdentityEndpoint, "/")
 
-		_, imdsErr := getValidatedEnvVariableUrlString(ArcIMDSEnvVar, imdsEndpoint, string(AzureArc))
-		if imdsErr != nil {
-			return nil, imdsErr
-		}
-
-		println(fmt.Sprintf("[Managed Identity] Environment variables validation passed for AzureArc managed identity. Endpoint URI: %s. Creating AzureArc managed identity.", validatedIdentityEndpoint))
-	}
+	// 	_, imdsErr := getValidatedEnvVariableUrlString(ArcIMDSEnvVar, imdsEndpoint)
+	// 	if imdsErr != nil {
+	// 		return nil, imdsErr
+	// 	}
+	// }
 
 	if _, ok := id.(systemAssignedValue); !ok {
+		println("unsupported AzureArc managed identity type")
 		return nil, errors.New("unable to create AzureArc")
 	}
 
@@ -361,12 +353,10 @@ func getAzureArcEnvironmentVariables() (string, string) {
 	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
 
 	if identityEndpoint == "" || imdsEndpoint == "" {
-		println("Identity endpoint or IMDS endpoint not found in environment variables")
 		platform := os.Getenv("GOOS")
 		fileDetectionPath, exists := azureArcFileDetection[platform]
 
 		if exists {
-			println("File detection path exists")
 			if _, err := os.Stat(fileDetectionPath); err == nil {
 				identityEndpoint = azureArcEndpoint
 				imdsEndpoint = himdsExecutableHelperString
@@ -377,21 +367,49 @@ func getAzureArcEnvironmentVariables() (string, string) {
 	return identityEndpoint, imdsEndpoint
 }
 
-// Validates the environment variable URL string
-func getValidatedEnvVariableUrlString(envVariableStringName, envVariable, sourceName string) (string, error) {
-	parsedUrl, err := url.ParseRequestURI(envVariable)
-
-	if err != nil {
-		println(fmt.Sprintf("[Managed Identity] %s managed identity is unavailable because the '%s' environment variable is malformed.", sourceName, envVariableStringName))
-		return "", fmt.Errorf("%s endpoint is malformed", envVariableStringName)
+func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string) bool {
+	if identityEndpoint != "" && imdsEndpoint != "" {
+		println("[Managed Identity] Azure Arc managed identity is available through environment variables.")
+		return true
 	}
-	return parsedUrl.String(), nil
+
+	platform := runtime.GOOS
+	himdsFilePath, platformSupported := azureArcFileDetection[platform]
+
+	println("platform: ", platform)
+	println("himdsFilePath: ", himdsFilePath)
+	println("platformSupported: ", platformSupported)
+	if platformSupported && fileExists(himdsFilePath) {
+		println("[Managed Identity] Azure Arc managed identity is available through file detection.")
+		return true
+	}
+
+	if !platformSupported {
+		println("[Managed Identity] Azure Arc managed identity cannot be configured on this platform.")
+	}
+
+	println("[Managed Identity] Azure Arc managed identity is not available.")
+	return false
 }
+
+func fileExists(path string) bool {
+	_, err := os.Stat(path)
+	return !os.IsNotExist(err)
+}
+
+// Validates the environment variable URL string
+// func getValidatedEnvVariableUrlString(envVariableStringName string, envVariable string) (string, error) {
+// 	parsedUrl, err := url.ParseRequestURI(envVariable)
+
+// 	if err != nil {
+// 		return "", fmt.Errorf("%s endpoint is malformed", envVariableStringName)
+// 	}
+// 	return parsedUrl.String(), nil
+// }
 
 func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
 	var r accesstokens.TokenResponse
 
-	println("Making request to get token, url: ", req.URL.String())
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
@@ -406,13 +424,11 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
-		println("Got a 401 response, handling it")
 		if resHandler != nil {
 			return resHandler(resp, ctx, r.Claims)
 		}
 	case http.StatusOK, http.StatusAccepted:
 	default:
-		println("Got 200 or 202 response")
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
 			return accesstokens.TokenResponse{}, errors.CallErr{
@@ -441,7 +457,6 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 		platform := runtime.GOOS
 
-		println("authenticateHeader: ", wwwAuthenticateHeader)
 		if len(wwwAuthenticateHeader) == 0 {
 			return accesstokens.TokenResponse{}, errors.New("response has no www-authenticate header")
 		}
@@ -482,30 +497,8 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, errors.New("invalid file path")
 		}
 
-		println("Secret file path: ", secretFilePath)
-		// changedSecretFilePath := strings.ReplaceAll(strings.TrimSpace(secretFilePath), "", "")
-		println("Changed Secret file path: ", secretFilePath)
-		// Attempt to get the secret file's size, in bytes,
-		// Attempt to get the secret file's size, in bytes
 		fileInfo, err := os.Stat(secretFilePath)
 		if err != nil {
-			// Log detailed error information
-			println(fmt.Sprintf("error reading file info: %v", err))
-			println(fmt.Sprintf("file path: %s", secretFilePath))
-
-			// Check if the file exists
-			if _, err := os.Stat(secretFilePath); os.IsNotExist(err) {
-				println("File does not exist")
-			}
-
-			// Check permissions
-			file, err := os.Open(secretFilePath)
-			if err != nil {
-				println(fmt.Sprintf("error opening file: %v", err))
-				return accesstokens.TokenResponse{}, errors.New("unable to open secret file")
-			}
-			file.Close()
-
 			return accesstokens.TokenResponse{}, errors.New("unable to read secret file")
 		}
 
@@ -523,8 +516,6 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		}
 
 		authHeaderValue := fmt.Sprintf("Basic %s", string(secret))
-
-		println("Adding auth header to the request")
 
 		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), "https://management.azure.com", claims)
 		if err != nil {
