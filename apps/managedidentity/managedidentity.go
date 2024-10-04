@@ -419,6 +419,48 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
 	}
 
+	// Check if the imds endpoint is set to the default for file detection
+	if imdsEndpoint == himdsExecutableHelperString {
+		println(fmt.Sprintf("[Managed Identity] AzureArc managed identity is available through file detection. Defaulting to known AzureArc endpoint: %s. Creating AzureArc managed identity.", azureArcEndpoint))
+	} else {
+		// Both the identity and imds endpoints are defined without file detection; validate them
+		validatedIdentityEndpoint, identityErr := getValidatedEnvVariableUrlString(IdentityEndpointEnvVar, identityEndpoint, string(AzureArc))
+		if identityErr != nil {
+			return nil, identityErr
+		}
+
+		validatedIdentityEndpoint = strings.TrimSuffix(validatedIdentityEndpoint, "/")
+
+		_, imdsErr := getValidatedEnvVariableUrlString(ArcIMDSEnvVar, imdsEndpoint, string(AzureArc))
+		if imdsErr != nil {
+			return nil, imdsErr
+		}
+
+		println(fmt.Sprintf("[Managed Identity] Environment variables validation passed for AzureArc managed identity. Endpoint URI: %s. Creating AzureArc managed identity.", validatedIdentityEndpoint))
+	}
+
+	if _, ok := id.(systemAssignedValue); !ok {
+		return nil, errors.New("unable to create AzureArc")
+	}
+
+	identityEndpoint = strings.Replace(identityEndpoint, "localhost", "127.0.0.1", -1)
+	msiEndpoint, parseErr := url.Parse(identityEndpoint)
+	if parseErr != nil {
+		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
+	}
+	// envEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar)
+	// if !ok {
+	// 	msiEndpoint, err = url.Parse(azureArcEndpoint)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
+	// 	}
+	// } else {
+	// 	msiEndpoint, err = url.Parse(envEndpoint)
+	// 	if err != nil {
+	// 		return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
+	// 	}
+	// }
+
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
 	resource = strings.TrimSuffix(resource, "/.default")
