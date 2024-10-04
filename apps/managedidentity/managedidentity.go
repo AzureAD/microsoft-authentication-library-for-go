@@ -481,7 +481,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		println("fileName: ", fileName)
 		println("secretFilePath: ", secretFilePath)
 		// check that file path from header matches the expected file path for the platform
-		if "/opt/azcmagent/bin/himds"+fileName != secretFilePath {
+		if expectedSecretFilePath+fileName != secretFilePath {
 			return accesstokens.TokenResponse{}, errors.New("invalid file path")
 		}
 
