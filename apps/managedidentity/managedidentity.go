@@ -525,14 +525,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, fmt.Errorf("error creating http request %s", err)
 		}
 
-		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", string(authHeaderValue)))
-
-		println("Request Headers:")
-		for name, values := range req.Header {
-			for _, value := range values {
-				println("%s: %s\n", name, value)
-			}
-		}
+		req.Header.Set("Authorization", authHeaderValue)
 
 		return c.getTokenForRequest(ctx, req, nil)
 	}
