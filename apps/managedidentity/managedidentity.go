@@ -511,6 +511,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		}
 
 		// Attempt to read the contents of the secret file
+		println("Reading the secret file: ", secretFilePath)
 		secret, err := os.ReadFile(secretFilePath)
 		if err != nil {
 			return accesstokens.TokenResponse{}, errors.New("unable to read the secret file")
