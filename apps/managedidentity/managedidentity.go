@@ -84,22 +84,6 @@ var azureArcFileDetection = map[string]string{
 	"linux":   "/opt/azcmagent/bin/himds",
 }
 
-// arcKeyDirectory returns the directory expected to contain Azure Arc keys
-var arcKeyDirectory = func() (string, error) {
-	switch runtime.GOOS {
-	case "linux":
-		return linuxSupportedPath, nil
-	case "windows":
-		pd := os.Getenv("ProgramData")
-		if pd == "" {
-			return "", errors.New("environment variable ProgramData has no value")
-		}
-		return filepath.Join(pd, windowsTokenPath), nil
-	default:
-		return "", fmt.Errorf("unsupported OS %q", runtime.GOOS)
-	}
-}
-
 type responseHandler func(*http.Response, context.Context, string) (accesstokens.TokenResponse, error)
 
 type Source string
@@ -457,6 +441,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 		platform := runtime.GOOS
 
+		println("authenticateHeader: ", wwwAuthenticateHeader)
 		if len(wwwAuthenticateHeader) == 0 {
 			return accesstokens.TokenResponse{}, errors.New("response has no www-authenticate header")
 		}
@@ -496,7 +481,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		println("fileName: ", fileName)
 		println("secretFilePath: ", secretFilePath)
 		// check that file path from header matches the expected file path for the platform
-		if expectedSecretFilePath+fileName != secretFilePath {
+		if "/opt/azcmagent/bin/himds"+fileName != secretFilePath {
 			return accesstokens.TokenResponse{}, errors.New("invalid file path")
 		}
 
