@@ -490,8 +490,8 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		fileInfo, err := os.Stat(secretFilePath)
 		if err != nil {
 			// Log detailed error information
-			println(fmt.Errorf("Error reading file info: %v", err))
-			println(fmt.Errorf("File path: %s", secretFilePath))
+			println(fmt.Sprintf("error reading file info: %v", err))
+			println(fmt.Sprintf("file path: %s", secretFilePath))
 
 			// Check if the file exists
 			if _, err := os.Stat(secretFilePath); os.IsNotExist(err) {
@@ -501,7 +501,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			// Check permissions
 			file, err := os.Open(secretFilePath)
 			if err != nil {
-				println(fmt.Errorf("Error opening file: %v", err))
+				println(fmt.Sprintf("error opening file: %v", err))
 				return accesstokens.TokenResponse{}, errors.New("unable to open secret file")
 			}
 			file.Close()
