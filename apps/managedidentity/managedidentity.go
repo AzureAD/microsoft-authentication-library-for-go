@@ -352,18 +352,6 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, clai
 	if parseErr != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
 	}
-	// envEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar)
-	// if !ok {
-	// 	msiEndpoint, err = url.Parse(azureArcEndpoint)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
-	// 	}
-	// } else {
-	// 	msiEndpoint, err = url.Parse(envEndpoint)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
-	// 	}
-	// }
 
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
@@ -473,11 +461,6 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, errors.New("response has no www-authenticate header")
 		}
 
-		// the WWW-Authenticate header is expected in the following format: Basic realm=/some/file/path.key
-		// _, p, found := strings.Cut(wwwAuthenticateHeader, "=")
-		// if !found {
-		// 	return accesstokens.TokenResponse{}, fmt.Errorf("unexpected WWW-Authenticate header from HIMDS: %s", wwwAuthenticateHeader)
-		// }
 		if !strings.Contains(wwwAuthenticateHeader, "Basic realm=") {
 			return accesstokens.TokenResponse{}, errors.New("www-authenticate header is in an unsupported format")
 		}
@@ -537,36 +520,15 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 
 		println("Adding auth header to the request")
 
-		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), "https://management.azure.com/", claims)
+		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), "https://management.azure.com", claims)
 		if err != nil {
 			return accesstokens.TokenResponse{}, fmt.Errorf("error creating http request %s", err)
 		}
 
 		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", string(authHeaderValue)))
 
+		println("Making request to get token from response, url: ", req.URL.String())
 		return c.getTokenForRequest(ctx, req, nil)
-		// expected, err := arcKeyDirectory()
-		// if err != nil {
-		// 	return accesstokens.TokenResponse{}, §§err
-		// }
-
-		// if filepath.Dir(p) != expected || !strings.HasSuffix(p, azureArcFileExtension) {
-		// 	return accesstokens.TokenResponse{}, fmt.Errorf("unexpected file path from HIMDS service: %s", p)
-		// }
-
-		// f, err := os.Stat(p)
-		// if err != nil {
-		// 	return accesstokens.TokenResponse{}, fmt.Errorf("could not stat: %s %s", p, err)
-		// }
-
-		// if s := f.Size(); s > azureArcMaxFileSizeBytes {
-		// 	return accesstokens.TokenResponse{}, fmt.Errorf("key is too large (%d bytes)", s)
-		// }
-
-		// key, err := os.ReadFile(p)
-		// if err != nil {
-		// 	return accesstokens.TokenResponse{}, fmt.Errorf("could not read %s: %s", p, err)
-		// }
 	}
 
 	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %s", response.Status)
