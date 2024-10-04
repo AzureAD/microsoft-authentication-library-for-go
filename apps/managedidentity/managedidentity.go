@@ -492,6 +492,9 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, errors.New("invalid file extension")
 		}
 
+		println("expectedSecretFilePath: ", expectedSecretFilePath)
+		println("fileName: ", fileName)
+		println("secretFilePath: ", secretFilePath)
 		// check that file path from header matches the expected file path for the platform
 		if expectedSecretFilePath+fileName != secretFilePath {
 			return accesstokens.TokenResponse{}, errors.New("invalid file path")
@@ -511,7 +514,6 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		}
 
 		// Attempt to read the contents of the secret file
-		println("Reading the secret file: ", secretFilePath)
 		secret, err := os.ReadFile(secretFilePath)
 		if err != nil {
 			return accesstokens.TokenResponse{}, errors.New("unable to read the secret file")
