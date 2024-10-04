@@ -419,6 +419,7 @@ func getValidatedEnvVariableUrlString(envVariableStringName, envVariable, source
 func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
 	var r accesstokens.TokenResponse
 
+	println("Making request to get token, url: ", req.URL.String())
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
