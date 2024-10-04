@@ -186,29 +186,29 @@ func New(id ID, options ...ClientOption) (Client, error) {
 // Detects and returns the managed identity source available on the environment.
 func GetSource(id ID) (Source, error) {
 	println("Detecting managed identity source")
-	if identityEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar); ok {
-		if _, ok := os.LookupEnv(IdentityHeaderEnvVar); ok {
-			if _, ok := os.LookupEnv(IdentityServerThumbprintEnvVar); ok {
-				if id != nil {
-					return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric, getSourceError)
-				}
-				return ServiceFabric, nil
-			} else {
-				return AppService, nil
+	identityEndpoint := os.Getenv(IdentityEndpointEnvVar)
+	identityHeader := os.Getenv(IdentityHeaderEnvVar)
+	identityServerThumbprint := os.Getenv(IdentityServerThumbprintEnvVar)
+	msiEndpoint := os.Getenv(MsiEndpointEnvVar)
+	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
+
+	if identityEndpoint != "" && identityHeader != "" {
+		if identityServerThumbprint != "" {
+			if id != nil {
+				return DefaultToIMDS, fmt.Errorf("%s %s", ServiceFabric, getSourceError)
 			}
-		} else if ok := validateAzureArcEnvironment(identityEndpoint, os.Getenv(ArcIMDSEnvVar)); ok {
-			if !ok {
-				println("[Managed Identity] AzureArc managed identity is not available, defaulting to IMDS")
-				return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
-			}
-			// if _, ok := id.(systemAssignedValue); !ok {
-			// 	return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
-			// }
-			return AzureArc, nil
+			return ServiceFabric, nil
 		}
-	} else if _, ok := os.LookupEnv(MsiEndpointEnvVar); ok {
+		return AppService, nil
+	} else if msiEndpoint != "" {
 		return CloudShell, nil
+	} else if validateAzureArcEnvironment(identityEndpoint, imdsEndpoint) {
+		if id != nil {
+			return DefaultToIMDS, fmt.Errorf("%s %s", AzureArc, getSourceError)
+		}
+		return AzureArc, nil
 	}
+
 	return DefaultToIMDS, nil
 }
 
