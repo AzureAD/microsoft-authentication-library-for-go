@@ -386,7 +386,7 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, clai
 // GetEnvironmentVariables returns the identity and IMDS endpoints
 func getAzureArcEnvironmentVariables() (string, string) {
 	identityEndpoint := os.Getenv(IdentityEndpointEnvVar)
-	imdsEndpoint := os.Getenv(imdsEndpoint)
+	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
 
 	if identityEndpoint == "" || imdsEndpoint == "" {
 		println("Identity endpoint or IMDS endpoint not found in environment variables")
