@@ -124,6 +124,7 @@ type ClientOption func(o *ClientOptions)
 type AcquireTokenOption func(o *AcquireTokenOptions)
 
 // WithClaims sets additional claims to request for the token, such as those required by token revocation or conditional access policies.
+
 // Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
 func WithClaims(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
@@ -299,24 +300,6 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, clai
 
 	println("AzureArc managed identity is available")
 
-	// Check if the imds endpoint is set to the default for file detection
-	// if imdsEndpoint == himdsExecutableHelperString {
-	// 	println(fmt.Sprintf("AzureArc managed identity is available through file detection. Defaulting to known AzureArc endpoint: %s. Creating AzureArc managed identity.", azureArcEndpoint))
-	// } else {
-	// 	// Both the identity and imds endpoints are defined without file detection; validate them
-	// 	validatedIdentityEndpoint, identityErr := getValidatedEnvVariableUrlString(IdentityEndpointEnvVar, identityEndpoint)
-	// 	if identityErr != nil {
-	// 		return nil, identityErr
-	// 	}
-
-	// 	validatedIdentityEndpoint = strings.TrimSuffix(validatedIdentityEndpoint, "/")
-
-	// 	_, imdsErr := getValidatedEnvVariableUrlString(ArcIMDSEnvVar, imdsEndpoint)
-	// 	if imdsErr != nil {
-	// 		return nil, imdsErr
-	// 	}
-	// }
-
 	if _, ok := id.(systemAssignedValue); !ok {
 		println("unsupported AzureArc managed identity type")
 		return nil, errors.New("unable to create AzureArc")
@@ -399,16 +382,6 @@ func fileExists(path string) bool {
 	_, err := os.Stat(path)
 	return !os.IsNotExist(err)
 }
-
-// Validates the environment variable URL string
-// func getValidatedEnvVariableUrlString(envVariableStringName string, envVariable string) (string, error) {
-// 	parsedUrl, err := url.ParseRequestURI(envVariable)
-
-// 	if err != nil {
-// 		return "", fmt.Errorf("%s endpoint is malformed", envVariableStringName)
-// 	}
-// 	return parsedUrl.String(), nil
-// }
 
 func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
 	println("getting token for request")
