@@ -102,9 +102,6 @@ We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work 
 
 If you find and bug or have a feature request, please raise the issue on [GitHub Issues](https://github.com/AzureAD/microsoft-authentication-library-for-go/issues).
 
-## Submit Feedback
-We'd like your thoughts on this library. Please complete [this short survey.](https://forms.office.com/r/s4waBAytFJ)
-
 ## Contributing
 
 This project welcomes contributions and suggestions.  Most contributions require you to agree to a
