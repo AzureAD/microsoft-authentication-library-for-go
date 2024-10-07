@@ -161,6 +161,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	msiParameters.Set(apiVersionQuerryParameterName, imdsAPIVersion)
 	resource = strings.TrimSuffix(resource, "/.default")
 	msiParameters.Set(resourceQuerryParameterName, resource)
+	// msiParameters.Set("scopes", resource)
 
 	if len(claims) > 0 {
 		msiParameters.Set("claims", claims)

@@ -173,8 +173,10 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	environment := authParameters.AuthorityInfo.Host
 	realm := authParameters.AuthorityInfo.Tenant
 	clientID := authParameters.ClientID
+
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
-	resource := tokenResponse.Resource
+	println("target ", target)
+	//tokenResponse.Resource
 	cachedAt := time.Now()
 	authnSchemeKeyID := authParameters.AuthnScheme.KeyID()
 	var account shared.Account
@@ -199,7 +201,6 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			tokenResponse.AccessToken,
 			tokenResponse.TokenType,
 			authnSchemeKeyID,
-			resource,
 		)
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {

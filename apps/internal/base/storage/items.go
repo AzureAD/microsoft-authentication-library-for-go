@@ -75,7 +75,6 @@ type AccessToken struct {
 	ExpiresOn         internalTime.Unix `json:"expires_on,omitempty"`
 	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
 	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
-	Resource          string            `json:"resource,omitempty"`
 	UserAssertionHash string            `json:"user_assertion_hash,omitempty"`
 	TokenType         string            `json:"token_type,omitempty"`
 	AuthnSchemeKeyID  string            `json:"keyid,omitempty"`
@@ -84,7 +83,7 @@ type AccessToken struct {
 }
 
 // NewAccessToken is the constructor for AccessToken.
-func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token, tokenType, authnSchemeKeyID string, resource string) AccessToken {
+func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, extendedExpiresOn time.Time, scopes, token, tokenType, authnSchemeKeyID string) AccessToken {
 	return AccessToken{
 		HomeAccountID:     homeID,
 		Environment:       env,
@@ -98,18 +97,12 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, expiresOn, ex
 		ExtendedExpiresOn: internalTime.Unix{T: extendedExpiresOn.UTC()},
 		TokenType:         tokenType,
 		AuthnSchemeKeyID:  authnSchemeKeyID,
-		Resource:          resource,
 	}
 }
 
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
-	var keyStringList []string
-	if a.Realm == "managed_identity" {
-		keyStringList = []string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Resource}
-	} else {
-		keyStringList = []string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes}
-	}
+	keyStringList := []string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes}
 	key := strings.Join(
 		keyStringList,
 		shared.CacheKeySeparator,
