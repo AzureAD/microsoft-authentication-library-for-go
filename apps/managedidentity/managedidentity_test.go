@@ -394,23 +394,27 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
 				ArcIMDSEnvVar:          "http://localhost:40342",
 			},
-			expectedID:   "http://localhost:40342/metadata/identity/oauth2/token",
-			expectedIMDS: "http://localhost:40342",
+			createMockFile: false,
+			expectedID:     "http://localhost:40342/metadata/identity/oauth2/token",
+			expectedIMDS:   "http://localhost:40342",
 		},
 		{
 			name: "Only identity endpoint provided",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
 			},
-
-			expectedID: "http://localhost:40342/metadata/identity/oauth2/token",
+			platform:       runtime.GOOS,
+			createMockFile: false,
+			expectedID:     "http://localhost:40342/metadata/identity/oauth2/token",
 		},
 		{
 			name: "Only arcImds endpoint provided",
 			envVars: map[string]string{
 				ArcIMDSEnvVar: "http://localhost:40342",
 			},
-			expectedIMDS: "http://localhost:40342",
+			platform:       runtime.GOOS,
+			createMockFile: false,
+			expectedIMDS:   "http://localhost:40342",
 		},
 		// Windows Specific Tests
 		{
@@ -462,6 +466,8 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.platform+" "+tc.name, func(t *testing.T) {
+			unsetEnvVars()
+
 			if tc.platform != "" && runtime.GOOS != tc.platform {
 				t.Skip("Skipping test because current platform is not " + tc.platform)
 			}
@@ -483,6 +489,8 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 				azureArcFileDetection[tc.platform] = mockFilePath
 				createMockFile(mockFilePath, 0)
 				defer os.Remove(mockFilePath)
+			} else {
+				azureArcFileDetection[tc.platform] = "fake"
 			}
 
 			id, imds := getAzureArcEnvironmentVariables()
