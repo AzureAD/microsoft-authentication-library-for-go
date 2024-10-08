@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
