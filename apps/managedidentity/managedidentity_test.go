@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
@@ -135,7 +136,6 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId")},
 	}
 	for _, testCase := range testCases {
-
 		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
 			var localUrl *url.URL
 			mockClient := mock.Client{}
@@ -147,14 +147,17 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
 			}))
+			resetCache()
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
-
 			if err != nil {
 				t.Fatal(err)
 			}
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
 				t.Fatal(err)
+			}
+			if localUrl == nil {
+				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
 			}
 			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
 				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
@@ -186,8 +189,8 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
 			}
-			if result.Metadata.TokenSource != 1 {
-				t.Fatalf("wanted Indenity token source, got %d", result.Metadata.TokenSource)
+			if result.Metadata.TokenSource != base.IdentityProvider {
+				t.Fatalf("wanted Indenity tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
@@ -196,16 +199,23 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				tokenValidation = true
 				return nil
 			}
-			// checking for cache
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
-				localUrl = r.URL
-			}))
 			cacheResult, err := client.AcquireToken(context.Background(), testCase.resource)
 			if cacheResult.Metadata.TokenSource != 2 {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			if !tokenValidation {
 				t.Fatal("token validation didnt happen")
+			}
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			secondResult, err := secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if secondResult.Metadata.TokenSource != base.Cache {
+				t.Fatalf("cache result wanted Indenity token source, got %d", secondResult.Metadata.TokenSource)
 			}
 			storage.FakeValidate = nil
 		})

@@ -18,7 +18,6 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
@@ -74,17 +73,16 @@ func SystemAssigned() ID {
 	return systemAssignedValue(systemAssignedManagedIdentity)
 }
 
+var cacheManager *storage.Manager = storage.New(oauth.New(http.DefaultClient))
+
+func resetCache() {
+	cacheManager = storage.New(oauth.New(http.DefaultClient))
+}
+
 type Client struct {
 	httpClient ops.HTTPClient
 	miType     ID
 	// source     Source reenable when required in future sources
-	cacheManager manager
-}
-
-type manager interface {
-	cache.Serializer
-	Read(context.Context, authority.AuthParams) (storage.TokenResponse, error)
-	Write(authority.AuthParams, accesstokens.TokenResponse) (shared.Account, error)
 }
 
 type ClientOptions struct {
@@ -142,11 +140,9 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
-	token := oauth.New(http.DefaultClient)
 	client := Client{
-		miType:       id,
-		httpClient:   opts.httpClient,
-		cacheManager: storage.New(token),
+		miType:     id,
+		httpClient: opts.httpClient,
 	}
 	return client, nil
 }
@@ -221,6 +217,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	}
 	var r accesstokens.TokenResponse
 	err = json.Unmarshal(responseBytes, &r)
+	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, req.URL.Query().Get(resourceQuerryParameterName))
 	return r, err
 }
 
@@ -239,14 +236,13 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		return base.AuthResult{}, err
 	}
 
-	m := client.cacheManager
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, false)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
 
 	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
-	storageTokenResponse, err := m.Read(ctx, fakeAuthParams)
+	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -269,8 +265,7 @@ func (c Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	if !cacheWrite {
 		return base.NewAuthResult(token, shared.Account{})
 	}
-	var m manager = c.cacheManager
-	account, err := m.Write(authParams, token)
+	account, err := cacheManager.Write(authParams, token)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
