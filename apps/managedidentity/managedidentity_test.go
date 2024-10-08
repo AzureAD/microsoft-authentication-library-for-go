@@ -398,44 +398,53 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 			expectedIMDS: "http://localhost:40342",
 		},
 		{
-			name: "Only identity endpoint provided, file doesn't exist",
+			name: "Only identity endpoint provided",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
 			},
-			createMockFile: false,
-			platform:       "linux",
 
 			expectedID: "http://localhost:40342/metadata/identity/oauth2/token",
 		},
 		{
-			name: "Only arcImds endpoint provided, file doesn't exist",
+			name: "Only arcImds endpoint provided",
 			envVars: map[string]string{
 				ArcIMDSEnvVar: "http://localhost:40342",
 			},
-			createMockFile: false,
-			platform:       "linux",
-			expectedIMDS:   "http://localhost:40342",
+			expectedIMDS: "http://localhost:40342",
 		},
+		// Windows Specific Tests
 		{
-			name:           "Both endpoints missing, platform supported, file doesn't exist",
-			platform:       "linux",
-			createMockFile: false,
-			expectedID:     "",
-			expectedIMDS:   "",
-		},
-		{
-			name: "Both endpoints, platform supported, file exists",
+			name: "Only identity endpoint provided, windows platform supported, file exists",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
+				ArcIMDSEnvVar:          "",
+			},
+			platform:       "windows",
+			createMockFile: true,
+			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedIMDS:   "N/A: himds executable exists",
+		},
+		{
+			name: "Only arcIMds endpoint, windows platform supported, file exists",
+			envVars: map[string]string{
+				IdentityEndpointEnvVar: "",
 				ArcIMDSEnvVar:          "http://localhost:40342",
 			},
-			platform:       "linux",
+			platform:       "windows",
 			createMockFile: true,
+			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedIMDS:   "N/A: himds executable exists",
+		},
+		{
+			name:           "Endpoints missing, windows platform supported, no file exists",
+			platform:       "windows",
+			createMockFile: false,
 			expectedID:     "",
 			expectedIMDS:   "",
 		},
+		// Linux Specific Tests
 		{
-			name: "Only identity endpoint, platform supported, file exists",
+			name: "Only identity endpoint provided, linux platform supported, file exists",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
 				ArcIMDSEnvVar:          "",
@@ -446,7 +455,7 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 			expectedIMDS:   "N/A: himds executable exists",
 		},
 		{
-			name: "Only arcIMds endpoint, platform supported, file exists",
+			name: "Only arcIMds endpoint, linux platform supported, file exists",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "",
 				ArcIMDSEnvVar:          "http://localhost:40342",
@@ -457,7 +466,7 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 			expectedIMDS:   "N/A: himds executable exists",
 		},
 		{
-			name:           "Endpoints missing, no file exists",
+			name:           "Endpoints missing, linux platform supported, no file exists",
 			platform:       "linux",
 			createMockFile: false,
 			expectedID:     "",
@@ -467,19 +476,22 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
+			if (runtime.GOOS == "windows" && tc.platform == "linux") || (runtime.GOOS == "linux" && tc.platform == "windows") {
+				t.Skipf("Skipping test for %s platform on %s machine", tc.platform, runtime.GOOS)
+			}
+
 			for k, v := range tc.envVars {
 				t.Setenv(k, v)
 			}
 
 			os.Setenv("GOOS", tc.platform)
 			if tc.createMockFile {
-				if runtime.GOOS == "linux" || runtime.GOOS == "windows" {
-					mockFilePath := azureArcFileDetection[tc.platform]
-					createMockFile(mockFilePath, 0)
-					defer os.Remove(mockFilePath)
-				} else {
-					t.Skip("Skipping part of the test because current platform is not linux or windows")
-				}
+				tempDir := os.TempDir()
+				mockFilePath := filepath.Join(tempDir, "mockFile")
+				println("mockfilepath: " + mockFilePath)
+				azureArcFileDetection[tc.platform] = mockFilePath
+				createMockFile(mockFilePath, 0)
+				defer os.Remove(mockFilePath)
 			}
 
 			id, imds := getAzureArcEnvironmentVariables()
