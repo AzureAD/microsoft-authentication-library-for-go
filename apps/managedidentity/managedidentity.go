@@ -69,9 +69,6 @@ const (
 	ArcIMDSEnvVar                       = "IMDS_ENDPOINT"
 	MsiEndpointEnvVar                   = "MSI_ENDPOINT"
 	IdentityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
-
-	//Errors
-	getSourceError = "API doesn't support specifying a user-assigned managed identity at runtime"
 )
 
 var supportedAzureArcPlatforms = map[string]string{
@@ -84,7 +81,7 @@ var azureArcFileDetection = map[string]string{
 	"linux":   linuxAzureArcFilePath,
 }
 
-type responseHandler func(*http.Response, context.Context, string) (accesstokens.TokenResponse, error)
+type responseHandler func(*http.Response, context.Context, string, string) (accesstokens.TokenResponse, error)
 
 type Source string
 
@@ -144,7 +141,6 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
-	println("Creating managed identity client")
 	source, err := GetSource(id)
 	if err != nil {
 		return Client{}, err
@@ -186,7 +182,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 
 // Detects and returns the managed identity source available on the environment.
 func GetSource(id ID) (Source, error) {
-	println("Detecting managed identity source")
 	identityEndpoint := os.Getenv(IdentityEndpointEnvVar)
 	identityHeader := os.Getenv(IdentityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(IdentityServerThumbprintEnvVar)
@@ -200,7 +195,7 @@ func GetSource(id ID) (Source, error) {
 		return AppService, nil
 	} else if msiEndpoint != "" {
 		return CloudShell, nil
-	} else if validateAzureArcEnvironment(identityEndpoint, imdsEndpoint) {
+	} else if validateAzureArcEnvironment(identityEndpoint, imdsEndpoint, runtime.GOOS) {
 		return AzureArc, nil
 	}
 
@@ -212,7 +207,6 @@ func GetSource(id ID) (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
-	println("Acquiring token")
 	o := AcquireTokenOptions{}
 	var req *http.Request
 	var err error
@@ -223,7 +217,6 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	var tokenResponse accesstokens.TokenResponse
 	switch client.source {
 	case AzureArc:
-		println("Acquiring token from AzureArc")
 		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
 		if err != nil {
 			return base.AuthResult{}, err
@@ -289,20 +282,15 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 }
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
-	println("creating azurearc auth request")
 	identityEndpoint, _ := getAzureArcEnvironmentVariables()
 	var msiEndpoint *url.URL
 
 	if identityEndpoint == "" {
 		identityEndpoint = azureArcEndpoint
-		println("AzureArc was detected through file based detection but the environment variables were not found. Defaulting to known azure arc endpoint.")
 	}
 
-	println("AzureArc managed identity is available")
-
 	if _, ok := id.(systemAssignedValue); !ok {
-		println("unsupported AzureArc managed identity type")
-		return nil, errors.New("unable to create AzureArc")
+		return nil, errors.New("Azure Arc doesn't support specifying a user-assigned managed identity at runtime")
 	}
 
 	identityEndpoint = strings.Replace(identityEndpoint, "localhost", "127.0.0.1", -1)
@@ -335,56 +323,43 @@ func getAzureArcEnvironmentVariables() (string, string) {
 	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
 
 	if identityEndpoint == "" || imdsEndpoint == "" {
-		println("[Managed Identity] Azure Arc managed identity environment variables are not set.")
 		platform := os.Getenv("GOOS")
 		fileDetectionPath, exists := azureArcFileDetection[platform]
 
 		if exists {
-			println("fileDetectionPath: ", fileDetectionPath)
 			if _, err := os.Stat(fileDetectionPath); err == nil {
-				println("no error finding path so setting identityEndpoint and imdsEndpoint: ", azureArcEndpoint, himdsExecutableHelperString)
 				identityEndpoint = azureArcEndpoint
 				imdsEndpoint = himdsExecutableHelperString
 			}
 		}
 	}
-
 	return identityEndpoint, imdsEndpoint
 }
 
-func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string) bool {
-	println("validateAzureArcEnvironment")
+func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
-		println("[Managed Identity] Azure Arc managed identity is available through environment variables.")
 		return true
 	}
 
-	platform := runtime.GOOS
 	himdsFilePath, platformSupported := azureArcFileDetection[platform]
 
-	println("platform: ", platform)
-	println("himdsFilePath: ", himdsFilePath)
-	println("platformSupported: ", platformSupported)
 	if platformSupported && fileExists(himdsFilePath) {
-		println("[Managed Identity] Azure Arc managed identity is available through file detection.")
 		return true
 	}
 
-	if !platformSupported {
-		println("[Managed Identity] Azure Arc managed identity cannot be configured on this platform.")
-	}
-
-	println("[Managed Identity] Azure Arc managed identity is not available.")
 	return false
 }
 
 func fileExists(path string) bool {
-	_, err := os.Stat(path)
-	return !os.IsNotExist(err)
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
 }
 
 func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
-	println("getting token for request")
 	var r accesstokens.TokenResponse
 
 	resp, err := client.httpClient.Do(req)
@@ -402,12 +377,10 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 	switch resp.StatusCode {
 	case http.StatusUnauthorized:
 		if resHandler != nil {
-			println("401 received, response handler is not nil so entering")
-			return resHandler(resp, ctx, r.Claims)
+			return resHandler(resp, ctx, r.Claims, runtime.GOOS)
 		}
 	case http.StatusOK, http.StatusAccepted:
 	default:
-		println("status code ok")
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
 			return accesstokens.TokenResponse{}, errors.CallErr{
@@ -431,18 +404,12 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 	return r, err
 }
 
-func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Context, claims string) (accesstokens.TokenResponse, error) {
+func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Context, claims string, platform string) (accesstokens.TokenResponse, error) {
 	if response.StatusCode == http.StatusUnauthorized {
-		println("handling azure arc response")
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
-		platform := runtime.GOOS
 
 		if len(wwwAuthenticateHeader) == 0 {
 			return accesstokens.TokenResponse{}, errors.New("response has no www-authenticate header")
-		}
-
-		if !strings.Contains(wwwAuthenticateHeader, "Basic realm=") {
-			return accesstokens.TokenResponse{}, errors.New("www-authenticate header is in an unsupported format")
 		}
 
 		var secretFilePath string
@@ -456,14 +423,9 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		}
 
 		// check if the platform is supported
-		if _, ok := supportedAzureArcPlatforms[platform]; !ok {
-			return accesstokens.TokenResponse{}, errors.New("platform not supported")
-		}
-
-		// get the expected Windows or Linux file path
 		expectedSecretFilePath, ok := supportedAzureArcPlatforms[platform]
 		if !ok {
-			return accesstokens.TokenResponse{}, errors.New("error getting expected secret file path")
+			return accesstokens.TokenResponse{}, errors.New("platform not supported")
 		}
 
 		// check that the file in the file path is a .key file
@@ -479,14 +441,14 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 
 		fileInfo, err := os.Stat(secretFilePath)
 		if err != nil {
-			return accesstokens.TokenResponse{}, errors.New("unable to read secret file")
+			return accesstokens.TokenResponse{}, errors.New("unable to get file info")
 		}
 
 		secretFileSize := fileInfo.Size()
 
 		// Throw an error if the secret file's size is greater than 4096 bytes
 		if secretFileSize > azureArcMaxFileSizeBytes {
-			return accesstokens.TokenResponse{}, errors.New("invalid secret")
+			return accesstokens.TokenResponse{}, errors.New("invalid secret file size")
 		}
 
 		// Attempt to read the contents of the secret file
@@ -507,5 +469,5 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		return c.getTokenForRequest(ctx, req, nil)
 	}
 
-	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %s", response.Status)
+	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %d", response.StatusCode)
 }
