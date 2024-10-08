@@ -414,7 +414,7 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 		},
 		// Windows Specific Tests
 		{
-			name: "Only identity endpoint provided, windows platform supported, file exists",
+			name: "Only identity endpoint provided, file exists",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
 				ArcIMDSEnvVar:          "",
@@ -425,7 +425,7 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 			expectedIMDS:   "N/A: himds executable exists",
 		},
 		{
-			name: "Only arcIMds endpoint, windows platform supported, file exists",
+			name: "Only arcIMds endpoint, file exists",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "",
 				ArcIMDSEnvVar:          "http://localhost:40342",
@@ -461,7 +461,7 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 	}
 
 	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
+		t.Run(tc.platform+" "+tc.name, func(t *testing.T) {
 			if tc.platform != "" && runtime.GOOS != tc.platform {
 				t.Skip("Skipping test because current platform is not " + tc.platform)
 			}
@@ -470,15 +470,20 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 				t.Setenv(k, v)
 			}
 
-			os.Setenv("GOOS", tc.platform)
-			// if tc.createMockFile {
-			// 	tempDir := os.TempDir()
-			// 	mockFilePath := filepath.Join(tempDir, "mockFile")
-			// 	println("mockfilepath: " + mockFilePath)
-			// 	// azureArcFileDetection[tc.platform] = mockFilePath
-			// 	createMockFile(mockFilePath, 0)
-			// 	defer os.Remove(mockFilePath)
-			// }
+			if tc.createMockFile {
+				homeDir, err := os.UserHomeDir()
+				if err != nil {
+					t.Fatalf("failed to get user home directory: %v", err)
+				}
+				mockFilePath := filepath.Join(homeDir, "AzureConnectedMachineAgent", "himds.exe")
+				if runtime.GOOS == "linux" {
+					mockFilePath = filepath.Join(homeDir, "AzureConnectedMachineAgent", "himds")
+				}
+
+				azureArcFileDetection[tc.platform] = mockFilePath
+				createMockFile(mockFilePath, 0)
+				defer os.Remove(mockFilePath)
+			}
 
 			id, imds := getAzureArcEnvironmentVariables()
 
@@ -488,7 +493,6 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 			if imds != tc.expectedIMDS {
 				t.Fatalf("expected IMDS %v, got %v", tc.expectedIMDS, imds)
 			}
-			os.Setenv("GOOS", runtime.GOOS)
 		})
 	}
 }

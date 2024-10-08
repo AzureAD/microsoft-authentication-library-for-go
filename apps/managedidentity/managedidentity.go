@@ -323,10 +323,10 @@ func getAzureArcEnvironmentVariables() (string, string) {
 	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
 
 	if identityEndpoint == "" || imdsEndpoint == "" {
-		platform := os.Getenv("GOOS")
-		fileDetectionPath, exists := azureArcFileDetection[platform]
+		platform := runtime.GOOS
+		fileDetectionPath, retrievedPath := azureArcFileDetection[platform]
 
-		if exists {
+		if retrievedPath {
 			if _, err := os.Stat(fileDetectionPath); err == nil {
 				identityEndpoint = azureArcEndpoint
 				imdsEndpoint = himdsExecutableHelperString
