@@ -35,10 +35,6 @@ const (
 	errorFormingJsonResponse = "error while forming json response : %s"
 )
 
-type mockEnvironmentVariables struct {
-	vars map[string]string
-}
-
 type sourceTestData struct {
 	source         Source
 	endpoint       string
@@ -47,10 +43,11 @@ type sourceTestData struct {
 }
 
 type resourceTestData struct {
-	source   Source
-	endpoint string
-	resource string
-	miType   ID
+	source     Source
+	endpoint   string
+	resource   string
+	miType     ID
+	apiVersion string
 }
 
 type errorTestData struct {
@@ -65,6 +62,11 @@ type SuccessfulResponse struct {
 	ExpiresIn   int64  `json:"expires_in"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
+}
+
+// Mock fileExists function for testing
+var mockFileExists = func() bool {
+	return true
 }
 
 type ErrorResponse struct {
@@ -94,11 +96,35 @@ func makeResponseWithErrorData(err string, desc string) ([]byte, error) {
 	return jsonResponse, e
 }
 
+func createMockFile(path string, size int64) {
+	dir := filepath.Dir(path)
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		panic(err)
+	}
+
+	f, err := os.Create(path)
+	if err != nil {
+		panic(err)
+	}
+
+	if size > 0 {
+		if err := f.Truncate(size); err != nil {
+			panic(err)
+		}
+	}
+
+	f.Close()
+}
+
+func createMockFileWithSize(path string, size int64) {
+	createMockFile(path, size)
+}
+
 func setEnvVars(t *testing.T, source Source) {
 	switch source {
 	case AzureArc:
-		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
-		t.Setenv(ArcIMDSEnvVar, "arcIMDSEnvVar value")
+		t.Setenv(IdentityEndpointEnvVar, "http://localhost:40342/metadata/identity/oauth2/token")
+		t.Setenv(ArcIMDSEnvVar, "http://localhost:40342 value")
 	case AppService:
 		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
 		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
@@ -119,7 +145,7 @@ func unsetEnvVars() {
 	os.Unsetenv(MsiEndpointEnvVar)
 }
 
-func environmentVariablesHelper(source Source, endpoint string) *mockEnvironmentVariables {
+func environmentVariablesHelper(source Source, endpoint string) {
 	vars := map[string]string{
 		"Source": string(source),
 	}
@@ -140,8 +166,6 @@ func environmentVariablesHelper(source Source, endpoint string) *mockEnvironment
 		vars[IdentityEndpointEnvVar] = endpoint
 		vars[ArcIMDSEnvVar] = endpoint
 	}
-
-	return &mockEnvironmentVariables{vars: vars}
 }
 
 func Test_Get_Source(t *testing.T) {
@@ -161,17 +185,12 @@ func Test_Get_Source(t *testing.T) {
 			setEnvVars(t, testCase.source)
 
 			actualSource, err := GetSource(testCase.miType)
-
 			if err != nil {
-				if fmt.Sprintf("%s %s", testCase.source, getSourceError) == err.Error() {
-					return
-				} else {
-					t.Fatalf("expected error but got nil")
-				}
-			} else {
-				if actualSource != testCase.expectedSource {
-					t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
-				}
+				t.Fatalf("error while getting source: %s", err.Error())
+			}
+
+			if actualSource != testCase.expectedSource {
+				t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
 			}
 		})
 	}
@@ -179,17 +198,23 @@ func Test_Get_Source(t *testing.T) {
 
 func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 	testCases := []resourceTestData{
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: SystemAssigned()},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned()},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: UserAssignedClientID("clientId")},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId")},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId")},
-		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned()},
-		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned()},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId"), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId"), apiVersion: imdsAPIVersion},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: azureArcAPIVersion},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedObjectID("objectId"), apiVersion: azureArcAPIVersion},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedResourceID("resourceId"), apiVersion: azureArcAPIVersion},
 	}
 	for _, testCase := range testCases {
 
 		t.Run(string(testCase.source), func(t *testing.T) {
+			unsetEnvVars()
+			setEnvVars(t, testCase.source)
+
 			var localUrl *url.URL
 			mockClient := mock.Client{}
 			responseBody, err := getSuccessfulResponse(resource)
@@ -205,16 +230,22 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				t.Fatal(err)
 			}
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				if testCase.source == AzureArc && err.Error() == "Azure Arc doesn't support specifying a user-assigned managed identity at runtime" {
+					return
+				}
+			}
 			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
 				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
 			}
+
 			if !strings.Contains(localUrl.String(), testCase.miType.value()) {
 				t.Fatalf("url request does not contain the %s got %s", testCase.endpoint, localUrl)
 			}
 			query := localUrl.Query()
 
-			if query.Get(apiVersionQueryParameterName) != imdsAPIVersion {
-				t.Fatalf("api-version not on %s got %s", imdsAPIVersion, query.Get(apiVersionQueryParameterName))
+			if query.Get(apiVersionQueryParameterName) != testCase.apiVersion {
+				t.Fatalf("api-version not on %s got %s", testCase.apiVersion, query.Get(apiVersionQueryParameterName))
 			}
 			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
