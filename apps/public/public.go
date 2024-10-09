@@ -142,7 +142,7 @@ func New(clientID string, options ...Option) (Client, error) {
 
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
-	claims, loginHint, tenantID, domainHint string
+	claims, loginHint, tenantID, domainHint, state string
 }
 
 // AuthCodeURLOption is implemented by options for AuthCodeURL
@@ -152,7 +152,7 @@ type AuthCodeURLOption interface {
 
 // AuthCodeURL creates a URL used to acquire an authorization code.
 //
-// Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithTenantID]
+// Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithTenantID], [WithState]
 func (pca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
 	o := authCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -162,10 +162,34 @@ func (pca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	if err != nil {
 		return "", err
 	}
+	ap.State = o.state
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
 	ap.DomainHint = o.domainHint
 	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
+}
+
+// WithState adds a user-generated state to the request.
+func WithState(state string) interface {
+	AuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *authCodeURLOptions:
+					t.state = state
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }
 
 // WithClaims sets additional claims to request for the token, such as those required by conditional access policies.
