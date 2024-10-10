@@ -4,6 +4,7 @@
 package local
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -20,12 +21,17 @@ func TestServer(t *testing.T) {
 	defer cancel()
 
 	tests := []struct {
-		desc       string
-		reqState   string
-		port       int
-		q          url.Values
-		failPage   bool
-		statusCode int
+		desc                  string
+		reqState              string
+		port                  int
+		q                     url.Values
+		failPage              bool
+		statusCode            int
+		successPage           []byte
+		errorPage             []byte
+		testTemplate          bool
+		testErrCodeXSS        bool
+		testErrDescriptionXSS bool
 	}{
 		{
 			desc:       "Error: Query Values has 'error' key",
@@ -63,10 +69,92 @@ func TestServer(t *testing.T) {
 			q:          url.Values{"state": []string{"state"}, "code": []string{"code"}},
 			statusCode: 200,
 		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having code and error",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page {{.Code}} {{.Err}}"),
+			testTemplate: true,
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having only code",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page {{.Code}}"),
+			testTemplate: true,
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having only error",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page {{.Err}}"),
+			testTemplate: true,
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, and optional error page, having no code or error",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			errorPage:    []byte("test option error page"),
+			testTemplate: true,
+		},
+		{
+			desc:         "Error: Query Values missing 'state' key, using default fail error page",
+			reqState:     "state",
+			port:         0,
+			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
+			statusCode:   200,
+			testTemplate: true,
+		},
+		{
+			desc:           "Error: Query Values missing 'state' key, using default fail error page - Error Code XSS test",
+			reqState:       "state",
+			port:           0,
+			q:              url.Values{"error": []string{"<script>alert('this code snippet was executed')</script>"}, "error_description": []string{"error_description"}},
+			statusCode:     200,
+			testTemplate:   true,
+			testErrCodeXSS: true,
+		},
+		{
+			desc:                  "Error: Query Values missing 'state' key, using default fail error page - Error Description XSS test",
+			reqState:              "state",
+			port:                  0,
+			q:                     url.Values{"error": []string{"error_code"}, "error_description": []string{"<script>alert('this code snippet was executed')</script>"}},
+			statusCode:            200,
+			testTemplate:          true,
+			testErrDescriptionXSS: true,
+		},
+		{
+			desc:           "Error: Query Values missing 'state' key, using optional fail error page - Error Code XSS test",
+			reqState:       "state",
+			port:           0,
+			q:              url.Values{"error": []string{"<script>alert('this code snippet was executed')</script>"}, "error_description": []string{"error_description"}},
+			statusCode:     200,
+			errorPage:      []byte("error: {{.Code}} error_description: {{.Err}}"),
+			testTemplate:   true,
+			testErrCodeXSS: true,
+		},
+		{
+			desc:                  "Error: Query Values missing 'state' key, using optional fail error page - Error Description XSS test",
+			reqState:              "state",
+			port:                  0,
+			q:                     url.Values{"error": []string{"error_code"}, "error_description": []string{"<script>alert('this code snippet was executed')</script>"}},
+			statusCode:            200,
+			errorPage:             []byte("error: {{.Code}} error_description: {{.Err}}"),
+			testTemplate:          true,
+			testErrDescriptionXSS: true,
+		},
 	}
 
 	for _, test := range tests {
-		serv, err := New(test.reqState, test.port)
+		serv, err := New(test.reqState, test.port, test.successPage, test.errorPage)
 		if err != nil {
 			panic(err)
 		}
@@ -127,6 +215,61 @@ func TestServer(t *testing.T) {
 				t.Errorf("TestServer(%s): Result.Err == nil, want Result.Err != nil", test.desc)
 			}
 			continue
+		}
+
+		if len(test.successPage) > 0 {
+			if !bytes.Equal(content, test.successPage) {
+				t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
+			}
+			continue
+		}
+
+		if test.testTemplate {
+			if test.testErrCodeXSS || test.testErrDescriptionXSS {
+				if !strings.Contains(string(content), "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;") {
+					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
+				}
+				continue
+			}
+
+			if len(test.errorPage) > 0 && (test.testErrCodeXSS || test.testErrDescriptionXSS) {
+				if !strings.Contains(string(content), "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;") {
+					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
+				}
+				continue
+			}
+
+			if len(test.errorPage) > 0 {
+				errCode := bytes.Contains(test.errorPage, []byte("{{.Code}}"))
+				errDescription := bytes.Contains(test.errorPage, []byte("{{.Err}}"))
+
+				if !errCode && !errDescription {
+					if !strings.Contains(string(content), "test option error page") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
+					}
+				}
+				if errCode && errDescription {
+					if !strings.Contains(string(content), "test option error page error_code error_description") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
+					}
+				}
+				if errCode && !errDescription {
+					if !strings.Contains(string(content), "test option error page error_code") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code", test.desc)
+					}
+				}
+				if !errCode && errDescription {
+					if !strings.Contains(string(content), "test option error page error_description") {
+						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_description", test.desc)
+					}
+				}
+				continue
+			} else {
+				if !strings.Contains(string(content), "<p>Error details: error error_code, error description: error_description</p>") {
+					t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
+				}
+				continue
+			}
 		}
 
 		if !strings.Contains(string(content), "Authentication Complete") {
