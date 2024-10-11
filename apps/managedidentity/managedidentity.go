@@ -430,12 +430,13 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 
 		// check that the file in the file path is a .key file
 		fileName := filepath.Base(secretFilePath)
+
 		if !strings.HasSuffix(fileName, azureArcFileExtension) {
 			return accesstokens.TokenResponse{}, errors.New("invalid file extension")
 		}
 
 		// check that file path from header matches the expected file path for the platform
-		if strings.TrimSpace(expectedSecretFilePath+fileName) != secretFilePath {
+		if strings.TrimSpace(filepath.Join(expectedSecretFilePath, fileName)) != secretFilePath {
 			return accesstokens.TokenResponse{}, errors.New("invalid file path")
 		}
 
@@ -461,7 +462,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 
 		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), "https://management.azure.com", claims)
 		if err != nil {
-			return accesstokens.TokenResponse{}, fmt.Errorf("error creating http request %s", err)
+			return accesstokens.TokenResponse{}, err
 		}
 
 		req.Header.Set("Authorization", authHeaderValue)
