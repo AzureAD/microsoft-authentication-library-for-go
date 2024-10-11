@@ -337,15 +337,21 @@ func getAzureArcEnvironmentVariables() (string, string) {
 }
 
 func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
+	println("identityEndpoint: ", identityEndpoint)
+	println("imdsEndpoint: ", imdsEndpoint)
+
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		return true
 	}
 
 	himdsFilePath, platformSupported := azureArcFileDetection[platform]
+	println("himdsFilePath: ", himdsFilePath)
 
 	if platformSupported && fileExists(himdsFilePath) {
+		println("himdsFilePath exists")
 		return true
 	}
+	println("himdsFilePath does not exist")
 
 	return false
 }
