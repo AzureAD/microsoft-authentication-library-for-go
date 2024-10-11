@@ -446,6 +446,7 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 		println("wwwAuthenticateHeader: ", wwwAuthenticateHeader)
 		fileInfo, err := os.Stat(secretFilePath)
 		if err != nil {
+			println("error: ", err)
 			return accesstokens.TokenResponse{}, errors.New("unable to get file info")
 		}
 
