@@ -576,7 +576,6 @@ func Test_validateAzureArcEnvironment(t *testing.T) {
 	}
 }
 
-// Test function
 func Test_fileExists(t *testing.T) {
 	// Create a temporary file
 	tmpFile, err := os.CreateTemp("", "test_file")

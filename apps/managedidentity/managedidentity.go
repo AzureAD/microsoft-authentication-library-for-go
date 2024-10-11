@@ -439,6 +439,10 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, errors.New("invalid file path")
 		}
 
+		println("expectedSecretFilePath: ", expectedSecretFilePath)
+		println("secretFilePath: ", secretFilePath)
+		println("fileName: ", fileName)
+		println("wwwAuthenticateHeader: ", wwwAuthenticateHeader)
 		fileInfo, err := os.Stat(secretFilePath)
 		if err != nil {
 			return accesstokens.TokenResponse{}, errors.New("unable to get file info")
