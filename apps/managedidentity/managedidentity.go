@@ -326,10 +326,15 @@ func getAzureArcEnvironmentVariables() (string, string) {
 		platform := runtime.GOOS
 		fileDetectionPath, retrievedPath := azureArcFileDetection[platform]
 
+		println("fileDetectionPath: " + " " + fileDetectionPath)
+
 		if retrievedPath {
+			println(retrievedPath)
 			if _, err := os.Stat(fileDetectionPath); err == nil {
 				identityEndpoint = azureArcEndpoint
 				imdsEndpoint = himdsExecutableHelperString
+				println("get envar identityEndpoint: ", identityEndpoint)
+				println("get envar imdsEndpoint: ", imdsEndpoint)
 			}
 		}
 	}
