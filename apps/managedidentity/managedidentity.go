@@ -326,15 +326,10 @@ func getAzureArcEnvironmentVariables() (string, string) {
 		platform := runtime.GOOS
 		fileDetectionPath, retrievedPath := azureArcFileDetection[platform]
 
-		println("fileDetectionPath: " + " " + fileDetectionPath)
-
 		if retrievedPath {
-			println(retrievedPath)
 			if _, err := os.Stat(fileDetectionPath); err == nil {
 				identityEndpoint = azureArcEndpoint
 				imdsEndpoint = himdsExecutableHelperString
-				println("get envar identityEndpoint: ", identityEndpoint)
-				println("get envar imdsEndpoint: ", imdsEndpoint)
 			}
 		}
 	}
@@ -342,21 +337,15 @@ func getAzureArcEnvironmentVariables() (string, string) {
 }
 
 func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
-	println("identityEndpoint: ", identityEndpoint)
-	println("imdsEndpoint: ", imdsEndpoint)
-
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		return true
 	}
 
 	himdsFilePath, platformSupported := azureArcFileDetection[platform]
-	println("himdsFilePath: ", himdsFilePath)
 
 	if platformSupported && fileExists(himdsFilePath) {
-		println("himdsFilePath exists")
 		return true
 	}
-	println("himdsFilePath does not exist")
 
 	return false
 }
@@ -451,13 +440,8 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, errors.New("invalid file path")
 		}
 
-		println("expectedSecretFilePath: ", expectedSecretFilePath)
-		println("secretFilePath: ", secretFilePath)
-		println("fileName: ", fileName)
-		println("wwwAuthenticateHeader: ", wwwAuthenticateHeader)
 		fileInfo, err := os.Stat(secretFilePath)
 		if err != nil {
-			println("error: ", err)
 			return accesstokens.TokenResponse{}, errors.New("unable to get file info")
 		}
 
