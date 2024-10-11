@@ -175,7 +175,6 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	clientID := authParameters.ClientID
 
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
-	//tokenResponse.Resource
 	cachedAt := time.Now()
 	authnSchemeKeyID := authParameters.AuthnScheme.KeyID()
 	var account shared.Account

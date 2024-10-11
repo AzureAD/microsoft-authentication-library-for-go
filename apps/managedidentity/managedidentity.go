@@ -50,7 +50,6 @@ const (
 	imdsEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
 	imdsAPIVersion = "2018-02-01"
 
-	//system assigned managed identity
 	systemAssignedManagedIdentity = "system_assigned_managed_identity"
 )
 
@@ -258,10 +257,10 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return client.AuthResultFromToken(ctx, fakeAuthParams, tokenResponse, true)
+	return client.authResultFromToken(ctx, fakeAuthParams, tokenResponse, true)
 }
 
-func (c Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (base.AuthResult, error) {
+func (c Client) authResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (base.AuthResult, error) {
 	if !cacheWrite {
 		return base.NewAuthResult(token, shared.Account{})
 	}

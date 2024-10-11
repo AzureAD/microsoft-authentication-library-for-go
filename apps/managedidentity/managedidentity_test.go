@@ -139,7 +139,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
 			var localUrl *url.URL
 			mockClient := mock.Client{}
-			var tokenValidation = false
+			tokenValidation := false
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
