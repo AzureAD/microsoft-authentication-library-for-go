@@ -157,7 +157,6 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	msiParameters.Set(apiVersionQuerryParameterName, imdsAPIVersion)
 	resource = strings.TrimSuffix(resource, "/.default")
 	msiParameters.Set(resourceQuerryParameterName, resource)
-	// msiParameters.Set("scopes", resource)
 
 	if len(claims) > 0 {
 		msiParameters.Set("claims", claims)
@@ -258,13 +257,10 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return client.authResultFromToken(ctx, fakeAuthParams, tokenResponse, true)
+	return client.authResultFromToken(ctx, fakeAuthParams, tokenResponse)
 }
 
-func (c Client) authResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (base.AuthResult, error) {
-	if !cacheWrite {
-		return base.NewAuthResult(token, shared.Account{})
-	}
+func (c Client) authResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
 	account, err := cacheManager.Write(authParams, token)
 	if err != nil {
 		return base.AuthResult{}, err
