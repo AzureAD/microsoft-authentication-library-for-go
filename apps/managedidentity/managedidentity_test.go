@@ -190,7 +190,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				}
 			}
 			if result.Metadata.TokenSource != base.IdentityProvider {
-				t.Fatalf("wanted Indenity tokensource, got %d", result.Metadata.TokenSource)
+				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
@@ -204,7 +204,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			if !tokenValidation {
-				t.Fatal("token validation didnt happen")
+				t.Fatal("token validation didn't happen")
 			}
 			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
@@ -215,7 +215,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				t.Fatal(err)
 			}
 			if secondResult.Metadata.TokenSource != base.Cache {
-				t.Fatalf("cache result wanted Indenity token source, got %d", secondResult.Metadata.TokenSource)
+				t.Fatalf("cache result wanted cache token source, got %d", secondResult.Metadata.TokenSource)
 			}
 			storage.FakeValidate = nil
 		})
