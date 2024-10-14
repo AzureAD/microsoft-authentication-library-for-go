@@ -21,7 +21,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -72,10 +71,12 @@ func SystemAssigned() ID {
 	return systemAssignedValue(systemAssignedManagedIdentity)
 }
 
-var cacheManager *storage.Manager = storage.New(oauth.New(http.DefaultClient))
+// cache never uses the client because instance discovery is always disabled.
+// so oauth can be nil here.
+var cacheManager *storage.Manager = storage.New(nil)
 
 func resetCache() {
-	cacheManager = storage.New(oauth.New(http.DefaultClient))
+	cacheManager = storage.New(nil)
 }
 
 type Client struct {
@@ -235,7 +236,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		return base.AuthResult{}, err
 	}
 
-	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, false)
+	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
