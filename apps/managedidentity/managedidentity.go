@@ -121,7 +121,6 @@ type ClientOption func(o *ClientOptions)
 type AcquireTokenOption func(o *AcquireTokenOptions)
 
 // WithClaims sets additional claims to request for the token, such as those required by token revocation or conditional access policies.
-
 // Use this option when Azure AD returned a claims challenge for a prior request. The argument must be decoded.
 func WithClaims(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
