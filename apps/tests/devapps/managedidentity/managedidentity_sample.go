@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
@@ -124,23 +125,44 @@ func setEnvironmentVariablesIfRequired(source mi.Source) {
 }
 
 func main() {
-	exampleType := "5"
+	var localTestInput string
+	for {
+		fmt.Println("Do you want to run a local test? (yes/no):")
+		fmt.Scanln(&localTestInput)
+		localTestInput = strings.ToLower(localTestInput)
+		if localTestInput == "yes" {
+			isLocalTest = true
+			break
+		} else if localTestInput == "no" {
+			isLocalTest = false
+			break
+		} else {
+			fmt.Println("Invalid input. Please enter 'yes' or 'no'.")
+		}
+	}
 
-	if exampleType == "1" {
+	var exampleType string
+	fmt.Println("Enter the example type (1-8):")
+	fmt.Scanln(&exampleType)
+
+	switch exampleType {
+	case "1":
 		runIMDSSystemAssigned()
-	} else if exampleType == "2" {
+	case "2":
 		runIMDSUserAssignedClientID()
-	} else if exampleType == "3" {
+	case "3":
 		runIMDSUserAssignedObjectID()
-	} else if exampleType == "4" {
+	case "4":
 		runIMDSUserAssignedResourceID()
-	} else if exampleType == "5" {
+	case "5":
 		runAzureArcSystemAssigned()
-	} else if exampleType == "6" {
+	case "6":
 		runAzureArcUserAssignedClientID()
-	} else if exampleType == "7" {
+	case "7":
 		runAzureArcUserAssignedObjectID()
-	} else if exampleType == "8" {
+	case "8":
 		runAzureArcUserAssignedResourceID()
+	default:
+		fmt.Println("Invalid example type")
 	}
 }
