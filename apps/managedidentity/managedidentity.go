@@ -545,3 +545,47 @@ func (c *Client) getAzureArcSecretKey(response *http.Response, platform string) 
 
 	return string(secret), nil
 }
+
+func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]byte, error) {
+	var secretFilePath string
+
+	// split the header to get the secret file path
+	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
+	if len(parts) > 1 {
+		secretFilePath = parts[1]
+	} else {
+		return nil, fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
+	}
+
+	// check that the file in the file path is a .key file
+	fileName := filepath.Base(secretFilePath)
+
+	if !strings.HasSuffix(fileName, azureArcFileExtension) {
+		return nil, fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
+	}
+
+	// check that file path from header matches the expected file path for the platform
+	if strings.TrimSpace(filepath.Join(expectedSecretFilePath, fileName)) != secretFilePath {
+		return nil, fmt.Errorf("invalid file path, expected %s, got %s", secretFilePath, filepath.Join(expectedSecretFilePath, fileName))
+	}
+
+	fileInfo, err := os.Stat(secretFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get file info for path %s", secretFilePath)
+	}
+
+	secretFileSize := fileInfo.Size()
+
+	// Throw an error if the secret file's size is greater than 4096 bytes
+	if secretFileSize > azureArcMaxFileSizeBytes {
+		return nil, fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, secretFileSize)
+	}
+
+	// Attempt to read the contents of the secret file
+	secret, err := os.ReadFile(secretFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read the secret file at path %s", secretFilePath)
+	}
+
+	return secret, nil
+}

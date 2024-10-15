@@ -98,20 +98,20 @@ func makeResponseWithErrorData(err string, desc string) ([]byte, error) {
 	return jsonResponse, e
 }
 
-func createMockFile(path string, size int64) {
+func createMockFile(t *testing.T, path string, size int64) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		panic(err)
+		t.Fatalf("failed to create directory: %v", err)
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		panic(err)
+		t.Fatalf("failed to create file: %v", err)
 	}
 
 	if size > 0 {
 		if err := f.Truncate(size); err != nil {
-			panic(err)
+			t.Fatalf("failed to truncate file: %v", err)
 		}
 	}
 
@@ -155,6 +155,9 @@ func Test_Get_Source(t *testing.T) {
 		{name: "testAzureArcUserResourceAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
 		{name: "testAzureArcUserObjectAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
 		{name: "testDefaultToImds", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
+		{name: "testDefaultToImdsClientAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedClientID("clientId")},
+		{name: "testDefaultToImdsResourceAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedResourceID("resourceId")},
+		{name: "testDefaultToImdsObjectAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedObjectID("objectId")},
 		{name: "testDefaultToImdsEmptyEndpoint", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 		{name: "testDefaultToImdsLinux", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 		{name: "testDefaultToImdsEmptyEndpointLinux", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
@@ -166,11 +169,11 @@ func Test_Get_Source(t *testing.T) {
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				originalPath := azureArcFileDetection[runtime.GOOS]
-				azureArcFileDetection[runtime.GOOS] = "fake/fake"
+				originalPath := azureArcOsToFileMap[runtime.GOOS]
+				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
 
 				if testCase.name == "testDefaultToImdsLinux" || testCase.name == "testDefaultToImdsEmptyEndpointLinux" {
-					azureArcFileDetection[runtime.GOOS] = originalPath
+					azureArcOsToFileMap[runtime.GOOS] = originalPath
 				}
 			}
 
@@ -206,7 +209,7 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				azureArcFileDetection[runtime.GOOS] = "fake/fake"
+				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
 			}
 
 			var localUrl *url.URL
@@ -225,7 +228,7 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			}
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
-				if testCase.source == AzureArc && err.Error() == "Azure Arc doesn't support specifying a user-assigned managed identity at runtime" {
+				if testCase.source == AzureArc && err.Error() == "Azure Arc doesn't support user assigned managed identities" {
 					return
 				}
 			}
