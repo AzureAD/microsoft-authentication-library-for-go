@@ -56,8 +56,8 @@ const (
 	azureArcAPIVersion                = "2020-06-01"
 	azureArcFileExtension             = ".key"
 	azureArcMaxFileSizeBytes    int64 = 4096
-	linuxSupportedPath                = "/var/opt/azcmagent/tokens/"
-	linuxAzureArcFilePath             = "/opt/azcmagent/bin/himds"
+	linuxTokenPath                    = "/var/opt/azcmagent/tokens/"
+	linuxHimdsPath                    = "/opt/azcmagent/bin/himds"
 	windowsTokenPath                  = "\\AzureConnectedMachineAgent\\Tokens\\"
 	windowsHimdsPath                  = "\\AzureConnectedMachineAgent\\himds.exe"
 	himdsExecutableHelperString       = "N/A: himds executable exists"
@@ -73,15 +73,15 @@ const (
 
 var supportedAzureArcPlatforms = map[string]string{
 	"windows": fmt.Sprintf("%s%s", os.Getenv("ProgramData"), windowsTokenPath),
-	"linux":   linuxSupportedPath,
+	"linux":   linuxTokenPath,
 }
 
-var azureArcFileDetection = map[string]string{
+var azureArcOsToFileMap = map[string]string{
 	"windows": fmt.Sprintf("%s%s", os.Getenv("ProgramFiles"), windowsHimdsPath),
-	"linux":   linuxAzureArcFilePath,
+	"linux":   linuxHimdsPath,
 }
 
-type responseHandler func(*http.Response, context.Context, string, string) (accesstokens.TokenResponse, error)
+type responseHandler func(context.Context, *http.Response, string, string) (accesstokens.TokenResponse, error)
 
 type Source string
 
@@ -185,7 +185,6 @@ func GetSource(id ID) (Source, error) {
 	identityHeader := os.Getenv(IdentityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(IdentityServerThumbprintEnvVar)
 	msiEndpoint := os.Getenv(MsiEndpointEnvVar)
-	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
 
 	if identityEndpoint != "" && identityHeader != "" {
 		if identityServerThumbprint != "" {
@@ -194,7 +193,7 @@ func GetSource(id ID) (Source, error) {
 		return AppService, nil
 	} else if msiEndpoint != "" {
 		return CloudShell, nil
-	} else if validateAzureArcEnvironment(identityEndpoint, imdsEndpoint, runtime.GOOS) {
+	} else if _, _, isValid := getAndValidateAzureArcEnvVars(); isValid {
 		return AzureArc, nil
 	}
 
@@ -216,149 +215,48 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	var tokenResponse accesstokens.TokenResponse
 	switch client.source {
 	case AzureArc:
-		req, err = createAzureArcAuthRequest(ctx, client.miType, resource, o.claims)
+		req, err = createAzureArcAuthRequest(ctx, client.miType, resource)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
 
 		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
 		// this is done when we get a 401 response, which will be handled by the response handler
-		tokenResponse, err = client.getTokenForRequest(ctx, req, client.handleAzureArcResponse)
+		tokenResponse, err = client.getTokenForRequest(ctx, req)
+		if err != nil {
+			switch callErr := err.(type) {
+			case errors.CallErr:
+				switch callErr.Resp.StatusCode {
+				case http.StatusUnauthorized:
+					response, err := client.handleAzureArcResponse(ctx, callErr.Resp, resource, runtime.GOOS)
+					if err != nil {
+						return base.AuthResult{}, err
+					}
+
+					return base.NewAuthResult(response, shared.Account{})
+				}
+			}
+			return base.AuthResult{}, err
+		}
+	case DefaultToIMDS:
+		req, err = createIMDSAuthRequest(ctx, client.miType, resource)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+
+		tokenResponse, err = client.getTokenForRequest(ctx, req)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
 	default:
-		req, err = createIMDSAuthRequest(ctx, client.miType, resource, o.claims)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-
-		tokenResponse, err = client.getTokenForRequest(ctx, req, nil)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-
+		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
 	}
 
 	return base.NewAuthResult(tokenResponse, shared.Account{})
 
 }
 
-func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
-	var msiEndpoint *url.URL
-	msiEndpoint, err := url.Parse(imdsEndpoint)
-	if err != nil {
-		return nil, fmt.Errorf("couldn't parse %q: %s", imdsEndpoint, err)
-	}
-	msiParameters := msiEndpoint.Query()
-	msiParameters.Set(apiVersionQueryParameterName, imdsAPIVersion)
-	resource = strings.TrimSuffix(resource, "/.default")
-	msiParameters.Set(resourceQueryParameterName, resource)
-
-	if len(claims) > 0 {
-		msiParameters.Set("claims", claims)
-	}
-
-	switch t := id.(type) {
-	case UserAssignedClientID:
-		msiParameters.Set(miQueryParameterClientId, string(t))
-	case UserAssignedResourceID:
-		msiParameters.Set(miQueryParameterResourceId, string(t))
-	case UserAssignedObjectID:
-		msiParameters.Set(miQueryParameterObjectId, string(t))
-	case systemAssignedValue: // not adding anything
-	default:
-		return nil, fmt.Errorf("unsupported type %T", id)
-	}
-
-	msiEndpoint.RawQuery = msiParameters.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating http request %s", err)
-	}
-	req.Header.Set(metaHTTPHeaderName, "true")
-	return req, nil
-}
-
-func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, claims string) (*http.Request, error) {
-	identityEndpoint, _ := getAzureArcEnvironmentVariables()
-	var msiEndpoint *url.URL
-
-	if identityEndpoint == "" {
-		identityEndpoint = azureArcEndpoint
-	}
-
-	if _, ok := id.(systemAssignedValue); !ok {
-		return nil, errors.New("Azure Arc doesn't support specifying a user-assigned managed identity at runtime")
-	}
-
-	identityEndpoint = strings.Replace(identityEndpoint, "localhost", "127.0.0.1", -1)
-	msiEndpoint, parseErr := url.Parse(identityEndpoint)
-	if parseErr != nil {
-		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
-	}
-
-	msiParameters := msiEndpoint.Query()
-	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
-	resource = strings.TrimSuffix(resource, "/.default")
-	msiParameters.Set(resourceQueryParameterName, resource)
-
-	if len(claims) > 0 {
-		msiParameters.Set("claims", claims)
-	}
-
-	msiEndpoint.RawQuery = msiParameters.Encode()
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
-	if err != nil {
-		return nil, fmt.Errorf("error creating http request %s", err)
-	}
-	req.Header.Set(metaHTTPHeaderName, "true")
-	return req, nil
-}
-
-// GetEnvironmentVariables returns the identity and IMDS endpoints
-func getAzureArcEnvironmentVariables() (string, string) {
-	identityEndpoint := os.Getenv(IdentityEndpointEnvVar)
-	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
-
-	if identityEndpoint == "" || imdsEndpoint == "" {
-		platform := runtime.GOOS
-		fileDetectionPath, retrievedPath := azureArcFileDetection[platform]
-
-		if retrievedPath {
-			if _, err := os.Stat(fileDetectionPath); err == nil {
-				identityEndpoint = azureArcEndpoint
-				imdsEndpoint = himdsExecutableHelperString
-			}
-		}
-	}
-	return identityEndpoint, imdsEndpoint
-}
-
-func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
-	if identityEndpoint != "" && imdsEndpoint != "" {
-		return true
-	}
-
-	himdsFilePath, platformSupported := azureArcFileDetection[platform]
-
-	if platformSupported && fileExists(himdsFilePath) {
-		return true
-	}
-
-	return false
-}
-
-func fileExists(path string) bool {
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
-}
-
-func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, resHandler responseHandler) (accesstokens.TokenResponse, error) {
+func (client Client) getTokenForRequest(ctx context.Context, req *http.Request) (accesstokens.TokenResponse, error) {
 	var r accesstokens.TokenResponse
 
 	resp, err := client.httpClient.Do(req)
@@ -374,10 +272,6 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 	}
 
 	switch resp.StatusCode {
-	case http.StatusUnauthorized:
-		if resHandler != nil {
-			return resHandler(resp, ctx, r.Claims, runtime.GOOS)
-		}
 	case http.StatusOK, http.StatusAccepted:
 	default:
 		sd := strings.TrimSpace(string(responseBytes))
@@ -403,22 +297,110 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request, 
 	return r, err
 }
 
-func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Context, claims string, platform string) (accesstokens.TokenResponse, error) {
+func fileExists(path string) bool {
+	if _, err := os.Stat(path); err != nil {
+		if os.IsNotExist(err) {
+			return false
+		}
+	}
+	return true
+}
+
+func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+	var msiEndpoint *url.URL
+	msiEndpoint, err := url.Parse(imdsEndpoint)
+	if err != nil {
+		return nil, fmt.Errorf("couldn't parse %q: %s", imdsEndpoint, err)
+	}
+	msiParameters := msiEndpoint.Query()
+	msiParameters.Set(apiVersionQueryParameterName, imdsAPIVersion)
+	resource = strings.TrimSuffix(resource, "/.default")
+	msiParameters.Set(resourceQueryParameterName, resource)
+
+	switch t := id.(type) {
+	case UserAssignedClientID:
+		msiParameters.Set(miQueryParameterClientId, string(t))
+	case UserAssignedResourceID:
+		msiParameters.Set(miQueryParameterResourceId, string(t))
+	case UserAssignedObjectID:
+		msiParameters.Set(miQueryParameterObjectId, string(t))
+	case systemAssignedValue: // not adding anything
+	default:
+		return nil, fmt.Errorf("unsupported type %T", id)
+	}
+
+	msiEndpoint.RawQuery = msiParameters.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating http request %s", err)
+	}
+	req.Header.Set(metaHTTPHeaderName, "true")
+	return req, nil
+}
+
+func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+	identityEndpoint, _, _ := getAndValidateAzureArcEnvVars()
+	var msiEndpoint *url.URL
+
+	if identityEndpoint == "" {
+		identityEndpoint = azureArcEndpoint
+	}
+
+	if _, ok := id.(systemAssignedValue); !ok {
+		return nil, errors.New("Azure Arc doesn't support user assigned managed identities")
+	}
+
+	identityEndpoint = strings.Replace(identityEndpoint, "localhost", "127.0.0.1", -1)
+	msiEndpoint, parseErr := url.Parse(identityEndpoint)
+	if parseErr != nil {
+		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
+	}
+
+	msiParameters := msiEndpoint.Query()
+	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
+	resource = strings.TrimSuffix(resource, "/.default")
+	msiParameters.Set(resourceQueryParameterName, resource)
+
+	msiEndpoint.RawQuery = msiParameters.Encode()
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
+	if err != nil {
+		return nil, fmt.Errorf("error creating http request %s", err)
+	}
+	req.Header.Set(metaHTTPHeaderName, "true")
+	return req, nil
+}
+
+// GetEnvironmentVariables returns the identity and IMDS endpoints
+func getAndValidateAzureArcEnvVars() (string, string, bool) {
+	identityEndpoint := os.Getenv(IdentityEndpointEnvVar)
+	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
+
+	if identityEndpoint != "" && imdsEndpoint != "" {
+		return identityEndpoint, imdsEndpoint, true
+	}
+
+	if identityEndpoint == "" || imdsEndpoint == "" {
+		platform := runtime.GOOS
+
+		// Only platforms inside the azureArcOsToFileMap are supported
+		fileDetectionPath, platformSupported := azureArcOsToFileMap[platform]
+
+		if platformSupported && fileExists(fileDetectionPath) {
+			identityEndpoint = azureArcEndpoint
+			imdsEndpoint = himdsExecutableHelperString
+			return identityEndpoint, imdsEndpoint, true
+		}
+	}
+
+	return identityEndpoint, imdsEndpoint, false
+}
+
+func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Response, resource string, platform string) (accesstokens.TokenResponse, error) {
 	if response.StatusCode == http.StatusUnauthorized {
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 
 		if len(wwwAuthenticateHeader) == 0 {
 			return accesstokens.TokenResponse{}, errors.New("response has no www-authenticate header")
-		}
-
-		var secretFilePath string
-
-		// split the header to get the secret file path
-		parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
-		if len(parts) > 1 {
-			secretFilePath = parts[1]
-		} else {
-			return accesstokens.TokenResponse{}, errors.New("basic realm= not found in the string")
 		}
 
 		// check if the platform is supported
@@ -427,47 +409,66 @@ func (c *Client) handleAzureArcResponse(response *http.Response, ctx context.Con
 			return accesstokens.TokenResponse{}, errors.New("platform not supported")
 		}
 
-		// check that the file in the file path is a .key file
-		fileName := filepath.Base(secretFilePath)
-
-		if !strings.HasSuffix(fileName, azureArcFileExtension) {
-			return accesstokens.TokenResponse{}, errors.New("invalid file extension")
-		}
-
-		// check that file path from header matches the expected file path for the platform
-		if strings.TrimSpace(filepath.Join(expectedSecretFilePath, fileName)) != secretFilePath {
-			return accesstokens.TokenResponse{}, errors.New("invalid file path")
-		}
-
-		fileInfo, err := os.Stat(secretFilePath)
+		secret, err := handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath)
 		if err != nil {
-			return accesstokens.TokenResponse{}, errors.New("unable to get file info")
-		}
-
-		secretFileSize := fileInfo.Size()
-
-		// Throw an error if the secret file's size is greater than 4096 bytes
-		if secretFileSize > azureArcMaxFileSizeBytes {
-			return accesstokens.TokenResponse{}, errors.New("invalid secret file size")
-		}
-
-		// Attempt to read the contents of the secret file
-		secret, err := os.ReadFile(secretFilePath)
-		if err != nil {
-			return accesstokens.TokenResponse{}, errors.New("unable to read the secret file")
+			return accesstokens.TokenResponse{}, err
 		}
 
 		authHeaderValue := fmt.Sprintf("Basic %s", string(secret))
 
-		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), "https://management.azure.com", claims)
+		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), resource)
 		if err != nil {
 			return accesstokens.TokenResponse{}, err
 		}
 
 		req.Header.Set("Authorization", authHeaderValue)
 
-		return c.getTokenForRequest(ctx, req, nil)
+		return c.getTokenForRequest(ctx, req)
 	}
 
 	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %d", response.StatusCode)
+}
+
+func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]byte, error) {
+	var secretFilePath string
+
+	// split the header to get the secret file path
+	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
+	if len(parts) > 1 {
+		secretFilePath = parts[1]
+	} else {
+		return nil, fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
+	}
+
+	// check that the file in the file path is a .key file
+	fileName := filepath.Base(secretFilePath)
+
+	if !strings.HasSuffix(fileName, azureArcFileExtension) {
+		return nil, fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
+	}
+
+	// check that file path from header matches the expected file path for the platform
+	if strings.TrimSpace(filepath.Join(expectedSecretFilePath, fileName)) != secretFilePath {
+		return nil, fmt.Errorf("invalid file path, expected %s, got %s", secretFilePath, filepath.Join(expectedSecretFilePath, fileName))
+	}
+
+	fileInfo, err := os.Stat(secretFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to get file info for path %s", secretFilePath)
+	}
+
+	secretFileSize := fileInfo.Size()
+
+	// Throw an error if the secret file's size is greater than 4096 bytes
+	if secretFileSize > azureArcMaxFileSizeBytes {
+		return nil, fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, secretFileSize)
+	}
+
+	// Attempt to read the contents of the secret file
+	secret, err := os.ReadFile(secretFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("unable to read the secret file at path %s", secretFilePath)
+	}
+
+	return secret, nil
 }

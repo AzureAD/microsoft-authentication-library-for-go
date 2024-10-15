@@ -5,7 +5,6 @@ package managedidentity
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -88,32 +87,30 @@ func makeResponseWithErrorData(err string, desc string) ([]byte, error) {
 	return jsonResponse, e
 }
 
-func createMockFile(path string, size int64) {
+func createMockFile(t *testing.T, path string, size int64) {
 	dir := filepath.Dir(path)
 	if err := os.MkdirAll(dir, 0755); err != nil {
-		panic(err)
+		t.Fatalf("failed to create directory: %v", err)
 	}
 
 	f, err := os.Create(path)
 	if err != nil {
-		panic(err)
+		t.Fatalf("failed to create file: %v", err)
 	}
 
 	if size > 0 {
 		if err := f.Truncate(size); err != nil {
-			panic(err)
+			t.Fatalf("failed to truncate file: %v", err)
 		}
 	}
 	f.Close()
 }
 
-func getMockFilePath() (string, error) {
-	homeDir, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get user home directory: %v", err)
-	}
-	mockDirPath := filepath.Join(homeDir, "AzureConnectedMachineAgent")
-	return mockDirPath, nil
+func getMockFilePath(t *testing.T) (string, error) {
+	tempDir := t.TempDir()
+	mockFilePath := filepath.Join(tempDir, "AzureConnectedMachineAgent")
+
+	return mockFilePath, nil
 }
 
 func setEnvVars(t *testing.T, source Source) {
@@ -149,6 +146,9 @@ func Test_Get_Source(t *testing.T) {
 		{name: "testAzureArcUserResourceAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
 		{name: "testAzureArcUserObjectAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
 		{name: "testDefaultToImds", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
+		{name: "testDefaultToImdsClientAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedClientID("clientId")},
+		{name: "testDefaultToImdsResourceAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedResourceID("resourceId")},
+		{name: "testDefaultToImdsObjectAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedObjectID("objectId")},
 		{name: "testDefaultToImdsEmptyEndpoint", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 		{name: "testDefaultToImdsLinux", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 		{name: "testDefaultToImdsEmptyEndpointLinux", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
@@ -160,11 +160,11 @@ func Test_Get_Source(t *testing.T) {
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				originalPath := azureArcFileDetection[runtime.GOOS]
-				azureArcFileDetection[runtime.GOOS] = "fake/fake"
+				originalPath := azureArcOsToFileMap[runtime.GOOS]
+				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
 
 				if testCase.name == "testDefaultToImdsLinux" || testCase.name == "testDefaultToImdsEmptyEndpointLinux" {
-					azureArcFileDetection[runtime.GOOS] = originalPath
+					azureArcOsToFileMap[runtime.GOOS] = originalPath
 				}
 			}
 
@@ -200,7 +200,7 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				azureArcFileDetection[runtime.GOOS] = "fake/fake"
+				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
 			}
 
 			var localUrl *url.URL
@@ -219,7 +219,7 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			}
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
-				if testCase.source == AzureArc && err.Error() == "Azure Arc doesn't support specifying a user-assigned managed identity at runtime" {
+				if testCase.source == AzureArc && err.Error() == "Azure Arc doesn't support user assigned managed identities" {
 					return
 				}
 			}
@@ -377,7 +377,7 @@ func TestCreatingIMDSClient(t *testing.T) {
 	}
 }
 
-func Test_getAzureArcEnvironmentVariables(t *testing.T) {
+func Test_getAndValidateAzureArcEnvVars(t *testing.T) {
 	testCases := []struct {
 		name           string
 		envVars        map[string]string
@@ -484,95 +484,20 @@ func Test_getAzureArcEnvironmentVariables(t *testing.T) {
 					mockFilePath = filepath.Join(homeDir, "AzureConnectedMachineAgent", "himds")
 				}
 
-				azureArcFileDetection[tc.platform] = mockFilePath
-				createMockFile(mockFilePath, 0)
+				azureArcOsToFileMap[tc.platform] = mockFilePath
+				createMockFile(t, mockFilePath, 0)
 				defer os.Remove(mockFilePath)
 			} else {
-				azureArcFileDetection[tc.platform] = "fake"
+				azureArcOsToFileMap[tc.platform] = "fake"
 			}
 
-			id, imds := getAzureArcEnvironmentVariables()
+			id, imds, _ := getAndValidateAzureArcEnvVars()
 
 			if id != tc.expectedID {
 				t.Fatalf("expected ID %v, got %v", tc.expectedID, id)
 			}
 			if imds != tc.expectedIMDS {
 				t.Fatalf("expected IMDS %v, got %v", tc.expectedIMDS, imds)
-			}
-		})
-	}
-}
-
-func Test_validateAzureArcEnvironment(t *testing.T) {
-	testCases := []struct {
-		name             string
-		identityEndpoint string
-		imdsEndpoint     string
-		platform         string
-		fileExistsResult bool
-		expectedResult   bool
-	}{
-		{
-			name:             "Both endpoints provided",
-			identityEndpoint: "endpoint",
-			imdsEndpoint:     "endpoint",
-			platform:         "linux",
-			expectedResult:   true,
-		},
-		{
-			name:             "Only identityEndpoint provided",
-			identityEndpoint: "endpoint",
-			imdsEndpoint:     "",
-			platform:         "linux",
-			fileExistsResult: false,
-			expectedResult:   false,
-		},
-		{
-			name:             "Only imdsEndpoint provided",
-			identityEndpoint: "",
-			imdsEndpoint:     "endpoint",
-			platform:         "linux",
-			fileExistsResult: false,
-			expectedResult:   false,
-		},
-		{
-			name:             "No endpoints provided",
-			identityEndpoint: "",
-			imdsEndpoint:     "",
-			platform:         "linux",
-			fileExistsResult: false,
-			expectedResult:   false,
-		},
-		{
-			name:             "Platform not supported",
-			identityEndpoint: "",
-			imdsEndpoint:     "",
-			platform:         "darwin",
-			expectedResult:   false,
-		},
-		{
-			name:             "File does not exist",
-			identityEndpoint: "",
-			imdsEndpoint:     "",
-			platform:         "linux",
-			fileExistsResult: false,
-			expectedResult:   false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			mockFileExists = func() bool {
-				return tc.fileExistsResult
-			}
-
-			if runtime.GOOS == "linux" {
-				azureArcFileDetection[runtime.GOOS] = "fake/fake"
-			}
-
-			result := validateAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
-			if result != tc.expectedResult {
-				t.Fatalf("expected %v, got %v", tc.expectedResult, result)
 			}
 		})
 	}
@@ -585,8 +510,6 @@ func Test_fileExists(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer os.Remove(tmpFile.Name())
-
-	print(fileExists(tmpFile.Name()))
 
 	// Test case: file exists
 	if !fileExists(tmpFile.Name()) {
@@ -601,7 +524,7 @@ func Test_fileExists(t *testing.T) {
 }
 
 func Test_handleAzureArcResponse(t *testing.T) {
-	testCaseFilePath, err := getMockFilePath()
+	testCaseFilePath, err := getMockFilePath(t)
 	if err != nil {
 		t.Fatalf("failed to get mock file path: %v", err)
 	}
@@ -676,15 +599,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			platform:       runtime.GOOS,
 			createMockFile: true,
 		},
-		// todo readd when we can figure out how to corrupt a file
-		// {
-		// 	name:           "Unable to read the secret file",
-		// 	statusCode:     http.StatusUnauthorized,
-		// 	headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + testCaseFilePath + "\\secret.key"},
-		// 	expectedError:  "unable to read the secret file",
-		// 	platform:       "windows",
-		// 	createMockFile: true,
-		// },
 		{
 			name:           "token request fail",
 			statusCode:     http.StatusUnauthorized,
@@ -719,9 +633,9 @@ func Test_handleAzureArcResponse(t *testing.T) {
 				supportedAzureArcPlatforms[tc.platform] = expectedFilePath
 
 				if tc.name == "Invalid secret file size" {
-					createMockFile(mockFilePath, 5000)
+					createMockFile(t, mockFilePath, 5000)
 				} else {
-					createMockFile(mockFilePath, 0)
+					createMockFile(t, mockFilePath, 0)
 				}
 
 				defer os.Remove(mockFilePath)
@@ -734,7 +648,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 				contextToUse = nil
 			}
 
-			_, err := client.handleAzureArcResponse(response, contextToUse, "", tc.platform)
+			_, err := client.handleAzureArcResponse(contextToUse, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
 				t.Fatalf("expected error %v, got %v", tc.expectedError, err)

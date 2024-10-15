@@ -9,160 +9,83 @@ import (
 	mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
 
-var isLocalTest = false
-
-func runIMDSSystemAssigned() {
-	miSystemAssigned, err := mi.New(mi.SystemAssigned())
+func acquireToken(identity mi.ID) {
+	tokenProvider, err := mi.New(identity)
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
-	result, err := miSystemAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
+	result, err := tokenProvider.AcquireToken(context.Background(), "https://management.azure.com/")
 	if err != nil {
 		fmt.Println(err)
+		return
 	}
 	fmt.Println("token expire at : ", result.ExpiresOn)
 }
 
-func runIMDSUserAssignedClientID() {
-	miUserAssigned, err := mi.New(mi.UserAssignedClientID("YOUR_MANAGED_IDENTITY_CLIENT_ID"))
-	if err != nil {
-		fmt.Println(err)
-	}
-	result, err := miUserAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("token expire at : ", result.ExpiresOn)
+func setEnvironmentVariablesIfRequired() {
+	os.Setenv(mi.IdentityEndpointEnvVar, "identityEndpointVar")
+	os.Setenv(mi.ArcIMDSEnvVar, "imdsEnvVar")
 }
 
-func runIMDSUserAssignedObjectID() {
-	miUserAssigned, err := mi.New(mi.UserAssignedObjectID("YOUR_MANAGED_IDENTITY_CLIENT_ID"))
-	if err != nil {
-		fmt.Println(err)
-	}
-	result, err := miUserAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("token expire at : ", result.ExpiresOn)
-}
-
-func runIMDSUserAssignedResourceID() {
-	miUserAssigned, err := mi.New(mi.UserAssignedResourceID("YOUR_MANAGED_IDENTITY_CLIENT_ID"))
-	if err != nil {
-		fmt.Println(err)
-	}
-	result, err := miUserAssigned.AcquireToken(context.Background(), "https://management.azure.com/")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("token expire at : ", result.ExpiresOn)
-}
-
-func runAzureArcSystemAssigned() {
-	setEnvironmentVariablesIfRequired(mi.AzureArc)
-
-	miAzureArc, err := mi.New(mi.SystemAssigned())
-	if err != nil {
-		fmt.Println(err)
-	}
-	result, err := miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
-	if err != nil {
-		fmt.Println(err)
-	}
-	fmt.Println("token expire at : ", result.ExpiresOn)
-}
-
-func runAzureArcUserAssignedClientID() {
-	setEnvironmentVariablesIfRequired(mi.AzureArc)
-	miAzureArc, err := mi.New(mi.UserAssignedClientID("This should fail"))
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	_, err = miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
-func runAzureArcUserAssignedObjectID() {
-	setEnvironmentVariablesIfRequired(mi.AzureArc)
-
-	miAzureArc, err := mi.New(mi.UserAssignedObjectID("This should fail"))
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	_, err = miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
-func runAzureArcUserAssignedResourceID() {
-	setEnvironmentVariablesIfRequired(mi.AzureArc)
-
-	miAzureArc, err := mi.New(mi.UserAssignedResourceID("This should fail"))
-	if err != nil {
-		fmt.Println(err)
-	}
-
-	_, err = miAzureArc.AcquireToken(context.Background(), "https://management.azure.com")
-	if err != nil {
-		fmt.Println(err)
-	}
-}
-
-func setEnvironmentVariablesIfRequired(source mi.Source) {
-	if isLocalTest {
-		switch source {
-		case mi.AzureArc:
-			os.Setenv(mi.IdentityEndpointEnvVar, "identityEndpointVar")
-			os.Setenv(mi.ArcIMDSEnvVar, "imdsEnvVar")
-		}
-	}
-}
-
-func main() {
+func promptForLocalTest() {
+	fmt.Println("Do you want to run a local test? (yes/no):")
 	var localTestInput string
 	for {
-		fmt.Println("Do you want to run a local test? (yes/no):")
 		fmt.Scanln(&localTestInput)
 		localTestInput = strings.ToLower(localTestInput)
 		if localTestInput == "yes" {
-			isLocalTest = true
+			setEnvironmentVariablesIfRequired()
 			break
 		} else if localTestInput == "no" {
-			isLocalTest = false
 			break
 		} else {
 			fmt.Println("Invalid input. Please enter 'yes' or 'no'.")
 		}
 	}
+}
 
+func promptForID(idType string) string {
+	fmt.Printf("Enter the %s: ", idType)
+	var id string
+	fmt.Scanln(&id)
+	return id
+}
+
+func main() {
 	var exampleType string
 	fmt.Println("Enter the example type (1-8):")
 	fmt.Scanln(&exampleType)
 
+	var identity mi.ID
 	switch exampleType {
 	case "1":
-		runIMDSSystemAssigned()
+		identity = mi.SystemAssigned()
 	case "2":
-		runIMDSUserAssignedClientID()
+		clientID := promptForID("Client ID")
+		identity = mi.UserAssignedClientID(clientID)
 	case "3":
-		runIMDSUserAssignedObjectID()
+		objectID := promptForID("Object ID")
+		identity = mi.UserAssignedObjectID(objectID)
 	case "4":
-		runIMDSUserAssignedResourceID()
+		resourceID := promptForID("Resource ID")
+		identity = mi.UserAssignedResourceID(resourceID)
 	case "5":
-		runAzureArcSystemAssigned()
+		promptForLocalTest()
+		identity = mi.SystemAssigned()
 	case "6":
-		runAzureArcUserAssignedClientID()
+		promptForLocalTest()
+		identity = mi.UserAssignedClientID("This should fail")
 	case "7":
-		runAzureArcUserAssignedObjectID()
+		promptForLocalTest()
+		identity = mi.UserAssignedObjectID("This should fail")
 	case "8":
-		runAzureArcUserAssignedResourceID()
+		promptForLocalTest()
+		identity = mi.UserAssignedResourceID("This should fail")
 	default:
 		fmt.Println("Invalid example type")
+		return
 	}
+
+	acquireToken(identity)
 }
