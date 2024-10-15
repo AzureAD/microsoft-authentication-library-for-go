@@ -12,11 +12,11 @@ func runIMDSSystemAssigned() {
 
 	miSystemAssigned, err := mi.New(mi.SystemAssigned())
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 	result, err := miSystemAssigned.AcquireToken(context.TODO(), "https://management.azure.com")
 	if err != nil {
-		fmt.Println(err)
+		log.Fatal(err)
 	}
 	fmt.Println("token expire at : ", result.ExpiresOn)
 	fmt.Println("token source : ", result.Metadata.TokenSource)
