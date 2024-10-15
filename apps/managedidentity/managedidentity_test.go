@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -147,7 +148,9 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
 			}))
-			resetCache()
+			// resetting cache
+			cacheManager = nil
+			once = sync.Once{}
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
 				t.Fatal(err)
@@ -199,8 +202,11 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				tokenValidation = true
 				return nil
 			}
-			cacheResult, err := client.AcquireToken(context.Background(), testCase.resource)
-			if cacheResult.Metadata.TokenSource != 2 {
+			result, err = client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			if !tokenValidation {
@@ -210,12 +216,12 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			secondResult, err := secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+			result, err = secondFakeClient.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if secondResult.Metadata.TokenSource != base.Cache {
-				t.Fatalf("cache result wanted cache token source, got %d", secondResult.Metadata.TokenSource)
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			storage.FakeValidate = nil
 		})
