@@ -260,7 +260,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	return client.authResultFromToken(ctx, fakeAuthParams, tokenResponse)
 }
 
-func (c Client) authResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
+func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
 	account, err := cacheManager.Write(authParams, token)
 	if err != nil {
 		return base.AuthResult{}, err
