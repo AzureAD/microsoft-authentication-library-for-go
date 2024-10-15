@@ -52,15 +52,14 @@ const (
 	imdsAPIVersion = "2018-02-01"
 
 	// Azure Arc
-	azureArcEndpoint                  = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
-	azureArcAPIVersion                = "2020-06-01"
-	azureArcFileExtension             = ".key"
-	azureArcMaxFileSizeBytes    int64 = 4096
-	linuxTokenPath                    = "/var/opt/azcmagent/tokens/"
-	linuxHimdsPath                    = "/opt/azcmagent/bin/himds"
-	windowsTokenPath                  = "\\AzureConnectedMachineAgent\\Tokens\\"
-	windowsHimdsPath                  = "\\AzureConnectedMachineAgent\\himds.exe"
-	himdsExecutableHelperString       = "N/A: himds executable exists"
+	azureArcEndpoint               = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
+	azureArcAPIVersion             = "2020-06-01"
+	azureArcFileExtension          = ".key"
+	azureArcMaxFileSizeBytes int64 = 4096
+	linuxTokenPath                 = "/var/opt/azcmagent/tokens/"
+	linuxHimdsPath                 = "/opt/azcmagent/bin/himds"
+	windowsTokenPath               = "\\AzureConnectedMachineAgent\\Tokens\\"
+	windowsHimdsPath               = "\\AzureConnectedMachineAgent\\himds.exe"
 
 	// Environment Variables
 	IdentityEndpointEnvVar              = "IDENTITY_ENDPOINT"
@@ -193,7 +192,7 @@ func GetSource(id ID) (Source, error) {
 		return AppService, nil
 	} else if msiEndpoint != "" {
 		return CloudShell, nil
-	} else if _, _, isValid := getAndValidateAzureArcEnvVars(); isValid {
+	} else if _, isValid := getAndValidateAzureArcEnvVars(); isValid {
 		return AzureArc, nil
 	}
 
@@ -339,18 +338,13 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 }
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
-	identityEndpoint, _, _ := getAndValidateAzureArcEnvVars()
+	identityEndpoint, _ := getAndValidateAzureArcEnvVars()
 	var msiEndpoint *url.URL
-
-	if identityEndpoint == "" {
-		identityEndpoint = azureArcEndpoint
-	}
 
 	if _, ok := id.(systemAssignedValue); !ok {
 		return nil, errors.New("Azure Arc doesn't support user assigned managed identities")
 	}
 
-	identityEndpoint = strings.Replace(identityEndpoint, "localhost", "127.0.0.1", -1)
 	msiEndpoint, parseErr := url.Parse(identityEndpoint)
 	if parseErr != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
@@ -371,12 +365,12 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*ht
 }
 
 // GetEnvironmentVariables returns the identity and IMDS endpoints
-func getAndValidateAzureArcEnvVars() (string, string, bool) {
+func getAndValidateAzureArcEnvVars() (string, bool) {
 	identityEndpoint := os.Getenv(IdentityEndpointEnvVar)
 	imdsEndpoint := os.Getenv(ArcIMDSEnvVar)
 
 	if identityEndpoint != "" && imdsEndpoint != "" {
-		return identityEndpoint, imdsEndpoint, true
+		return identityEndpoint, true
 	}
 
 	if identityEndpoint == "" || imdsEndpoint == "" {
@@ -387,12 +381,11 @@ func getAndValidateAzureArcEnvVars() (string, string, bool) {
 
 		if platformSupported && fileExists(fileDetectionPath) {
 			identityEndpoint = azureArcEndpoint
-			imdsEndpoint = himdsExecutableHelperString
-			return identityEndpoint, imdsEndpoint, true
+			return identityEndpoint, true
 		}
 	}
 
-	return identityEndpoint, imdsEndpoint, false
+	return identityEndpoint, false
 }
 
 func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Response, resource string, platform string) (accesstokens.TokenResponse, error) {

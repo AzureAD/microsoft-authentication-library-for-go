@@ -23,7 +23,7 @@ const (
 	resource              = "https://management.azure.com"
 	resourceDefaultSuffix = "https://management.azure.com/.default"
 	token                 = "fakeToken"
-	azureArcTestEndpoint  = "http://localhost:40342/metadata/identity/oauth2/token"
+	azureArcTestEndpoint  = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
 )
 
 type sourceTestData struct {
@@ -116,8 +116,8 @@ func getMockFilePath(t *testing.T) (string, error) {
 func setEnvVars(t *testing.T, source Source) {
 	switch source {
 	case AzureArc:
-		t.Setenv(IdentityEndpointEnvVar, "http://localhost:40342/metadata/identity/oauth2/token")
-		t.Setenv(ArcIMDSEnvVar, "http://localhost:40342 value")
+		t.Setenv(IdentityEndpointEnvVar, "http://127.0.0.1:40342/metadata/identity/oauth2/token")
+		t.Setenv(ArcIMDSEnvVar, "http://127.0.0.1:40342 value")
 	case AppService:
 		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
 		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
@@ -389,76 +389,70 @@ func Test_getAndValidateAzureArcEnvVars(t *testing.T) {
 		{
 			name: "Both endpoints provided",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
-				ArcIMDSEnvVar:          "http://localhost:40342",
+				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+				ArcIMDSEnvVar:          "http://127.0.0.1:40342",
 			},
 			createMockFile: false,
-			expectedID:     "http://localhost:40342/metadata/identity/oauth2/token",
-			expectedIMDS:   "http://localhost:40342",
+			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
 		},
 		{
 			name: "Only identity endpoint provided",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
+				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
 			},
 			platform:       runtime.GOOS,
 			createMockFile: false,
-			expectedID:     "http://localhost:40342/metadata/identity/oauth2/token",
+			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
 		},
 		{
 			name: "Only arcImds endpoint provided",
 			envVars: map[string]string{
-				ArcIMDSEnvVar: "http://localhost:40342",
+				ArcIMDSEnvVar: "http://127.0.0.1:40342",
 			},
 			platform:       runtime.GOOS,
 			createMockFile: false,
-			expectedIMDS:   "http://localhost:40342",
 		},
 		// Windows Specific Tests
 		{
 			name: "Only identity endpoint provided, file exists",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
+				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
 				ArcIMDSEnvVar:          "",
 			},
 			platform:       "windows",
 			createMockFile: true,
 			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
-			expectedIMDS:   "N/A: himds executable exists",
 		},
 		{
 			name: "Only arcIMds endpoint, file exists",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "",
-				ArcIMDSEnvVar:          "http://localhost:40342",
+				ArcIMDSEnvVar:          "http://127.0.0.1:40342",
 			},
 			platform:       "windows",
 			createMockFile: true,
 			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
-			expectedIMDS:   "N/A: himds executable exists",
 		},
 		// Linux Specific Tests
 		{
 			name: "Only identity endpoint provided, linux platform supported, file exists",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://localhost:40342/metadata/identity/oauth2/token",
+				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
 				ArcIMDSEnvVar:          "",
 			},
 			platform:       "linux",
 			createMockFile: true,
 			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
-			expectedIMDS:   "N/A: himds executable exists",
 		},
 		{
 			name: "Only arcIMds endpoint, linux platform supported, file exists",
 			envVars: map[string]string{
 				IdentityEndpointEnvVar: "",
-				ArcIMDSEnvVar:          "http://localhost:40342",
+				ArcIMDSEnvVar:          "http://127.0.0.1:40342",
 			},
 			platform:       "linux",
 			createMockFile: true,
 			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
-			expectedIMDS:   "N/A: himds executable exists",
 		},
 	}
 
@@ -491,13 +485,10 @@ func Test_getAndValidateAzureArcEnvVars(t *testing.T) {
 				azureArcOsToFileMap[tc.platform] = "fake"
 			}
 
-			id, imds, _ := getAndValidateAzureArcEnvVars()
+			id, _ := getAndValidateAzureArcEnvVars()
 
 			if id != tc.expectedID {
 				t.Fatalf("expected ID %v, got %v", tc.expectedID, id)
-			}
-			if imds != tc.expectedIMDS {
-				t.Fatalf("expected IMDS %v, got %v", tc.expectedIMDS, imds)
 			}
 		})
 	}
