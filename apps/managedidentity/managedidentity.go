@@ -443,7 +443,6 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 		return nil, errors.New("unable to create AzureArc")
 	}
 
-	identityEndpoint = strings.Replace(identityEndpoint, "localhost", "127.0.0.1", -1)
 	msiEndpoint, parseErr := url.Parse(identityEndpoint)
 	if parseErr != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)

@@ -125,8 +125,8 @@ func createMockFileWithSize(path string, size int64) {
 func setEnvVars(t *testing.T, source Source) {
 	switch source {
 	case AzureArc:
-		t.Setenv(IdentityEndpointEnvVar, "http://localhost:40342/metadata/identity/oauth2/token")
-		t.Setenv(ArcIMDSEnvVar, "http://localhost:40342 value")
+		t.Setenv(IdentityEndpointEnvVar, "http://127.0.0.1:40342/metadata/identity/oauth2/token")
+		t.Setenv(ArcIMDSEnvVar, "http://127.0.0.1:40342 value")
 	case AppService:
 		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
 		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
