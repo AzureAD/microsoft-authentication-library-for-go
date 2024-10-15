@@ -245,14 +245,13 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-
 	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
 		storageTokenResponse, err := getCacheInstance().Read(ctx, fakeAuthParams)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)

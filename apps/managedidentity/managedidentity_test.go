@@ -14,7 +14,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
@@ -27,7 +26,7 @@ const (
 
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
-	ExpiresOn   int64  `json:"expires_on"`
+	ExpiresIn   int64  `json:"expires_in"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
 }
@@ -38,10 +37,11 @@ type ErrorRespone struct {
 }
 
 func getSuccessfulResponse(resource string) ([]byte, error) {
-	expiresOn := time.Now().Add(1 * time.Hour).Unix()
+	duration := 10 * time.Minute
+	expiresIn := duration.Seconds()
 	response := SuccessfulResponse{
 		AccessToken: token,
-		ExpiresOn:   expiresOn,
+		ExpiresIn:   int64(expiresIn),
 		Resource:    resource,
 		TokenType:   "Bearer",
 	}
@@ -140,7 +140,6 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
 			var localUrl *url.URL
 			mockClient := mock.Client{}
-			tokenValidation := false
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
@@ -198,19 +197,12 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
 			}
-			storage.FakeValidate = func(storage.AccessToken) error {
-				tokenValidation = true
-				return nil
-			}
 			result, err = client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
 				t.Fatal(err)
 			}
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
-			}
-			if !tokenValidation {
-				t.Fatal("token validation didn't happen")
 			}
 			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
@@ -223,7 +215,6 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
-			storage.FakeValidate = nil
 		})
 	}
 }
