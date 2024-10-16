@@ -20,10 +20,11 @@ import (
 
 const (
 	// Test Resources
-	resource              = "https://management.azure.com"
-	resourceDefaultSuffix = "https://management.azure.com/.default"
-	token                 = "fakeToken"
-	azureArcTestEndpoint  = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
+	resource                 = "https://management.azure.com"
+	resourceDefaultSuffix    = "https://management.azure.com/.default"
+	token                    = "fakeToken"
+	azureArcIdentityEndpoint = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
+	azureArcImdsEndpoint     = "http://127.0.0.1:40342"
 )
 
 type sourceTestData struct {
@@ -54,11 +55,6 @@ type SuccessfulResponse struct {
 	ExpiresOn   int64  `json:"expires_on"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
-}
-
-// Mock fileExists function for testing
-var mockFileExists = func() bool {
-	return true
 }
 
 type ErrorResponse struct {
@@ -116,26 +112,35 @@ func getMockFilePath(t *testing.T) (string, error) {
 func setEnvVars(t *testing.T, source Source) {
 	switch source {
 	case AzureArc:
-		t.Setenv(IdentityEndpointEnvVar, "http://127.0.0.1:40342/metadata/identity/oauth2/token")
-		t.Setenv(ArcIMDSEnvVar, "http://127.0.0.1:40342 value")
+		t.Setenv(identityEndpointEnvVar, azureArcIdentityEndpoint)
+		t.Setenv(arcIMDSEnvVar, "http://127.0.0.1:40342 value")
 	case AppService:
-		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
-		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
+		t.Setenv(identityEndpointEnvVar, "identityEndpointEnvVar value")
+		t.Setenv(identityHeaderEnvVar, "identityHeaderEnvVar value")
 	case CloudShell:
-		t.Setenv(MsiEndpointEnvVar, "msiEndpointEnvVar value")
+		t.Setenv(msiEndpointEnvVar, "msiEndpointEnvVar value")
 	case ServiceFabric:
-		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
-		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
-		t.Setenv(IdentityServerThumbprintEnvVar, "identityServerThumbprintEnvVar value")
+		t.Setenv(identityEndpointEnvVar, "identityEndpointEnvVar value")
+		t.Setenv(identityHeaderEnvVar, "identityHeaderEnvVar value")
+		t.Setenv(identityServerThumbprintEnvVar, "identityServerThumbprintEnvVar value")
 	}
 }
 
-func unsetEnvVars() {
-	os.Unsetenv(IdentityEndpointEnvVar)
-	os.Unsetenv(IdentityHeaderEnvVar)
-	os.Unsetenv(IdentityServerThumbprintEnvVar)
-	os.Unsetenv(ArcIMDSEnvVar)
-	os.Unsetenv(MsiEndpointEnvVar)
+func unsetEnvVars(t *testing.T) {
+	t.Setenv(identityEndpointEnvVar, "")
+	t.Setenv(identityHeaderEnvVar, "")
+	t.Setenv(identityServerThumbprintEnvVar, "")
+	t.Setenv(arcIMDSEnvVar, "")
+	t.Setenv(msiEndpointEnvVar, "")
+}
+
+func setCustomAzureArcFilePath(path string) {
+	originalFunc := getAzureArcFilePath
+	defer func() { getAzureArcFilePath = originalFunc }()
+
+	getAzureArcFilePath = func() string {
+		return path
+	}
 }
 
 func Test_Get_Source(t *testing.T) {
@@ -156,16 +161,11 @@ func Test_Get_Source(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(string(testCase.source), func(t *testing.T) {
-			unsetEnvVars()
+			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				originalPath := azureArcOsToFileMap[runtime.GOOS]
-				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
-
-				if testCase.name == "testDefaultToImdsLinux" || testCase.name == "testDefaultToImdsEmptyEndpointLinux" {
-					azureArcOsToFileMap[runtime.GOOS] = originalPath
-				}
+				setCustomAzureArcFilePath("fake/fake")
 			}
 
 			actualSource, err := GetSource(testCase.miType)
@@ -196,11 +196,11 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 	for _, testCase := range testCases {
 
 		t.Run(string(testCase.source), func(t *testing.T) {
-			unsetEnvVars()
+			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
+				setCustomAzureArcFilePath("fake/fake")
 			}
 
 			var localUrl *url.URL
@@ -389,25 +389,25 @@ func Test_getAndValidateAzureArcEnvVars(t *testing.T) {
 		{
 			name: "Both endpoints provided",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
-				ArcIMDSEnvVar:          "http://127.0.0.1:40342",
+				identityEndpointEnvVar: azureArcIdentityEndpoint,
+				arcIMDSEnvVar:          azureArcImdsEndpoint,
 			},
 			createMockFile: false,
-			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedID:     azureArcIdentityEndpoint,
 		},
 		{
 			name: "Only identity endpoint provided",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+				identityEndpointEnvVar: azureArcIdentityEndpoint,
 			},
 			platform:       runtime.GOOS,
 			createMockFile: false,
-			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedID:     azureArcIdentityEndpoint,
 		},
 		{
 			name: "Only arcImds endpoint provided",
 			envVars: map[string]string{
-				ArcIMDSEnvVar: "http://127.0.0.1:40342",
+				arcIMDSEnvVar: azureArcImdsEndpoint,
 			},
 			platform:       runtime.GOOS,
 			createMockFile: false,
@@ -416,49 +416,49 @@ func Test_getAndValidateAzureArcEnvVars(t *testing.T) {
 		{
 			name: "Only identity endpoint provided, file exists",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
-				ArcIMDSEnvVar:          "",
+				identityEndpointEnvVar: azureArcIdentityEndpoint,
+				arcIMDSEnvVar:          "",
 			},
 			platform:       "windows",
 			createMockFile: true,
-			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedID:     azureArcIdentityEndpoint,
 		},
 		{
 			name: "Only arcIMds endpoint, file exists",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "",
-				ArcIMDSEnvVar:          "http://127.0.0.1:40342",
+				identityEndpointEnvVar: "",
+				arcIMDSEnvVar:          azureArcImdsEndpoint,
 			},
 			platform:       "windows",
 			createMockFile: true,
-			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedID:     azureArcIdentityEndpoint,
 		},
 		// Linux Specific Tests
 		{
 			name: "Only identity endpoint provided, linux platform supported, file exists",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "http://127.0.0.1:40342/metadata/identity/oauth2/token",
-				ArcIMDSEnvVar:          "",
+				identityEndpointEnvVar: azureArcIdentityEndpoint,
+				arcIMDSEnvVar:          "",
 			},
 			platform:       "linux",
 			createMockFile: true,
-			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedID:     azureArcIdentityEndpoint,
 		},
 		{
 			name: "Only arcIMds endpoint, linux platform supported, file exists",
 			envVars: map[string]string{
-				IdentityEndpointEnvVar: "",
-				ArcIMDSEnvVar:          "http://127.0.0.1:40342",
+				identityEndpointEnvVar: "",
+				arcIMDSEnvVar:          azureArcImdsEndpoint,
 			},
 			platform:       "linux",
 			createMockFile: true,
-			expectedID:     "http://127.0.0.1:40342/metadata/identity/oauth2/token",
+			expectedID:     azureArcIdentityEndpoint,
 		},
 	}
 
 	for _, tc := range testCases {
 		t.Run(tc.platform+" "+tc.name, func(t *testing.T) {
-			unsetEnvVars()
+			unsetEnvVars(t)
 
 			if tc.platform != "" && runtime.GOOS != tc.platform {
 				t.Skip("Skipping test because current platform is not " + tc.platform)
@@ -478,14 +478,14 @@ func Test_getAndValidateAzureArcEnvVars(t *testing.T) {
 					mockFilePath = filepath.Join(homeDir, "AzureConnectedMachineAgent", "himds")
 				}
 
-				azureArcOsToFileMap[tc.platform] = mockFilePath
+				setCustomAzureArcFilePath(mockFilePath)
 				createMockFile(t, mockFilePath, 0)
 				defer os.Remove(mockFilePath)
 			} else {
-				azureArcOsToFileMap[tc.platform] = "fake"
+				setCustomAzureArcFilePath("fake")
 			}
 
-			id, _ := getAndValidateAzureArcEnvVars()
+			id := getAzureArcEndpoint()
 
 			if id != tc.expectedID {
 				t.Fatalf("expected ID %v, got %v", tc.expectedID, id)
@@ -511,6 +511,72 @@ func Test_fileExists(t *testing.T) {
 	nonExistentFilePath := tmpFile.Name() + "_nonexistent"
 	if fileExists(nonExistentFilePath) {
 		t.Errorf("expected file not to exist, but it does")
+	}
+}
+
+func Test_validateAzureArcEnvironment(t *testing.T) {
+	testCases := []struct {
+		name             string
+		identityEndpoint string
+		imdsEndpoint     string
+		platform         string
+		expectedResult   bool
+	}{
+		{
+			name:             "Both endpoints provided",
+			identityEndpoint: "endpoint",
+			imdsEndpoint:     "endpoint",
+			platform:         runtime.GOOS,
+			expectedResult:   true,
+		},
+		{
+			name:             "Only identityEndpoint provided",
+			identityEndpoint: "endpoint",
+			imdsEndpoint:     "",
+			platform:         runtime.GOOS,
+			expectedResult:   false,
+		},
+		{
+			name:             "Only imdsEndpoint provided",
+			identityEndpoint: "",
+			imdsEndpoint:     "endpoint",
+			platform:         runtime.GOOS,
+			expectedResult:   false,
+		},
+		{
+			name:             "No endpoints provided",
+			identityEndpoint: "",
+			imdsEndpoint:     "",
+			platform:         runtime.GOOS,
+			expectedResult:   false,
+		},
+		{
+			name:             "Platform not supported",
+			identityEndpoint: "",
+			imdsEndpoint:     "",
+			platform:         "darwin",
+			expectedResult:   false,
+		},
+		{
+			name:             "File does not exist",
+			identityEndpoint: "",
+			imdsEndpoint:     "",
+			platform:         runtime.GOOS,
+			expectedResult:   false,
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			if runtime.GOOS == "linux" {
+				setCustomAzureArcFilePath("fake/fake")
+			}
+
+			result := validateAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
+			if result != tc.expectedResult {
+				t.Fatalf("expected %v, got %v", tc.expectedResult, result)
+			}
+		})
 	}
 }
 
@@ -606,7 +672,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 				t.Skip("Skipping test because current platform is not linux or windows")
 			}
 
-			unsetEnvVars()
+			unsetEnvVars(t)
 			setEnvVars(t, AzureArc)
 
 			response := &http.Response{
@@ -621,7 +687,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			if tc.createMockFile {
 				expectedFilePath := filepath.Join(testCaseFilePath)
 				mockFilePath := filepath.Join(expectedFilePath, "secret.key")
-				supportedAzureArcPlatforms[tc.platform] = expectedFilePath
+				setCustomAzureArcFilePath(mockFilePath)
 
 				if tc.name == "Invalid secret file size" {
 					createMockFile(t, mockFilePath, 5000)
@@ -639,7 +705,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 				contextToUse = nil
 			}
 
-			_, err := client.handleAzureArcResponse(contextToUse, response, "", tc.platform)
+			_, err := client.handleAzureArcResponse(contextToUse, response, "")
 
 			if err == nil || err.Error() != tc.expectedError {
 				t.Fatalf("expected error %v, got %v", tc.expectedError, err)

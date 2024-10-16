@@ -24,8 +24,8 @@ func acquireToken(identity mi.ID) {
 }
 
 func setEnvironmentVariablesIfRequired() {
-	os.Setenv(mi.IdentityEndpointEnvVar, "identityEndpointVar")
-	os.Setenv(mi.ArcIMDSEnvVar, "imdsEnvVar")
+	os.Setenv("IDENTITY_ENDPOINT", "identityEndpointVar")
+	os.Setenv("IMDS_ENDPOINT", "imdsEnvVar")
 }
 
 func promptForLocalTest() {
