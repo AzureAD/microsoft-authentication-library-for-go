@@ -88,12 +88,10 @@ func createMockFile(t *testing.T, path string, size int64) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("failed to create directory: %v", err)
 	}
-
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-
 	if size > 0 {
 		if err := f.Truncate(size); err != nil {
 			t.Fatalf("failed to truncate file: %v", err)
@@ -105,7 +103,6 @@ func createMockFile(t *testing.T, path string, size int64) {
 func getMockFilePath(t *testing.T) (string, error) {
 	tempDir := t.TempDir()
 	mockFilePath := filepath.Join(tempDir, "AzureConnectedMachineAgent")
-
 	return mockFilePath, nil
 }
 
@@ -134,11 +131,20 @@ func unsetEnvVars(t *testing.T) {
 	t.Setenv(msiEndpointEnvVar, "")
 }
 
+func setCustomAzureArcPlatformPath(path string) {
+	originalFunc := getAzureArcFilePath
+	defer func() { getAzureArcFilePath = originalFunc }()
+
+	getAzureArcPlatformPath = func(platform string) string {
+		return path
+	}
+}
+
 func setCustomAzureArcFilePath(path string) {
 	originalFunc := getAzureArcFilePath
 	defer func() { getAzureArcFilePath = originalFunc }()
 
-	getAzureArcFilePath = func() string {
+	getAzureArcFilePath = func(platform string) string {
 		return path
 	}
 }
@@ -570,7 +576,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			if tc.createMockFile {
 				expectedFilePath := filepath.Join(testCaseFilePath)
 				mockFilePath := filepath.Join(expectedFilePath, "secret.key")
-				setCustomAzureArcFilePath(mockFilePath)
+				setCustomAzureArcPlatformPath(expectedFilePath)
 
 				if tc.name == "Invalid secret file size" {
 					createMockFile(t, mockFilePath, 5000)
@@ -588,7 +594,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 				contextToUse = nil
 			}
 
-			_, err := client.handleAzureArcResponse(contextToUse, response, "")
+			_, err := client.handleAzureArcResponse(contextToUse, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
 				t.Fatalf("expected error %v, got %v", tc.expectedError, err)

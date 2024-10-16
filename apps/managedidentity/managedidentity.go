@@ -70,14 +70,10 @@ const (
 	identityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
 )
 
-var getAzureArcPlatformPath = func() string {
-	switch runtime.GOOS {
+var getAzureArcPlatformPath = func(platform string) string {
+	switch platform {
 	case "windows":
-		programData := os.Getenv("ProgramData")
-		if programData == "" {
-			return ""
-		}
-		return fmt.Sprintf("%s%s", programData, windowsTokenPath)
+		return fmt.Sprintf("%s%s", os.Getenv("ProgramData"), windowsTokenPath)
 	case "linux":
 		return linuxTokenPath
 	default:
@@ -85,30 +81,16 @@ var getAzureArcPlatformPath = func() string {
 	}
 }
 
-var getAzureArcFilePath = func() string {
-	switch runtime.GOOS {
+var getAzureArcFilePath = func(platform string) string {
+	switch platform {
 	case "windows":
-		programFiles := os.Getenv("ProgramFiles")
-		if programFiles == "" {
-			return ""
-		}
-		return fmt.Sprintf("%s%s", programFiles, windowsHimdsPath)
+		return fmt.Sprintf("%s%s", os.Getenv("ProgramFiles"), windowsHimdsPath)
 	case "linux":
 		return linuxHimdsPath
 	default:
 		return ""
 	}
 }
-
-// var supportedAzureArcPlatforms = map[string]string{
-// 	"windows": fmt.Sprintf("%s%s", os.Getenv("ProgramData"), windowsTokenPath),
-// 	"linux":   linuxTokenPath,
-// }
-
-// var azureArcOsToFileMap = map[string]string{
-// 	"windows": fmt.Sprintf("%s%s", os.Getenv("ProgramFiles"), windowsHimdsPath),
-// 	"linux":   linuxHimdsPath,
-// }
 
 type Source string
 
@@ -255,7 +237,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 			case errors.CallErr:
 				switch callErr.Resp.StatusCode {
 				case http.StatusUnauthorized:
-					response, err := client.handleAzureArcResponse(ctx, callErr.Resp, resource)
+					response, err := client.handleAzureArcResponse(ctx, callErr.Resp, resource, runtime.GOOS)
 					if err != nil {
 						return base.AuthResult{}, err
 					}
@@ -397,7 +379,7 @@ func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform
 		return true
 	}
 
-	himdsFilePath := getAzureArcFilePath()
+	himdsFilePath := getAzureArcFilePath(platform)
 
 	if himdsFilePath != "" && fileExists(himdsFilePath) {
 		return true
@@ -406,7 +388,7 @@ func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform
 	return false
 }
 
-func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Response, resource string) (accesstokens.TokenResponse, error) {
+func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Response, resource string, platform string) (accesstokens.TokenResponse, error) {
 	if response.StatusCode == http.StatusUnauthorized {
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 
@@ -415,7 +397,7 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 		}
 
 		// check if the platform is supported
-		expectedSecretFilePath := getAzureArcPlatformPath()
+		expectedSecretFilePath := getAzureArcPlatformPath(platform)
 		if expectedSecretFilePath == "" {
 			return accesstokens.TokenResponse{}, errors.New("platform not supported")
 		}
