@@ -366,7 +366,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 }
 
 func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
-	identityEndpoint := getAzureArcEndpoint()
+	identityEndpoint := azureArcEndpoint
 	var msiEndpoint *url.URL
 
 	if _, ok := id.(systemAssignedValue); !ok {
@@ -404,28 +404,6 @@ func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform
 	}
 
 	return false
-}
-
-// GetEnvironmentVariables returns the identity and IMDS endpoints
-func getAzureArcEndpoint() string {
-	identityEndpoint := os.Getenv(identityEndpointEnvVar)
-	// imdsEndpoint := os.Getenv(arcIMDSEnvVar)
-
-	if identityEndpoint != "" && imdsEndpoint != "" {
-		return identityEndpoint
-	}
-
-	if identityEndpoint == "" || imdsEndpoint == "" {
-		// Only platforms inside the getAzureArcFilePath() are supported
-		himdsFilePath := getAzureArcFilePath()
-
-		if himdsFilePath != "" && fileExists(himdsFilePath) {
-			identityEndpoint = azureArcEndpoint
-			return identityEndpoint
-		}
-	}
-
-	return identityEndpoint
 }
 
 func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Response, resource string) (accesstokens.TokenResponse, error) {
