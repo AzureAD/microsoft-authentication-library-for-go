@@ -265,6 +265,9 @@ func (m *Manager) aadMetadataFromCache(ctx context.Context, authorityInfo author
 func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
 	m.aadCacheMu.Lock()
 	defer m.aadCacheMu.Unlock()
+	if m.requests == nil {
+		return authority.InstanceDiscoveryMetadata{}, fmt.Errorf("httpclient in oauth instance for fetching metadata is nil")
+	}
 	discoveryResponse, err := m.requests.AADInstanceDiscovery(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err
