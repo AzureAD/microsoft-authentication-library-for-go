@@ -484,7 +484,7 @@ func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform
 		return true
 	}
 
-	himdsFilePath := getAzureArcFilePath()
+	himdsFilePath := getAzureArcFilePath(platform)
 
 	if himdsFilePath != "" && fileExists(himdsFilePath) {
 		return true

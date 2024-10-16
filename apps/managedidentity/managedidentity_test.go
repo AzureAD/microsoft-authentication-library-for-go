@@ -98,12 +98,10 @@ func createMockFile(t *testing.T, path string, size int64) {
 	if err := os.MkdirAll(dir, 0755); err != nil {
 		t.Fatalf("failed to create directory: %v", err)
 	}
-
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-
 	if size > 0 {
 		if err := f.Truncate(size); err != nil {
 			t.Fatalf("failed to truncate file: %v", err)
@@ -142,11 +140,20 @@ func unsetEnvVars(t *testing.T) {
 	t.Setenv(msiEndpointEnvVar, "")
 }
 
+func setCustomAzureArcPlatformPath(path string) {
+	originalFunc := getAzureArcFilePath
+	defer func() { getAzureArcFilePath = originalFunc }()
+
+	getAzureArcPlatformPath = func(platform string) string {
+		return path
+	}
+}
+
 func setCustomAzureArcFilePath(path string) {
 	originalFunc := getAzureArcFilePath
 	defer func() { getAzureArcFilePath = originalFunc }()
 
-	getAzureArcFilePath = func() string {
+	getAzureArcFilePath = func(platform string) string {
 		return path
 	}
 }
