@@ -48,8 +48,8 @@ const (
 	miQueryParameterResourceId = "msi_res_id"
 
 	// IMDS
-	imdsEndpoint   = "http://169.254.169.254/metadata/identity/oauth2/token"
-	imdsAPIVersion = "2018-02-01"
+	imdsDefaultEndpoint = "http://169.254.169.254/metadata/identity/oauth2/token"
+	imdsAPIVersion      = "2018-02-01"
 
 	// Azure Arc
 	azureArcEndpoint               = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
@@ -65,7 +65,7 @@ const (
 	identityEndpointEnvVar              = "IDENTITY_ENDPOINT"
 	identityHeaderEnvVar                = "IDENTITY_HEADER"
 	azurePodIdentityAuthorityHostEnvVar = "AZURE_POD_IDENTITY_AUTHORITY_HOST"
-	arcIMDSEnvVar                       = "IMDS_ENDPOINT"
+	imdsEndVar                          = "IMDS_ENDPOINT"
 	msiEndpointEnvVar                   = "MSI_ENDPOINT"
 	identityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
 )
@@ -194,6 +194,7 @@ func GetSource(id ID) (Source, error) {
 	identityHeader := os.Getenv(identityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(identityServerThumbprintEnvVar)
 	msiEndpoint := os.Getenv(msiEndpointEnvVar)
+	imdsEndpoint := os.Getenv(imdsEndVar)
 
 	if identityEndpoint != "" && identityHeader != "" {
 		if identityServerThumbprint != "" {
@@ -317,9 +318,9 @@ func fileExists(path string) bool {
 
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
 	var msiEndpoint *url.URL
-	msiEndpoint, err := url.Parse(imdsEndpoint)
+	msiEndpoint, err := url.Parse(imdsDefaultEndpoint)
 	if err != nil {
-		return nil, fmt.Errorf("couldn't parse %q: %s", imdsEndpoint, err)
+		return nil, fmt.Errorf("couldn't parse %q: %s", imdsDefaultEndpoint, err)
 	}
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, imdsAPIVersion)

@@ -110,7 +110,7 @@ func setEnvVars(t *testing.T, source Source) {
 	switch source {
 	case AzureArc:
 		t.Setenv(identityEndpointEnvVar, azureArcIdentityEndpoint)
-		t.Setenv(arcIMDSEnvVar, "http://127.0.0.1:40342 value")
+		t.Setenv(imdsEndVar, "http://127.0.0.1:40342 value")
 	case AppService:
 		t.Setenv(identityEndpointEnvVar, "identityEndpointEnvVar value")
 		t.Setenv(identityHeaderEnvVar, "identityHeaderEnvVar value")
@@ -127,41 +127,41 @@ func unsetEnvVars(t *testing.T) {
 	t.Setenv(identityEndpointEnvVar, "")
 	t.Setenv(identityHeaderEnvVar, "")
 	t.Setenv(identityServerThumbprintEnvVar, "")
-	t.Setenv(arcIMDSEnvVar, "")
+	t.Setenv(imdsEndVar, "")
 	t.Setenv(msiEndpointEnvVar, "")
 }
 
-func setCustomAzureArcPlatformPath(path string) {
-	originalFunc := getAzureArcFilePath
-	defer func() { getAzureArcFilePath = originalFunc }()
-
+func setCustomAzureArcPlatformPath(path string) func() {
+	originalFunc := getAzureArcPlatformPath
 	getAzureArcPlatformPath = func(platform string) string {
 		return path
 	}
+
+	return func() { getAzureArcPlatformPath = originalFunc }
 }
 
-func setCustomAzureArcFilePath(path string) {
+func setCustomAzureArcFilePath(path string) func() {
 	originalFunc := getAzureArcFilePath
-	defer func() { getAzureArcFilePath = originalFunc }()
-
 	getAzureArcFilePath = func(platform string) string {
 		return path
 	}
+
+	return func() { getAzureArcFilePath = originalFunc }
 }
 
 func Test_Get_Source(t *testing.T) {
 	// todo update as required
 	testCases := []sourceTestData{
-		{name: "testAzureArcSystemAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: SystemAssigned()},
-		{name: "testAzureArcUserClientAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedClientID("clientId")},
-		{name: "testAzureArcUserResourceAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
-		{name: "testAzureArcUserObjectAssigned", source: AzureArc, endpoint: imdsEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
-		{name: "testDefaultToImds", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
-		{name: "testDefaultToImdsClientAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedClientID("clientId")},
-		{name: "testDefaultToImdsResourceAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedResourceID("resourceId")},
-		{name: "testDefaultToImdsObjectAssigned", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedObjectID("objectId")},
+		{name: "testAzureArcSystemAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: SystemAssigned()},
+		{name: "testAzureArcUserClientAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: UserAssignedClientID("clientId")},
+		{name: "testAzureArcUserResourceAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
+		{name: "testAzureArcUserObjectAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
+		{name: "testDefaultToImds", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
+		{name: "testDefaultToImdsClientAssigned", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedClientID("clientId")},
+		{name: "testDefaultToImdsResourceAssigned", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedResourceID("resourceId")},
+		{name: "testDefaultToImdsObjectAssigned", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedObjectID("objectId")},
 		{name: "testDefaultToImdsEmptyEndpoint", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
-		{name: "testDefaultToImdsLinux", source: DefaultToIMDS, endpoint: imdsEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
+		{name: "testDefaultToImdsLinux", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 		{name: "testDefaultToImdsEmptyEndpointLinux", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
 	}
 
@@ -171,7 +171,8 @@ func Test_Get_Source(t *testing.T) {
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				setCustomAzureArcFilePath("fake/fake")
+				restoreFunc := setCustomAzureArcFilePath("fake/fake")
+				defer restoreFunc()
 			}
 
 			actualSource, err := GetSource(testCase.miType)
@@ -188,11 +189,11 @@ func Test_Get_Source(t *testing.T) {
 
 func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 	testCases := []resourceTestData{
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: imdsAPIVersion},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId"), apiVersion: imdsAPIVersion},
-		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId"), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId"), apiVersion: imdsAPIVersion},
+		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId"), apiVersion: imdsAPIVersion},
 		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
 		{source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
 		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: azureArcAPIVersion},
@@ -206,7 +207,8 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				setCustomAzureArcFilePath("fake/fake")
+				restoreFunc := setCustomAzureArcFilePath("fake/fake")
+				defer restoreFunc()
 			}
 
 			var localUrl *url.URL
@@ -458,7 +460,8 @@ func Test_validateAzureArcEnvironment(t *testing.T) {
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
 			if runtime.GOOS == "linux" {
-				setCustomAzureArcFilePath("fake/fake")
+				restoreFunc := setCustomAzureArcFilePath("fake/fake")
+				defer restoreFunc()
 			}
 
 			result := validateAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
@@ -576,7 +579,8 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			if tc.createMockFile {
 				expectedFilePath := filepath.Join(testCaseFilePath)
 				mockFilePath := filepath.Join(expectedFilePath, "secret.key")
-				setCustomAzureArcPlatformPath(expectedFilePath)
+				restoreFunc := setCustomAzureArcPlatformPath(expectedFilePath)
+				defer restoreFunc()
 
 				if tc.name == "Invalid secret file size" {
 					createMockFile(t, mockFilePath, 5000)
