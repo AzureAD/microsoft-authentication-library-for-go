@@ -479,6 +479,20 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 	return req, nil
 }
 
+func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
+	if identityEndpoint != "" && imdsEndpoint != "" {
+		return true
+	}
+
+	himdsFilePath := getAzureArcFilePath()
+
+	if himdsFilePath != "" && fileExists(himdsFilePath) {
+		return true
+	}
+
+	return false
+}
+
 func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		return true

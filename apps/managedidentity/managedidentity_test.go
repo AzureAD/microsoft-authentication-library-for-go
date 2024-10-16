@@ -66,11 +66,6 @@ type SuccessfulResponse struct {
 	TokenType   string `json:"token_type"`
 }
 
-// Mock fileExists function for testing
-var mockFileExists = func() bool {
-	return true
-}
-
 type ErrorResponse struct {
 	Err  string `json:"error"`
 	Desc string `json:"error_description"`
@@ -125,26 +120,35 @@ func createMockFileWithSize(path string, size int64) {
 func setEnvVars(t *testing.T, source Source) {
 	switch source {
 	case AzureArc:
-		t.Setenv(IdentityEndpointEnvVar, "http://127.0.0.1:40342/metadata/identity/oauth2/token")
-		t.Setenv(ArcIMDSEnvVar, "http://127.0.0.1:40342 value")
+		t.Setenv(identityEndpointEnvVar, azureArcIdentityEndpoint)
+		t.Setenv(arcIMDSEnvVar, "http://127.0.0.1:40342 value")
 	case AppService:
-		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
-		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
+		t.Setenv(identityEndpointEnvVar, "identityEndpointEnvVar value")
+		t.Setenv(identityHeaderEnvVar, "identityHeaderEnvVar value")
 	case CloudShell:
-		t.Setenv(MsiEndpointEnvVar, "msiEndpointEnvVar value")
+		t.Setenv(msiEndpointEnvVar, "msiEndpointEnvVar value")
 	case ServiceFabric:
-		t.Setenv(IdentityEndpointEnvVar, "identityEndpointEnvVar value")
-		t.Setenv(IdentityHeaderEnvVar, "identityHeaderEnvVar value")
-		t.Setenv(IdentityServerThumbprintEnvVar, "identityServerThumbprintEnvVar value")
+		t.Setenv(identityEndpointEnvVar, "identityEndpointEnvVar value")
+		t.Setenv(identityHeaderEnvVar, "identityHeaderEnvVar value")
+		t.Setenv(identityServerThumbprintEnvVar, "identityServerThumbprintEnvVar value")
 	}
 }
 
-func unsetEnvVars() {
-	os.Unsetenv(IdentityEndpointEnvVar)
-	os.Unsetenv(IdentityHeaderEnvVar)
-	os.Unsetenv(IdentityServerThumbprintEnvVar)
-	os.Unsetenv(ArcIMDSEnvVar)
-	os.Unsetenv(MsiEndpointEnvVar)
+func unsetEnvVars(t *testing.T) {
+	t.Setenv(identityEndpointEnvVar, "")
+	t.Setenv(identityHeaderEnvVar, "")
+	t.Setenv(identityServerThumbprintEnvVar, "")
+	t.Setenv(arcIMDSEnvVar, "")
+	t.Setenv(msiEndpointEnvVar, "")
+}
+
+func setCustomAzureArcFilePath(path string) {
+	originalFunc := getAzureArcFilePath
+	defer func() { getAzureArcFilePath = originalFunc }()
+
+	getAzureArcFilePath = func() string {
+		return path
+	}
 }
 
 func Test_Get_Source(t *testing.T) {
@@ -165,16 +169,11 @@ func Test_Get_Source(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(string(testCase.source), func(t *testing.T) {
-			unsetEnvVars()
+			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				originalPath := azureArcOsToFileMap[runtime.GOOS]
-				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
-
-				if testCase.name == "testDefaultToImdsLinux" || testCase.name == "testDefaultToImdsEmptyEndpointLinux" {
-					azureArcOsToFileMap[runtime.GOOS] = originalPath
-				}
+				setCustomAzureArcFilePath("fake/fake")
 			}
 
 			actualSource, err := GetSource(testCase.miType)
@@ -205,11 +204,11 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 	for _, testCase := range testCases {
 
 		t.Run(string(testCase.source), func(t *testing.T) {
-			unsetEnvVars()
+			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 
 			if runtime.GOOS == "linux" {
-				azureArcOsToFileMap[runtime.GOOS] = "fake/fake"
+				setCustomAzureArcFilePath("fake/fake")
 			}
 
 			var localUrl *url.URL
