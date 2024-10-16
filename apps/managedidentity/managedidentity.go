@@ -17,7 +17,6 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
@@ -73,17 +72,7 @@ func SystemAssigned() ID {
 }
 
 // cache never uses the client because instance discovery is always disabled.
-// so oauth can be nil here.
-var once sync.Once
-var cacheManager *storage.Manager
-
-// GetCacheInstance returns the single instance of the storage.Manager
-func getCacheInstance() *storage.Manager {
-	once.Do(func() {
-		cacheManager = storage.New(nil)
-	})
-	return cacheManager
-}
+var cacheManager *storage.Manager = storage.New(nil)
 
 type Client struct {
 	httpClient ops.HTTPClient
@@ -248,7 +237,10 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		storageTokenResponse, err := getCacheInstance().Read(ctx, fakeAuthParams)
+		if cacheManager == nil {
+			return base.AuthResult{}, fmt.Errorf("cache instance is nil")
+		}
+		storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
@@ -266,7 +258,10 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 }
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
-	account, err := getCacheInstance().Write(authParams, token)
+	if cacheManager == nil {
+		return base.AuthResult{}, fmt.Errorf("cache instance is nil")
+	}
+	account, err := cacheManager.Write(authParams, token)
 	if err != nil {
 		return base.AuthResult{}, err
 	}

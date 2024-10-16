@@ -8,12 +8,12 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
@@ -148,8 +148,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				localUrl = r.URL
 			}))
 			// resetting cache
-			cacheManager = nil
-			once = sync.Once{}
+			cacheManager = storage.New(nil)
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
 				t.Fatal(err)

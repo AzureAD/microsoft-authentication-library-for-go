@@ -24,7 +24,7 @@ func runIMDSSystemAssigned() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	cachedResult, err := miSystemAssignedCache.AcquireToken(context.Background(), "https://management.azure.com")
+	cachedResult, err := miSystemAssignedCache.AcquireToken(context.TODO(), "https://management.azure.com")
 	if err != nil {
 		log.Fatal(err)
 	}
