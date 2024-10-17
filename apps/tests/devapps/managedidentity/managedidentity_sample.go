@@ -57,8 +57,8 @@ func promptForID(idType string) string {
 }
 
 func getSecretFromAzureVault() {
-	keyVaultUri := "https://go-lang-kv.vault.azure.net/"
-	secretName := "go-lang-secret/38a02a81208a4718bccbe3598ddc6dee"
+	keyVaultUri := "your-key-vault-uri"
+	secretName := "your-secret-name"
 
 	// Comment this and uncomment the following lines to test different scenarios
 	miClient, err := mi.New(mi.SystemAssigned())
