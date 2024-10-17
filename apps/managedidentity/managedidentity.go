@@ -342,7 +342,7 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*ht
 	var msiEndpoint *url.URL
 
 	if _, ok := id.(systemAssignedValue); !ok {
-		return nil, errors.New("Azure Arc doesn't support user assigned managed identities")
+		return nil, fmt.Errorf("Azure Arc doesn't support user assigned managed identities")
 	}
 
 	msiEndpoint, parseErr := url.Parse(identityEndpoint)
@@ -385,13 +385,13 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 
 		if len(wwwAuthenticateHeader) == 0 {
-			return accesstokens.TokenResponse{}, errors.New("response has no www-authenticate header")
+			return accesstokens.TokenResponse{}, fmt.Errorf("response has no www-authenticate header")
 		}
 
 		// check if the platform is supported
 		expectedSecretFilePath := getAzureArcPlatformPath(platform)
 		if expectedSecretFilePath == "" {
-			return accesstokens.TokenResponse{}, errors.New("platform not supported")
+			return accesstokens.TokenResponse{}, fmt.Errorf("platform not supported")
 		}
 
 		secret, err := handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath)
