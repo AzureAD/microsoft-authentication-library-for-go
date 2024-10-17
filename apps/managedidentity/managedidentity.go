@@ -234,18 +234,16 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		// this is done when we get a 401 response, which will be handled by the response handler
 		tokenResponse, err = client.getTokenForRequest(ctx, req)
 		if err != nil {
-			switch callErr := err.(type) {
-			case errors.CallErr:
-				switch callErr.Resp.StatusCode {
-				case http.StatusUnauthorized:
-					response, err := client.handleAzureArcResponse(ctx, callErr.Resp, resource, runtime.GOOS)
-					if err != nil {
-						return base.AuthResult{}, err
-					}
-
-					return base.NewAuthResult(response, shared.Account{})
+			var newCallErr errors.CallErr
+			if errors.As(err, &newCallErr) {
+				response, err := client.handleAzureArcResponse(ctx, newCallErr.Resp, resource, runtime.GOOS)
+				if err != nil {
+					return base.AuthResult{}, err
 				}
+
+				return base.NewAuthResult(response, shared.Account{})
 			}
+
 			return base.AuthResult{}, err
 		}
 	case DefaultToIMDS:
@@ -305,15 +303,6 @@ func (client Client) getTokenForRequest(ctx context.Context, req *http.Request) 
 
 	err = json.Unmarshal(responseBytes, &r)
 	return r, err
-}
-
-func fileExists(path string) bool {
-	if _, err := os.Stat(path); err != nil {
-		if os.IsNotExist(err) {
-			return false
-		}
-	}
-	return true
 }
 
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
@@ -382,8 +371,10 @@ func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform
 
 	himdsFilePath := getAzureArcFilePath(platform)
 
-	if himdsFilePath != "" && fileExists(himdsFilePath) {
-		return true
+	if himdsFilePath != "" {
+		if _, err := os.Stat(himdsFilePath); !os.IsNotExist(err) {
+			return true
+		}
 	}
 
 	return false

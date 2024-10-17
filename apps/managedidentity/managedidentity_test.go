@@ -385,26 +385,6 @@ func TestCreatingIMDSClient(t *testing.T) {
 	}
 }
 
-func Test_fileExists(t *testing.T) {
-	// Create a temporary file
-	tmpFile, err := os.CreateTemp("", "test_file")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Remove(tmpFile.Name())
-
-	// Test case: file exists
-	if !fileExists(tmpFile.Name()) {
-		t.Errorf("expected file to exist, but it doesn't")
-	}
-
-	// Test case: file does not exist
-	nonExistentFilePath := tmpFile.Name() + "_nonexistent"
-	if fileExists(nonExistentFilePath) {
-		t.Errorf("expected file not to exist, but it does")
-	}
-}
-
 func Test_validateAzureArcEnvironment(t *testing.T) {
 	testCases := []struct {
 		name             string

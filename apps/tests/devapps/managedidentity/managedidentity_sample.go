@@ -2,7 +2,11 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
 	"os"
 	"strings"
 
@@ -52,9 +56,67 @@ func promptForID(idType string) string {
 	return id
 }
 
+func getSecretFromAzureVault() {
+	keyVaultUri := "https://go-lang-kv.vault.azure.net/"
+	secretName := "go-lang-secret/38a02a81208a4718bccbe3598ddc6dee"
+
+	// Comment this and uncomment the following lines to test different scenarios
+	miClient, err := mi.New(mi.SystemAssigned())
+	// miClient, err := mi.New(mi.UserAssignedClientID("my-client-id"))
+	// miClient, err := mi.New(mi.UserAssignedObjectID("my-object-id"))
+	// miClient, err := mi.New(mi.UserAssignedResourceID("my-resource-id"))
+	if err != nil {
+		log.Fatalf("failed to create a new managed identity client: %v", err)
+		return
+	}
+
+	accessToken, err := miClient.AcquireToken(context.Background(), "https://vault.azure.net")
+	if err != nil {
+		log.Fatalf("failed to acquire token: %v", err)
+		return
+	}
+
+	println(fmt.Sprintf("Access token: %s", accessToken.AccessToken))
+
+	// Create http request using access token
+	url := fmt.Sprintf("%ssecrets/%s?api-version=7.2", keyVaultUri, secretName)
+
+	// Create a new HTTP request
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		log.Fatalf("Error creating request: %v", err)
+	}
+
+	// Set the authorization header
+	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken.AccessToken))
+
+	// Send the request
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		log.Fatalf("Error sending request: %v", err)
+	}
+	defer resp.Body.Close()
+
+	// Read the response body
+	body, err := io.ReadAll(resp.Body)
+	if err != nil {
+		log.Fatalf("Error reading response body: %v", err)
+	}
+
+	// Combine all received buffer streams into one buffer, and then into a string
+	var parsedData map[string]interface{}
+	if err := json.Unmarshal(body, &parsedData); err != nil {
+		log.Fatalf("Error parsing JSON: %v", err)
+	}
+
+	// Print the response body
+	println(fmt.Sprintf("The secret, %s, has a value of: %s", secretName, string(body)))
+}
+
 func main() {
 	var exampleType string
-	fmt.Println("Enter the example type (1-8):")
+	fmt.Println("Enter the example type (1-9):")
 	fmt.Scanln(&exampleType)
 
 	var identity mi.ID
@@ -82,6 +144,8 @@ func main() {
 	case "8":
 		promptForLocalTest()
 		identity = mi.UserAssignedResourceID("This should fail")
+	case "9":
+		getSecretFromAzureVault()
 	default:
 		fmt.Println("Invalid example type")
 		return
