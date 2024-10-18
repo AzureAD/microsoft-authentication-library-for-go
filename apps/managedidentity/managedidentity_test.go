@@ -288,6 +288,10 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(http.StatusText(testCase.code), func(t *testing.T) {
+			unsetEnvVars(t)
+			restoreFunc := setCustomAzureArcFilePath("fake/fake")
+			defer restoreFunc()
+
 			fakeErrorClient := mock.Client{}
 			responseBody, err := makeResponseWithErrorData(testCase.err, testCase.desc)
 			if err != nil {
