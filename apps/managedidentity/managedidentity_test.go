@@ -288,6 +288,9 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(http.StatusText(testCase.code), func(t *testing.T) {
+			restoreFunc := setCustomAzureArcFilePath("fake/fake")
+			defer restoreFunc()
+
 			fakeErrorClient := mock.Client{}
 			responseBody, err := makeResponseWithErrorData(testCase.err, testCase.desc)
 			if err != nil {
@@ -362,6 +365,9 @@ func TestCreatingIMDSClient(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			restoreFunc := setCustomAzureArcFilePath("fake/fake")
+			defer restoreFunc()
+
 			client, err := New(tt.id)
 			if tt.wantErr {
 				if err == nil {
