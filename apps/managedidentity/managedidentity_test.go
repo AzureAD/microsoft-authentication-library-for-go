@@ -131,22 +131,22 @@ func unsetEnvVars(t *testing.T) {
 	t.Setenv(msiEndpointEnvVar, "")
 }
 
-func setCustomAzureArcPlatformPath(path string) func() {
+func setCustomAzureArcPlatformPath(t *testing.T, path string) {
 	originalFunc := getAzureArcPlatformPath
 	getAzureArcPlatformPath = func(platform string) string {
 		return path
 	}
 
-	return func() { getAzureArcPlatformPath = originalFunc }
+	t.Cleanup(func() { getAzureArcPlatformPath = originalFunc })
 }
 
-func setCustomAzureArcFilePath(path string) func() {
+func setCustomAzureArcFilePath(t *testing.T, path string) {
 	originalFunc := getAzureArcFilePath
 	getAzureArcFilePath = func(platform string) string {
 		return path
 	}
 
-	return func() { getAzureArcFilePath = originalFunc }
+	t.Cleanup(func() { getAzureArcFilePath = originalFunc })
 }
 
 func Test_Get_Source(t *testing.T) {
@@ -169,9 +169,7 @@ func Test_Get_Source(t *testing.T) {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
-
-			restoreFunc := setCustomAzureArcFilePath("fake/fake")
-			defer restoreFunc()
+			setCustomAzureArcFilePath(t, "fake/fake")
 
 			actualSource, err := GetSource(testCase.miType)
 			if err != nil {
@@ -225,9 +223,7 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
-
-			restoreFunc := setCustomAzureArcFilePath("fake/fake")
-			defer restoreFunc()
+			setCustomAzureArcFilePath(t, "fake/fake")
 
 			var localUrl *url.URL
 			mockClient := mock.Client{}
@@ -311,8 +307,7 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(http.StatusText(testCase.code), func(t *testing.T) {
 			unsetEnvVars(t)
-			restoreFunc := setCustomAzureArcFilePath("fake/fake")
-			defer restoreFunc()
+			setCustomAzureArcFilePath(t, "fake/fake")
 
 			fakeErrorClient := mock.Client{}
 			responseBody, err := makeResponseWithErrorData(testCase.err, testCase.desc)
@@ -389,8 +384,7 @@ func TestCreatingIMDSClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			unsetEnvVars(t)
-			restoreFunc := setCustomAzureArcFilePath("fake/fake")
-			defer restoreFunc()
+			setCustomAzureArcFilePath(t, "fake/fake")
 
 			client, err := New(tt.id)
 			if tt.wantErr {
@@ -511,8 +505,7 @@ func Test_validateAzureArcEnvironment(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			restoreFunc := setCustomAzureArcFilePath("fake/fake")
-			defer restoreFunc()
+			setCustomAzureArcFilePath(t, "fake/fake")
 
 			result := isAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
 			if result != tc.expectedResult {
@@ -631,8 +624,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 
 			if tc.createMockFile {
 				mockFilePath := filepath.Join(testCaseFilePath, "secret.key")
-				restoreFunc := setCustomAzureArcPlatformPath(testCaseFilePath)
-				defer restoreFunc()
+				setCustomAzureArcPlatformPath(t, testCaseFilePath)
 
 				if tc.name == "Invalid secret file size" {
 					createMockFile(t, mockFilePath, 5000)
