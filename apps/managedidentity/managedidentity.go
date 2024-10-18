@@ -203,7 +203,7 @@ func GetSource(id ID) (Source, error) {
 		return AppService, nil
 	} else if msiEndpoint != "" {
 		return CloudShell, nil
-	} else if validateAzureArcEnvironment(identityEndpoint, imdsEndpoint, runtime.GOOS) {
+	} else if isAzureArcEnvironment(identityEndpoint, imdsEndpoint, runtime.GOOS) {
 		return AzureArc, nil
 	}
 
@@ -342,7 +342,7 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*ht
 	var msiEndpoint *url.URL
 
 	if _, ok := id.(systemAssignedValue); !ok {
-		return nil, fmt.Errorf("Azure Arc doesn't support user assigned managed identities")
+		return nil, fmt.Errorf("azure Arc doesn't support user assigned managed identities")
 	}
 
 	msiEndpoint, parseErr := url.Parse(identityEndpoint)
@@ -364,7 +364,7 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*ht
 	return req, nil
 }
 
-func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
+func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		return true
 	}
@@ -372,7 +372,7 @@ func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform
 	himdsFilePath := getAzureArcFilePath(platform)
 
 	if himdsFilePath != "" {
-		if _, err := os.Stat(himdsFilePath); !os.IsNotExist(err) {
+		if _, err := os.Stat(himdsFilePath); err == nil {
 			return true
 		}
 	}

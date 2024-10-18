@@ -217,20 +217,23 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
 			}
+
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
 			}))
-			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 
+			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
-				if testCase.source == AzureArc && err.Error() == "Azure Arc doesn't support user assigned managed identities" {
+				if testCase.source == AzureArc && err.Error() == "azure Arc doesn't support user assigned managed identities" {
 					return
 				}
 			}
+
 			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
 				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
 			}
@@ -444,7 +447,7 @@ func Test_validateAzureArcEnvironment(t *testing.T) {
 				defer restoreFunc()
 			}
 
-			result := validateAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
+			result := isAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
 			if result != tc.expectedResult {
 				t.Fatalf("expected %v, got %v", tc.expectedResult, result)
 			}
