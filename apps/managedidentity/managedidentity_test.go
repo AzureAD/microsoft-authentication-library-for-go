@@ -627,9 +627,8 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			}
 
 			if tc.createMockFile {
-				expectedFilePath := filepath.Join(testCaseFilePath)
-				mockFilePath := filepath.Join(expectedFilePath, "secret.key")
-				restoreFunc := setCustomAzureArcPlatformPath(expectedFilePath)
+				mockFilePath := filepath.Join(testCaseFilePath, "secret.key")
+				restoreFunc := setCustomAzureArcPlatformPath(testCaseFilePath)
 				defer restoreFunc()
 
 				if tc.name == "Invalid secret file size" {
