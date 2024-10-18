@@ -170,10 +170,8 @@ func Test_Get_Source(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 
-			if runtime.GOOS == "linux" {
-				restoreFunc := setCustomAzureArcFilePath("fake/fake")
-				defer restoreFunc()
-			}
+			restoreFunc := setCustomAzureArcFilePath("fake/fake")
+			defer restoreFunc()
 
 			actualSource, err := GetSource(testCase.miType)
 			if err != nil {
