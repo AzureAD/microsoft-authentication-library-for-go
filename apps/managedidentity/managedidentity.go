@@ -73,7 +73,7 @@ const (
 var getAzureArcPlatformPath = func(platform string) string {
 	switch platform {
 	case "windows":
-		return fmt.Sprintf("%s%s", os.Getenv("ProgramData"), windowsTokenPath)
+		return filepath.Join(os.Getenv("ProgramData"), windowsTokenPath)
 	case "linux":
 		return linuxTokenPath
 	default:
@@ -84,7 +84,7 @@ var getAzureArcPlatformPath = func(platform string) string {
 var getAzureArcFilePath = func(platform string) string {
 	switch platform {
 	case "windows":
-		return fmt.Sprintf("%s%s", os.Getenv("ProgramFiles"), windowsHimdsPath)
+		return filepath.Join(os.Getenv("ProgramData"), windowsHimdsPath)
 	case "linux":
 		return linuxHimdsPath
 	default:
@@ -154,6 +154,14 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, err
 	}
 
+	// If source is Azure Arc return an error, as Azure Arc allow accepts System Assigned managed identities.
+	if source == AzureArc {
+		switch id.(type) {
+		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+			return Client{}, fmt.Errorf("azure Arc doesn't support user assigned managed identities")
+		}
+	}
+
 	opts := ClientOptions{
 		httpClient: shared.DefaultClient,
 	}
@@ -215,14 +223,17 @@ func GetSource(id ID) (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	var (
+		err           error
+		req           *http.Request
+		tokenResponse accesstokens.TokenResponse
+	)
 	o := AcquireTokenOptions{}
-	var req *http.Request
-	var err error
 
 	for _, option := range options {
 		option(&o)
 	}
-	var tokenResponse accesstokens.TokenResponse
+
 	switch client.source {
 	case AzureArc:
 		req, err = createAzureArcAuthRequest(ctx, client.miType, resource)
@@ -232,7 +243,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
 		// this is done when we get a 401 response, which will be handled by the response handler
-		tokenResponse, err = client.getTokenForRequest(ctx, req)
+		tokenResponse, err = client.getTokenForRequest(req)
 		if err != nil {
 			var newCallErr errors.CallErr
 			if errors.As(err, &newCallErr) {
@@ -252,7 +263,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 			return base.AuthResult{}, err
 		}
 
-		tokenResponse, err = client.getTokenForRequest(ctx, req)
+		tokenResponse, err = client.getTokenForRequest(req)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
@@ -264,7 +275,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 }
 
-func (client Client) getTokenForRequest(ctx context.Context, req *http.Request) (accesstokens.TokenResponse, error) {
+func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
 	var r accesstokens.TokenResponse
 
 	resp, err := client.httpClient.Do(req)
@@ -341,10 +352,6 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*ht
 	identityEndpoint := azureArcEndpoint
 	var msiEndpoint *url.URL
 
-	if _, ok := id.(systemAssignedValue); !ok {
-		return nil, fmt.Errorf("azure Arc doesn't support user assigned managed identities")
-	}
-
 	msiEndpoint, parseErr := url.Parse(identityEndpoint)
 	if parseErr != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
@@ -408,7 +415,7 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 
 		req.Header.Set("Authorization", authHeaderValue)
 
-		return c.getTokenForRequest(ctx, req)
+		return c.getTokenForRequest(req)
 	}
 
 	return accesstokens.TokenResponse{}, fmt.Errorf("managed identity error: %d", response.StatusCode)

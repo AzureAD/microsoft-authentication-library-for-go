@@ -196,9 +196,9 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId"), apiVersion: imdsAPIVersion},
 		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
 		{source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: azureArcAPIVersion},
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedObjectID("objectId"), apiVersion: azureArcAPIVersion},
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedResourceID("resourceId"), apiVersion: azureArcAPIVersion},
+		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: azureArcAPIVersion},
+		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedObjectID("objectId"), apiVersion: azureArcAPIVersion},
+		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: UserAssignedResourceID("resourceId"), apiVersion: azureArcAPIVersion},
 	}
 	for _, testCase := range testCases {
 
@@ -228,11 +228,6 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			}
 
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
-			if err != nil {
-				if testCase.source == AzureArc && err.Error() == "azure Arc doesn't support user assigned managed identities" {
-					return
-				}
-			}
 
 			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
 				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
@@ -375,6 +370,54 @@ func TestCreatingIMDSClient(t *testing.T) {
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("client New() should return a error but did not.")
+				}
+				return
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			if client.miType.value() != tt.id.value() {
+				t.Fatal("client New() did not assign a correct value to type.")
+			}
+		})
+	}
+}
+
+func Test_AzureArc_User_Assigned_Failure(t *testing.T) {
+	tests := []struct {
+		name    string
+		id      ID
+		wantErr bool
+	}{
+		{
+			wantErr: true,
+			name:    "Client ID",
+			id:      UserAssignedClientID("test-client-id"),
+		},
+		{
+			wantErr: true,
+			name:    "Resource ID",
+			id:      UserAssignedResourceID("test-resource-id"),
+		},
+		{
+			wantErr: true,
+			name:    "Object ID",
+			id:      UserAssignedObjectID("test-object-id"),
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			unsetEnvVars(t)
+			setEnvVars(t, AzureArc)
+			client, err := New(tt.id)
+			if tt.wantErr {
+				if err == nil {
+					t.Fatal("client New() should return a error but did not.")
+				}
+
+				if err.Error() != "azure Arc doesn't support user assigned managed identities" {
+					t.Fatalf("expected error message 'azure Arc doesn't support user assigned managed identities', got %s", err.Error())
 				}
 				return
 			}
