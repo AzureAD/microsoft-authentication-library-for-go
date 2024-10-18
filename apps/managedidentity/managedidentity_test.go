@@ -545,7 +545,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			headers:       map[string]string{},
 			expectedError: "managed identity error: 200",
 			platform:      runtime.GOOS,
-			context:       context.Background(),
 		},
 		{
 			name:          "No www-authenticate header",
@@ -553,7 +552,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			headers:       map[string]string{},
 			expectedError: "response has no www-authenticate header",
 			platform:      runtime.GOOS,
-			context:       context.Background(),
 		},
 		{
 			name:          "Basic realm= not found",
@@ -561,7 +559,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic "},
 			expectedError: "basic realm= not found in the string, instead found: Basic ",
 			platform:      runtime.GOOS,
-			context:       context.Background(),
 		},
 		{
 			name:          "Platform not supported",
@@ -578,7 +575,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "invalid file extension, expected .key, got .txt",
 			platform:       runtime.GOOS,
 			createMockFile: true,
-			context:        context.Background(),
 		},
 		{
 			name:           "Invalid file path",
@@ -587,7 +583,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "invalid file path, expected /path/to/secret.key, got " + filepath.Join(testCaseFilePath, "secret.key"),
 			platform:       runtime.GOOS,
 			createMockFile: true,
-			context:        context.Background(),
 		},
 		{
 			name:           "Unable to get file info",
@@ -596,7 +591,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "unable to get file info for path " + filepath.Join(testCaseFilePath, "2secret.key"),
 			platform:       runtime.GOOS,
 			createMockFile: true,
-			context:        context.Background(),
 		},
 		{
 			name:           "Invalid secret file size",
@@ -605,7 +599,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "invalid secret file size, expected 4096, file size was 5000",
 			platform:       runtime.GOOS,
 			createMockFile: true,
-			context:        context.Background(),
 		},
 		{
 			name:           "token request fail",
@@ -650,8 +643,11 @@ func Test_handleAzureArcResponse(t *testing.T) {
 				defer os.Remove(mockFilePath)
 			}
 
-			contextToUse := context.Background()
 			client := &Client{}
+
+			if tc.name == "token request fail" {
+				tc.context = nil
+			}
 
 			_, err := client.handleAzureArcResponse(tc.context, response, "", tc.platform)
 
