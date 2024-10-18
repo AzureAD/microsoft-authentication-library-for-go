@@ -535,6 +535,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 		expectedError  string
 		platform       string
 		createMockFile bool
+		context        context.Context
 		prepareMockEnv func(*testing.T)
 		cleanupMockEnv func()
 	}{
@@ -544,6 +545,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			headers:       map[string]string{},
 			expectedError: "managed identity error: 200",
 			platform:      runtime.GOOS,
+			context:       context.Background(),
 		},
 		{
 			name:          "No www-authenticate header",
@@ -551,6 +553,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			headers:       map[string]string{},
 			expectedError: "response has no www-authenticate header",
 			platform:      runtime.GOOS,
+			context:       context.Background(),
 		},
 		{
 			name:          "Basic realm= not found",
@@ -558,6 +561,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic "},
 			expectedError: "basic realm= not found in the string, instead found: Basic ",
 			platform:      runtime.GOOS,
+			context:       context.Background(),
 		},
 		{
 			name:          "Platform not supported",
@@ -565,6 +569,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.key"},
 			expectedError: "platform not supported",
 			platform:      "testPlatform",
+			context:       context.Background(),
 		},
 		{
 			name:           "Invalid file extension",
@@ -573,6 +578,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "invalid file extension, expected .key, got .txt",
 			platform:       runtime.GOOS,
 			createMockFile: true,
+			context:        context.Background(),
 		},
 		{
 			name:           "Invalid file path",
@@ -581,6 +587,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "invalid file path, expected /path/to/secret.key, got " + filepath.Join(testCaseFilePath, "secret.key"),
 			platform:       runtime.GOOS,
 			createMockFile: true,
+			context:        context.Background(),
 		},
 		{
 			name:           "Unable to get file info",
@@ -589,6 +596,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "unable to get file info for path " + filepath.Join(testCaseFilePath, "2secret.key"),
 			platform:       runtime.GOOS,
 			createMockFile: true,
+			context:        context.Background(),
 		},
 		{
 			name:           "Invalid secret file size",
@@ -597,6 +605,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "invalid secret file size, expected 4096, file size was 5000",
 			platform:       runtime.GOOS,
 			createMockFile: true,
+			context:        context.Background(),
 		},
 		{
 			name:           "token request fail",
@@ -605,6 +614,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			expectedError:  "error creating http request net/http: nil Context",
 			platform:       runtime.GOOS,
 			createMockFile: true,
+			context:        context.Background(),
 		},
 	}
 
@@ -643,7 +653,11 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			contextToUse := context.Background()
 			client := &Client{}
 
-			_, err := client.handleAzureArcResponse(contextToUse, response, "", tc.platform)
+			if tc.name == "token request fail" {
+				contextToUse = nil
+			}
+
+			_, err := client.handleAzureArcResponse(tc.context, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
 				t.Fatalf("expected error %v, got %v", tc.expectedError, err)
