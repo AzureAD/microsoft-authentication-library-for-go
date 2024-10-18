@@ -150,6 +150,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
 	source, err := GetSource(id)
+	println("source: " + source)
 	if err != nil {
 		return Client{}, err
 	}
@@ -203,6 +204,12 @@ func GetSource(id ID) (Source, error) {
 	identityServerThumbprint := os.Getenv(identityServerThumbprintEnvVar)
 	msiEndpoint := os.Getenv(msiEndpointEnvVar)
 	imdsEndpoint := os.Getenv(imdsEndVar)
+
+	println("identityEndpoint: " + identityEndpoint)
+	println("identityHeader: " + identityHeader)
+	println("identityServerThumbprint: " + identityServerThumbprint)
+	println("msiEndpoint: " + msiEndpoint)
+	println("imdsEndpoint: " + imdsEndpoint)
 
 	if identityEndpoint != "" && identityHeader != "" {
 		if identityServerThumbprint != "" {
@@ -373,13 +380,17 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*ht
 
 func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
+		println("both not empty")
 		return true
 	}
 
 	himdsFilePath := getAzureArcFilePath(platform)
+	println("himdsFilePath: " + himdsFilePath)
 
 	if himdsFilePath != "" {
+		println("himdsFilePath not empty")
 		if _, err := os.Stat(himdsFilePath); err == nil {
+			println("himdsFilePath exists")
 			return true
 		}
 	}
