@@ -236,7 +236,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 	switch client.source {
 	case AzureArc:
-		req, err = createAzureArcAuthRequest(ctx, client.miType, resource)
+		req, err = createAzureArcAuthRequest(ctx, resource)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
@@ -348,7 +348,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 	return req, nil
 }
 
-func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+func createAzureArcAuthRequest(ctx context.Context, resource string) (*http.Request, error) {
 	identityEndpoint := azureArcEndpoint
 	var msiEndpoint *url.URL
 
@@ -408,7 +408,7 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 
 		authHeaderValue := fmt.Sprintf("Basic %s", string(secret))
 
-		req, err := createAzureArcAuthRequest(ctx, SystemAssigned(), resource)
+		req, err := createAzureArcAuthRequest(ctx, resource)
 		if err != nil {
 			return accesstokens.TokenResponse{}, err
 		}

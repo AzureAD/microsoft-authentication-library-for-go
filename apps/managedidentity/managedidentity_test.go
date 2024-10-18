@@ -185,6 +185,31 @@ func Test_Get_Source(t *testing.T) {
 	}
 }
 
+func Test_AzureArc_Returns_When_Himds_Found(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("Skipping test on macOS as HIMDS is not supported")
+	}
+
+	testCases := []sourceTestData{
+		{name: "testAzureArcSystemAssigned", source: AzureArc, endpoint: "imdsDefaultEndpoint", expectedSource: AzureArc, miType: SystemAssigned()},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(string(testCase.source), func(t *testing.T) {
+			unsetEnvVars(t)
+
+			actualSource, err := GetSource(testCase.miType)
+			if err != nil {
+				t.Fatalf("error while getting source: %s", err.Error())
+			}
+
+			if actualSource != testCase.expectedSource {
+				t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
+			}
+		})
+	}
+}
+
 func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 	testCases := []resourceTestData{
 		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
