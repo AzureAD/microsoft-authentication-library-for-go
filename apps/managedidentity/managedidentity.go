@@ -373,17 +373,13 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string) (*ht
 
 func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
-		println("both not empty")
 		return true
 	}
 
 	himdsFilePath := getAzureArcFilePath(platform)
-	println("himdsFilePath: " + himdsFilePath)
 
 	if himdsFilePath != "" {
-		println("himdsFilePath not empty")
 		if _, err := os.Stat(himdsFilePath); err == nil {
-			println("himdsFilePath exists")
 			return true
 		}
 	}
