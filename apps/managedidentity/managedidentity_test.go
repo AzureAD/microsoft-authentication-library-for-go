@@ -653,10 +653,6 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			contextToUse := context.Background()
 			client := &Client{}
 
-			if tc.name == "token request fail" {
-				contextToUse = nil
-			}
-
 			_, err := client.handleAzureArcResponse(tc.context, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
