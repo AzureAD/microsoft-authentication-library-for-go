@@ -204,10 +204,8 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 
-			if runtime.GOOS == "linux" {
-				restoreFunc := setCustomAzureArcFilePath("fake/fake")
-				defer restoreFunc()
-			}
+			restoreFunc := setCustomAzureArcFilePath("fake/fake")
+			defer restoreFunc()
 
 			var localUrl *url.URL
 			mockClient := mock.Client{}
@@ -483,10 +481,8 @@ func Test_validateAzureArcEnvironment(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			if runtime.GOOS == "linux" {
-				restoreFunc := setCustomAzureArcFilePath("fake/fake")
-				defer restoreFunc()
-			}
+			restoreFunc := setCustomAzureArcFilePath("fake/fake")
+			defer restoreFunc()
 
 			result := isAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
 			if result != tc.expectedResult {
