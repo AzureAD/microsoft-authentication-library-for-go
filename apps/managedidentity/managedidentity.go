@@ -16,7 +16,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
@@ -50,7 +52,27 @@ const (
 	imdsAPIVersion = "2018-02-01"
 
 	systemAssignedManagedIdentity = "system_assigned_managed_identity"
+	defaultRetryCount             = 3
 )
+
+// IMDS docs recommend retrying 404, 410, 429 and 5xx
+// https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/how-to-use-vm-token#error-handling
+var retryStatusCodes = []int{
+	http.StatusNotFound,                      // 404
+	http.StatusGone,                          // 410
+	http.StatusTooManyRequests,               // 429 // retry after.
+	http.StatusInternalServerError,           // 500
+	http.StatusNotImplemented,                // 501
+	http.StatusBadGateway,                    // 502
+	http.StatusServiceUnavailable,            // 503
+	http.StatusGatewayTimeout,                // 504
+	http.StatusHTTPVersionNotSupported,       // 505
+	http.StatusVariantAlsoNegotiates,         // 506
+	http.StatusInsufficientStorage,           // 507
+	http.StatusLoopDetected,                  // 508
+	http.StatusNotExtended,                   // 510
+	http.StatusNetworkAuthenticationRequired, // 511
+}
 
 type Source string
 
@@ -75,13 +97,14 @@ func SystemAssigned() ID {
 var cacheManager *storage.Manager = storage.New(nil)
 
 type Client struct {
-	httpClient ops.HTTPClient
-	miType     ID
-	// source     Source reenable when required in future sources
+	httpClient          ops.HTTPClient
+	miType              ID
+	retryPolicyDisabled bool
 }
 
 type ClientOptions struct {
-	httpClient ops.HTTPClient
+	httpClient         ops.HTTPClient
+	retryPolicyDiabled bool
 }
 
 type AcquireTokenOptions struct {
@@ -107,13 +130,20 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	}
 }
 
+func WithRetryPolicyDisabled() ClientOption {
+	return func(o *ClientOptions) {
+		o.retryPolicyDiabled = true
+	}
+}
+
 // Client to be used to acquire tokens for managed identity.
 // ID: [SystemAssigned], [UserAssignedClientID], [UserAssignedResourceID], [UserAssignedObjectID]
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
 	opts := ClientOptions{
-		httpClient: shared.DefaultClient,
+		httpClient:         shared.DefaultClient,
+		retryPolicyDiabled: false,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -136,8 +166,9 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
 	client := Client{
-		miType:     id,
-		httpClient: opts.httpClient,
+		miType:              id,
+		httpClient:          opts.httpClient,
+		retryPolicyDisabled: opts.retryPolicyDiabled,
 	}
 	return client, nil
 }
@@ -178,8 +209,24 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	return req, nil
 }
 
+func retry(attempts int, delay time.Duration, c ops.HTTPClient, req *http.Request) (*http.Response, error) {
+	resp, err := c.Do(req)
+	if err == nil && !slices.Contains(retryStatusCodes, resp.StatusCode) {
+		return resp, nil // Success
+	}
+	if attempts-1 < 1 {
+		return resp, nil
+	}
+	time.Sleep(delay)
+	return retry(attempts-1, delay, c, req)
+}
+
 func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
-	resp, err := client.httpClient.Do(req)
+	retryCount := 1 // defaul Count
+	if !client.retryPolicyDisabled {
+		retryCount = defaultRetryCount
+	}
+	resp, err := retry(retryCount, time.Second, client.httpClient, req) //client.httpClient.Do(req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
@@ -254,10 +301,10 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(fakeAuthParams, tokenResponse)
+	return client.authResultFromToken(fakeAuthParams, tokenResponse)
 }
 
-func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
+func (c Client) authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
 	if cacheManager == nil {
 		return base.AuthResult{}, fmt.Errorf("cache instance is nil")
 	}

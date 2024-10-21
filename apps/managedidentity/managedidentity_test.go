@@ -102,7 +102,7 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 			}
 			fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(testCase.code),
 				mock.WithBody(responseBody))
-			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
+			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient), WithRetryPolicyDisabled())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -126,6 +126,74 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_RetryPolicy_For_AcquireToken_Request(t *testing.T) {
+	t.Run("Testing retry policy with With One failure", func(t *testing.T) {
+		fakeClient := mock.Client{}
+		responseBody, err := makeResponseWithErrorData("sample error", "sample error desc")
+		if err != nil {
+			t.Fatalf("error while forming json response : %s", err.Error())
+		}
+		errorRetry := 2
+		errorRetryCounter := 0
+		fakeClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusInternalServerError),
+			mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				errorRetryCounter += 1
+			}))
+		fakeClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusInternalServerError),
+			mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				errorRetryCounter += 1
+			}))
+		fakeClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized),
+			mock.WithBody(responseBody))
+		client, err := New(SystemAssigned(), WithHTTPClient(&fakeClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.AcquireToken(context.Background(), resource)
+		if err == nil {
+			t.Fatalf("should have encountered the error")
+		}
+		if resp.AccessToken != "" {
+			t.Fatalf("wanted %q, got %q", "", resp.AccessToken)
+		}
+		if errorRetryCounter != errorRetry {
+			t.Fatalf("expected Number of retry of %d, got %d", errorRetry, errorRetryCounter)
+		}
+	})
+}
+
+func Test_RetryPolicy_For_AcquireToken_Request_MaxTries(t *testing.T) {
+	t.Run("Testing retry policy with With One failure", func(t *testing.T) {
+		fakeErrorClient := mock.Client{}
+		responseBody, err := makeResponseWithErrorData("sample error", "sample error desc")
+		if err != nil {
+			t.Fatalf("error while forming json response : %s", err.Error())
+		}
+		errorRetry := 4
+		errorRetryCounter := 0
+		for i := 0; i < errorRetry; i++ {
+			fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusInternalServerError),
+				mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+					errorRetryCounter += 1
+				}))
+		}
+		client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+		resp, err := client.AcquireToken(context.Background(), resource)
+		if err == nil {
+			t.Fatalf("should have encountered the error")
+		}
+		if resp.AccessToken != "" {
+			t.Fatalf("wanted %q, got %q", "", resp.AccessToken)
+		}
+		if errorRetryCounter != defaultRetryCount {
+			t.Fatalf("expected Number of retry of %d, got %d", errorRetry, errorRetryCounter)
+		}
+	})
 }
 
 func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
