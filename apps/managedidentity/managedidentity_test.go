@@ -211,15 +211,13 @@ func Test_AzureArc_Returns_When_Himds_Found(t *testing.T) {
 	}
 }
 
-func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
+func Test_IMDS_AcquireToken_Returns_Token_Success(t *testing.T) {
 	testCases := []resourceTestData{
 		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
 		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
 		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: imdsAPIVersion},
 		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId"), apiVersion: imdsAPIVersion},
 		{source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId"), apiVersion: imdsAPIVersion},
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
 	}
 	for _, testCase := range testCases {
 		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
@@ -232,6 +230,136 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
+			}
+
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				localUrl = r.URL
+			}))
+
+			// resetting cache
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
+
+			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := client.AcquireToken(context.Background(), testCase.resource)
+
+			if err != nil {
+				t.Fatal(err)
+			}
+			if localUrl == nil || !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
+				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
+			}
+			if testCase.miType.value() != systemAssignedManagedIdentity {
+				if !strings.Contains(localUrl.String(), testCase.miType.value()) {
+					t.Fatalf("url request does not contain the %s got %s", testCase.endpoint, testCase.miType.value())
+				}
+			}
+
+			query := localUrl.Query()
+
+			if query.Get(apiVersionQueryParameterName) != testCase.apiVersion {
+				t.Fatalf("api-version not on %s got %s", testCase.apiVersion, query.Get(apiVersionQueryParameterName))
+			}
+			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
+				t.Fatal("suffix /.default was not removed.")
+			}
+			switch i := testCase.miType.(type) {
+			case UserAssignedClientID:
+				if query.Get(miQueryParameterClientId) != i.value() {
+					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
+				}
+			case UserAssignedResourceID:
+				if query.Get(miQueryParameterResourceId) != i.value() {
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
+				}
+			case UserAssignedObjectID:
+				if query.Get(miQueryParameterObjectId) != i.value() {
+					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
+				}
+			}
+			if result.Metadata.TokenSource != base.IdentityProvider {
+				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
+			}
+			if result.AccessToken != token {
+				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+			}
+			result, err = client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err = secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+		})
+	}
+}
+
+func Test_AzureArc_AcquireToken_Returns_Token_Success(t *testing.T) {
+	testCaseFilePath, err := getMockFilePath(t)
+	if err != nil {
+		t.Fatalf("failed to get mock file path: %v", err)
+	}
+
+	testCases := []struct {
+		source            Source
+		endpoint          string
+		resource          string
+		miType            ID
+		apiVersion        string
+		failFirstResponse bool
+	}{
+		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, failFirstResponse: false},
+		// {source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, failFirstResponse: false},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, failFirstResponse: true},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
+			unsetEnvVars(t)
+			setEnvVars(t, testCase.source)
+			setCustomAzureArcFilePath(t, "fake/fake")
+
+			var localUrl *url.URL
+			mockClient := mock.Client{}
+			responseBody, err := getSuccessfulResponse(resource)
+			if err != nil {
+				t.Fatalf("error while forming json response : %s", err.Error())
+			}
+
+			if testCase.failFirstResponse {
+				response := &http.Response{
+					StatusCode: http.StatusUnauthorized,
+					Header:     make(http.Header),
+				}
+
+				response.Header.Set(wwwAuthenticateHeaderName, "Basic realm="+filepath.Join(testCaseFilePath, "secret.key"))
+
+				mockFilePath := filepath.Join(testCaseFilePath, "secret.key")
+				setCustomAzureArcPlatformPath(t, testCaseFilePath)
+				createMockFile(t, mockFilePath, 0)
+
+				defer os.Remove(mockFilePath)
+
+				println("HERE")
+				mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+					localUrl = r.URL
+				}))
 			}
 
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {

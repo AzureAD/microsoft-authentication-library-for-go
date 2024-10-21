@@ -174,6 +174,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
+
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -197,6 +198,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient: opts.httpClient,
 		source:     source,
 	}
+
 	return client, nil
 }
 
@@ -245,20 +247,20 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
 	// ignore cached access tokens when given claims
 
-	// if o.claims == "" {
-	// 	if cacheManager == nil {
-	// 		return base.AuthResult{}, errors.New("cache instance is nil")
-	// 	}
-	// 	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
-	// 	if err != nil {
-	// 		return base.AuthResult{}, err
-	// 	}
-	// 	ar, err := base.AuthResultFromStorage(storageTokenResponse)
-	// 	if err == nil {
-	// 		ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-	// 		return ar, err
-	// 	}
-	// }
+	if o.claims == "" {
+		if cacheManager == nil {
+			return base.AuthResult{}, errors.New("cache instance is nil")
+		}
+		storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+		ar, err := base.AuthResultFromStorage(storageTokenResponse)
+		if err == nil {
+			ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			return ar, err
+		}
+	}
 
 	switch client.source {
 	case AzureArc:
@@ -273,6 +275,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		if err != nil {
 			var newCallErr errors.CallErr
 			if errors.As(err, &newCallErr) {
+				println("first www-authenticate header: ", newCallErr.Resp.Header.Get(wwwAuthenticateHeaderName))
 				response, err := client.handleAzureArcResponse(ctx, newCallErr.Resp, resource, runtime.GOOS)
 				if err != nil {
 					return base.AuthResult{}, err
@@ -283,6 +286,8 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 			return base.AuthResult{}, err
 		}
+
+		return authResultFromToken(fakeAuthParams, tokenResponse)
 	case DefaultToIMDS:
 		req, err = createIMDSAuthRequest(ctx, client.miType, resource)
 		if err != nil {
@@ -297,8 +302,22 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
 	}
+}
 
-	return authResultFromToken(fakeAuthParams, tokenResponse)
+func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
+	if cacheManager == nil {
+		return base.AuthResult{}, fmt.Errorf("cache instance is nil")
+	}
+	account, err := cacheManager.Write(authParams, token)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	ar, err := base.NewAuthResult(token, account)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	return ar, err
 }
 
 func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
@@ -308,6 +327,8 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
+	println("og status code: ", resp.StatusCode)
+	println("Header1 after setting: ", resp.Header.Get(wwwAuthenticateHeaderName))
 
 	responseBytes, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
@@ -321,6 +342,8 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	default:
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
+			println("here in 401")
+			println("Header after setting: ", resp.Header.Get(wwwAuthenticateHeaderName))
 			return accesstokens.TokenResponse{}, errors.CallErr{
 				Req:  req,
 				Resp: resp,
@@ -415,8 +438,12 @@ func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform strin
 }
 
 func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Response, resource string, platform string) (accesstokens.TokenResponse, error) {
+	println("Handling Azure Arc response")
 	if response.StatusCode == http.StatusUnauthorized {
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
+
+		println("www-authenticate header: ", response.Header.Get(wwwAuthenticateHeaderName))
+		println("response status code: ", response.StatusCode)
 
 		if len(wwwAuthenticateHeader) == 0 {
 			return accesstokens.TokenResponse{}, fmt.Errorf("response has no www-authenticate header")
@@ -486,24 +513,8 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	// Attempt to read the contents of the secret file
 	secret, err := os.ReadFile(secretFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read the secret file at path %s", secretFilePath)
+		return nil, fmt.Errorf("Authorization %s", secretFilePath)
 	}
 
 	return secret, nil
-}
-
-func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
-	if cacheManager == nil {
-		return base.AuthResult{}, fmt.Errorf("cache instance is nil")
-	}
-	account, err := cacheManager.Write(authParams, token)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	ar, err := base.NewAuthResult(token, account)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-	return ar, err
 }
