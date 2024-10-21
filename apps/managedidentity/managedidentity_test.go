@@ -148,6 +148,8 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 				localUrl = r.URL
 			}))
 			// resetting cache
+			before := cacheManager
+			defer func() { cacheManager = before }()
 			cacheManager = storage.New(nil)
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
