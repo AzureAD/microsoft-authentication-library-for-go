@@ -164,7 +164,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	if source == AzureArc {
 		switch id.(type) {
 		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
-			return Client{}, fmt.Errorf("azure Arc doesn't support user assigned managed identities")
+			return Client{}, errors.New("azure Arc doesn't support user assigned managed identities")
 		}
 	}
 
@@ -275,7 +275,6 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		if err != nil {
 			var newCallErr errors.CallErr
 			if errors.As(err, &newCallErr) {
-				println("first www-authenticate header: ", newCallErr.Resp.Header.Get(wwwAuthenticateHeaderName))
 				response, err := client.handleAzureArcResponse(ctx, newCallErr.Resp, resource, runtime.GOOS)
 				if err != nil {
 					return base.AuthResult{}, err
@@ -306,7 +305,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
 	if cacheManager == nil {
-		return base.AuthResult{}, fmt.Errorf("cache instance is nil")
+		return base.AuthResult{}, errors.New("cache instance is nil")
 	}
 	account, err := cacheManager.Write(authParams, token)
 	if err != nil {
@@ -325,16 +324,14 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
-		return accesstokens.TokenResponse{}, err
+		return r, err
 	}
-	println("og status code: ", resp.StatusCode)
-	println("Header1 after setting: ", resp.Header.Get(wwwAuthenticateHeaderName))
 
 	responseBytes, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 
 	if err != nil {
-		return accesstokens.TokenResponse{}, err
+		return r, err
 	}
 
 	switch resp.StatusCode {
@@ -342,9 +339,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	default:
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
-			println("here in 401")
-			println("Header after setting: ", resp.Header.Get(wwwAuthenticateHeaderName))
-			return accesstokens.TokenResponse{}, errors.CallErr{
+			return r, errors.CallErr{
 				Req:  req,
 				Resp: resp,
 				Err: fmt.Errorf("http call(%s)(%s) error: reply status code was %d:\n%s",
@@ -354,7 +349,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 					sd),
 			}
 		}
-		return accesstokens.TokenResponse{}, errors.CallErr{
+		return r, errors.CallErr{
 			Req:  req,
 			Resp: resp,
 			Err:  fmt.Errorf("http call(%s)(%s) error: reply status code was %d", req.URL.String(), req.Method, resp.StatusCode),
@@ -367,7 +362,6 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 }
 
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
-	var msiEndpoint *url.URL
 	msiEndpoint, err := url.Parse(imdsDefaultEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", imdsDefaultEndpoint, err)
@@ -400,9 +394,8 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 
 func createAzureArcAuthRequest(ctx context.Context, resource string) (*http.Request, error) {
 	identityEndpoint := azureArcEndpoint
-	var msiEndpoint *url.URL
-
 	msiEndpoint, parseErr := url.Parse(identityEndpoint)
+
 	if parseErr != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
 	}
@@ -438,21 +431,17 @@ func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform strin
 }
 
 func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Response, resource string, platform string) (accesstokens.TokenResponse, error) {
-	println("Handling Azure Arc response")
 	if response.StatusCode == http.StatusUnauthorized {
 		wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 
-		println("www-authenticate header: ", response.Header.Get(wwwAuthenticateHeaderName))
-		println("response status code: ", response.StatusCode)
-
 		if len(wwwAuthenticateHeader) == 0 {
-			return accesstokens.TokenResponse{}, fmt.Errorf("response has no www-authenticate header")
+			return accesstokens.TokenResponse{}, errors.New("response has no www-authenticate header")
 		}
 
 		// check if the platform is supported
 		expectedSecretFilePath := getAzureArcPlatformPath(platform)
 		if expectedSecretFilePath == "" {
-			return accesstokens.TokenResponse{}, fmt.Errorf("platform not supported")
+			return accesstokens.TokenResponse{}, fmt.Errorf("platform not supported, expected linux or windows, got %s", platform)
 		}
 
 		secret, err := handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath)
@@ -476,44 +465,42 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 }
 
 func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]byte, error) {
-	var secretFilePath string
-
 	// split the header to get the secret file path
 	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
-	if len(parts) > 1 {
-		secretFilePath = parts[1]
-	} else {
+	if len(parts) < 2 {
 		return nil, fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
 	}
 
+	secretFilePath := parts
+
 	// check that the file in the file path is a .key file
-	fileName := filepath.Base(secretFilePath)
+	fileName := filepath.Base(secretFilePath[1])
 
 	if !strings.HasSuffix(fileName, azureArcFileExtension) {
 		return nil, fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
 	}
 
 	// check that file path from header matches the expected file path for the platform
-	if strings.TrimSpace(filepath.Join(expectedSecretFilePath, fileName)) != secretFilePath {
-		return nil, fmt.Errorf("invalid file path, expected %s, got %s", secretFilePath, filepath.Join(expectedSecretFilePath, fileName))
+	if strings.TrimSpace(filepath.Dir(expectedSecretFilePath)) != filepath.Dir(secretFilePath[1]) {
+		return nil, fmt.Errorf("invalid file path, expected %s, got %s", secretFilePath, filepath.Dir(expectedSecretFilePath))
 	}
 
-	fileInfo, err := os.Stat(secretFilePath)
+	fileInfo, err := os.Stat(secretFilePath[1])
 	if err != nil {
-		return nil, fmt.Errorf("unable to get file info for path %s", secretFilePath)
+		return nil, fmt.Errorf("failed to get metadata for %q due to error: %s", secretFilePath, err)
 	}
 
 	secretFileSize := fileInfo.Size()
 
 	// Throw an error if the secret file's size is greater than 4096 bytes
-	if secretFileSize > azureArcMaxFileSizeBytes {
+	if s := fileInfo.Size(); s > azureArcMaxFileSizeBytes {
 		return nil, fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, secretFileSize)
 	}
 
 	// Attempt to read the contents of the secret file
-	secret, err := os.ReadFile(secretFilePath)
+	secret, err := os.ReadFile(secretFilePath[1])
 	if err != nil {
-		return nil, fmt.Errorf("Authorization %s", secretFilePath)
+		return nil, fmt.Errorf("failed to read %q due to error: %s", secretFilePath, err)
 	}
 
 	return secret, nil
