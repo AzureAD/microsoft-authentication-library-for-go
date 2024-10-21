@@ -345,6 +345,8 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	if err != nil {
 		return r, err
 	}
+	println("og status code: ", resp.StatusCode)
+	println("Header1 after setting: ", resp.Header.Get(wwwAuthenticateHeaderName))
 
 	responseBytes, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
@@ -599,7 +601,7 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	// Attempt to read the contents of the secret file
 	secret, err := os.ReadFile(secretFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("unable to read the secret file at path %s", secretFilePath)
+		return nil, fmt.Errorf("Authorization %s", secretFilePath)
 	}
 
 	return secret, nil
