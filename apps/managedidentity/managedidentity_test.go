@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
@@ -22,7 +24,7 @@ const (
 	// Test Resources
 	resource                 = "https://management.azure.com"
 	resourceDefaultSuffix    = "https://management.azure.com/.default"
-	token                    = "fakeToken"
+	token                    = "fake-access-token"
 	azureArcIdentityEndpoint = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
 	azureArcImdsEndpoint     = "http://127.0.0.1:40342"
 )
@@ -52,7 +54,7 @@ type errorTestData struct {
 
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
-	ExpiresOn   int64  `json:"expires_on"`
+	ExpiresIn   int64  `json:"expires_in"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
 }
@@ -63,10 +65,11 @@ type ErrorResponse struct {
 }
 
 func getSuccessfulResponse(resource string) ([]byte, error) {
-	expiresOn := time.Now().Add(1 * time.Hour).Unix()
+	duration := 10 * time.Minute
+	expiresIn := duration.Seconds()
 	response := SuccessfulResponse{
 		AccessToken: token,
-		ExpiresOn:   expiresOn,
+		ExpiresIn:   int64(expiresIn),
 		Resource:    resource,
 		TokenType:   "Bearer",
 	}
@@ -219,8 +222,7 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 		{source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
 	}
 	for _, testCase := range testCases {
-
-		t.Run(string(testCase.source), func(t *testing.T) {
+		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 			setCustomAzureArcFilePath(t, "fake/fake")
@@ -236,6 +238,11 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 				localUrl = r.URL
 			}))
 
+			// resetting cache
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
+
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
 				t.Fatal(err)
@@ -243,13 +250,18 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 
-			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
+			if err != nil {
+				t.Fatal(err)
+			}
+			if localUrl == nil || !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
 				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
 			}
-
-			if !strings.Contains(localUrl.String(), testCase.miType.value()) {
-				t.Fatalf("url request does not contain the %s got %s", testCase.endpoint, localUrl)
+			if testCase.miType.value() != systemAssignedManagedIdentity {
+				if !strings.Contains(localUrl.String(), testCase.miType.value()) {
+					t.Fatalf("url request does not contain the %s got %s", testCase.endpoint, testCase.miType.value())
+				}
 			}
+
 			query := localUrl.Query()
 
 			if query.Get(apiVersionQueryParameterName) != testCase.apiVersion {
@@ -272,13 +284,30 @@ func Test_AcquireToken_Returns_Token_Success(t *testing.T) {
 					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
 			}
-			if err != nil {
-				t.Fatal(err)
+			if result.Metadata.TokenSource != base.IdentityProvider {
+				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
 			}
-
+			result, err = client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err = secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
 		})
 	}
 }

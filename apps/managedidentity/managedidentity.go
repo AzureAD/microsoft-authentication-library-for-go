@@ -23,8 +23,10 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
@@ -48,8 +50,9 @@ const (
 	miQueryParameterResourceId = "msi_res_id"
 
 	// IMDS
-	imdsDefaultEndpoint = "http://169.254.169.254/metadata/identity/oauth2/token"
-	imdsAPIVersion      = "2018-02-01"
+	imdsDefaultEndpoint           = "http://169.254.169.254/metadata/identity/oauth2/token"
+	imdsAPIVersion                = "2018-02-01"
+	systemAssignedManagedIdentity = "system_assigned_managed_identity"
 
 	// Azure Arc
 	azureArcEndpoint               = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
@@ -108,8 +111,11 @@ func (c UserAssignedClientID) value() string   { return string(c) }
 func (o UserAssignedObjectID) value() string   { return string(o) }
 func (r UserAssignedResourceID) value() string { return string(r) }
 func SystemAssigned() ID {
-	return systemAssignedValue("")
+	return systemAssignedValue(systemAssignedManagedIdentity)
 }
+
+// cache never uses the client because instance discovery is always disabled.
+var cacheManager *storage.Manager = storage.New(nil)
 
 type Client struct {
 	httpClient ops.HTTPClient
@@ -165,7 +171,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	opts := ClientOptions{
 		httpClient: shared.DefaultClient,
 	}
-
 	for _, option := range options {
 		option(&opts)
 	}
@@ -192,7 +197,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient: opts.httpClient,
 		source:     source,
 	}
-
 	return client, nil
 }
 
@@ -234,6 +238,28 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		option(&o)
 	}
 
+	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
+	// ignore cached access tokens when given claims
+
+	// if o.claims == "" {
+	// 	if cacheManager == nil {
+	// 		return base.AuthResult{}, errors.New("cache instance is nil")
+	// 	}
+	// 	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+	// 	if err != nil {
+	// 		return base.AuthResult{}, err
+	// 	}
+	// 	ar, err := base.AuthResultFromStorage(storageTokenResponse)
+	// 	if err == nil {
+	// 		ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	// 		return ar, err
+	// 	}
+	// }
+
 	switch client.source {
 	case AzureArc:
 		req, err = createAzureArcAuthRequest(ctx, resource)
@@ -252,7 +278,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 					return base.AuthResult{}, err
 				}
 
-				return base.NewAuthResult(response, shared.Account{})
+				return authResultFromToken(fakeAuthParams, response)
 			}
 
 			return base.AuthResult{}, err
@@ -267,12 +293,12 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		if err != nil {
 			return base.AuthResult{}, err
 		}
+		return authResultFromToken(fakeAuthParams, tokenResponse)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
 	}
 
-	return base.NewAuthResult(tokenResponse, shared.Account{})
-
+	return authResultFromToken(fakeAuthParams, tokenResponse)
 }
 
 func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
@@ -313,6 +339,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	}
 
 	err = json.Unmarshal(responseBytes, &r)
+	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, req.URL.Query().Get(resourceQueryParameterName))
 	return r, err
 }
 
@@ -463,4 +490,20 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	}
 
 	return secret, nil
+}
+
+func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
+	if cacheManager == nil {
+		return base.AuthResult{}, fmt.Errorf("cache instance is nil")
+	}
+	account, err := cacheManager.Write(authParams, token)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	ar, err := base.NewAuthResult(token, account)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	return ar, err
 }

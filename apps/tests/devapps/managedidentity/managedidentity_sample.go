@@ -25,6 +25,7 @@ func acquireToken(identity mi.ID) {
 		return
 	}
 	fmt.Println("token expire at : ", result.ExpiresOn)
+
 }
 
 func setEnvironmentVariablesIfRequired() {
