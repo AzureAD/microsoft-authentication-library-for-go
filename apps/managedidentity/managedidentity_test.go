@@ -734,10 +734,15 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			createMockFile: true,
 		},
 		{
-			name:           "Unable to get file info",
-			statusCode:     http.StatusUnauthorized,
-			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + filepath.Join(testCaseFilePath, "2secret.key")},
-			expectedError:  "failed to get metadata for " + filepath.Join(testCaseFilePath, "2secret.key") + " due to error: CreateFile " + filepath.Join(testCaseFilePath, "2secret.key") + ": The system cannot find the file specified.",
+			name:       "Unable to get file info",
+			statusCode: http.StatusUnauthorized,
+			headers:    map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + filepath.Join(testCaseFilePath, "2secret.key")},
+			expectedError: func() string {
+				if runtime.GOOS == "windows" {
+					return "failed to get metadata for " + filepath.Join(testCaseFilePath, "2secret.key") + " due to error: CreateFile " + filepath.Join(testCaseFilePath, "2secret.key") + ": The system cannot find the file specified."
+				}
+				return "failed to get metadata for " + filepath.Join(testCaseFilePath, "2secret.key") + " due to error: stat " + filepath.Join(testCaseFilePath, "2secret.key") + ": no such file or directory"
+			}(),
 			platform:       runtime.GOOS,
 			createMockFile: true,
 		},
