@@ -159,10 +159,7 @@ func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if localUrl == nil {
-				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
-			}
-			if !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
+			if localUrl == nil || !strings.HasPrefix(localUrl.String(), testCase.endpoint) {
 				t.Fatalf("url request is not on %s got %s", testCase.endpoint, localUrl)
 			}
 			if testCase.miType.value() != systemAssignedManagedIdentity {

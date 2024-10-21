@@ -19,17 +19,6 @@ func runIMDSSystemAssigned() {
 		log.Fatal(err)
 	}
 	fmt.Println("token expire at : ", result.ExpiresOn)
-	fmt.Println("token source : ", result.Metadata.TokenSource)
-	miSystemAssignedCache, err := mi.New(mi.SystemAssigned())
-	if err != nil {
-		log.Fatal(err)
-	}
-	cachedResult, err := miSystemAssignedCache.AcquireToken(context.TODO(), "https://management.azure.com")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("token expire at : ", cachedResult.ExpiresOn)
-	fmt.Println("token source : ", cachedResult.Metadata.TokenSource)
 
 }
 

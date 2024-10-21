@@ -177,6 +177,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	target := strings.Join(tokenResponse.GrantedScopes.Slice, scopeSeparator)
 	cachedAt := time.Now()
 	authnSchemeKeyID := authParameters.AuthnScheme.KeyID()
+
 	var account shared.Account
 
 	if len(tokenResponse.RefreshToken) > 0 {
@@ -200,6 +201,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			tokenResponse.TokenType,
 			authnSchemeKeyID,
 		)
+
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
 			if err := m.writeAccessToken(accessToken); err != nil {
@@ -237,6 +239,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 	}
 
 	AppMetaData := NewAppMetaData(tokenResponse.FamilyID, clientID, environment)
+
 	if err := m.writeAppMetaData(AppMetaData); err != nil {
 		return shared.Account{}, err
 	}
@@ -263,11 +266,11 @@ func (m *Manager) aadMetadataFromCache(ctx context.Context, authorityInfo author
 }
 
 func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {
-	m.aadCacheMu.Lock()
-	defer m.aadCacheMu.Unlock()
 	if m.requests == nil {
 		return authority.InstanceDiscoveryMetadata{}, fmt.Errorf("httpclient in oauth instance for fetching metadata is nil")
 	}
+	m.aadCacheMu.Lock()
+	defer m.aadCacheMu.Unlock()
 	discoveryResponse, err := m.requests.AADInstanceDiscovery(ctx, authorityInfo)
 	if err != nil {
 		return authority.InstanceDiscoveryMetadata{}, err

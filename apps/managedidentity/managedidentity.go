@@ -238,7 +238,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
 		if cacheManager == nil {
-			return base.AuthResult{}, fmt.Errorf("cache instance is nil")
+			return base.AuthResult{}, errors.New("cache instance is nil")
 		}
 		storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
 		if err != nil {
