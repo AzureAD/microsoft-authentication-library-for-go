@@ -13,6 +13,10 @@ import (
 	mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
 
+const (
+	thisShouldFail = "This should fail"
+)
+
 func acquireToken(identity mi.ID) {
 	tokenProvider, err := mi.New(identity)
 	if err != nil {
@@ -138,13 +142,13 @@ func main() {
 		identity = mi.SystemAssigned()
 	case "6":
 		promptForLocalTest()
-		identity = mi.UserAssignedClientID("This should fail")
+		identity = mi.UserAssignedClientID(thisShouldFail)
 	case "7":
 		promptForLocalTest()
-		identity = mi.UserAssignedObjectID("This should fail")
+		identity = mi.UserAssignedObjectID(thisShouldFail)
 	case "8":
 		promptForLocalTest()
-		identity = mi.UserAssignedResourceID("This should fail")
+		identity = mi.UserAssignedResourceID(thisShouldFail)
 	case "9":
 		getSecretFromAzureVault()
 	default:
