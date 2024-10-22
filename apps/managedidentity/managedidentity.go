@@ -467,6 +467,7 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]byte, error) {
 	// split the header to get the secret file path
 	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
+	println("headerParts: ", parts)
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
 	}
@@ -475,6 +476,9 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 
 	// check that the file in the file path is a .key file
 	fileName := filepath.Base(secretFilePath[1])
+	println("fileName: ", fileName)
+	println("headerParts[0]: ", secretFilePath[0])
+	println("headerParts[1]: ", secretFilePath[1])
 
 	if !strings.HasSuffix(fileName, azureArcFileExtension) {
 		return nil, fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
