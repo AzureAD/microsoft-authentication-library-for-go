@@ -86,6 +86,11 @@ func createMockFile(t *testing.T, path string, size int64) {
 			t.Fatalf("failed to truncate file: %v", err)
 		}
 	}
+
+	// Write the content to the file
+	if _, err := f.WriteString("secret file data"); err != nil {
+		t.Fatalf("failed to write to file: %v", err)
+	}
 }
 
 func getMockFilePath(t *testing.T) (string, error) {
@@ -339,16 +344,15 @@ func TestAzureArcAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 
 	testCases := []struct {
-		source            Source
-		endpoint          string
-		resource          string
-		miType            ID
-		apiVersion        string
-		failFirstResponse bool
+		source     Source
+		endpoint   string
+		resource   string
+		miType     ID
+		apiVersion string
 	}{
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, failFirstResponse: false},
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, failFirstResponse: false},
-		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, failFirstResponse: true},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
+		{source: AzureArc, endpoint: azureArcEndpoint, resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion},
 	}
 
 	for _, testCase := range testCases {
@@ -364,27 +368,25 @@ func TestAzureArcAcquireTokenReturnsTokenSuccess(t *testing.T) {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 
-			if testCase.failFirstResponse {
-				mockFilePath := filepath.Join(testCaseFilePath, secretKey)
-				setCustomAzureArcPlatformPath(t, testCaseFilePath)
-				createMockFile(t, mockFilePath, 0)
+			mockFilePath := filepath.Join(testCaseFilePath, secretKey)
+			setCustomAzureArcPlatformPath(t, testCaseFilePath)
+			createMockFile(t, mockFilePath, 0)
 
-				defer os.Remove(mockFilePath)
+			defer os.Remove(mockFilePath)
 
-				headers := http.Header{}
-				headers.Add(wwwAuthenticateHeaderName, basicRealm+filepath.Join(testCaseFilePath, secretKey))
+			headers := http.Header{}
+			headers.Add(wwwAuthenticateHeaderName, basicRealm+filepath.Join(testCaseFilePath, secretKey))
 
-				mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized),
-					mock.WithHTTPHeader(headers),
-					mock.WithCallback(func(r *http.Request) { localUrl = r.URL }))
-			}
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized),
+				mock.WithHTTPHeader(headers),
+				mock.WithCallback(func(r *http.Request) { localUrl = r.URL }))
 
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
 			}))
 
@@ -830,7 +832,7 @@ func TestHandleAzureArcResponse(t *testing.T) {
 				tc.context = nil
 			}
 
-			_, err := client.handleAzureArcResponse(tc.context, response, "", tc.platform)
+			_, err := client.getAzureArcSecretKey(tc.context, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
 				t.Fatalf("expected error: \"%v\"\ngot error: \"%v\"", tc.expectedError, err)
