@@ -814,7 +814,7 @@ func TestHandleAzureArcResponse(t *testing.T) {
 			_, err := client.handleAzureArcResponse(tc.context, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
-				t.Fatalf("expected error: \"%v\"\ngot error: \"%v\"", tc.expectedError, err)
+				t.Fatalf("\nexpected error: \"%v\"\ngot error: \"%v\"", tc.expectedError, err)
 			}
 		})
 	}
