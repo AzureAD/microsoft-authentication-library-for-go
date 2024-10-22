@@ -315,6 +315,10 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 	return authResultFromToken(client.authParams, tokenResponse)
 }
 
+// func handleAzureArcExpectedError(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams, err error) (base.AuthResult, error) {
+
+// }
+
 func createFakeAuthParams(client Client) (authority.AuthParams, error) {
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
@@ -568,7 +572,7 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	// split the header to get the secret file path
 	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
 	if len(parts) < 2 {
-		return nil, fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
+		return "", fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
 	}
 
 	secretFilePath := parts
@@ -577,7 +581,7 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	fileName := filepath.Base(secretFilePath[1])
 
 	if !strings.HasSuffix(fileName, azureArcFileExtension) {
-		return nil, fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
+		return "", fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
 	}
 
 	// check that file path from header matches the expected file path for the platform
@@ -594,7 +598,7 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 
 	// Throw an error if the secret file's size is greater than 4096 bytes
 	if s := fileInfo.Size(); s > azureArcMaxFileSizeBytes {
-		return nil, fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, secretFileSize)
+		return "", fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, secretFileSize)
 	}
 
 	// Attempt to read the contents of the secret file
@@ -603,5 +607,5 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 		return nil, fmt.Errorf("failed to read %q due to error: %s", secretFilePath, err)
 	}
 
-	return secret, nil
+	return string(secret), nil
 }
