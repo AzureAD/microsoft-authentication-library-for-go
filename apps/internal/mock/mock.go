@@ -53,6 +53,13 @@ func WithHTTPStatusCode(statusCode int) responseOption {
 	})
 }
 
+// WithHeader sets the HTTP statusCode of response to the specified value.
+func WithHTTPHeader(header http.Header) responseOption {
+	return respOpt(func(r *response) {
+		r.headers = header
+	})
+}
+
 // Client is a mock HTTP client that returns a sequence of responses. Use AppendResponse to specify the sequence.
 type Client struct {
 	resp []response
