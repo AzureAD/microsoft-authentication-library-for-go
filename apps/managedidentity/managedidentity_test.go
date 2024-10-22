@@ -203,6 +203,7 @@ func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 			} else {
 				mockFilePath = filepath.Join("/tmp", "himds")
 			}
+			setCustomAzureArcFilePath(t, mockFilePath)
 
 			// Create the mock himds file
 			createMockFile(t, mockFilePath, 1024)
