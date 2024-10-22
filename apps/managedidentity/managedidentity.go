@@ -444,7 +444,7 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 			return accesstokens.TokenResponse{}, fmt.Errorf("platform not supported, expected linux or windows, got %s", platform)
 		}
 
-		secret, err := handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath)
+		secret, err := handleSecretFile(wwwAuthenticateHeader, filepath.Dir(expectedSecretFilePath))
 		if err != nil {
 			return accesstokens.TokenResponse{}, err
 		}
