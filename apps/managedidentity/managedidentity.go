@@ -229,78 +229,111 @@ func GetSource(id ID) (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
-	var (
-		err           error
-		req           *http.Request
-		tokenResponse accesstokens.TokenResponse
-	)
 	o := AcquireTokenOptions{}
-
 	for _, option := range options {
 		option(&o)
 	}
 
-	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
+	fakeAuthParams, err := createFakeAuthParams(client)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
-	// ignore cached access tokens when given claims
 
+	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		if cacheManager == nil {
-			return base.AuthResult{}, errors.New("cache instance is nil")
-		}
-		storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-		ar, err := base.AuthResultFromStorage(storageTokenResponse)
-		if err == nil {
-			ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			return ar, err
-		}
+		return handleCachedToken(ctx, fakeAuthParams)
 	}
+
+	// if o.claims == "" {
+	// 	if cacheManager == nil {
+	// 		return base.AuthResult{}, errors.New("cache instance is nil")
+	// 	}
+	// 	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+	// 	if err != nil {
+	// 		return base.AuthResult{}, err
+	// 	}
+	// 	ar, err := base.AuthResultFromStorage(storageTokenResponse)
+	// 	if err == nil {
+	// 		ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	// 		return ar, err
+	// 	}
+	// }
 
 	switch client.source {
 	case AzureArc:
-		req, err = createAzureArcAuthRequest(ctx, resource)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-
-		// need to perform preliminary request to retrieve the secret key challenge provided by the HIMDS service
-		// this is done when we get a 401 response, which will be handled by the response handler
-		tokenResponse, err = client.getTokenForRequest(req)
-		if err != nil {
-			var newCallErr errors.CallErr
-			if errors.As(err, &newCallErr) {
-				response, err := client.handleAzureArcResponse(ctx, newCallErr.Resp, resource, runtime.GOOS)
-				if err != nil {
-					return base.AuthResult{}, err
-				}
-
-				return authResultFromToken(fakeAuthParams, response)
-			}
-
-			return base.AuthResult{}, err
-		}
-
-		return authResultFromToken(fakeAuthParams, tokenResponse)
+		return acquireAzureArc(ctx, client, resource, fakeAuthParams)
 	case DefaultToIMDS:
-		req, err = createIMDSAuthRequest(ctx, client.miType, resource)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-
-		tokenResponse, err = client.getTokenForRequest(req)
-		if err != nil {
-			return base.AuthResult{}, err
-		}
-		return authResultFromToken(fakeAuthParams, tokenResponse)
+		return acquireIMDS(ctx, client, resource, fakeAuthParams)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
 	}
+}
+
+func acquireIMDS(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams) (base.AuthResult, error) {
+	req, err := createIMDSAuthRequest(ctx, client.miType, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+
+	tokenResponse, err := client.getTokenForRequest(req)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(fakeAuthParams, tokenResponse)
+}
+
+func acquireAzureArc(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams) (base.AuthResult, error) {
+	req, err := createAzureArcAuthRequest(ctx, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+
+	tokenResponse, err := client.getTokenForRequest(req)
+	if err != nil {
+		return handleAzureArcExpectedError(ctx, client, resource, fakeAuthParams, err)
+	}
+
+	return authResultFromToken(fakeAuthParams, tokenResponse)
+}
+
+func handleAzureArcExpectedError(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams, err error) (base.AuthResult, error) {
+	var newCallErr errors.CallErr
+
+	if errors.As(err, &newCallErr) {
+		response, err := client.handleAzureArcResponse(ctx, newCallErr.Resp, resource, runtime.GOOS)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+
+		return authResultFromToken(fakeAuthParams, response)
+	}
+
+	return base.AuthResult{}, err
+}
+
+func createFakeAuthParams(client Client) (authority.AuthParams, error) {
+	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
+	if err != nil {
+		return authority.AuthParams{}, err
+	}
+
+	return authority.NewAuthParams(client.miType.value(), fakeAuthInfo), nil
+}
+
+func handleCachedToken(ctx context.Context, fakeAuthParams authority.AuthParams) (base.AuthResult, error) {
+	if cacheManager == nil {
+		return base.AuthResult{}, errors.New("cache instance is nil")
+	}
+	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	ar, err := base.AuthResultFromStorage(storageTokenResponse)
+	if err == nil {
+		ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+		return ar, err
+	}
+	return base.AuthResult{}, err
 }
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
