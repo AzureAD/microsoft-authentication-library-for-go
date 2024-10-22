@@ -738,7 +738,7 @@ func TestHandleAzureArcResponse(t *testing.T) {
 			name:           "Invalid file path",
 			statusCode:     http.StatusUnauthorized,
 			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.key"},
-			expectedError:  "invalid file path, expected " + filepath.Dir(testCaseFilePath) + "got /path/to/secret.key",
+			expectedError:  "invalid file path, expected " + filepath.Dir(testCaseFilePath) + " got /path/to/secret.key",
 			platform:       runtime.GOOS,
 			createMockFile: true,
 		},
@@ -814,7 +814,7 @@ func TestHandleAzureArcResponse(t *testing.T) {
 			_, err := client.handleAzureArcResponse(tc.context, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
-				t.Fatalf("expected error %v, got %v", tc.expectedError, err)
+				t.Fatalf("expected error: \"%v\"\ngot error: \"%v\"", tc.expectedError, err)
 			}
 		})
 	}
