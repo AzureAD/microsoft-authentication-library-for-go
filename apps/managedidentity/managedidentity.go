@@ -429,7 +429,6 @@ func createAzureArcAuthRequest(ctx context.Context, resource string) (*http.Requ
 
 func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
-		println("Found identity and imds endpoint")
 		return true
 	}
 
@@ -437,7 +436,6 @@ func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform strin
 
 	if himdsFilePath != "" {
 		if _, err := os.Stat(himdsFilePath); err == nil {
-			println("Found himds file")
 			return true
 		}
 	}
