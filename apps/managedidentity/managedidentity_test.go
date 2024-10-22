@@ -25,6 +25,14 @@ const (
 	resource              = "https://management.azure.com"
 	resourceDefaultSuffix = "https://management.azure.com/.default"
 	token                 = "fake-access-token"
+	fakeAzureArcFilePath  = "fake/fake"
+	secretKey             = "secret.key"
+	wrongSecretKey        = "2secret.key"
+	basicRealm            = "Basic realm="
+	thisShouldFail        = "This should fail"
+
+	errorExpectedButGot      = "expected %v, got %v"
+	errorFormingJsonResponse = "error while forming json response : %s"
 )
 
 type SuccessfulResponse struct {
@@ -129,7 +137,7 @@ func setCustomAzureArcFilePath(t *testing.T, path string) {
 	t.Cleanup(func() { getAzureArcFilePath = originalFunc })
 }
 
-func Test_Get_Source(t *testing.T) {
+func TestGetSource(t *testing.T) {
 	// todo update as required
 	testCases := []struct {
 		name           string
@@ -155,7 +163,7 @@ func Test_Get_Source(t *testing.T) {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
-			setCustomAzureArcFilePath(t, "fake/fake")
+			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 			actualSource, err := GetSource(testCase.miType)
 			if err != nil {
@@ -163,13 +171,13 @@ func Test_Get_Source(t *testing.T) {
 			}
 
 			if actualSource != testCase.expectedSource {
-				t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
+				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
 			}
 		})
 	}
 }
 
-func Test_AzureArc_Returns_When_Himds_Found(t *testing.T) {
+func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("Skipping test on macOS as HIMDS is not supported")
 	}
@@ -194,13 +202,13 @@ func Test_AzureArc_Returns_When_Himds_Found(t *testing.T) {
 			}
 
 			if actualSource != testCase.expectedSource {
-				t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
+				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
 			}
 		})
 	}
 }
 
-func Test_IMDS_AcquireToken_Returns_Token_Success(t *testing.T) {
+func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	testCases := []struct {
 		source     Source
 		endpoint   string
@@ -218,13 +226,13 @@ func Test_IMDS_AcquireToken_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
-			setCustomAzureArcFilePath(t, "fake/fake")
+			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 			var localUrl *url.URL
 			mockClient := mock.Client{}
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
-				t.Fatalf("error while forming json response : %s", err.Error())
+				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
@@ -305,7 +313,7 @@ func Test_IMDS_AcquireToken_Returns_Token_Success(t *testing.T) {
 	}
 }
 
-func Test_AzureArc_AcquireToken_Returns_Token_Success(t *testing.T) {
+func TestAzureArcAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	testCaseFilePath, err := getMockFilePath(t)
 	if err != nil {
 		t.Fatalf("failed to get mock file path: %v", err)
@@ -328,24 +336,24 @@ func Test_AzureArc_AcquireToken_Returns_Token_Success(t *testing.T) {
 		t.Run(string(testCase.source)+"-"+testCase.miType.value(), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
-			setCustomAzureArcFilePath(t, "fake/fake")
+			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 			var localUrl *url.URL
 			mockClient := mock.Client{}
 
 			if err != nil {
-				t.Fatalf("error while forming json response : %s", err.Error())
+				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 
 			if testCase.failFirstResponse {
-				mockFilePath := filepath.Join(testCaseFilePath, "secret.key")
+				mockFilePath := filepath.Join(testCaseFilePath, secretKey)
 				setCustomAzureArcPlatformPath(t, testCaseFilePath)
 				createMockFile(t, mockFilePath, 0)
 
 				defer os.Remove(mockFilePath)
 
 				headers := http.Header{}
-				headers.Add(wwwAuthenticateHeaderName, "Basic realm="+filepath.Join(testCaseFilePath, "secret.key"))
+				headers.Add(wwwAuthenticateHeaderName, basicRealm+filepath.Join(testCaseFilePath, secretKey))
 
 				mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized),
 					mock.WithHTTPHeader(headers),
@@ -354,7 +362,7 @@ func Test_AzureArc_AcquireToken_Returns_Token_Success(t *testing.T) {
 
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
-				t.Fatalf("error while forming json response : %s", err.Error())
+				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
@@ -435,7 +443,7 @@ func Test_AzureArc_AcquireToken_Returns_Token_Success(t *testing.T) {
 	}
 }
 
-func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
+func TestSystemAssignedReturnsAcquireTokenFailure(t *testing.T) {
 	testCases := []struct {
 		code          int
 		err           string
@@ -464,12 +472,12 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(http.StatusText(testCase.code), func(t *testing.T) {
 			unsetEnvVars(t)
-			setCustomAzureArcFilePath(t, "fake/fake")
+			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 			fakeErrorClient := mock.Client{}
 			responseBody, err := makeResponseWithErrorData(testCase.err, testCase.desc)
 			if err != nil {
-				t.Fatalf("error while forming json response : %s", err.Error())
+				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 			fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(testCase.code),
 				mock.WithBody(responseBody))
@@ -541,7 +549,7 @@ func TestCreatingIMDSClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			unsetEnvVars(t)
-			setCustomAzureArcFilePath(t, "fake/fake")
+			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 			client, err := New(tt.id)
 			if tt.wantErr {
@@ -560,7 +568,7 @@ func TestCreatingIMDSClient(t *testing.T) {
 	}
 }
 
-func Test_AzureArc_User_Assigned_Failure(t *testing.T) {
+func TestAzureArcUserAssignedFailure(t *testing.T) {
 	tests := []struct {
 		name    string
 		id      ID
@@ -608,7 +616,7 @@ func Test_AzureArc_User_Assigned_Failure(t *testing.T) {
 	}
 }
 
-func Test_validateAzureArcEnvironment(t *testing.T) {
+func TestValidateAzureArcEnvironment(t *testing.T) {
 	testCases := []struct {
 		name             string
 		identityEndpoint string
@@ -662,17 +670,17 @@ func Test_validateAzureArcEnvironment(t *testing.T) {
 
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			setCustomAzureArcFilePath(t, "fake/fake")
+			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 			result := isAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
 			if result != tc.expectedResult {
-				t.Fatalf("expected %v, got %v", tc.expectedResult, result)
+				t.Fatalf(errorExpectedButGot, tc.expectedResult, result)
 			}
 		})
 	}
 }
 
-func Test_handleAzureArcResponse(t *testing.T) {
+func TestHandleAzureArcResponse(t *testing.T) {
 	testCaseFilePath, err := getMockFilePath(t)
 	if err != nil {
 		t.Fatalf("failed to get mock file path: %v", err)
@@ -737,12 +745,12 @@ func Test_handleAzureArcResponse(t *testing.T) {
 		{
 			name:       "Unable to get file info",
 			statusCode: http.StatusUnauthorized,
-			headers:    map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + filepath.Join(testCaseFilePath, "2secret.key")},
+			headers:    map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, wrongSecretKey)},
 			expectedError: func() string {
 				if runtime.GOOS == "windows" {
-					return "failed to get metadata for " + filepath.Join(testCaseFilePath, "2secret.key") + " due to error: CreateFile " + filepath.Join(testCaseFilePath, "2secret.key") + ": The system cannot find the file specified."
+					return "failed to get metadata for " + filepath.Join(testCaseFilePath, wrongSecretKey) + " due to error: CreateFile " + filepath.Join(testCaseFilePath, wrongSecretKey) + ": The system cannot find the file specified."
 				}
-				return "failed to get metadata for " + filepath.Join(testCaseFilePath, "2secret.key") + " due to error: stat " + filepath.Join(testCaseFilePath, "2secret.key") + ": no such file or directory"
+				return "failed to get metadata for " + filepath.Join(testCaseFilePath, wrongSecretKey) + " due to error: stat " + filepath.Join(testCaseFilePath, wrongSecretKey) + ": no such file or directory"
 			}(),
 			platform:       runtime.GOOS,
 			createMockFile: true,
@@ -750,7 +758,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 		{
 			name:           "Invalid secret file size",
 			statusCode:     http.StatusUnauthorized,
-			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + filepath.Join(testCaseFilePath, "secret.key")},
+			headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
 			expectedError:  "invalid secret file size, expected 4096, file size was 5000",
 			platform:       runtime.GOOS,
 			createMockFile: true,
@@ -758,7 +766,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 		{
 			name:           "token request fail",
 			statusCode:     http.StatusUnauthorized,
-			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + filepath.Join(testCaseFilePath, "secret.key")},
+			headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
 			expectedError:  "error creating http request net/http: nil Context",
 			platform:       runtime.GOOS,
 			createMockFile: true,
@@ -785,7 +793,7 @@ func Test_handleAzureArcResponse(t *testing.T) {
 			}
 
 			if tc.createMockFile {
-				mockFilePath := filepath.Join(testCaseFilePath, "secret.key")
+				mockFilePath := filepath.Join(testCaseFilePath, secretKey)
 				setCustomAzureArcPlatformPath(t, testCaseFilePath)
 
 				if tc.name == "Invalid secret file size" {
