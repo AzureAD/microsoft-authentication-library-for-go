@@ -50,13 +50,15 @@ const (
 	miQueryParameterResourceId = "msi_res_id"
 
 	// IMDS
-	// nosonar: Hardcoded URL used intentionally
+	// SonarQube: Suppress warning for hardcoded IP address
+	// sonar-ignore: S1313
 	imdsDefaultEndpoint           = "http://169.254.169.254/metadata/identity/oauth2/token"
 	imdsAPIVersion                = "2018-02-01"
 	systemAssignedManagedIdentity = "system_assigned_managed_identity"
 
 	// Azure Arc
-	// nosonar: Hardcoded URL used intentionally
+	// SonarQube: Suppress warning for hardcoded IP address
+	// sonar-ignore: S1313
 	azureArcEndpoint               = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
 	azureArcAPIVersion             = "2020-06-01"
 	azureArcFileExtension          = ".key"
