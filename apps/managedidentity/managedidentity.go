@@ -296,7 +296,7 @@ func acquireAzureArc(ctx context.Context, client Client, resource string, fakeAu
 		return base.AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
 	}
 
-	secret, err := client.getAzureArcSecretKey(ctx, response, resource, runtime.GOOS)
+	secret, err := client.getAzureArcSecretKey(response, resource, runtime.GOOS)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -330,37 +330,7 @@ func acquireAzureArc(ctx context.Context, client Client, resource string, fakeAu
 	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, secondRequest.URL.Query().Get(resourceQueryParameterName))
 
 	return authResultFromToken(client.authParams, r)
-	// tokenResponse, err := client.getTokenForRequest(req)
-	// if err == nil {
-	// 	return base.AuthResult{}, fmt.Errorf("expected a 401 error response")
-	// }
-
-	// the endpoint is expected to return a 401 with the WWW-Authenticate header set to the location
-	// of the secret key file. Any other status code indicates an error in the request.
-	// var newCallErr errors.CallErr
-	// if errors.As(err, &newCallErr) {
-	// 	if newCallErr.Resp.StatusCode != http.StatusUnauthorized {
-	// 		return base.AuthResult{}, fmt.Errorf("expected a 401 response, received %d", newCallErr.Resp.StatusCode)
-	// 	}
-	// }
-
-	// if errors.As(err, &newCallErr) {
-	// 	response, err := client.handleAzureArcResponse(ctx, newCallErr.Resp, resource, runtime.GOOS)
-	// 	if err != nil {
-	// 		return base.AuthResult{}, err
-	// 	}
-
-	// 	return authResultFromToken(fakeAuthParams, response)
-	// }
-
-	// return base.AuthResult{}, err
-
-	// return authResultFromToken(fakeAuthParams, tokenResponse)
 }
-
-// func handleAzureArcExpectedError(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams, err error) (base.AuthResult, error) {
-
-// }
 
 func createFakeAuthParams(client Client) (authority.AuthParams, error) {
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
@@ -502,7 +472,7 @@ func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform strin
 	return false
 }
 
-func (c *Client) getAzureArcSecretKey(ctx context.Context, response *http.Response, resource string, platform string) (string, error) {
+func (c *Client) getAzureArcSecretKey(response *http.Response, resource string, platform string) (string, error) {
 	wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 
 	if len(wwwAuthenticateHeader) == 0 {
