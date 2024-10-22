@@ -416,6 +416,7 @@ func createAzureArcAuthRequest(ctx context.Context, resource string) (*http.Requ
 
 func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
+		println("Found identity and imds endpoint")
 		return true
 	}
 
@@ -423,6 +424,7 @@ func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform strin
 
 	if himdsFilePath != "" {
 		if _, err := os.Stat(himdsFilePath); err == nil {
+			println("Found himds file")
 			return true
 		}
 	}
@@ -477,9 +479,7 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	fileName := filepath.Base(secretFilePath[1])
 	println("fileName: ", fileName)
 	println("ExpectedSecretFilePath: ", expectedSecretFilePath)
-	println("headerParts[0]: ", secretFilePath[0])
 	println("headerParts[1]: ", secretFilePath[1])
-	println("Dir headerParts[0]: ", filepath.Dir(secretFilePath[0]))
 	println("Dir headerParts[1]: ", filepath.Dir(secretFilePath[1]))
 
 	if !strings.HasSuffix(fileName, azureArcFileExtension) {
