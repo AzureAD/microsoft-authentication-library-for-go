@@ -268,7 +268,6 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 // Options: [WithClaims]
 func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
 	o := AcquireTokenOptions{}
-
 	for _, option := range options {
 		option(&o)
 	}
@@ -301,10 +300,10 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return client.authResultFromToken(fakeAuthParams, tokenResponse)
+	return authResultFromToken(fakeAuthParams, tokenResponse)
 }
 
-func (c Client) authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
+func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
 	if cacheManager == nil {
 		return base.AuthResult{}, fmt.Errorf("cache instance is nil")
 	}
