@@ -241,23 +241,19 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		return handleCachedToken(ctx, fakeAuthParams)
+		if cacheManager == nil {
+			return base.AuthResult{}, errors.New("cache instance is nil")
+		}
+		storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+		if err != nil {
+			return base.AuthResult{}, err
+		}
+		ar, err := base.AuthResultFromStorage(storageTokenResponse)
+		if err == nil {
+			ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			return ar, err
+		}
 	}
-
-	// if o.claims == "" {
-	// 	if cacheManager == nil {
-	// 		return base.AuthResult{}, errors.New("cache instance is nil")
-	// 	}
-	// 	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
-	// 	if err != nil {
-	// 		return base.AuthResult{}, err
-	// 	}
-	// 	ar, err := base.AuthResultFromStorage(storageTokenResponse)
-	// 	if err == nil {
-	// 		ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-	// 		return ar, err
-	// 	}
-	// }
 
 	switch client.source {
 	case AzureArc:
@@ -318,22 +314,6 @@ func createFakeAuthParams(client Client) (authority.AuthParams, error) {
 	}
 
 	return authority.NewAuthParams(client.miType.value(), fakeAuthInfo), nil
-}
-
-func handleCachedToken(ctx context.Context, fakeAuthParams authority.AuthParams) (base.AuthResult, error) {
-	if cacheManager == nil {
-		return base.AuthResult{}, errors.New("cache instance is nil")
-	}
-	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	ar, err := base.AuthResultFromStorage(storageTokenResponse)
-	if err == nil {
-		ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-		return ar, err
-	}
-	return base.AuthResult{}, err
 }
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {

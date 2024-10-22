@@ -249,7 +249,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			result, err := client.AcquireToken(context.Background(), testCase.resource, WithClaims("claim"))
+			result, err := client.AcquireToken(context.Background(), testCase.resource)
 
 			if err != nil {
 				t.Fatal(err)
@@ -379,7 +379,7 @@ func TestAzureArcAcquireTokenReturnsTokenSuccess(t *testing.T) {
 				t.Fatal(err)
 			}
 
-			result, err := client.AcquireToken(context.Background(), testCase.resource, WithClaims("claim"))
+			result, err := client.AcquireToken(context.Background(), testCase.resource)
 
 			if err != nil {
 				t.Fatal(err)
@@ -485,7 +485,7 @@ func TestSystemAssignedReturnsAcquireTokenFailure(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			resp, err := client.AcquireToken(context.Background(), resource, WithClaims("claim"))
+			resp, err := client.AcquireToken(context.Background(), resource)
 			if err == nil {
 				t.Fatalf("should have encountered the error")
 			}
