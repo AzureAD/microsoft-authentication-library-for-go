@@ -738,7 +738,7 @@ func TestHandleAzureArcResponse(t *testing.T) {
 			name:           "Invalid file path",
 			statusCode:     http.StatusUnauthorized,
 			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.key"},
-			expectedError:  "invalid file path, expected /path/to/secret.key, got " + filepath.Join(filepath.Dir(testCaseFilePath), "AzureConnectedMachineAgent"),
+			expectedError:  "invalid file path, expected /path/to/secret.key, got " + filepath.Dir(testCaseFilePath),
 			platform:       runtime.GOOS,
 			createMockFile: true,
 		},
