@@ -55,6 +55,7 @@ const (
 	systemAssignedManagedIdentity = "system_assigned_managed_identity"
 
 	// Azure Arc
+	// nosonar: Hardcoded URL used intentionally
 	azureArcEndpoint               = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
 	azureArcAPIVersion             = "2020-06-01"
 	azureArcFileExtension          = ".key"
