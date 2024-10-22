@@ -196,6 +196,19 @@ func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			unsetEnvVars(t)
 
+			// Get system dependent mock file path
+			mockFilePath := getAzureArcFilePath(runtime.GOOS)
+
+			// Create the mock himds file
+			createMockFile(t, mockFilePath, 1024)
+
+			// Ensure file is deleted after test
+			defer func() {
+				if err := os.Remove(mockFilePath); err != nil {
+					t.Fatalf("failed to delete mock file: %v", err)
+				}
+			}()
+
 			actualSource, err := GetSource(testCase.miType)
 			if err != nil {
 				t.Fatalf("error while getting source: %s", err.Error())
