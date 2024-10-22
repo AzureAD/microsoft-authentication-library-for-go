@@ -51,7 +51,7 @@ const (
 
 	// IMDS
 	// SonarQube: Suppress warning for hardcoded IP address
-	// sonar-ignore: S1313
+	// NOSONAR
 	imdsDefaultEndpoint           = "http://169.254.169.254/metadata/identity/oauth2/token"
 	imdsAPIVersion                = "2018-02-01"
 	systemAssignedManagedIdentity = "system_assigned_managed_identity"
