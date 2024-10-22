@@ -501,7 +501,7 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 
 	// check that file path from header matches the expected file path for the platform
 	if expectedSecretFilePath != filepath.Dir(secretFilePath[1]) {
-		println("ACTUAL ERROR: ", fmt.Errorf("invalid file path, expected %s, got %s", expectedSecretFilePath, filepath.Dir(secretFilePath[1])))
+		println("ACTUAL ERROR: ", fmt.Sprintf("invalid file path, expected %s, got %s", expectedSecretFilePath, filepath.Dir(secretFilePath[1])))
 		return nil, fmt.Errorf("invalid file path, expected %s, got %s", expectedSecretFilePath, filepath.Dir(secretFilePath[1]))
 	}
 
