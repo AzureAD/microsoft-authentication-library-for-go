@@ -487,9 +487,9 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 		return nil, fmt.Errorf("invalid file path, expected %s, got %s", expectedSecretFilePath, filepath.Dir(secretFilePath[1]))
 	}
 
-	fileInfo, err := os.Stat(filepath.Join(secretFilePath[1], fileName))
+	fileInfo, err := os.Stat(secretFilePath[1])
 	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata for %s due to error: %s", filepath.Join(secretFilePath[1], fileName), err)
+		return nil, fmt.Errorf("failed to get metadata for %s due to error: %s", secretFilePath[1], err)
 	}
 
 	secretFileSize := fileInfo.Size()
