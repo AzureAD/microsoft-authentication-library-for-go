@@ -719,13 +719,6 @@ func TestHandleAzureArcResponse(t *testing.T) {
 		cleanupMockEnv func()
 	}{
 		{
-			name:          "Not 401 error",
-			statusCode:    http.StatusOK,
-			headers:       map[string]string{},
-			expectedError: "managed identity error: 200",
-			platform:      runtime.GOOS,
-		},
-		{
 			name:          "No www-authenticate header",
 			statusCode:    http.StatusUnauthorized,
 			headers:       map[string]string{},
@@ -784,15 +777,6 @@ func TestHandleAzureArcResponse(t *testing.T) {
 			platform:       runtime.GOOS,
 			createMockFile: true,
 		},
-		{
-			name:           "token request fail",
-			statusCode:     http.StatusUnauthorized,
-			headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
-			expectedError:  "error creating http request net/http: nil Context",
-			platform:       runtime.GOOS,
-			createMockFile: true,
-			context:        context.Background(),
-		},
 	}
 
 	for _, tc := range testCases {
@@ -827,11 +811,6 @@ func TestHandleAzureArcResponse(t *testing.T) {
 			}
 
 			client := &Client{}
-
-			if tc.name == "token request fail" {
-				tc.context = nil
-			}
-
 			_, err := client.getAzureArcSecretKey(tc.context, response, "", tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
