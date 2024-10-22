@@ -443,9 +443,8 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 		if expectedSecretFilePath == "" {
 			return accesstokens.TokenResponse{}, fmt.Errorf("platform not supported, expected linux or windows, got %s", platform)
 		}
-		println("expectedSecretFilePath Pre Dir: ", expectedSecretFilePath)
 
-		secret, err := handleSecretFile(wwwAuthenticateHeader, filepath.Dir(expectedSecretFilePath))
+		secret, err := handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath)
 		if err != nil {
 			return accesstokens.TokenResponse{}, err
 		}
@@ -477,16 +476,17 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	// check that the file in the file path is a .key file
 	fileName := filepath.Base(secretFilePath[1])
 	println("fileName: ", fileName)
+	println("ExpectedSecretFilePath: ", expectedSecretFilePath)
 	println("headerParts[0]: ", secretFilePath[0])
 	println("headerParts[1]: ", secretFilePath[1])
+	println("Dir headerParts[0]: ", filepath.Dir(secretFilePath[0]))
+	println("Dir headerParts[1]: ", filepath.Dir(secretFilePath[1]))
 
 	if !strings.HasSuffix(fileName, azureArcFileExtension) {
 		return nil, fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
 	}
 
 	// check that file path from header matches the expected file path for the platform
-	println("ExpectedSecretFilePath: ", expectedSecretFilePath)
-	println(filepath.Dir(secretFilePath[1]))
 	if expectedSecretFilePath != filepath.Dir(secretFilePath[1]) {
 		return nil, fmt.Errorf("invalid file path, expected %s, got %s", expectedSecretFilePath, filepath.Dir(secretFilePath[1]))
 	}
