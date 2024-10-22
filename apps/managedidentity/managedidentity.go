@@ -259,15 +259,15 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 	switch client.source {
 	case AzureArc:
-		return acquireAzureArc(ctx, client, resource, client.authParams)
+		return acquireAzureArc(ctx, client, resource)
 	case DefaultToIMDS:
-		return acquireIMDS(ctx, client, resource, client.authParams)
+		return acquireIMDS(ctx, client, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
 	}
 }
 
-func acquireIMDS(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams) (base.AuthResult, error) {
+func acquireIMDS(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, client.miType, resource)
 	if err != nil {
 		return base.AuthResult{}, err
@@ -277,10 +277,10 @@ func acquireIMDS(ctx context.Context, client Client, resource string, fakeAuthPa
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(fakeAuthParams, tokenResponse)
+	return authResultFromToken(client.authParams, tokenResponse)
 }
 
-func acquireAzureArc(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams) (base.AuthResult, error) {
+func acquireAzureArc(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
 	req, err := createAzureArcAuthRequest(ctx, resource, "")
 	if err != nil {
 		return base.AuthResult{}, err
@@ -311,10 +311,6 @@ func acquireAzureArc(ctx context.Context, client Client, resource string, fakeAu
 		return base.AuthResult{}, err
 	}
 	defer secondResponse.Body.Close()
-
-	if err != nil {
-		return base.AuthResult{}, err
-	}
 
 	responseBytes, err := io.ReadAll(secondResponse.Body)
 	if err != nil {
