@@ -53,7 +53,7 @@ func WithHTTPStatusCode(statusCode int) responseOption {
 	})
 }
 
-// WithHeader sets the HTTP statusCode of response to the specified value.
+// WithHTTPHeader sets the HTTP headers of the response to the specified value.
 func WithHTTPHeader(header http.Header) responseOption {
 	return respOpt(func(r *response) {
 		r.headers = header

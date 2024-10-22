@@ -61,8 +61,9 @@ const (
 	azureArcMaxFileSizeBytes int64 = 4096
 	linuxTokenPath                 = "/var/opt/azcmagent/tokens"
 	linuxHimdsPath                 = "/opt/azcmagent/bin/himds"
-	windowsTokenPath               = "\\AzureConnectedMachineAgent\\Tokens\\"
-	windowsHimdsPath               = "\\AzureConnectedMachineAgent\\himds.exe"
+	azureConnectedMachine          = "AzureConnectedMachine"
+	himdsExecutableName            = "himds.exe"
+	tokenName                      = "Tokens"
 
 	// Environment Variables
 	identityEndpointEnvVar              = "IDENTITY_ENDPOINT"
@@ -76,7 +77,7 @@ const (
 var getAzureArcPlatformPath = func(platform string) string {
 	switch platform {
 	case "windows":
-		return filepath.Join(os.Getenv("ProgramData"), windowsTokenPath)
+		return filepath.Join(os.Getenv("ProgramData"), azureConnectedMachine, tokenName)
 	case "linux":
 		return linuxTokenPath
 	default:
@@ -87,7 +88,7 @@ var getAzureArcPlatformPath = func(platform string) string {
 var getAzureArcFilePath = func(platform string) string {
 	switch platform {
 	case "windows":
-		return filepath.Join(os.Getenv("ProgramData"), windowsHimdsPath)
+		return filepath.Join(os.Getenv("ProgramData"), azureConnectedMachine, himdsExecutableName)
 	case "linux":
 		return linuxHimdsPath
 	default:
@@ -121,6 +122,7 @@ type Client struct {
 	httpClient ops.HTTPClient
 	miType     ID
 	source     Source
+	authParams authority.AuthParams
 }
 
 type ClientOptions struct {
@@ -199,10 +201,15 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		source:     source,
 	}
 
+	client.authParams, err = createFakeAuthParams(client)
+	if err != nil {
+		return Client{}, err
+	}
+
 	return client, nil
 }
 
-// Detects and returns the managed identity source available on the environment.
+// GetSource detects and returns the managed identity source available on the environment.
 func GetSource(id ID) (Source, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	identityHeader := os.Getenv(identityHeaderEnvVar)
@@ -234,32 +241,27 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		option(&o)
 	}
 
-	fakeAuthParams, err := createFakeAuthParams(client)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
 		if cacheManager == nil {
 			return base.AuthResult{}, errors.New("cache instance is nil")
 		}
-		storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+		storageTokenResponse, err := cacheManager.Read(ctx, client.authParams)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			ar.AccessToken, err = client.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
 	}
 
 	switch client.source {
 	case AzureArc:
-		return acquireAzureArc(ctx, client, resource, fakeAuthParams)
+		return acquireAzureArc(ctx, client, resource, client.authParams)
 	case DefaultToIMDS:
-		return acquireIMDS(ctx, client, resource, fakeAuthParams)
+		return acquireIMDS(ctx, client, resource, client.authParams)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
 	}
