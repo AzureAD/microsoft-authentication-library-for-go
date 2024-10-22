@@ -197,7 +197,12 @@ func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 			unsetEnvVars(t)
 
 			// Get system dependent mock file path
-			mockFilePath := getAzureArcFilePath(runtime.GOOS)
+			var mockFilePath string
+			if runtime.GOOS == "windows" {
+				mockFilePath = filepath.Join(os.TempDir(), "himds.exe")
+			} else {
+				mockFilePath = filepath.Join("/tmp", "himds")
+			}
 
 			// Create the mock himds file
 			createMockFile(t, mockFilePath, 1024)
