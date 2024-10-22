@@ -443,6 +443,7 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 		if expectedSecretFilePath == "" {
 			return accesstokens.TokenResponse{}, fmt.Errorf("platform not supported, expected linux or windows, got %s", platform)
 		}
+		println("expectedSecretFilePath Pre Dir: ", expectedSecretFilePath)
 
 		secret, err := handleSecretFile(wwwAuthenticateHeader, filepath.Dir(expectedSecretFilePath))
 		if err != nil {
@@ -467,7 +468,6 @@ func (c *Client) handleAzureArcResponse(ctx context.Context, response *http.Resp
 func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]byte, error) {
 	// split the header to get the secret file path
 	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
-	println("headerParts: ", parts)
 	if len(parts) < 2 {
 		return nil, fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
 	}
@@ -485,7 +485,7 @@ func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]b
 	}
 
 	// check that file path from header matches the expected file path for the platform
-	println(expectedSecretFilePath)
+	println("ExpectedSecretFilePath: ", expectedSecretFilePath)
 	println(filepath.Dir(secretFilePath[1]))
 	if expectedSecretFilePath != filepath.Dir(secretFilePath[1]) {
 		return nil, fmt.Errorf("invalid file path, expected %s, got %s", expectedSecretFilePath, filepath.Dir(secretFilePath[1]))
