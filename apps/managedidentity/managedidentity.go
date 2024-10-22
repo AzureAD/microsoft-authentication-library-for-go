@@ -257,6 +257,21 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		}
 	}
 
+	// if o.claims == "" {
+	// 	if cacheManager == nil {
+	// 		return base.AuthResult{}, errors.New("cache instance is nil")
+	// 	}
+	// 	storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+	// 	if err != nil {
+	// 		return base.AuthResult{}, err
+	// 	}
+	// 	ar, err := base.AuthResultFromStorage(storageTokenResponse)
+	// 	if err == nil {
+	// 		ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	// 		return ar, err
+	// 	}
+	// }
+
 	switch client.source {
 	case AzureArc:
 		return acquireTokenForAzureArc(ctx, client, resource)
