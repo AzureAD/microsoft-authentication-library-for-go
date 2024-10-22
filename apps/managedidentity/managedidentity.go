@@ -59,7 +59,7 @@ const (
 	azureArcAPIVersion             = "2020-06-01"
 	azureArcFileExtension          = ".key"
 	azureArcMaxFileSizeBytes int64 = 4096
-	linuxTokenPath                 = "/var/opt/azcmagent/tokens/"
+	linuxTokenPath                 = "/var/opt/azcmagent/tokens"
 	linuxHimdsPath                 = "/opt/azcmagent/bin/himds"
 	windowsTokenPath               = "\\AzureConnectedMachineAgent\\Tokens\\"
 	windowsHimdsPath               = "\\AzureConnectedMachineAgent\\himds.exe"
