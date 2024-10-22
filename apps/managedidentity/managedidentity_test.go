@@ -138,7 +138,7 @@ func setCustomAzureArcFilePath(path string) func() {
 	return func() { getAzureArcFilePath = originalFunc }
 }
 
-func Test_Get_Source(t *testing.T) {
+func TestGetSource(t *testing.T) {
 	// todo update as required
 	testCases := []struct {
 		name           string
@@ -176,13 +176,13 @@ func Test_Get_Source(t *testing.T) {
 			}
 
 			if actualSource != testCase.expectedSource {
-				t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
+				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
 			}
 		})
 	}
 }
 
-func Test_AzureArc_Returns_When_Himds_Found(t *testing.T) {
+func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 	if runtime.GOOS == "darwin" {
 		t.Skip("Skipping test on macOS as HIMDS is not supported")
 	}
@@ -207,13 +207,13 @@ func Test_AzureArc_Returns_When_Himds_Found(t *testing.T) {
 			}
 
 			if actualSource != testCase.expectedSource {
-				t.Errorf("expected %v, got %v", testCase.expectedSource, actualSource)
+				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
 			}
 		})
 	}
 }
 
-func Test_IMDS_AcquireToken_Returns_Token_Success(t *testing.T) {
+func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	testCases := []struct {
 		source     Source
 		endpoint   string
@@ -247,7 +247,7 @@ func Test_IMDS_AcquireToken_Returns_Token_Success(t *testing.T) {
 			mockClient := mock.Client{}
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
-				t.Fatalf("error while forming json response : %s", err.Error())
+				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
@@ -432,7 +432,7 @@ func Test_IMDS_AcquireToken_Returns_Token_Success(t *testing.T) {
 // 	}
 // }
 
-func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
+func TestSystemAssignedReturnsAcquireTokenFailure(t *testing.T) {
 	testCases := []struct {
 		code          int
 		err           string
