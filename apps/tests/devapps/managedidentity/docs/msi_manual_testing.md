@@ -2,6 +2,20 @@
 
 This file will talk you through the steps required to run the each of the Managed Identity Sources locally
 
+## Running Managed Identity Sample App
+
+Open **managedidentity_sample.go** to view the list of test apps
+
+In your terminal, ***cd*** to ***'microsoft-authentication-library-for-go/apps/tests/devapps/managedidentity'***
+
+Then run the command ***go run .***
+
+You will be prompted to enter the sample you would like to run, see **managedidentity_sample.go** for the corresponding sample number
+
+After selecting the sample, you may be asked further information such as 'Do you want to run a local test?', you can answer as you see fit
+
+The sample app will then run and give you an output
+
 ## Setup Virtual Environment and Run Tests for IMDS
 
 To test locally we will require a virtual machine, which we can set up in [Azure](https://portal.azure.com/?feature.tokencaching=true&feature.internalgraphapiversion=true#home)
