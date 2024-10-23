@@ -296,7 +296,7 @@ func acquireAzureArc(ctx context.Context, client Client, resource string) (base.
 		return base.AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
 	}
 
-	secret, err := client.getAzureArcSecretKey(response, resource, runtime.GOOS)
+	secret, err := client.getAzureArcSecretKey(response, runtime.GOOS)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -446,9 +446,10 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 	}
 	req.Header.Set(metaHTTPHeaderName, "true")
 
-	if condition := key != ""; condition {
+	if key != "" {
 		req.Header.Set("Authorization", fmt.Sprintf("Basic %s", key))
 	}
+
 	return req, nil
 }
 
@@ -468,7 +469,7 @@ func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform strin
 	return false
 }
 
-func (c *Client) getAzureArcSecretKey(response *http.Response, resource string, platform string) (string, error) {
+func (c *Client) getAzureArcSecretKey(response *http.Response, platform string) (string, error) {
 	wwwAuthenticateHeader := response.Header.Get(wwwAuthenticateHeaderName)
 
 	if len(wwwAuthenticateHeader) == 0 {

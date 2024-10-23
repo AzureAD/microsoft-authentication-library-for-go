@@ -811,7 +811,7 @@ func TestHandleAzureArcResponse(t *testing.T) {
 			}
 
 			client := &Client{}
-			_, err := client.getAzureArcSecretKey(response, "", tc.platform)
+			_, err := client.getAzureArcSecretKey(response, tc.platform)
 
 			if err == nil || err.Error() != tc.expectedError {
 				t.Fatalf("expected error: \"%v\"\ngot error: \"%v\"", tc.expectedError, err)
