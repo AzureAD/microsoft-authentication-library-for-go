@@ -16,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"slices"
 	"strings"
 	"time"
 
@@ -142,8 +141,7 @@ func WithRetryPolicyDisabled() ClientOption {
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
 	opts := ClientOptions{
-		httpClient:         shared.DefaultClient,
-		retryPolicyDiabled: false,
+		httpClient: shared.DefaultClient,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -209,24 +207,47 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	return req, nil
 }
 
-func retry(attempts int, delay time.Duration, c ops.HTTPClient, req *http.Request) (*http.Response, error) {
-	resp, err := c.Do(req)
-	if err == nil && !slices.Contains(retryStatusCodes, resp.StatusCode) {
-		return resp, nil // Success
+// Contains checks if the element is present in the list.
+func contains[T comparable](list []T, element T) bool {
+	for _, v := range list {
+		if v == element {
+			return true
+		}
 	}
-	if attempts-1 < 1 {
-		return resp, nil
+	return false
+}
+
+// retry performs an HTTP request with retries based on the provided options.
+func retry(maxRetries int, c ops.HTTPClient, req *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
+		defer tryCancel()
+		cloneReq := req.Clone(tryCtx)
+		resp, err = c.Do(cloneReq)
+		if err == nil && !contains(retryStatusCodes, resp.StatusCode) {
+			return resp, nil
+		}
+		if attempt == maxRetries-1 {
+			return resp, err
+		}
+		if resp != nil && resp.Body != nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+		delay := time.Duration(time.Second)
+		time.Sleep(delay)
 	}
-	time.Sleep(delay)
-	return retry(attempts-1, delay, c, req)
+	return resp, err
 }
 
 func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
-	retryCount := 1 // defaul Count
+	retryCount := 1
 	if !client.retryPolicyDisabled {
 		retryCount = defaultRetryCount
 	}
-	resp, err := retry(retryCount, time.Second, client.httpClient, req) //client.httpClient.Do(req)
+	resp, err := retry(retryCount, client.httpClient, req)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}

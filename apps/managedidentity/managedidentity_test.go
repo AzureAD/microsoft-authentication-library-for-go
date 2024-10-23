@@ -3,13 +3,14 @@
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
-	"sync"
 	"testing"
 	"time"
 
@@ -131,6 +132,84 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 	}
 }
 
+func TestRetryFunction(t *testing.T) {
+	tests := []struct {
+		name          string
+		mockResponses []struct {
+			body       string
+			statusCode int
+		}
+		expectedStatus int
+		expectedBody   string
+		maxRetries     int
+		requestBody    string
+	}{
+		{
+			name: "Successful Request",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusInternalServerError},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     3,
+			requestBody:    "Test Body",
+		},
+		{
+			name: "Max Retries Reached",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Error", http.StatusInternalServerError},
+				{"Error", http.StatusInternalServerError},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "Error",
+			maxRetries:     2,
+			requestBody:    "Test Body",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &mock.Client{}
+			for _, resp := range tt.mockResponses {
+				body := bytes.NewBufferString(resp.body)
+				mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode))
+			}
+			reqBody := bytes.NewBufferString(tt.requestBody)
+			req, _ := http.NewRequest("POST", "https://example.com", reqBody)
+			finalResp, err := retry(tt.maxRetries, mockClient, req)
+			if finalResp.StatusCode != tt.expectedStatus {
+				t.Fatalf("Expected status code %d, got %d", tt.expectedStatus, finalResp.StatusCode)
+			}
+			bodyBytes, err := io.ReadAll(finalResp.Body)
+			if err != nil {
+				t.Fatalf("Failed to read response body: %v", err)
+			}
+			finalResp.Body.Close() // Close the body after reading
+			if string(bodyBytes) != tt.expectedBody {
+				t.Fatalf("Expected body %q, got %q", tt.expectedBody, bodyBytes)
+			}
+			if req.Body != nil {
+				reqBodyBytes, err := io.ReadAll(req.Body)
+				if err != nil {
+					t.Fatalf("Failed to read request body: %v", err)
+				}
+				req.Body.Close()
+
+				if string(reqBodyBytes) != tt.requestBody {
+					t.Fatalf("Expected request body %q, got %q", tt.requestBody, reqBodyBytes)
+				}
+			}
+		})
+	}
+}
+
 func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
 	testCases := []struct {
 		numberOfFails int
@@ -145,31 +224,25 @@ func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(fmt.Sprintf("Testing retry policy with %d ", testCase.numberOfFails), func(t *testing.T) {
-			var wg sync.WaitGroup
 			fakeErrorClient := mock.Client{}
 			responseBody, err := makeResponseWithErrorData("sample error", "sample error desc")
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
 			}
 			errorRetryCounter := 0
-			wg.Add(testCase.numberOfFails)
 			for i := 0; i < testCase.numberOfFails; i++ {
 				fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusInternalServerError),
 					mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 						errorRetryCounter++
-						wg.Done()
 					}))
 			}
 			if !testCase.expectedFail {
-				wg.Add(1)
 				successRespBody, err := getSuccessfulResponse(resource)
 				if err != nil {
 					t.Fatalf("error while forming json response : %s", err.Error())
 				}
 				fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusAccepted),
-					mock.WithBody(successRespBody), mock.WithCallback(func(r *http.Request) {
-						wg.Done()
-					}))
+					mock.WithBody(successRespBody))
 			}
 			var client Client
 			if testCase.disableRetry {
@@ -182,7 +255,6 @@ func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
 				t.Fatal(err)
 			}
 			resp, err := client.AcquireToken(context.Background(), resource, WithClaims("noCache"))
-			wg.Wait()
 			if testCase.expectedFail {
 				if err == nil {
 					t.Fatalf("should have encountered the error")
