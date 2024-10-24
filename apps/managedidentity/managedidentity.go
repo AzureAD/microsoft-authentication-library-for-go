@@ -96,14 +96,14 @@ func SystemAssigned() ID {
 var cacheManager *storage.Manager = storage.New(nil)
 
 type Client struct {
-	httpClient          ops.HTTPClient
-	miType              ID
-	retryPolicyDisabled bool
+	httpClient         ops.HTTPClient
+	miType             ID
+	retryPolicyEnabled bool
 }
 
 type ClientOptions struct {
 	httpClient         ops.HTTPClient
-	retryPolicyDiabled bool
+	retryPolicyEnabled bool
 }
 
 type AcquireTokenOptions struct {
@@ -131,7 +131,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 
 func WithRetryPolicyDisabled() ClientOption {
 	return func(o *ClientOptions) {
-		o.retryPolicyDiabled = true
+		o.retryPolicyEnabled = false
 	}
 }
 
@@ -141,7 +141,8 @@ func WithRetryPolicyDisabled() ClientOption {
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
 	opts := ClientOptions{
-		httpClient: shared.DefaultClient,
+		httpClient:         shared.DefaultClient,
+		retryPolicyEnabled: true,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -164,9 +165,9 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
 	client := Client{
-		miType:              id,
-		httpClient:          opts.httpClient,
-		retryPolicyDisabled: opts.retryPolicyDiabled,
+		miType:             id,
+		httpClient:         opts.httpClient,
+		retryPolicyEnabled: opts.retryPolicyEnabled,
 	}
 	return client, nil
 }
@@ -243,9 +244,9 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request) (*http.Response,
 }
 
 func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
-	retryCount := 1
-	if !client.retryPolicyDisabled {
-		retryCount = defaultRetryCount
+	retryCount := 3
+	if !client.retryPolicyEnabled {
+		retryCount = 1
 	}
 	resp, err := retry(retryCount, client.httpClient, req)
 	if err != nil {
