@@ -600,8 +600,8 @@ func TestAzureArcUserAssignedFailure(t *testing.T) {
 		},
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, id := range []ID{UserAssignedClientID("clientID"), UserAssignedResourceID("resourceID"), UserAssignedObjectID("objectID")} {
+		t.Run(fmt.Sprintf("%T", id), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, AzureArc)
 			client, err := New(tt.id)
