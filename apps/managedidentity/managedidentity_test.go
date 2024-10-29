@@ -187,18 +187,6 @@ func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 		t.Skip("Skipping test on macOS as HIMDS is not supported")
 	}
 
-	testCases := []struct {
-		name           string
-		source         Source
-		endpoint       string
-		expectedSource Source
-		miType         ID
-	}{
-		{name: "testAzureArcSystemAssigned", source: AzureArc, endpoint: "imdsDefaultEndpoint", expectedSource: AzureArc, miType: SystemAssigned()},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(string(testCase.source), func(t *testing.T) {
 			unsetEnvVars(t)
 
 			// Get system dependent mock file path
