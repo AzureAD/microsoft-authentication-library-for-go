@@ -184,6 +184,9 @@ func TestRetryFunction(t *testing.T) {
 			reqBody := bytes.NewBufferString(tt.requestBody)
 			req, _ := http.NewRequest("POST", "https://example.com", reqBody)
 			finalResp, err := retry(tt.maxRetries, mockClient, req)
+			if err != nil {
+				t.Fatalf("error was not expected %s", err)
+			}
 			if finalResp.StatusCode != tt.expectedStatus {
 				t.Fatalf("Expected status code %d, got %d", tt.expectedStatus, finalResp.StatusCode)
 			}
