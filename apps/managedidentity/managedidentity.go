@@ -54,23 +54,15 @@ const (
 	defaultRetryCount             = 3
 )
 
-// IMDS docs recommend retrying 404, 410, 429 and 5xx
+// IMDS docs recommend retrying 408, 429, 500, 502, 503, 504
 // https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/how-to-use-vm-token#error-handling
 var retryStatusCodes = []int{
-	http.StatusNotFound,                      // 404
-	http.StatusGone,                          // 410
-	http.StatusTooManyRequests,               // 429 // retry after.
-	http.StatusInternalServerError,           // 500
-	http.StatusNotImplemented,                // 501
-	http.StatusBadGateway,                    // 502
-	http.StatusServiceUnavailable,            // 503
-	http.StatusGatewayTimeout,                // 504
-	http.StatusHTTPVersionNotSupported,       // 505
-	http.StatusVariantAlsoNegotiates,         // 506
-	http.StatusInsufficientStorage,           // 507
-	http.StatusLoopDetected,                  // 508
-	http.StatusNotExtended,                   // 510
-	http.StatusNetworkAuthenticationRequired, // 511
+	http.StatusRequestTimeout,      // 408
+	http.StatusTooManyRequests,     // 429
+	http.StatusInternalServerError, // 500
+	http.StatusBadGateway,          // 502
+	http.StatusServiceUnavailable,  // 503
+	http.StatusGatewayTimeout,      // 504
 }
 
 type Source string
