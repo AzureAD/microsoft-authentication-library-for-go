@@ -170,76 +170,73 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 }
 
-func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
+func TestRegionAutoEnable(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
 		t.Fatal(err)
 	}
-
-	envRegion := "envRegion"
-	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv("MSAL_FORCE_REGION")
-
-	lmo := "login.microsoftonline.com"
-	tenant := "tenant"
-	mockClient := mock.Client{}
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if client.base.AuthParams.AuthorityInfo.Region != envRegion {
-		t.Fatalf("wanted %q, got %q", envRegion, client.base.AuthParams.AuthorityInfo.Region)
-	}
-}
-
-func TestRegionAutoEnable_SpecifiedRegion_EnvRegion(t *testing.T) {
-	cred, err := NewCredFromSecret(fakeSecret)
-	if err != nil {
-		t.Fatal(err)
+	tests := []struct {
+		region    string
+		envRegion string
+	}{
+		{
+			region:    "",
+			envRegion: "envRegion",
+		},
+		{
+			region:    "region",
+			envRegion: "envRegion",
+		},
+		{
+			region:    "DisableMsalForceRegion",
+			envRegion: "envRegion",
+		},
 	}
 
-	envRegion := "envRegion"
-	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv("MSAL_FORCE_REGION")
+	for _, test := range tests {
+		lmo := "login.microsoftonline.com"
+		tenant := "tenant"
+		mockClient := mock.Client{}
+		if test.envRegion != "" {
+			err := os.Setenv("MSAL_FORCE_REGION", test.envRegion)
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
+		var client Client
+		if test.region != "" {
+			client, err = New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(test.region))
+			if err != nil {
+				t.Fatal(err)
+			}
+		} else {
+			client, err = New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+		}
 
-	lmo := "login.microsoftonline.com"
-	tenant := "tenant"
-	mockClient := mock.Client{}
-	testRegion := "region"
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
-	if err != nil {
-		t.Fatal(err)
-	}
+		t.Cleanup(func() {
+			os.Unsetenv("MSAL_FORCE_REGION")
+		})
+		if test.region == "" {
+			if test.envRegion != "" {
+				if client.base.AuthParams.AuthorityInfo.Region != test.envRegion {
+					t.Fatalf("wanted %q, got %q", test.envRegion, client.base.AuthParams.AuthorityInfo.Region)
+				}
+			}
+		} else {
+			if test.region == "DisableMsalForceRegion" {
+				if client.base.AuthParams.AuthorityInfo.Region != "" {
+					t.Fatalf("wanted empty, got %q", client.base.AuthParams.AuthorityInfo.Region)
+				}
+			} else {
 
-	if client.base.AuthParams.AuthorityInfo.Region != testRegion {
-		t.Fatalf("wanted %q, got %q", testRegion, client.base.AuthParams.AuthorityInfo.Region)
-	}
-}
-
-func TestRegionAutoEnable_DisableMsalForceRegion(t *testing.T) {
-	cred, err := NewCredFromSecret(fakeSecret)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	lmo := "login.microsoftonline.com"
-	tenant := "tenant"
-	mockClient := mock.Client{}
-	testRegion := "DisableMsalForceRegion"
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if client.base.AuthParams.AuthorityInfo.Region != "" {
-		t.Fatalf("wanted empty, got %q", client.base.AuthParams.AuthorityInfo.Region)
+				if client.base.AuthParams.AuthorityInfo.Region != test.region {
+					t.Fatalf("wanted %q, got %q", test.region, client.base.AuthParams.AuthorityInfo.Region)
+				}
+			}
+		}
 	}
 }
 

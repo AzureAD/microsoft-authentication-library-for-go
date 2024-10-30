@@ -317,13 +317,13 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	if err != nil {
 		return Client{}, err
 	}
-	autoEnabledRegion := os.Getenv("MSAL_FORCE_REGION")
+	region := os.Getenv("MSAL_FORCE_REGION")
 	opts := clientOptions{
 		authority: authority,
 		// if the caller specified a token provider, it will handle all details of authentication, using Client only as a token cache
 		disableInstanceDiscovery: cred.tokenProvider != nil,
 		httpClient:               shared.DefaultClient,
-		azureRegion:              autoEnabledRegion,
+		azureRegion:              region,
 	}
 	for _, o := range options {
 		o(&opts)
