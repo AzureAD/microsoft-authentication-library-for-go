@@ -5,6 +5,7 @@ package managedidentity
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/url"
 	"os"
@@ -178,6 +179,41 @@ func TestGetSource(t *testing.T) {
 				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
 			}
 		})
+	}
+}
+
+func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
+	if runtime.GOOS == "darwin" {
+		t.Skip("Skipping test on macOS as HIMDS is not supported")
+	}
+
+	unsetEnvVars(t)
+	// Get system dependent mock file path
+	var mockFilePath string
+	if runtime.GOOS == "windows" {
+		mockFilePath = filepath.Join(os.TempDir(), "himds.exe")
+	} else {
+		mockFilePath = filepath.Join("/tmp", "himds")
+	}
+	setCustomAzureArcFilePath(t, mockFilePath)
+
+	// Create the mock himds file
+	createMockFile(t, mockFilePath, 1024)
+
+	// Ensure file is deleted after test
+	t.Cleanup(func() {
+		if err := os.Remove(mockFilePath); err != nil {
+			t.Fatalf("failed to delete mock file: %s", err)
+		}
+	})
+
+	actualSource, err := GetSource(SystemAssigned())
+	if err != nil {
+		t.Fatalf("error while getting source: %s", err.Error())
+	}
+
+	if actualSource != AzureArc {
+		t.Errorf(errorExpectedButGot, AzureArc, actualSource)
 	}
 }
 
@@ -619,29 +655,13 @@ func TestCreatingIMDSClient(t *testing.T) {
 }
 
 func TestAzureArcUserAssignedFailure(t *testing.T) {
-	tests := []struct {
-		name string
-		id   ID
-	}{
-		{
-			name: "Client ID",
-			id:   UserAssignedClientID("test-client-id"),
-		},
-		{
-			name: "Resource ID",
-			id:   UserAssignedResourceID("test-resource-id"),
-		},
-		{
-			name: "Object ID",
-			id:   UserAssignedObjectID("test-object-id"),
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
+	for _, id := range []ID{UserAssignedClientID("clientID"),
+		UserAssignedResourceID("resourceID"),
+		UserAssignedObjectID("objectID")} {
+		t.Run(fmt.Sprintf("%T", id), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, AzureArc)
-			_, err := New(tt.id)
+			_, err := New(id)
 			if err == nil {
 				t.Fatal("client New() should return a error but did not.")
 			}
@@ -699,56 +719,6 @@ func TestValidateAzureArcEnvironment(t *testing.T) {
 			result := isAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
 			if result != tc.expectedResult {
 				t.Fatalf(errorExpectedButGot, tc.expectedResult, result)
-			}
-		})
-	}
-}
-
-func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("Skipping test on macOS as HIMDS is not supported")
-	}
-
-	testCases := []struct {
-		name           string
-		source         Source
-		endpoint       string
-		expectedSource Source
-		miType         ID
-	}{
-		{name: "testAzureArcSystemAssigned", source: AzureArc, endpoint: "imdsDefaultEndpoint", expectedSource: AzureArc, miType: SystemAssigned()},
-	}
-
-	for _, testCase := range testCases {
-		t.Run(string(testCase.source), func(t *testing.T) {
-			unsetEnvVars(t)
-
-			// Get system dependent mock file path
-			var mockFilePath string
-			if runtime.GOOS == "windows" {
-				mockFilePath = filepath.Join(os.TempDir(), "himds.exe")
-			} else {
-				mockFilePath = filepath.Join("/tmp", "himds")
-			}
-			setCustomAzureArcFilePath(t, mockFilePath)
-
-			// Create the mock himds file
-			createMockFile(t, mockFilePath, 1024)
-
-			// Ensure file is deleted after test
-			t.Cleanup(func() {
-				if err := os.Remove(mockFilePath); err != nil {
-					t.Fatalf("failed to delete mock file: %v", err)
-				}
-			})
-
-			actualSource, err := GetSource(testCase.miType)
-			if err != nil {
-				t.Fatalf("error while getting source: %s", err.Error())
-			}
-
-			if actualSource != testCase.expectedSource {
-				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
 			}
 		})
 	}
