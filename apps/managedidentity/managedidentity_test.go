@@ -607,6 +607,13 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 
+			if testCase.request.shouldFail {
+				if err == nil || err.Error() != testCase.request.expectedError {
+					t.Fatalf(`expected error: "%v" got error: "%v"`, testCase.request.expectedError, err)
+				}
+				return
+
+			}
 			if err != nil {
 				t.Fatal(err)
 			}
