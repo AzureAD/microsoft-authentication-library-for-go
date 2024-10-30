@@ -259,15 +259,15 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 	switch client.source {
 	case AzureArc:
-		return acquireAzureArc(ctx, client, resource)
+		return acquireTokenForAzureArc(ctx, client, resource)
 	case DefaultToIMDS:
-		return acquireIMDS(ctx, client, resource)
+		return acquireTokenForIMDS(ctx, client, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
 	}
 }
 
-func acquireIMDS(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
+func acquireTokenForIMDS(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, client.miType, resource)
 	if err != nil {
 		return base.AuthResult{}, err
@@ -280,7 +280,7 @@ func acquireIMDS(ctx context.Context, client Client, resource string) (base.Auth
 	return authResultFromToken(client.authParams, tokenResponse)
 }
 
-func acquireAzureArc(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
+func acquireTokenForAzureArc(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
 	req, err := createAzureArcAuthRequest(ctx, resource, "")
 	if err != nil {
 		return base.AuthResult{}, err
@@ -314,13 +314,13 @@ func acquireAzureArc(ctx context.Context, client Client, resource string) (base.
 
 	responseBytes, err := io.ReadAll(secondResponse.Body)
 	if err != nil {
-		return base.AuthResult{}, fmt.Errorf("failed to read second azure arc response body: %w", err)
+		return base.AuthResult{}, fmt.Errorf("failed to read second azure arc response body: %s", err)
 	}
 
 	var r accesstokens.TokenResponse
 	err = json.Unmarshal(responseBytes, &r)
 	if err != nil {
-		return base.AuthResult{}, fmt.Errorf("failed to unmarshal second response body: %w", err)
+		return base.AuthResult{}, fmt.Errorf("failed to unmarshal second response body: %s", err)
 	}
 
 	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, secondRequest.URL.Query().Get(resourceQueryParameterName))
@@ -479,7 +479,7 @@ func (c *Client) getAzureArcSecretKey(response *http.Response, platform string) 
 	// check if the platform is supported
 	expectedSecretFilePath := getAzureArcPlatformPath(platform)
 	if expectedSecretFilePath == "" {
-		return "", fmt.Errorf("platform not supported, expected linux or windows, got %s", platform)
+		return "", errors.New("platform not supported, expected linux or windows")
 	}
 
 	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
@@ -505,11 +505,9 @@ func (c *Client) getAzureArcSecretKey(response *http.Response, platform string) 
 		return "", fmt.Errorf("failed to get metadata for %s due to error: %s", secretFilePath[1], err)
 	}
 
-	secretFileSize := fileInfo.Size()
-
 	// Throw an error if the secret file's size is greater than 4096 bytes
 	if s := fileInfo.Size(); s > azureArcMaxFileSizeBytes {
-		return "", fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, secretFileSize)
+		return "", fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, s)
 	}
 
 	// Attempt to read the contents of the secret file
