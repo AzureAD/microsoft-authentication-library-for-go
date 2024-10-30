@@ -314,7 +314,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 }
 
-func TestAzureArcAcquireTokenReturnsTokenSuccess(t *testing.T) {
+func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 	testCaseFilePath := getMockFilePath(t)
 	type ArcRequest struct {
 		name           string
