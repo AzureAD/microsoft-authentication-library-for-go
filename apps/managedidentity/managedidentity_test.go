@@ -183,18 +183,8 @@ func TestGetSource(t *testing.T) {
 }
 
 func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
-	if runtime.GOOS == "darwin" {
-		t.Skip("Skipping test on macOS as HIMDS is not supported")
-	}
-
 	unsetEnvVars(t)
-	// Get system dependent mock file path
-	var mockFilePath string
-	if runtime.GOOS == "windows" {
-		mockFilePath = filepath.Join(os.TempDir(), "himds.exe")
-	} else {
-		mockFilePath = filepath.Join("/tmp", "himds")
-	}
+	mockFilePath := filepath.Join(t.TempDir(), "himds")
 	setCustomAzureArcFilePath(t, mockFilePath)
 
 	// Create the mock himds file
