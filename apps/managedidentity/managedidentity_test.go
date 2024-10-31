@@ -347,7 +347,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 	testCaseFilePath := getMockFilePath(t)
 	type ArcRequest struct {
 		name           string
-		statusCode     int
 		headers        map[string]string
 		expectedError  string
 		platform       string
@@ -362,7 +361,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 	}{
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
 			name:          "No www-authenticate header",
-			statusCode:    http.StatusUnauthorized,
 			headers:       map[string]string{},
 			expectedError: "response has no www-authenticate header",
 			platform:      runtime.GOOS,
@@ -370,7 +368,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 		}},
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
 			name:          "Basic realm= not found",
-			statusCode:    http.StatusUnauthorized,
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic "},
 			expectedError: "basic realm= not found in the string, instead found: Basic ",
 			platform:      runtime.GOOS,
@@ -378,7 +375,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 		}},
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
 			name:          "Platform not supported",
-			statusCode:    http.StatusUnauthorized,
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.key"},
 			expectedError: "platform not supported, expected linux or windows",
 			platform:      "freebsd",
@@ -386,7 +382,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 		}},
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
 			name:           "Invalid file extension",
-			statusCode:     http.StatusUnauthorized,
 			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.txt"},
 			expectedError:  "invalid file extension, expected .key, got .txt",
 			platform:       runtime.GOOS,
@@ -395,7 +390,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 		}},
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
 			name:           "Invalid file path",
-			statusCode:     http.StatusUnauthorized,
 			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + filepath.Join("path", "to", "secret.key")},
 			expectedError:  "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
 			platform:       runtime.GOOS,
@@ -403,9 +397,8 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			shouldFail:     true,
 		}},
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
-			name:       "Unable to get file info",
-			statusCode: http.StatusUnauthorized,
-			headers:    map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, wrongSecretKey)},
+			name:    "Unable to get file info",
+			headers: map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, wrongSecretKey)},
 			expectedError: func() string {
 				if runtime.GOOS == "windows" {
 					return "failed to get metadata for " + filepath.Join(testCaseFilePath, wrongSecretKey) + " due to error: CreateFile " + filepath.Join(testCaseFilePath, wrongSecretKey) + ": The system cannot find the file specified."
@@ -418,27 +411,15 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 		}},
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
 			name:           "Invalid secret file size",
-			statusCode:     http.StatusUnauthorized,
 			headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
 			expectedError:  "invalid secret file size, expected 4096, file size was 5000",
 			platform:       runtime.GOOS,
 			createMockFile: true,
 			shouldFail:     true,
 		}},
-		// {resource: resourceDefaultSuffix, miType: UserAssignedClientID("FakeClientID"), apiVersion: azureArcAPIVersion,
-		// 	request: ArcRequest{
-		// 		name:           "success",
-		// 		statusCode:     http.StatusUnauthorized,
-		// 		headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
-		// 		expectedError:  "",
-		// 		platform:       runtime.GOOS,
-		// 		createMockFile: true,
-		// 		shouldFail:     false,
-		// 	}},
 		{resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion,
 			request: ArcRequest{
 				name:           "success",
-				statusCode:     http.StatusUnauthorized,
 				headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
 				expectedError:  "",
 				platform:       runtime.GOOS,
@@ -473,7 +454,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			for k, v := range testCase.request.headers {
 				headers.Set(k, v)
 			}
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(testCase.request.statusCode),
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized),
 				mock.WithHTTPHeader(headers),
 				mock.WithCallback(func(r *http.Request) {
 					localUrl = r.URL
@@ -484,7 +465,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers),
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
 				mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 					localUrl = r.URL
 				}))

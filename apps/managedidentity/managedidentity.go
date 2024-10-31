@@ -306,26 +306,11 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 		return base.AuthResult{}, err
 	}
 
-	secondResponse, err := client.httpClient.Do(secondRequest)
+	tokenResponse, err := client.getTokenForRequest(secondRequest)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	defer secondResponse.Body.Close()
-
-	responseBytes, err := io.ReadAll(secondResponse.Body)
-	if err != nil {
-		return base.AuthResult{}, fmt.Errorf("failed to read second azure arc response body: %s", err)
-	}
-
-	var r accesstokens.TokenResponse
-	err = json.Unmarshal(responseBytes, &r)
-	if err != nil {
-		return base.AuthResult{}, fmt.Errorf("failed to unmarshal second response body: %s", err)
-	}
-
-	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, secondRequest.URL.Query().Get(resourceQueryParameterName))
-
-	return authResultFromToken(client.authParams, r)
+	return authResultFromToken(client.authParams, tokenResponse)
 }
 
 func createFakeAuthParams(client Client) (authority.AuthParams, error) {
