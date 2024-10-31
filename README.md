@@ -11,7 +11,7 @@ Quick links:
 
 ## Build Status
 
-![Go](https://github.com/AzureAD/microsoft-authentication-library-for-go/workflows/Go/badge.svg?branch=dev)
+![Go](https://github.com/AzureAD/microsoft-authentication-library-for-go/workflows/Go/badge.svg?branch=dev) 
 
 ## Installation
 
