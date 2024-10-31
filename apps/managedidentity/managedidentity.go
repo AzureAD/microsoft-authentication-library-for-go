@@ -157,7 +157,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
-	source, err := GetSource(id)
+	source, err := GetSource()
 	if err != nil {
 		return Client{}, err
 	}
@@ -210,7 +210,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 }
 
 // GetSource detects and returns the managed identity source available on the environment.
-func GetSource(id ID) (Source, error) {
+func GetSource() (Source, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	identityHeader := os.Getenv(identityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(identityServerThumbprintEnvVar)

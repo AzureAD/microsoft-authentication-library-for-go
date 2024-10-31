@@ -143,38 +143,77 @@ func setCustomAzureArcFilePath(t *testing.T, path string) {
 }
 
 func TestGetSource(t *testing.T) {
-	// todo update as required
 	testCases := []struct {
 		name           string
 		source         Source
-		endpoint       string
 		expectedSource Source
-		miType         ID
 	}{
-		{name: "testAzureArcSystemAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: SystemAssigned()},
-		{name: "testAzureArcUserClientAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: UserAssignedClientID("clientId")},
-		{name: "testAzureArcUserResourceAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: UserAssignedResourceID("resourceId")},
-		{name: "testAzureArcUserObjectAssigned", source: AzureArc, endpoint: imdsDefaultEndpoint, expectedSource: AzureArc, miType: UserAssignedObjectID("objectId")},
-		{name: "testDefaultToImds", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
-		{name: "testDefaultToImdsClientAssigned", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedClientID("clientId")},
-		{name: "testDefaultToImdsResourceAssigned", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedResourceID("resourceId")},
-		{name: "testDefaultToImdsObjectAssigned", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: UserAssignedObjectID("objectId")},
-		{name: "testDefaultToImdsEmptyEndpoint", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
-		{name: "testDefaultToImdsLinux", source: DefaultToIMDS, endpoint: imdsDefaultEndpoint, expectedSource: DefaultToIMDS, miType: SystemAssigned()},
-		{name: "testDefaultToImdsEmptyEndpointLinux", source: DefaultToIMDS, endpoint: "", expectedSource: DefaultToIMDS, miType: SystemAssigned()},
+		{
+			name:           "testAzureArcSystemAssigned",
+			source:         AzureArc,
+			expectedSource: AzureArc,
+		},
+		{
+			name:           "testAzureArcUserClientAssigned",
+			source:         AzureArc,
+			expectedSource: AzureArc,
+		},
+		{
+			name:           "testAzureArcUserResourceAssigned",
+			source:         AzureArc,
+			expectedSource: AzureArc,
+		},
+		{
+			name:           "testAzureArcUserObjectAssigned",
+			source:         AzureArc,
+			expectedSource: AzureArc,
+		},
+		{
+			name:           "testDefaultToImds",
+			source:         DefaultToIMDS,
+			expectedSource: DefaultToIMDS,
+		},
+		{
+			name:           "testDefaultToImdsClientAssigned",
+			source:         DefaultToIMDS,
+			expectedSource: DefaultToIMDS,
+		},
+		{
+			name:           "testDefaultToImdsResourceAssigned",
+			source:         DefaultToIMDS,
+			expectedSource: DefaultToIMDS,
+		},
+		{
+			name:           "testDefaultToImdsObjectAssigned",
+			source:         DefaultToIMDS,
+			expectedSource: DefaultToIMDS,
+		},
+		{
+			name:           "testDefaultToImdsEmptyEndpoint",
+			source:         DefaultToIMDS,
+			expectedSource: DefaultToIMDS,
+		},
+		{
+			name:           "testDefaultToImdsLinux",
+			source:         DefaultToIMDS,
+			expectedSource: DefaultToIMDS,
+		},
+		{
+			name:           "testDefaultToImdsEmptyEndpointLinux",
+			source:         DefaultToIMDS,
+			expectedSource: DefaultToIMDS,
+		},
 	}
-
 	for _, testCase := range testCases {
 		t.Run(string(testCase.source), func(t *testing.T) {
 			unsetEnvVars(t)
 			setEnvVars(t, testCase.source)
 			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
-			actualSource, err := GetSource(testCase.miType)
+			actualSource, err := GetSource()
 			if err != nil {
 				t.Fatalf("error while getting source: %s", err.Error())
 			}
-
 			if actualSource != testCase.expectedSource {
 				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
 			}
@@ -197,7 +236,7 @@ func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 		}
 	})
 
-	actualSource, err := GetSource(SystemAssigned())
+	actualSource, err := GetSource()
 	if err != nil {
 		t.Fatalf("error while getting source: %s", err.Error())
 	}
@@ -313,7 +352,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 		expectedError  string
 		platform       string
 		createMockFile bool
-		context        context.Context
 		shouldFail     bool
 	}
 	testCases := []struct {
@@ -343,8 +381,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			statusCode:    http.StatusUnauthorized,
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.key"},
 			expectedError: "platform not supported, expected linux or windows",
-			platform:      "platformNotSupported",
-			context:       context.Background(),
+			platform:      "freebsd",
 			shouldFail:    true,
 		}},
 		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
@@ -388,6 +425,16 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			createMockFile: true,
 			shouldFail:     true,
 		}},
+		// {resource: resourceDefaultSuffix, miType: UserAssignedClientID("FakeClientID"), apiVersion: azureArcAPIVersion,
+		// 	request: ArcRequest{
+		// 		name:           "success",
+		// 		statusCode:     http.StatusUnauthorized,
+		// 		headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
+		// 		expectedError:  "",
+		// 		platform:       runtime.GOOS,
+		// 		createMockFile: true,
+		// 		shouldFail:     false,
+		// 	}},
 		{resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion,
 			request: ArcRequest{
 				name:           "success",
@@ -412,7 +459,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			mockClient := mock.Client{}
 
 			mockFilePath := filepath.Join(testCaseFilePath, secretKey)
-			if testCase.request.platform != "platformNotSupported" {
+			if testCase.request.platform != "freebsd" {
 				setCustomAzureArcPlatformPath(t, testCaseFilePath)
 			}
 			if testCase.request.name == "Invalid secret file size" {
