@@ -164,6 +164,79 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 }
 
+func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	envRegion := "envRegion"
+	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Unsetenv("MSAL_FORCE_REGION")
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	mockClient := mock.Client{}
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.base.AuthParams.AuthorityInfo.Region != envRegion {
+		t.Fatalf("wanted %q, got %q", envRegion, client.base.AuthParams.AuthorityInfo.Region)
+	}
+}
+
+func TestRegionAutoEnable_SpecifiedRegion_EnvRegion(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	envRegion := "envRegion"
+	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Unsetenv("MSAL_FORCE_REGION")
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	mockClient := mock.Client{}
+	testRegion := "region"
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.base.AuthParams.AuthorityInfo.Region != testRegion {
+		t.Fatalf("wanted %q, got %q", testRegion, client.base.AuthParams.AuthorityInfo.Region)
+	}
+}
+
+func TestRegionAutoEnable_DisableMsalForceRegion(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	mockClient := mock.Client{}
+	testRegion := "DisableMsalForceRegion"
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.base.AuthParams.AuthorityInfo.Region != "" {
+		t.Fatalf("wanted empty, got %q", client.base.AuthParams.AuthorityInfo.Region)
+	}
+}
+
 func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	// this test is an offline version of TestOnBehalfOf in integration_test.go
 	cred, err := NewCredFromSecret(fakeSecret)
