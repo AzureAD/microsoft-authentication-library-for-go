@@ -54,8 +54,7 @@ const (
 	defaultRetryCount             = 3
 )
 
-// IMDS docs recommend retrying 408, 429, 500, 502, 503, 504
-// https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/how-to-use-vm-token#error-handling
+// retry on these codes
 var retryStatusCodes = []int{
 	http.StatusRequestTimeout,      // 408
 	http.StatusTooManyRequests,     // 429
