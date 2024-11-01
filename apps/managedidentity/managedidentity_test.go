@@ -252,11 +252,11 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 		miType     ID
 		apiVersion string
 	}{
-		{resource: resource, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
-		{resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: imdsAPIVersion},
-		{resource: resource, miType: UserAssignedClientID("clientId"), apiVersion: imdsAPIVersion},
-		{resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId"), apiVersion: imdsAPIVersion},
-		{resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId"), apiVersion: imdsAPIVersion},
+		{resource: resource, miType: SystemAssigned()},
+		{resource: resourceDefaultSuffix, miType: SystemAssigned()},
+		{resource: resource, miType: UserAssignedClientID("clientId")},
+		{resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId")},
+		{resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId")},
 	}
 	for _, testCase := range testCases {
 		t.Run(string(DefaultToIMDS)+"-"+testCase.miType.value(), func(t *testing.T) {
@@ -295,8 +295,8 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 			query := localUrl.Query()
 
-			if query.Get(apiVersionQueryParameterName) != testCase.apiVersion {
-				t.Fatalf("api-version not on %s got %s", testCase.apiVersion, query.Get(apiVersionQueryParameterName))
+			if query.Get(apiVersionQueryParameterName) != imdsAPIVersion {
+				t.Fatalf("api-version not on %s got %s", imdsAPIVersion, query.Get(apiVersionQueryParameterName))
 			}
 			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
@@ -354,33 +354,32 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 		shouldFail     bool
 	}
 	testCases := []struct {
-		resource   string
-		miType     ID
-		apiVersion string
-		request    ArcRequest
+		resource string
+		miType   ID
+		request  ArcRequest
 	}{
-		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
+		{resource: resource, miType: SystemAssigned(), request: ArcRequest{
 			name:          "No www-authenticate header",
 			headers:       map[string]string{},
 			expectedError: "response has no www-authenticate header",
 			platform:      runtime.GOOS,
 			shouldFail:    true,
 		}},
-		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
+		{resource: resource, miType: SystemAssigned(), request: ArcRequest{
 			name:          "Basic realm= not found",
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic "},
 			expectedError: "basic realm= not found in the string, instead found: Basic ",
 			platform:      runtime.GOOS,
 			shouldFail:    true,
 		}},
-		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
+		{resource: resource, miType: SystemAssigned(), request: ArcRequest{
 			name:          "Platform not supported",
 			headers:       map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.key"},
 			expectedError: "platform not supported, expected linux or windows",
 			platform:      "freebsd",
 			shouldFail:    true,
 		}},
-		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
+		{resource: resource, miType: SystemAssigned(), request: ArcRequest{
 			name:           "Invalid file extension",
 			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=/path/to/secret.txt"},
 			expectedError:  "invalid file extension, expected .key, got .txt",
@@ -388,7 +387,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			createMockFile: true,
 			shouldFail:     true,
 		}},
-		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
+		{resource: resource, miType: SystemAssigned(), request: ArcRequest{
 			name:           "Invalid file path",
 			headers:        map[string]string{wwwAuthenticateHeaderName: "Basic realm=" + filepath.Join("path", "to", "secret.key")},
 			expectedError:  "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
@@ -396,7 +395,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			createMockFile: true,
 			shouldFail:     true,
 		}},
-		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
+		{resource: resource, miType: SystemAssigned(), request: ArcRequest{
 			name:    "Unable to get file info",
 			headers: map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, wrongSecretKey)},
 			expectedError: func() string {
@@ -409,7 +408,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			createMockFile: true,
 			shouldFail:     true,
 		}},
-		{resource: resource, miType: SystemAssigned(), apiVersion: azureArcAPIVersion, request: ArcRequest{
+		{resource: resource, miType: SystemAssigned(), request: ArcRequest{
 			name:           "Invalid secret file size",
 			headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
 			expectedError:  "invalid secret file size, expected 4096, file size was 5000",
@@ -417,7 +416,7 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			createMockFile: true,
 			shouldFail:     true,
 		}},
-		{resource: resourceDefaultSuffix, miType: SystemAssigned(), apiVersion: azureArcAPIVersion,
+		{resource: resourceDefaultSuffix, miType: SystemAssigned(),
 			request: ArcRequest{
 				name:           "success",
 				headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
@@ -425,6 +424,15 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 				platform:       runtime.GOOS,
 				createMockFile: true,
 				shouldFail:     false,
+			}},
+		{resource: resourceDefaultSuffix, miType: UserAssignedClientID("Clientid"),
+			request: ArcRequest{
+				name:           "Platform not supported",
+				headers:        map[string]string{wwwAuthenticateHeaderName: basicRealm + filepath.Join(testCaseFilePath, secretKey)},
+				expectedError:  "azure Arc doesn't support user assigned managed identities",
+				platform:       runtime.GOOS,
+				createMockFile: true,
+				shouldFail:     true,
 			}},
 	}
 
@@ -477,7 +485,13 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
-				t.Fatal(err)
+				if testCase.request.shouldFail {
+					if err.Error() != testCase.request.expectedError {
+						t.Fatalf(`expected error: "%v" got error: "%v"`, testCase.request.expectedError, err)
+					}
+				} else {
+					t.Fatal(err)
+				}
 			}
 
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
@@ -499,8 +513,8 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 
 			query := localUrl.Query()
 
-			if query.Get(apiVersionQueryParameterName) != testCase.apiVersion {
-				t.Fatalf("api-version not on %s got %s", testCase.apiVersion, query.Get(apiVersionQueryParameterName))
+			if query.Get(apiVersionQueryParameterName) != azureArcAPIVersion {
+				t.Fatalf("api-version not on %s got %s", azureArcAPIVersion, query.Get(apiVersionQueryParameterName))
 			}
 			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
