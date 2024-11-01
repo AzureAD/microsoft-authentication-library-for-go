@@ -602,7 +602,13 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
 			if err != nil {
-				t.Fatal(err)
+				if testCase.request.shouldFail {
+					if err.Error() != testCase.request.expectedError {
+						t.Fatalf(`expected error: "%v" got error: "%v"`, testCase.request.expectedError, err)
+					}
+				} else {
+					t.Fatal(err)
+				}
 			}
 
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
