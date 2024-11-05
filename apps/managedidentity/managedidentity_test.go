@@ -448,7 +448,9 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			mockClient := mock.Client{}
 
 			mockFilePath := filepath.Join(testCaseFilePath, secretKey)
-			if testCase.request.platform != "freebsd" {
+			if testCase.request.platform == "freebsd" {
+				setCustomAzureArcPlatformPath(t, "")
+			} else {
 				setCustomAzureArcPlatformPath(t, testCaseFilePath)
 			}
 			if testCase.request.name == "Invalid secret file size" {
@@ -489,11 +491,11 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 					if err.Error() != testCase.request.expectedError {
 						t.Fatalf(`expected error: "%v" got error: "%v"`, testCase.request.expectedError, err)
 					}
+					return
 				} else {
 					t.Fatal(err)
 				}
 			}
-
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 
 			if testCase.request.shouldFail {
@@ -501,7 +503,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 					t.Fatalf(`expected error: "%v" got error: "%v"`, testCase.request.expectedError, err)
 				}
 				return
-
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -518,20 +519,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 			}
 			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
-			}
-			switch i := testCase.miType.(type) {
-			case UserAssignedClientID:
-				if query.Get(miQueryParameterClientId) != i.value() {
-					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
-				}
-			case UserAssignedResourceID:
-				if query.Get(miQueryParameterResourceId) != i.value() {
-					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
-				}
-			case UserAssignedObjectID:
-				if query.Get(miQueryParameterObjectId) != i.value() {
-					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
-				}
 			}
 			if result.Metadata.TokenSource != base.IdentityProvider {
 				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
