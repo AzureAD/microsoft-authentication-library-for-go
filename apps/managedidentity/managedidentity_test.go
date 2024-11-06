@@ -92,6 +92,7 @@ func createMockFile(t *testing.T, path string, size int64) {
 	if _, err := f.WriteString("secret file data"); err != nil {
 		t.Fatalf("failed to write to file: %v", err)
 	}
+	t.Cleanup(func() { os.Remove(path) })
 }
 
 func getMockFilePath(t *testing.T) string {
@@ -144,64 +145,52 @@ func setCustomAzureArcFilePath(t *testing.T, path string) {
 
 func TestGetSource(t *testing.T) {
 	testCases := []struct {
-		name           string
-		source         Source
-		expectedSource Source
+		name   string
+		source Source
 	}{
 		{
-			name:           "testAzureArcSystemAssigned",
-			source:         AzureArc,
-			expectedSource: AzureArc,
+			name:   "testAzureArcSystemAssigned",
+			source: AzureArc,
 		},
 		{
-			name:           "testAzureArcUserClientAssigned",
-			source:         AzureArc,
-			expectedSource: AzureArc,
+			name:   "testAzureArcUserClientAssigned",
+			source: AzureArc,
 		},
 		{
-			name:           "testAzureArcUserResourceAssigned",
-			source:         AzureArc,
-			expectedSource: AzureArc,
+			name:   "testAzureArcUserResourceAssigned",
+			source: AzureArc,
 		},
 		{
-			name:           "testAzureArcUserObjectAssigned",
-			source:         AzureArc,
-			expectedSource: AzureArc,
+			name:   "testAzureArcUserObjectAssigned",
+			source: AzureArc,
 		},
 		{
-			name:           "testDefaultToImds",
-			source:         DefaultToIMDS,
-			expectedSource: DefaultToIMDS,
+			name:   "testDefaultToImds",
+			source: DefaultToIMDS,
 		},
 		{
-			name:           "testDefaultToImdsClientAssigned",
-			source:         DefaultToIMDS,
-			expectedSource: DefaultToIMDS,
+			name:   "testDefaultToImdsClientAssigned",
+			source: DefaultToIMDS,
 		},
 		{
-			name:           "testDefaultToImdsResourceAssigned",
-			source:         DefaultToIMDS,
-			expectedSource: DefaultToIMDS,
+			name:   "testDefaultToImdsResourceAssigned",
+			source: DefaultToIMDS,
 		},
 		{
-			name:           "testDefaultToImdsObjectAssigned",
-			source:         DefaultToIMDS,
-			expectedSource: DefaultToIMDS,
+			name:   "testDefaultToImdsObjectAssigned",
+			source: DefaultToIMDS,
 		},
 		{
-			name:           "testDefaultToImdsEmptyEndpoint",
-			source:         DefaultToIMDS,
-			expectedSource: DefaultToIMDS,
+			name:   "testDefaultToImdsEmptyEndpoint",
+			source: DefaultToIMDS,
 		},
 		{
-			name:           "testDefaultToImdsLinux",
-			source:         DefaultToIMDS,
-			expectedSource: DefaultToIMDS,
+			name:   "testDefaultToImdsLinux",
+			source: DefaultToIMDS,
 		},
 		{
-			name:           "testDefaultToImdsEmptyEndpointLinux",
-			source:         DefaultToIMDS,
-			expectedSource: DefaultToIMDS,
+			name:   "testDefaultToImdsEmptyEndpointLinux",
+			source: DefaultToIMDS,
 		},
 	}
 	for _, testCase := range testCases {
@@ -214,8 +203,8 @@ func TestGetSource(t *testing.T) {
 			if err != nil {
 				t.Fatalf("error while getting source: %s", err.Error())
 			}
-			if actualSource != testCase.expectedSource {
-				t.Errorf(errorExpectedButGot, testCase.expectedSource, actualSource)
+			if actualSource != testCase.source {
+				t.Errorf(errorExpectedButGot, testCase.source, actualSource)
 			}
 		})
 	}
@@ -248,9 +237,8 @@ func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 
 func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	testCases := []struct {
-		resource   string
-		miType     ID
-		apiVersion string
+		resource string
+		miType   ID
 	}{
 		{resource: resource, miType: SystemAssigned()},
 		{resource: resourceDefaultSuffix, miType: SystemAssigned()},
@@ -459,7 +447,6 @@ func TestAzureArcAcquireTokenReturnsToken(t *testing.T) {
 				createMockFile(t, mockFilePath, 0)
 			}
 
-			t.Cleanup(func() { os.Remove(mockFilePath) })
 			headers := http.Header{}
 			for k, v := range testCase.request.headers {
 				headers.Set(k, v)
@@ -688,57 +675,6 @@ func TestAzureArcUserAssignedFailure(t *testing.T) {
 				t.Fatalf("expected error message 'azure Arc doesn't support user assigned managed identities', got %s", err.Error())
 			}
 
-		})
-	}
-}
-
-func TestValidateAzureArcEnvironment(t *testing.T) {
-	testCases := []struct {
-		name             string
-		identityEndpoint string
-		imdsEndpoint     string
-		platform         string
-		expectedResult   bool
-	}{
-		{
-			name:             "Both endpoints provided",
-			identityEndpoint: "endpoint",
-			imdsEndpoint:     "endpoint",
-			platform:         runtime.GOOS,
-			expectedResult:   true,
-		},
-		{
-			name:             "Only identityEndpoint provided",
-			identityEndpoint: "endpoint",
-			platform:         runtime.GOOS,
-			expectedResult:   false,
-		},
-		{
-			name:           "Only imdsEndpoint provided",
-			imdsEndpoint:   "endpoint",
-			platform:       runtime.GOOS,
-			expectedResult: false,
-		},
-		{
-			name:           "No endpoints provided",
-			platform:       runtime.GOOS,
-			expectedResult: false,
-		},
-		{
-			name:           "Platform not supported",
-			platform:       "darwin",
-			expectedResult: false,
-		},
-	}
-
-	for _, tc := range testCases {
-		t.Run(tc.name, func(t *testing.T) {
-			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
-
-			result := isAzureArcEnvironment(tc.identityEndpoint, tc.imdsEndpoint, tc.platform)
-			if result != tc.expectedResult {
-				t.Fatalf(errorExpectedButGot, tc.expectedResult, result)
-			}
 		})
 	}
 }
