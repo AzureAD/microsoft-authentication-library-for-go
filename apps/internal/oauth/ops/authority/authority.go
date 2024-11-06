@@ -47,12 +47,12 @@ type jsonCaller interface {
 }
 
 var aadTrustedHostList = map[string]bool{
-	"login.windows.net":                      true, // Microsoft Azure Worldwide - Used in validation scenarios where host is not this list
-	"login.partner.microsoftonline.cn":       true, // Microsoft Azure China
-	"login.microsoftonline.de":               true, // Microsoft Azure Blackforest
-	"login-us.microsoftonline.com":           true, // Microsoft Azure US Government - Legacy
-	"login.microsoftonline.us":               true, // Microsoft Azure US Government
-	"login.microsoftonline.com":              true, // Microsoft Azure Worldwide
+	"login.windows.net":                true, // Microsoft Azure Worldwide - Used in validation scenarios where host is not this list
+	"login.partner.microsoftonline.cn": true, // Microsoft Azure China
+	"login.microsoftonline.de":         true, // Microsoft Azure Blackforest
+	"login-us.microsoftonline.com":     true, // Microsoft Azure US Government - Legacy
+	"login.microsoftonline.us":         true, // Microsoft Azure US Government
+	"login.microsoftonline.com":        true, // Microsoft Azure Worldwide
 }
 
 // TrustedHost checks if an AAD host is trusted/valid.
@@ -358,7 +358,16 @@ type Info struct {
 
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
 func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceDiscoveryDisabled bool) (Info, error) {
-	u, err := url.Parse(strings.ToLower(authority))
+
+	cannonicalAuthority := authority
+
+	// suffix authority with / if it doesn't have one
+	if !strings.HasSuffix(authority, "/") {
+		cannonicalAuthority += "/"
+	}
+
+	u, err := url.Parse(strings.ToLower(cannonicalAuthority))
+
 	if err != nil {
 		return Info{}, fmt.Errorf("couldn't parse authority url: %w", err)
 	}
@@ -376,7 +385,7 @@ func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceD
 	case "adfs":
 		authorityType = ADFS
 	case "dstsv2":
-		if len(pathParts) != 3 {
+		if len(pathParts) != 4 {
 			return Info{}, fmt.Errorf("dSTS authority must be an https URL such as https://<authority>/dstsv2/%s", DSTSTenant)
 		}
 		if pathParts[2] != DSTSTenant {
@@ -392,7 +401,7 @@ func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceD
 	// u.Host includes the port, if any, which is required for private cloud deployments
 	return Info{
 		Host:                      u.Host,
-		CanonicalAuthorityURI:     authority,
+		CanonicalAuthorityURI:     cannonicalAuthority,
 		AuthorityType:             authorityType,
 		ValidateAuthority:         validateAuthority,
 		Tenant:                    tenant,
