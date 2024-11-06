@@ -330,8 +330,8 @@ func TestAuthorityParsing(t *testing.T) {
 	}{
 		"AAD with slash":     {"https://login.microsoftonline.com/common/", "MSSTS", "https://login.microsoftonline.com/common/", "common"},
 		"AAD without slash":  {"https://login.microsoftonline.com/common", "MSSTS", "https://login.microsoftonline.com/common/", "common"},
-		"ADFS with slash":    {"https://adfs.example.com/adfs/", "ADFS", "https://adfs.example.com/adfs/", ""},
-		"ADFS without slash": {"https://adfs.example.com/adfs", "ADFS", "https://adfs.example.com/adfs/", ""},
+		"ADFS with slash":    {"https://adfs.example.com/adfs/", "ADFS", "https://adfs.example.com/adfs/", "adfs"},
+		"ADFS without slash": {"https://adfs.example.com/adfs", "ADFS", "https://adfs.example.com/adfs/", "adfs"},
 		"dSTS with slash":    {dSTSWithSlash, "DSTS", dSTSWithSlash, DSTSTenant},
 		"dSTS without slash": {dSTSNoSlash, "DSTS", dSTSWithSlash, DSTSTenant},
 	}
@@ -364,6 +364,7 @@ func TestAuthParamsWithTenant(t *testing.T) {
 	}{
 		"do nothing if tenant override is empty":          {authority: host + uuid1, tenant: "", expectedAuthority: host + uuid1},
 		"do nothing if tenant override is empty for ADFS": {authority: host + "adfs", tenant: "", expectedAuthority: host + "adfs"},
+		`do nothing if tenant override is adfs for ADFS`:  {authority: host + "adfs", tenant: "adfs", expectedAuthority: host + "adfs"},
 		"do nothing if tenant override equals tenant":     {authority: host + uuid1, tenant: uuid1, expectedAuthority: host + uuid1},
 
 		"override common to tenant":        {authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
