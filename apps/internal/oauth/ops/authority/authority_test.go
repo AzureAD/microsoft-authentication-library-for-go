@@ -320,6 +320,39 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 	}
 }
 
+func TestAuthorityParsing(t *testing.T) {
+
+	dSTSWithSlash := fmt.Sprintf("https://dstsv2.example.com/dstsv2/%s/", DSTSTenant)
+	dSTSNoSlash := fmt.Sprintf("https://dstsv2.example.com/dstsv2/%s", DSTSTenant)
+
+	tests := map[string]struct {
+		authority, expectedType, expectedCannonical, expectedTenant string
+	}{
+		"AAD with slash":     {"https://login.microsoftonline.com/common/", "MSSTS", "https://login.microsoftonline.com/common/", "common"},
+		"AAD without slash":  {"https://login.microsoftonline.com/common", "MSSTS", "https://login.microsoftonline.com/common/", "common"},
+		"ADFS with slash":    {"https://adfs.example.com/adfs/", "ADFS", "https://adfs.example.com/adfs/", ""},
+		"ADFS without slash": {"https://adfs.example.com/adfs", "ADFS", "https://adfs.example.com/adfs/", ""},
+		"dSTS with slash":    {dSTSWithSlash, "DSTS", dSTSWithSlash, DSTSTenant},
+		"dSTS without slash": {dSTSNoSlash, "DSTS", dSTSWithSlash, DSTSTenant},
+	}
+
+	for name, test := range tests {
+		actual, err := NewInfoFromAuthorityURI(test.authority, false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual.AuthorityType != test.expectedType {
+			t.Fatalf("%s: unexpected authority type %s", name, actual.AuthorityType)
+		}
+		if actual.CanonicalAuthorityURI != test.expectedCannonical {
+			t.Fatalf("%s: unexpected canonical authority %s", name, actual.CanonicalAuthorityURI)
+		}
+		if actual.Tenant != test.expectedTenant {
+			t.Fatalf("%s: unexpected tenant %s", name, actual.Tenant)
+		}
+	}
+}
+
 func TestAuthParamsWithTenant(t *testing.T) {
 	uuid1 := uuid.New().String()
 	uuid2 := uuid.New().String()
