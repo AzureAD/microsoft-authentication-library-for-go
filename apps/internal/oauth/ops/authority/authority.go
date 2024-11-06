@@ -362,7 +362,7 @@ func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceD
 	cannonicalAuthority := authority
 
 	// suffix authority with / if it doesn't have one
-	if !strings.HasSuffix(cannonicalAuthority, "/") {
+	if !strings.HasSuffix(authority, "/") {
 		cannonicalAuthority += "/"
 	}
 
@@ -376,7 +376,7 @@ func NewInfoFromAuthorityURI(authority string, validateAuthority bool, instanceD
 	}
 
 	pathParts := strings.Split(u.EscapedPath(), "/")
-	if len(pathParts) < 3 {
+	if len(pathParts) < 2 {
 		return Info{}, errors.New(`authority must be an URL such as "https://login.microsoftonline.com/<your tenant>"`)
 	}
 
