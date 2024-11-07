@@ -128,6 +128,35 @@ func Test_SystemAssigned_Returns_AcquireToken_Failure(t *testing.T) {
 	}
 }
 
+func TestCacheScopes(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	const (
+		a = "A"
+		b = "B/.default"
+	)
+	mc := mock.Client{}
+	client, err := New(SystemAssigned(), WithHTTPClient(&mc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, r := range []string{a, b} {
+		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600)))
+		for i := 0; i < 2; i++ {
+			ar, err := client.AcquireToken(context.Background(), r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ar.AccessToken != r {
+				t.Fatalf("expected %q, got %q", r, ar.AccessToken)
+			}
+		}
+	}
+}
+
 func Test_SystemAssigned_Returns_Token_Success(t *testing.T) {
 	testCases := []resourceTestData{
 		{source: DefaultToIMDS, endpoint: imdsEndpoint, resource: resource, miType: SystemAssigned()},
