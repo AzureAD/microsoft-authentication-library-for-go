@@ -224,11 +224,16 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request) (*http.Response,
 		if attempt == maxRetries-1 {
 			return resp, err
 		}
-		io.Copy(io.Discard, resp.Body)
-		resp.Body.Close()
-
-		delay := time.Duration(time.Second)
-		time.Sleep(delay)
+		if resp != nil && resp.Body != nil {
+			io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+		select {
+		case <-time.After(time.Second):
+		case <-req.Context().Done():
+			err = req.Context().Err()
+			return resp, err
+		}
 	}
 	return resp, err
 }
