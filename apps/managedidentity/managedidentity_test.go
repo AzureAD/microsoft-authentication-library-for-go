@@ -133,17 +133,13 @@ func TestCacheScopes(t *testing.T) {
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	const (
-		a = "A"
-		b = "B/.default"
-	)
 	mc := mock.Client{}
 	client, err := New(SystemAssigned(), WithHTTPClient(&mc))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	for _, r := range []string{a, b} {
+	for _, r := range []string{"A", "B/.default"} {
 		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600)))
 		for i := 0; i < 2; i++ {
 			ar, err := client.AcquireToken(context.Background(), r)
