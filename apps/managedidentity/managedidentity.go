@@ -159,7 +159,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
-	source, err := GetSource()
+	source, err := getSource()
 	if err != nil {
 		return Client{}, err
 	}
@@ -211,8 +211,8 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	return client, nil
 }
 
-// GetSource detects and returns the managed identity source available on the environment.
-func GetSource() (Source, error) {
+// getSource detects and returns the managed identity source available on the environment.
+func getSource() (Source, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	identityHeader := os.Getenv(identityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(identityServerThumbprintEnvVar)
@@ -418,7 +418,10 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 }
 
 func createAzureArcAuthRequest(ctx context.Context, resource string, key string) (*http.Request, error) {
-	identityEndpoint := azureArcEndpoint
+	identityEndpoint := os.Getenv(identityEndpointEnvVar)
+	if identityEndpoint == "" {
+		identityEndpoint = azureArcEndpoint
+	}
 	msiEndpoint, parseErr := url.Parse(identityEndpoint)
 
 	if parseErr != nil {
