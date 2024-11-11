@@ -55,8 +55,6 @@ const (
 	systemAssignedManagedIdentity = "system_assigned_managed_identity"
 
 	// Azure Arc
-	// SonarQube: Suppress warning for hardcoded IP address
-	// sonar-ignore: S1313
 	azureArcEndpoint               = "http://127.0.0.1:40342/metadata/identity/oauth2/token"
 	azureArcAPIVersion             = "2020-06-01"
 	azureArcFileExtension          = ".key"
@@ -211,7 +209,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	return client, nil
 }
 
-// getSource detects and returns the managed identity source available on the environment.
+// GetSource detects and returns the managed identity source available on the environment.
 func getSource() (Source, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	identityHeader := os.Getenv(identityHeaderEnvVar)
@@ -314,10 +312,6 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 	}
 	return authResultFromToken(client.authParams, tokenResponse)
 }
-
-// func handleAzureArcExpectedError(ctx context.Context, client Client, resource string, fakeAuthParams authority.AuthParams, err error) (base.AuthResult, error) {
-
-// }
 
 func createFakeAuthParams(client Client) (authority.AuthParams, error) {
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
@@ -428,48 +422,6 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
 	}
 
-	// Check if the imds endpoint is set to the default for file detection
-	if imdsEndpoint == himdsExecutableHelperString {
-		println(fmt.Sprintf("[Managed Identity] AzureArc managed identity is available through file detection. Defaulting to known AzureArc endpoint: %s. Creating AzureArc managed identity.", azureArcEndpoint))
-	} else {
-		// Both the identity and imds endpoints are defined without file detection; validate them
-		validatedIdentityEndpoint, identityErr := getValidatedEnvVariableUrlString(IdentityEndpointEnvVar, identityEndpoint, string(AzureArc))
-		if identityErr != nil {
-			return nil, identityErr
-		}
-
-		validatedIdentityEndpoint = strings.TrimSuffix(validatedIdentityEndpoint, "/")
-
-		_, imdsErr := getValidatedEnvVariableUrlString(ArcIMDSEnvVar, imdsEndpoint, string(AzureArc))
-		if imdsErr != nil {
-			return nil, imdsErr
-		}
-
-		println(fmt.Sprintf("[Managed Identity] Environment variables validation passed for AzureArc managed identity. Endpoint URI: %s. Creating AzureArc managed identity.", validatedIdentityEndpoint))
-	}
-
-	if _, ok := id.(systemAssignedValue); !ok {
-		return nil, errors.New("unable to create AzureArc")
-	}
-
-	msiEndpoint, parseErr := url.Parse(identityEndpoint)
-
-	if parseErr != nil {
-		return nil, fmt.Errorf("couldn't parse %q: %s", identityEndpoint, parseErr)
-	}
-	// envEndpoint, ok := os.LookupEnv(IdentityEndpointEnvVar)
-	// if !ok {
-	// 	msiEndpoint, err = url.Parse(azureArcEndpoint)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
-	// 	}
-	// } else {
-	// 	msiEndpoint, err = url.Parse(envEndpoint)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("couldn't parse %q: %s", envEndpoint, err)
-	// 	}
-	// }
-
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
 	resource = strings.TrimSuffix(resource, "/.default")
@@ -487,22 +439,6 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 	}
 
 	return req, nil
-}
-
-func validateAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
-	if identityEndpoint != "" && imdsEndpoint != "" {
-		return true
-	}
-
-	himdsFilePath := getAzureArcFilePath(platform)
-
-	if himdsFilePath != "" {
-		if _, err := os.Stat(himdsFilePath); !os.IsNotExist(err) {
-			return true
-		}
-	}
-
-	return false
 }
 
 func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
@@ -566,48 +502,6 @@ func (c *Client) getAzureArcSecretKey(response *http.Response, platform string) 
 	secret, err := os.ReadFile(secretFilePath[1])
 	if err != nil {
 		return "", fmt.Errorf("failed to read %q due to error: %s", secretFilePath[1], err)
-	}
-
-	return string(secret), nil
-}
-
-func handleSecretFile(wwwAuthenticateHeader, expectedSecretFilePath string) ([]byte, error) {
-	// split the header to get the secret file path
-	parts := strings.Split(wwwAuthenticateHeader, "Basic realm=")
-	if len(parts) < 2 {
-		return "", fmt.Errorf("basic realm= not found in the string, instead found: %s", wwwAuthenticateHeader)
-	}
-
-	secretFilePath := parts
-
-	// check that the file in the file path is a .key file
-	fileName := filepath.Base(secretFilePath[1])
-
-	if !strings.HasSuffix(fileName, azureArcFileExtension) {
-		return "", fmt.Errorf("invalid file extension, expected %s, got %s", azureArcFileExtension, filepath.Ext(fileName))
-	}
-
-	// check that file path from header matches the expected file path for the platform
-	if strings.TrimSpace(filepath.Dir(expectedSecretFilePath)) != filepath.Dir(secretFilePath[1]) {
-		return nil, fmt.Errorf("invalid file path, expected %s, got %s", secretFilePath, filepath.Dir(expectedSecretFilePath))
-	}
-
-	fileInfo, err := os.Stat(secretFilePath[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to get metadata for %q due to error: %s", secretFilePath, err)
-	}
-
-	secretFileSize := fileInfo.Size()
-
-	// Throw an error if the secret file's size is greater than 4096 bytes
-	if s := fileInfo.Size(); s > azureArcMaxFileSizeBytes {
-		return "", fmt.Errorf("invalid secret file size, expected %d, file size was %d", azureArcMaxFileSizeBytes, secretFileSize)
-	}
-
-	// Attempt to read the contents of the secret file
-	secret, err := os.ReadFile(secretFilePath[1])
-	if err != nil {
-		return nil, fmt.Errorf("failed to read %q due to error: %s", secretFilePath, err)
 	}
 
 	return string(secret), nil
