@@ -157,7 +157,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //
 // Options: [WithHTTPClient]
 func New(id ID, options ...ClientOption) (Client, error) {
-	source, err := getSource()
+	source, err := GetSource()
 	if err != nil {
 		return Client{}, err
 	}
@@ -169,14 +169,12 @@ func New(id ID, options ...ClientOption) (Client, error) {
 			return Client{}, errors.New("azure Arc doesn't support user assigned managed identities")
 		}
 	}
-
 	opts := ClientOptions{
 		httpClient: shared.DefaultClient,
 	}
 	for _, option := range options {
 		option(&opts)
 	}
-
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -194,23 +192,21 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
-
 	client := Client{
 		miType:     id,
 		httpClient: opts.httpClient,
 		source:     source,
 	}
-
-	client.authParams, err = createFakeAuthParams(client)
+	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return Client{}, err
 	}
-
+	client.authParams = authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
 	return client, nil
 }
 
 // GetSource detects and returns the managed identity source available on the environment.
-func getSource() (Source, error) {
+func GetSource() (Source, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	identityHeader := os.Getenv(identityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(identityServerThumbprintEnvVar)
@@ -235,7 +231,7 @@ func getSource() (Source, error) {
 //
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
-func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
 	o := AcquireTokenOptions{}
 	for _, option := range options {
 		option(&o)
@@ -243,24 +239,24 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		storageTokenResponse, err := cacheManager.Read(ctx, client.authParams)
+		storageTokenResponse, err := cacheManager.Read(ctx, c.authParams)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			ar.AccessToken, err = client.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
 	}
 
-	switch client.source {
+	switch c.source {
 	case AzureArc:
-		return acquireTokenForAzureArc(ctx, client, resource)
+		return acquireTokenForAzureArc(ctx, c, resource)
 	case DefaultToIMDS:
-		return acquireTokenForIMDS(ctx, client, resource)
+		return acquireTokenForIMDS(ctx, c, resource)
 	default:
-		return base.AuthResult{}, fmt.Errorf("unsupported source %q", client.source)
+		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
 }
 
@@ -269,7 +265,6 @@ func acquireTokenForIMDS(ctx context.Context, client Client, resource string) (b
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-
 	tokenResponse, err := client.getTokenForRequest(req)
 	if err != nil {
 		return base.AuthResult{}, err
@@ -310,15 +305,6 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 	return authResultFromToken(client.authParams, tokenResponse)
 }
 
-func createFakeAuthParams(client Client) (authority.AuthParams, error) {
-	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
-	if err != nil {
-		return authority.AuthParams{}, err
-	}
-
-	return authority.NewAuthParams(client.miType.value(), fakeAuthInfo), nil
-}
-
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
 	if cacheManager == nil {
 		return base.AuthResult{}, errors.New("cache instance is nil")
@@ -337,19 +323,15 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 
 func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
 	var r accesstokens.TokenResponse
-
 	resp, err := client.httpClient.Do(req)
 	if err != nil {
 		return r, err
 	}
-
 	responseBytes, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
-
 	if err != nil {
 		return r, err
 	}
-
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusAccepted:
 	default:
@@ -439,11 +421,10 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 }
 
 func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string) bool {
-	platform := runtime.GOOS
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		return true
 	}
-	himdsFilePath := getAzureArcFilePath(platform)
+	himdsFilePath := getAzureArcFilePath(runtime.GOOS)
 	if himdsFilePath != "" {
 		if _, err := os.Stat(himdsFilePath); err == nil {
 			return true

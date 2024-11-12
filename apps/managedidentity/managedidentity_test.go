@@ -26,13 +26,13 @@ const (
 	token                 = "fake-access-token"
 	fakeAzureArcFilePath  = "fake/fake"
 	secretKey             = "secret.key"
-	wrongSecretKey        = "2secret.key"
 	basicRealm            = "Basic realm="
-	thisShouldFail        = "This should fail"
 
 	errorExpectedButGot      = "expected %v, got %v"
 	errorFormingJsonResponse = "error while forming json response : %s"
 )
+
+// We only need to do this if we'll routinely run the test suite on Arc-managed machines (I doubt we will). If you still want to keep this, it would be best to use a path that's certain not to exist such as filepath.Join(t.TempDir(), t.Name())
 
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
@@ -78,7 +78,7 @@ func createMockFile(t *testing.T, path string, size int64) {
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-	defer f.Close() // Ensure the file is closed
+	defer f.Close()
 
 	if size > 0 {
 		if err := f.Truncate(size); err != nil {
@@ -91,11 +91,6 @@ func createMockFile(t *testing.T, path string, size int64) {
 		t.Fatalf("failed to write to file: %v", err)
 	}
 	t.Cleanup(func() { os.Remove(path) })
-}
-
-func getMockFilePath(t *testing.T) string {
-	tempDir := t.TempDir()
-	return filepath.Join(tempDir, "AzureConnectedMachineAgent")
 }
 
 func setEnvVars(t *testing.T, source Source) {
@@ -139,12 +134,12 @@ func TestSource(t *testing.T) {
 			setEnvVars(t, testCase)
 			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
-			actualSource, err := getSource()
+			actualSource, err := GetSource()
 			if err != nil {
 				t.Fatalf("error while getting source: %s", err.Error())
 			}
 			if actualSource != testCase {
-				t.Errorf(errorExpectedButGot, testCase, actualSource)
+				t.Fatalf(errorExpectedButGot, testCase, actualSource)
 			}
 		})
 	}
@@ -157,13 +152,13 @@ func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 	// Create the mock himds file
 	createMockFile(t, mockFilePath, 1024)
 
-	actualSource, err := getSource()
+	actualSource, err := GetSource()
 	if err != nil {
 		t.Fatalf("error while getting source: %s", err.Error())
 	}
 
 	if actualSource != AzureArc {
-		t.Errorf(errorExpectedButGot, AzureArc, actualSource)
+		t.Fatalf(errorExpectedButGot, AzureArc, actualSource)
 	}
 }
 
@@ -181,7 +176,6 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(string(DefaultToIMDS)+"-"+testCase.miType.value(), func(t *testing.T) {
 			endpoint := imdsDefaultEndpoint
-			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 			var localUrl *url.URL
 			mockClient := mock.Client{}
@@ -193,7 +187,6 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
 			}))
-
 			// resetting cache
 			before := cacheManager
 			defer func() { cacheManager = before }()
@@ -203,16 +196,13 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
-
 			if err != nil {
 				t.Fatal(err)
 			}
 			if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
 				t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
 			}
-
 			query := localUrl.Query()
 
 			if query.Get(apiVersionQueryParameterName) != imdsAPIVersion {
@@ -264,7 +254,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 }
 
 func TestAzureArc(t *testing.T) {
-	testCaseFilePath := getMockFilePath(t)
+	testCaseFilePath := filepath.Join(t.TempDir(), "AzureConnectedMachineAgent")
 
 	endpoint := azureArcEndpoint
 	setEnvVars(t, AzureArc)
@@ -291,7 +281,6 @@ func TestAzureArc(t *testing.T) {
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
-	// adding success response.
 	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
 		mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 			localUrl = r.URL
@@ -308,7 +297,7 @@ func TestAzureArc(t *testing.T) {
 	}
 	result, err := client.AcquireToken(context.Background(), resourceDefaultSuffix)
 	if err != nil {
-		t.Fatalf(`error not expected, got error: "%s"`, err)
+		t.Fatal(err)
 	}
 
 	if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
@@ -384,7 +373,7 @@ func TestAzureArcPlatformSupported(t *testing.T) {
 
 	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
 	if err != nil {
-		t.Fatalf(`no errors were expected, got : %v"`, err)
+		t.Fatal(err)
 	}
 	result, err := client.AcquireToken(context.Background(), resource)
 	if err == nil || !strings.Contains(err.Error(), "platform not supported") {
@@ -399,7 +388,8 @@ func TestAzureArcPlatformSupported(t *testing.T) {
 func TestAzureArcErrors(t *testing.T) {
 	setEnvVars(t, AzureArc)
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
-	testCaseFilePath := getMockFilePath(t)
+	testCaseFilePath := filepath.Join(t.TempDir(), "AzureConnectedMachineAgent")
+
 	testCases := []struct {
 		name          string
 		headerValue   string
@@ -422,12 +412,12 @@ func TestAzureArcErrors(t *testing.T) {
 		},
 		{
 			name:          "Invalid file path",
-			headerValue:   "Basic realm=" + filepath.Join("path", "to", "secret.key"),
+			headerValue:   "Basic realm=" + filepath.Join("path", "to", secretKey),
 			expectedError: "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
 		},
 		{
 			name:          "Unable to get file info",
-			headerValue:   basicRealm + filepath.Join(testCaseFilePath, wrongSecretKey),
+			headerValue:   basicRealm + filepath.Join(testCaseFilePath, "2secret.key"),
 			expectedError: "failed to get metadata",
 		},
 		{
@@ -461,7 +451,7 @@ func TestAzureArcErrors(t *testing.T) {
 
 			client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
 			if err != nil {
-				t.Fatalf(`expected error: "%v" "`, testCase.expectedError)
+				t.Fatal(err)
 				return
 			}
 			result, err := client.AcquireToken(context.Background(), resource)
@@ -470,7 +460,7 @@ func TestAzureArcErrors(t *testing.T) {
 
 			}
 			if result.AccessToken != "" {
-				t.Fatalf("access token should be empty")
+				t.Fatal("access token should be empty")
 			}
 		})
 	}
@@ -570,7 +560,6 @@ func TestCreatingIMDSClient(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
-
 			client, err := New(tt.id)
 			if tt.wantErr {
 				if err == nil {
