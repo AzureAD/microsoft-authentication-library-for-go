@@ -224,7 +224,7 @@ func getSource() (Source, error) {
 		return AppService, nil
 	} else if msiEndpoint != "" {
 		return CloudShell, nil
-	} else if isAzureArcEnvironment(identityEndpoint, imdsEndpoint, runtime.GOOS) {
+	} else if isAzureArcEnvironment(identityEndpoint, imdsEndpoint) {
 		return AzureArc, nil
 	}
 
@@ -243,9 +243,6 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		if cacheManager == nil {
-			return base.AuthResult{}, errors.New("cache instance is nil")
-		}
 		storageTokenResponse, err := cacheManager.Read(ctx, client.authParams)
 		if err != nil {
 			return base.AuthResult{}, err
@@ -441,19 +438,17 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 	return req, nil
 }
 
-func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string, platform string) bool {
+func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string) bool {
+	platform := runtime.GOOS
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		return true
 	}
-
 	himdsFilePath := getAzureArcFilePath(platform)
-
 	if himdsFilePath != "" {
 		if _, err := os.Stat(himdsFilePath); err == nil {
 			return true
 		}
 	}
-
 	return false
 }
 
