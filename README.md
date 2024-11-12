@@ -13,7 +13,7 @@ Quick links:
 
 ![Go](https://github.com/AzureAD/microsoft-authentication-library-for-go/workflows/Go/badge.svg?branch=dev)
 
-## Installation
+## Installation 
 
 ### Setting up Go
 To install Go, visit [this link](https://golang.org/dl/).
