@@ -21,6 +21,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/golang-jwt/jwt/v5"
+	"github.com/kylelemons/godebug/pretty"
+
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
@@ -28,8 +31,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
-	"github.com/golang-jwt/jwt/v5"
-	"github.com/kylelemons/godebug/pretty"
 )
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
@@ -66,10 +67,10 @@ func TestCertFromPEM(t *testing.T) {
 
 const (
 	authorityFmt      = "https://%s/%s"
-	fakeAuthority     = "https://fake_authority/fake"
+	fakeAuthority     = "https://fake_authority/fake_tenant"
 	fakeClientID      = "fake_client_id"
 	fakeSecret        = "fake_secret"
-	fakeTokenEndpoint = "https://fake_authority/fake/token"
+	fakeTokenEndpoint = "https://fake_authority/fake_tenant/token"
 	localhost         = "http://localhost"
 	refresh           = "fake_refresh"
 	token             = "fake_token"
@@ -77,7 +78,7 @@ const (
 
 var tokenScope = []string{"the_scope"}
 
-func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ...Option) (Client, error) {
+func fakeClient(tk accesstokens.TokenResponse, credential Credential, fakeAuthority string, options ...Option) (Client, error) {
 	client, err := New(fakeAuthority, fakeClientID, credential, options...)
 	if err != nil {
 		return Client{}, err
@@ -87,7 +88,7 @@ func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ..
 	}
 	client.base.Token.Authority = &fake.Authority{
 		InstanceResp: authority.InstanceDiscoveryResponse{
-			TenantDiscoveryEndpoint: "https://fake_authority/fake/discovery/endpoint",
+			TenantDiscoveryEndpoint: fakeAuthority + "/discovery/endpoint",
 			Metadata: []authority.InstanceDiscoveryMetadata{
 				{
 					PreferredNetwork: "fake_authority",
@@ -105,8 +106,12 @@ func fakeClient(tk accesstokens.TokenResponse, credential Credential, options ..
 		},
 	}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{
-		Endpoints: authority.NewEndpoints("https://fake_authority/fake/auth",
-			fakeTokenEndpoint, "https://fake_authority/fake/jwt", "fake_authority"),
+		Endpoints: authority.NewEndpoints(
+			fakeAuthority+"/auth",
+			fakeAuthority+"/token",
+			fakeAuthority+"/jwt",
+			fakeAuthority,
+		),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
 	return client, nil
@@ -138,7 +143,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			TokenType:     "Bearer",
-		}, cred)
+		}, cred, fakeAuthority)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -162,6 +167,79 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		if tk.AccessToken != token {
 			t.Errorf("TestAcquireTokenByCredential(%s): unexpected access token %s", test.desc, tk.AccessToken)
 		}
+	}
+}
+
+func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	envRegion := "envRegion"
+	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Unsetenv("MSAL_FORCE_REGION")
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	mockClient := mock.Client{}
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.base.AuthParams.AuthorityInfo.Region != envRegion {
+		t.Fatalf("wanted %q, got %q", envRegion, client.base.AuthParams.AuthorityInfo.Region)
+	}
+}
+
+func TestRegionAutoEnable_SpecifiedRegion_EnvRegion(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	envRegion := "envRegion"
+	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.Unsetenv("MSAL_FORCE_REGION")
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	mockClient := mock.Client{}
+	testRegion := "region"
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.base.AuthParams.AuthorityInfo.Region != testRegion {
+		t.Fatalf("wanted %q, got %q", testRegion, client.base.AuthParams.AuthorityInfo.Region)
+	}
+}
+
+func TestRegionAutoEnable_DisableMsalForceRegion(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	mockClient := mock.Client{}
+	testRegion := "DisableMsalForceRegion"
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.base.AuthParams.AuthorityInfo.Region != "" {
+		t.Fatalf("wanted empty, got %q", client.base.AuthParams.AuthorityInfo.Region)
 	}
 }
 
@@ -232,7 +310,7 @@ func TestAcquireTokenByAssertionCallback(t *testing.T) {
 		return "", errors.New("expected error")
 	}
 	cred := NewCredFromAssertionCallback(getAssertion)
-	client, err := fakeClient(accesstokens.TokenResponse{}, cred)
+	client, err := fakeClient(accesstokens.TokenResponse{}, cred, fakeAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -276,7 +354,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 					Oid:               "123-456",
 					TenantID:          "fake",
 					Subject:           "nothing",
-					Issuer:            "https://fake_authority/fake",
+					Issuer:            fakeAuthority,
 					Audience:          "abc-123",
 					ExpirationTime:    time.Now().Add(time.Hour).Unix(),
 					IssuedAt:          time.Now().Add(-5 * time.Minute).Unix(),
@@ -291,7 +369,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 				},
 			}
 
-			client, err := fakeClient(tr, cred)
+			client, err := fakeClient(tr, cred, fakeAuthority)
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -518,7 +596,7 @@ func TestNewCredFromCert(t *testing.T) {
 					AccessToken:   token,
 					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-				}, cred, opts...)
+				}, cred, fakeAuthority, opts...)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -1310,7 +1388,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 		TokenType:     "TokenType",
-	}, cred)
+	}, cred, fakeAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1327,5 +1405,61 @@ func TestWithAuthenticationScheme(t *testing.T) {
 	}
 	if result.AccessToken != fmt.Sprintf(mock.Authnschemeformat, token) {
 		t.Fatalf(`unexpected access token "%s"`, result.AccessToken)
+	}
+}
+
+func TestAcquireTokenByCredentialFromDSTS(t *testing.T) {
+	tests := map[string]struct {
+		cred string
+	}{
+		"secret":           {cred: "fake_secret"},
+		"signed assertion": {cred: "fake_assertion"},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			cred, err := NewCredFromSecret(test.cred)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, err := fakeClient(accesstokens.TokenResponse{
+				AccessToken:   token,
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+				TokenType:     "Bearer",
+			}, cred, "https://fake_authority/dstsv2/"+authority.DSTSTenant)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// expect first attempt to fail
+			_, err = client.AcquireTokenSilent(context.Background(), tokenScope)
+			if err == nil {
+				t.Errorf("unexpected nil error from AcquireTokenSilent: %s", err)
+			}
+
+			tk, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+			if err != nil {
+				t.Errorf("got err == %s, want err == nil", err)
+			}
+			if tk.AccessToken != token {
+				t.Errorf("unexpected access token %s", tk.AccessToken)
+			}
+
+			tk, err = client.AcquireTokenSilent(context.Background(), tokenScope)
+			if err != nil {
+				t.Errorf("got err == %s, want err == nil", err)
+			}
+			if tk.AccessToken != token {
+				t.Errorf("unexpected access token %s", tk.AccessToken)
+			}
+
+			// fail for another tenant
+			tk, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("other"))
+			if err == nil {
+				t.Errorf("unexpected nil error from AcquireTokenSilent: %s", err)
+			}
+		})
 	}
 }

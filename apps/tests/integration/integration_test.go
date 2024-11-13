@@ -36,7 +36,7 @@ const (
 
 	// Default values
 	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
-	pemFile         = "Insert path to pem file here"
+	pemFile         = "../../../cert.pem"
 )
 
 var httpClient = http.Client{}
@@ -242,8 +242,7 @@ func TestUsernamePassword(t *testing.T) {
 
 // TODO: update this at a later date, see issue https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/513
 func TestConfidentialClientWithSecret(t *testing.T) {
-	t.Skip("skipping integration test until it is fixed")
-
+	t.Skip("Skipping test until fix")
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -273,13 +272,11 @@ func TestConfidentialClientWithSecret(t *testing.T) {
 	if silentResult.AccessToken == "" {
 		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
 	}
-
 }
 
 // TODO: update this at a later date, see issue https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/513
 func TestOnBehalfOf(t *testing.T) {
-	t.Skip("skipping integration test until it is fixed")
-
+	t.Skip("Skipping test until fix")
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}

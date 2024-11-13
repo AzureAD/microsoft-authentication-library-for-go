@@ -14,6 +14,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/google/uuid"
+
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -212,7 +214,7 @@ func TestAADInstanceDiscovery(t *testing.T) {
 		},
 		{
 			desc:     "Success with authorityInfo.Host not in trusted list",
-			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, defaultHost),
+			endpoint: fmt.Sprintf(aadInstanceDiscoveryEndpoint, defaultHost),
 			authInfo: Info{
 				Host:   "host",
 				Tenant: "tenant",
@@ -225,7 +227,7 @@ func TestAADInstanceDiscovery(t *testing.T) {
 		},
 		{
 			desc:     "Success with authorityInfo.Host in trusted list",
-			endpoint: fmt.Sprintf(instanceDiscoveryEndpoint, "login.microsoftonline.de"),
+			endpoint: fmt.Sprintf(aadInstanceDiscoveryEndpoint, "login.microsoftonline.de"),
 			authInfo: Info{
 				Host:   "login.microsoftonline.de",
 				Tenant: "tenant",
@@ -305,7 +307,6 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 		Host:                  "login.microsoftonline.com",
 		CanonicalAuthorityURI: authorityURI,
 		AuthorityType:         "MSSTS",
-		UserRealmURIPrefix:    "https://login.microsoftonline.com/common/userrealm/",
 		Tenant:                "common",
 		ValidateAuthority:     true,
 	}
@@ -319,23 +320,67 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 	}
 }
 
+func TestAuthorityParsing(t *testing.T) {
+
+	dSTSWithSlash := fmt.Sprintf("https://dstsv2.example.com/dstsv2/%s/", DSTSTenant)
+	dSTSNoSlash := fmt.Sprintf("https://dstsv2.example.com/dstsv2/%s", DSTSTenant)
+
+	tests := map[string]struct {
+		authority, expectedType, expectedCannonical, expectedTenant string
+	}{
+		"AAD with slash":     {"https://login.microsoftonline.com/common/", "MSSTS", "https://login.microsoftonline.com/common/", "common"},
+		"AAD without slash":  {"https://login.microsoftonline.com/common", "MSSTS", "https://login.microsoftonline.com/common/", "common"},
+		"ADFS with slash":    {"https://adfs.example.com/adfs/", "ADFS", "https://adfs.example.com/adfs/", "adfs"},
+		"ADFS without slash": {"https://adfs.example.com/adfs", "ADFS", "https://adfs.example.com/adfs/", "adfs"},
+		"dSTS with slash":    {dSTSWithSlash, "DSTS", dSTSWithSlash, DSTSTenant},
+		"dSTS without slash": {dSTSNoSlash, "DSTS", dSTSWithSlash, DSTSTenant},
+	}
+
+	for name, test := range tests {
+		actual, err := NewInfoFromAuthorityURI(test.authority, false, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if actual.AuthorityType != test.expectedType {
+			t.Fatalf("%s: unexpected authority type %s", name, actual.AuthorityType)
+		}
+		if actual.CanonicalAuthorityURI != test.expectedCannonical {
+			t.Fatalf("%s: unexpected canonical authority %s", name, actual.CanonicalAuthorityURI)
+		}
+		if actual.Tenant != test.expectedTenant {
+			t.Fatalf("%s: unexpected tenant %s", name, actual.Tenant)
+		}
+	}
+}
+
 func TestAuthParamsWithTenant(t *testing.T) {
-	uuid1 := "00000000-0000-0000-0000-000000000000"
-	uuid2 := strings.ReplaceAll(uuid1, "0", "1")
+	uuid1 := uuid.New().String()
+	uuid2 := uuid.New().String()
 	host := "https://localhost/"
-	for _, test := range []struct {
+
+	tests := map[string]struct {
 		authority, expectedAuthority, tenant string
 		expectError                          bool
 	}{
-		{authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
-		{authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
-		{authority: host + uuid1, tenant: "common", expectError: true},
-		{authority: host + uuid1, tenant: "organizations", expectError: true},
-		{authority: host + "adfs", tenant: uuid1, expectError: true},
-		{authority: host + "consumers", tenant: uuid1, expectError: true},
-	} {
-		t.Run("", func(t *testing.T) {
+		"do nothing if tenant override is empty":          {authority: host + uuid1, tenant: "", expectedAuthority: host + uuid1},
+		"do nothing if tenant override is empty for ADFS": {authority: host + "adfs", tenant: "", expectedAuthority: host + "adfs"},
+		`do nothing if tenant override is adfs for ADFS`:  {authority: host + "adfs", tenant: "adfs", expectedAuthority: host + "adfs"},
+		"do nothing if tenant override equals tenant":     {authority: host + uuid1, tenant: uuid1, expectedAuthority: host + uuid1},
+
+		"override common to tenant":        {authority: host + "common", tenant: uuid1, expectedAuthority: host + uuid1},
+		"override organizations to tenant": {authority: host + "organizations", tenant: uuid1, expectedAuthority: host + uuid1},
+		"override tenant to tenant2":       {authority: host + uuid1, tenant: uuid2, expectedAuthority: host + uuid2},
+
+		"tenant can't be common for AAD":        {authority: host + uuid1, tenant: "common", expectError: true},
+		"tenant can't be consumers for AAD":     {authority: host + uuid1, tenant: "consumers", expectError: true},
+		"tenant can't be organizations for AAD": {authority: host + uuid1, tenant: "organizations", expectError: true},
+		"can't override tenant for ADFS ever":   {authority: host + "adfs", tenant: uuid1, expectError: true},
+		"can't override tenant for dSTS ever":   {authority: host + "dstsv2/" + DSTSTenant, tenant: uuid1, expectError: true},
+		"can't override AAD tenant consumers":   {authority: host + "consumers", tenant: uuid1, expectError: true},
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
 			info, err := NewInfoFromAuthorityURI(test.authority, false, false)
 			if err != nil {
 				t.Fatal(err)
