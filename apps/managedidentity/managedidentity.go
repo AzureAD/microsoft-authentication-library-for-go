@@ -150,7 +150,6 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, claims s
 	}
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQuerryParameterName, imdsAPIVersion)
-	resource = strings.TrimSuffix(resource, "/.default")
 	msiParameters.Set(resourceQuerryParameterName, resource)
 
 	if len(claims) > 0 {
@@ -220,6 +219,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (client Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 
 	for _, option := range options {
@@ -230,23 +230,24 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 		return base.AuthResult{}, err
 	}
 
-	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
+	authInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	fakeAuthParams := authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
+	authParams := authority.NewAuthParams(client.miType.value(), authInfo)
+	authParams.Scopes = []string{resource}
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
 		if cacheManager == nil {
 			return base.AuthResult{}, errors.New("cache instance is nil")
 		}
-		storageTokenResponse, err := cacheManager.Read(ctx, fakeAuthParams)
+		storageTokenResponse, err := cacheManager.Read(ctx, authParams)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			ar.AccessToken, err = fakeAuthParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
 	}
@@ -254,7 +255,7 @@ func (client Client) AcquireToken(ctx context.Context, resource string, options 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(fakeAuthParams, tokenResponse)
+	return authResultFromToken(authParams, tokenResponse)
 }
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
