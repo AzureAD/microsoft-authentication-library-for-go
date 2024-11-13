@@ -145,6 +145,31 @@ func TestSource(t *testing.T) {
 	}
 }
 
+func TestCacheScopes(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	mc := mock.Client{}
+	client, err := New(SystemAssigned(), WithHTTPClient(&mc))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, r := range []string{"A", "B/.default"} {
+		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600)))
+		for i := 0; i < 2; i++ {
+			ar, err := client.AcquireToken(context.Background(), r)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if ar.AccessToken != r {
+				t.Fatalf("expected %q, got %q", r, ar.AccessToken)
+			}
+		}
+	}
+}
+
 func TestAzureArcReturnsWhenHimdsFound(t *testing.T) {
 	mockFilePath := filepath.Join(t.TempDir(), "himds")
 	setCustomAzureArcFilePath(t, mockFilePath)

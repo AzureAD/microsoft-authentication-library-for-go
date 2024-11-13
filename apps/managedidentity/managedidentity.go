@@ -232,10 +232,12 @@ func GetSource() (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 	for _, option := range options {
 		option(&o)
 	}
+	c.authParams.Scopes = []string{resource}
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
@@ -366,7 +368,6 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 	}
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, imdsAPIVersion)
-	resource = strings.TrimSuffix(resource, "/.default")
 	msiParameters.Set(resourceQueryParameterName, resource)
 
 	switch t := id.(type) {
