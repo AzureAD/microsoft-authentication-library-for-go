@@ -404,7 +404,6 @@ func createAzureArcAuthRequest(ctx context.Context, resource string, key string)
 
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
-	resource = strings.TrimSuffix(resource, "/.default")
 	msiParameters.Set(resourceQueryParameterName, resource)
 
 	msiEndpoint.RawQuery = msiParameters.Encode()
