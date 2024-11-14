@@ -32,8 +32,6 @@ const (
 	errorFormingJsonResponse = "error while forming json response : %s"
 )
 
-// We only need to do this if we'll routinely run the test suite on Arc-managed machines (I doubt we will). If you still want to keep this, it would be best to use a path that's certain not to exist such as filepath.Join(t.TempDir(), t.Name())
-
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int64  `json:"expires_in"`
