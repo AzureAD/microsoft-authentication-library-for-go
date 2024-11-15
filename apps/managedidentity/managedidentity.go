@@ -54,6 +54,7 @@ const (
 	defaultRetryCount             = 3
 )
 
+// retry codes for IMDS
 var retryCodesForIMDS = []int{
 	http.StatusGone,                          // 410
 	http.StatusNotImplemented,                // 501
