@@ -61,7 +61,7 @@ const (
 	azureArcMaxFileSizeBytes int64 = 4096
 	linuxTokenPath                 = "/var/opt/azcmagent/tokens"
 	linuxHimdsPath                 = "/opt/azcmagent/bin/himds"
-	azureConnectedMachine          = "AzureConnectedMachine"
+	azureConnectedMachine          = "AzureConnectedMachineAgent"
 	himdsExecutableName            = "himds.exe"
 	tokenName                      = "Tokens"
 
