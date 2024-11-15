@@ -277,7 +277,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 }
 
 func TestAzureArc(t *testing.T) {
-	testCaseFilePath := filepath.Join(t.TempDir(), "AzureConnectedMachineAgent")
+	testCaseFilePath := filepath.Join(t.TempDir(), azureConnectedMachine)
 
 	endpoint := azureArcEndpoint
 	setEnvVars(t, AzureArc)
