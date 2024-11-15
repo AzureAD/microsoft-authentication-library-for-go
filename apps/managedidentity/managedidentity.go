@@ -54,6 +54,18 @@ const (
 	defaultRetryCount             = 3
 )
 
+var retryCodesForIMDS = []int{
+	http.StatusNotFound,                      // 404
+	http.StatusGone,                          // 410
+	http.StatusNotImplemented,                // 501
+	http.StatusHTTPVersionNotSupported,       // 505
+	http.StatusVariantAlsoNegotiates,         // 506
+	http.StatusInsufficientStorage,           // 507
+	http.StatusLoopDetected,                  // 508
+	http.StatusNotExtended,                   // 510
+	http.StatusNetworkAuthenticationRequired, // 511
+}
+
 // retry on these codes
 var retryStatusCodes = []int{
 	http.StatusRequestTimeout,      // 408
@@ -89,6 +101,7 @@ var cacheManager *storage.Manager = storage.New(nil)
 type Client struct {
 	httpClient         ops.HTTPClient
 	miType             ID
+	source             Source
 	retryPolicyEnabled bool
 }
 
@@ -159,6 +172,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		miType:             id,
 		httpClient:         opts.httpClient,
 		retryPolicyEnabled: opts.retryPolicyEnabled,
+		source:             DefaultToIMDS,
 	}
 	return client, nil
 }
@@ -209,7 +223,7 @@ func contains[T comparable](list []T, element T) bool {
 }
 
 // retry performs an HTTP request with retries based on the provided options.
-func retry(maxRetries int, c ops.HTTPClient, req *http.Request) (*http.Response, error) {
+func retry(maxRetries int, c ops.HTTPClient, req *http.Request, s Source) (*http.Response, error) {
 	var resp *http.Response
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
@@ -217,7 +231,11 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request) (*http.Response,
 		defer tryCancel()
 		cloneReq := req.Clone(tryCtx)
 		resp, err = c.Do(cloneReq)
-		if err == nil && !contains(retryStatusCodes, resp.StatusCode) {
+		retrylist := retryStatusCodes
+		if s == DefaultToIMDS {
+			retrylist = append(retrylist, retryCodesForIMDS...)
+		}
+		if err == nil && !contains(retrylist, resp.StatusCode) {
 			return resp, nil
 		}
 		if attempt == maxRetries-1 {
@@ -242,7 +260,7 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	if !client.retryPolicyEnabled {
 		retryCount = 1
 	}
-	resp, err := retry(retryCount, client.httpClient, req)
+	resp, err := retry(retryCount, client.httpClient, req, client.source)
 	if err != nil {
 		return accesstokens.TokenResponse{}, err
 	}

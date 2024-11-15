@@ -143,6 +143,7 @@ func TestRetryFunction(t *testing.T) {
 		expectedBody   string
 		maxRetries     int
 		requestBody    string
+		source         Source
 	}{
 		{
 			name: "Successful Request",
@@ -157,6 +158,22 @@ func TestRetryFunction(t *testing.T) {
 			expectedBody:   "Success",
 			maxRetries:     3,
 			requestBody:    "Test Body",
+			source:         AzureArc,
+		},
+		{
+			name: "Successful Request",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusNotFound},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     3,
+			requestBody:    "Test Body",
+			source:         DefaultToIMDS,
 		},
 		{
 			name: "Max Retries Reached",
@@ -171,6 +188,22 @@ func TestRetryFunction(t *testing.T) {
 			expectedBody:   "Error",
 			maxRetries:     2,
 			requestBody:    "Test Body",
+			source:         AzureArc,
+		},
+		{
+			name: "Max Retries Reached",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Error", http.StatusNotFound},
+				{"Error", http.StatusInternalServerError},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "Error",
+			maxRetries:     2,
+			requestBody:    "Test Body",
+			source:         DefaultToIMDS,
 		},
 	}
 
@@ -183,7 +216,7 @@ func TestRetryFunction(t *testing.T) {
 			}
 			reqBody := bytes.NewBufferString(tt.requestBody)
 			req, _ := http.NewRequest("POST", "https://example.com", reqBody)
-			finalResp, err := retry(tt.maxRetries, mockClient, req)
+			finalResp, err := retry(tt.maxRetries, mockClient, req, tt.source)
 			if err != nil {
 				t.Fatalf("error was not expected %s", err)
 			}
@@ -252,7 +285,6 @@ func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
 				client, err = New(SystemAssigned(), WithHTTPClient(&fakeErrorClient), WithRetryPolicyDisabled())
 			} else {
 				client, err = New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
-
 			}
 			if err != nil {
 				t.Fatal(err)
