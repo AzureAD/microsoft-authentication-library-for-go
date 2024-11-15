@@ -85,7 +85,7 @@ var getAzureArcPlatformPath = func(platform string) string {
 	}
 }
 
-var getAzureArcFilePath = func(platform string) string {
+var getAzureArcHimdsFilePath = func(platform string) string {
 	switch platform {
 	case "windows":
 		return filepath.Join(os.Getenv("ProgramData"), azureConnectedMachine, himdsExecutableName)
@@ -424,7 +424,7 @@ func isAzureArcEnvironment(identityEndpoint, imdsEndpoint string) bool {
 	if identityEndpoint != "" && imdsEndpoint != "" {
 		return true
 	}
-	himdsFilePath := getAzureArcFilePath(runtime.GOOS)
+	himdsFilePath := getAzureArcHimdsFilePath(runtime.GOOS)
 	if himdsFilePath != "" {
 		if _, err := os.Stat(himdsFilePath); err == nil {
 			return true

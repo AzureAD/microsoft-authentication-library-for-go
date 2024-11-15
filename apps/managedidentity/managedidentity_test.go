@@ -118,12 +118,12 @@ func setCustomAzureArcPlatformPath(t *testing.T, path string) {
 }
 
 func setCustomAzureArcFilePath(t *testing.T, path string) {
-	originalFunc := getAzureArcFilePath
-	getAzureArcFilePath = func(string) string {
+	originalFunc := getAzureArcHimdsFilePath
+	getAzureArcHimdsFilePath = func(string) string {
 		return path
 	}
 
-	t.Cleanup(func() { getAzureArcFilePath = originalFunc })
+	t.Cleanup(func() { getAzureArcHimdsFilePath = originalFunc })
 }
 
 func TestSource(t *testing.T) {
