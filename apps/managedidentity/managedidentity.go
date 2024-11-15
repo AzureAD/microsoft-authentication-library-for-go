@@ -55,9 +55,9 @@ const (
 )
 
 var retryCodesForIMDS = []int{
-	http.StatusNotFound,                      // 404
 	http.StatusGone,                          // 410
 	http.StatusNotImplemented,                // 501
+	http.StatusBadGateway,                    // 502
 	http.StatusHTTPVersionNotSupported,       // 505
 	http.StatusVariantAlsoNegotiates,         // 506
 	http.StatusInsufficientStorage,           // 507
@@ -68,10 +68,10 @@ var retryCodesForIMDS = []int{
 
 // retry on these codes
 var retryStatusCodes = []int{
+	http.StatusNotFound,            // 404
 	http.StatusRequestTimeout,      // 408
 	http.StatusTooManyRequests,     // 429
 	http.StatusInternalServerError, // 500
-	http.StatusBadGateway,          // 502
 	http.StatusServiceUnavailable,  // 503
 	http.StatusGatewayTimeout,      // 504
 }
