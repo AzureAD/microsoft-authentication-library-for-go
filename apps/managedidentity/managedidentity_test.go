@@ -593,7 +593,6 @@ func TestAzureArcPlatformSupported(t *testing.T) {
 	}
 	result, err := client.AcquireToken(context.Background(), resource)
 	if err == nil || !strings.Contains(err.Error(), "platform not supported") {
-		println(result.AccessToken)
 		t.Fatalf(`expected error: "%v" got error: "%v"`, "platform not supported", err)
 
 	}

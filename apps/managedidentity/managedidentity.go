@@ -79,9 +79,15 @@ const (
 
 // retry codes for IMDS
 var retryCodesForIMDS = []int{
+	http.StatusNotFound,                      // 404
+	http.StatusRequestTimeout,                // 408
 	http.StatusGone,                          // 410
+	http.StatusTooManyRequests,               // 429
+	http.StatusInternalServerError,           // 500
 	http.StatusNotImplemented,                // 501
 	http.StatusBadGateway,                    // 502
+	http.StatusServiceUnavailable,            // 503
+	http.StatusGatewayTimeout,                // 504
 	http.StatusHTTPVersionNotSupported,       // 505
 	http.StatusVariantAlsoNegotiates,         // 506
 	http.StatusInsufficientStorage,           // 507
@@ -98,7 +104,6 @@ var retryStatusCodes = []int{
 	http.StatusInternalServerError, // 500
 	http.StatusServiceUnavailable,  // 503
 	http.StatusGatewayTimeout,      // 504
-
 }
 
 var getAzureArcPlatformPath = func(platform string) string {
@@ -381,7 +386,7 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request, s Source) (*http
 		resp, err = c.Do(cloneReq)
 		retrylist := retryStatusCodes
 		if s == DefaultToIMDS {
-			retrylist = append(retrylist, retryCodesForIMDS...)
+			retrylist = retryCodesForIMDS
 		}
 		if err == nil && !contains(retrylist, resp.StatusCode) {
 			return resp, nil
