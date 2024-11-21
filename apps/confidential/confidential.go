@@ -429,6 +429,7 @@ func WithClaims(claims string) interface {
 	AcquireByAuthCodeOption
 	AcquireByCredentialOption
 	AcquireOnBehalfOfOption
+	AcquireByUsernamePasswordOption
 	AcquireSilentOption
 	AuthCodeURLOption
 	options.CallOption
@@ -437,6 +438,7 @@ func WithClaims(claims string) interface {
 		AcquireByAuthCodeOption
 		AcquireByCredentialOption
 		AcquireOnBehalfOfOption
+		AcquireByUsernamePasswordOption
 		AcquireSilentOption
 		AuthCodeURLOption
 		options.CallOption
@@ -449,6 +451,8 @@ func WithClaims(claims string) interface {
 				case *acquireTokenByCredentialOptions:
 					t.claims = claims
 				case *acquireTokenOnBehalfOfOptions:
+					t.claims = claims
+				case *acquireTokenByUsernamePasswordOptions:
 					t.claims = claims
 				case *acquireTokenSilentOptions:
 					t.claims = claims
@@ -496,6 +500,7 @@ func WithTenantID(tenantID string) interface {
 	AcquireByAuthCodeOption
 	AcquireByCredentialOption
 	AcquireOnBehalfOfOption
+	AcquireByUsernamePasswordOption
 	AcquireSilentOption
 	AuthCodeURLOption
 	options.CallOption
@@ -504,6 +509,7 @@ func WithTenantID(tenantID string) interface {
 		AcquireByAuthCodeOption
 		AcquireByCredentialOption
 		AcquireOnBehalfOfOption
+		AcquireByUsernamePasswordOption
 		AcquireSilentOption
 		AuthCodeURLOption
 		options.CallOption
@@ -516,6 +522,8 @@ func WithTenantID(tenantID string) interface {
 				case *acquireTokenByCredentialOptions:
 					t.tenantID = tenantID
 				case *acquireTokenOnBehalfOfOptions:
+					t.tenantID = tenantID
+				case *acquireTokenByUsernamePasswordOptions:
 					t.tenantID = tenantID
 				case *acquireTokenSilentOptions:
 					t.tenantID = tenantID
@@ -590,6 +598,46 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
+}
+
+// acquireTokenByUsernamePasswordOptions contains optional configuration for AcquireTokenByUsernamePassword
+type acquireTokenByUsernamePasswordOptions struct {
+	claims, tenantID string
+	authnScheme      AuthenticationScheme
+}
+
+// AcquireByUsernamePasswordOption is implemented by options for AcquireTokenByUsernamePassword
+type AcquireByUsernamePasswordOption interface {
+	acquireByUsernamePasswordOption()
+}
+
+// AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
+// NOTE: this flow is NOT recommended.
+//
+// Options: [WithClaims], [WithTenantID]
+func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
+	o := acquireTokenByUsernamePasswordOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
+	}
+	authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	authParams.Scopes = scopes
+	authParams.AuthorizationType = authority.ATUsernamePassword
+	authParams.Claims = o.claims
+	authParams.Username = username
+	authParams.Password = password
+	if o.authnScheme != nil {
+		authParams.AuthnScheme = o.authnScheme
+	}
+
+	token, err := cca.base.Token.UsernamePassword(ctx, authParams)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 // acquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
