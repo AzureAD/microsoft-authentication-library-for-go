@@ -228,9 +228,13 @@ func TestRetryFunction(t *testing.T) {
 				body := bytes.NewBufferString(resp.body)
 				mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode))
 			}
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithRetryPolicyDisabled())
+			if err != nil {
+				t.Fatal(err)
+			}
 			reqBody := bytes.NewBufferString(tt.requestBody)
 			req, _ := http.NewRequest("POST", "https://example.com", reqBody)
-			finalResp, err := retry(tt.maxRetries, mockClient, req, tt.source)
+			finalResp, err := client.retry(tt.maxRetries, req)
 			if err != nil {
 				t.Fatalf("error was not expected %s", err)
 			}
