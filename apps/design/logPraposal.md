@@ -85,7 +85,7 @@ import "fmt"
 
 // CallbackFunc defines the signature for callback functions
 // we can only have one string to support azure sdk
-type CallbackFunc func(level, message string, fields ...any)
+type CallbackFunc func(level, message string)
 
 // Logger struct for Go versions <= 1.20.
 type Logger struct {
@@ -111,6 +111,8 @@ func (a *Logger) Log(level string, message string, fields ...any) {
 
 package logger
 
+type CallbackFunc func(level, message string)
+
 import (
 	"log/slog"
 )
@@ -118,6 +120,7 @@ import (
 // Logger struct for Go 1.21+ with full `slog` logging support.
 type Logger struct {
 	loging *slog.Logger
+	callBackLogger CallbackFunc
 }
 
 // Log method for Go 1.21+ with full support for structured logging and multiple log levels.
@@ -161,13 +164,16 @@ import (
 // New created a new logger instance, determining the Go version and choosing the appropriate logging method.
 func New(input interface{}) (*Logger, error) {
 	if isGo121OrLater() {
+		if callback, ok := input.(func(level, message string)); ok {
+			return &Logger{callBackLogger: callback}, nil
+		}
 		if logger, ok := input.(*slog.Logger); ok {
 			return &Logger{Logger: logger}, nil
 		}
 		return nil, fmt.Errorf("invalid input for Go 1.21+; expected *slog.Logger")
 	}
 
-	if callback, ok := input.(func(level, message string, fields ...any)); ok {
+	if callback, ok := input.(func(level, message string)); ok {
 		return &Logger{LogCallback: callback}, nil
 	}
 	return nil, fmt.Errorf("invalid input for Go <=1.20; expected CallbackFunc")
@@ -240,7 +246,7 @@ func main() {
 		}
 		fmt.Println()
 	}
-	if err := miClient.New(callback); err != nil {
+	if err := miClient.New(SystemAssigned(), WithLogCallback(callback)); err != nil {
 		fmt.Println("Error configuring Mi with callback:", err)
 		return
 	}
@@ -249,7 +255,11 @@ func main() {
 
 	// Configure Mi with slog for Go 1.21+
 	logger := slog.New(slog.NewTextHandler())
-	if err := miClient.New(logger); err != nil {
+	if err := miClient.New(SystemAssigned(), WithLogger(logger); err != nil {
+		fmt.Println("Error configuring Mi with slog:", err)
+		return
+	}
+	if err := miClient.New(SystemAssigned(), WithLogCallback(callback); err != nil {
 		fmt.Println("Error configuring Mi with slog:", err)
 		return
 	}
