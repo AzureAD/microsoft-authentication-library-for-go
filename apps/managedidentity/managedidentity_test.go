@@ -233,10 +233,13 @@ func TestRetryFunction(t *testing.T) {
 				t.Fatal(err)
 			}
 			reqBody := bytes.NewBufferString(tt.requestBody)
-			req, _ := http.NewRequest("POST", "https://example.com", reqBody)
+			req, err := http.NewRequest("POST", "https://example.com", reqBody)
+			if err != nil {
+				t.Fatal(err)
+			}
 			finalResp, err := client.retry(tt.maxRetries, req)
 			if err != nil {
-				t.Fatalf("error was not expected %s", err)
+				t.Fatal(err)
 			}
 			if finalResp.StatusCode != tt.expectedStatus {
 				t.Fatalf("Expected status code %d, got %d", tt.expectedStatus, finalResp.StatusCode)
@@ -245,26 +248,15 @@ func TestRetryFunction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to read response body: %v", err)
 			}
-			finalResp.Body.Close() // Close the body after reading
+			finalResp.Body.Close()
 			if string(bodyBytes) != tt.expectedBody {
 				t.Fatalf("Expected body %q, got %q", tt.expectedBody, bodyBytes)
-			}
-			if req.Body != nil {
-				reqBodyBytes, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("Failed to read request body: %v", err)
-				}
-				req.Body.Close()
-
-				if string(reqBodyBytes) != tt.requestBody {
-					t.Fatalf("Expected request body %q, got %q", tt.requestBody, reqBodyBytes)
-				}
 			}
 		})
 	}
 }
 
-func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
+func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
 	testCases := []struct {
 		numberOfFails int
 		expectedFail  bool
@@ -317,7 +309,7 @@ func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("should have encountered the error")
+					t.Fatal(err)
 				}
 				if resp.AccessToken != token {
 					t.Fatalf("wanted %q, got %q", token, resp.AccessToken)

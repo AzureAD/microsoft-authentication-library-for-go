@@ -80,7 +80,6 @@ const (
 // retry codes for IMDS
 var retryCodesForIMDS = []int{
 	http.StatusNotFound,                      // 404
-	http.StatusRequestTimeout,                // 408
 	http.StatusGone,                          // 410
 	http.StatusTooManyRequests,               // 429
 	http.StatusInternalServerError,           // 500
