@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -29,6 +30,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/logger"
 )
 
 const (
@@ -156,6 +158,7 @@ type Client struct {
 	source             Source
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
+	logger             *logger.Logger
 }
 
 type ClientOptions struct {
@@ -216,6 +219,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
+
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -233,11 +237,16 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
+	log, err := logger.New(slog.New(slog.NewJSONHandler(os.Stderr, nil)))
+	if err != nil {
+		return Client{}, err
+	}
 	client := Client{
 		miType:             id,
 		httpClient:         opts.httpClient,
 		retryPolicyEnabled: opts.retryPolicyEnabled,
 		source:             source,
+		logger:             log,
 	}
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
@@ -299,13 +308,28 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		return acquireTokenForAzureArc(ctx, c, resource)
 	case DefaultToIMDS:
 		return acquireTokenForIMDS(ctx, c, resource)
+	case AppService:
+		return acquireTokenForAppService(ctx, c, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
 }
 
+func acquireTokenForAppService(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
+	req, err := createAppServiceAuthRequest(ctx, client.miType, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := client.getTokenForRequest(req)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(client.authParams, tokenResponse)
+}
+
 func acquireTokenForIMDS(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, client.miType, resource)
+	client.logger.Log("info", "acquireTokenForIMDS", "resource", resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -448,6 +472,31 @@ func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRe
 	err = json.Unmarshal(responseBytes, &r)
 	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, req.URL.Query().Get(resourceQueryParameterName))
 	return r, err
+}
+
+func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+	identityEndpoint := os.Getenv(identityEndpointEnvVar)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set(os.Getenv(identityHeaderEnvVar), "X-IDENTITY-HEADER")
+	q := req.URL.Query()
+	q.Set("api-version", "2019-08-01")
+	q.Set("resource", resource)
+	switch t := id.(type) {
+	case UserAssignedClientID:
+		q.Set(miQueryParameterClientId, string(t))
+	case UserAssignedResourceID:
+		q.Set(miQueryParameterResourceId, string(t))
+	case UserAssignedObjectID:
+		q.Set(miQueryParameterObjectId, string(t))
+	case systemAssignedValue: // not adding anything
+	default:
+		return nil, fmt.Errorf("unsupported type %T", id)
+	}
+	req.URL.RawQuery = q.Encode()
+	return req, nil
 }
 
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
