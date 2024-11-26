@@ -480,7 +480,7 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set(os.Getenv(identityHeaderEnvVar), "X-IDENTITY-HEADER")
+	req.Header.Set("X-IDENTITY-HEADER", os.Getenv(identityHeaderEnvVar))
 	q := req.URL.Query()
 	q.Set("api-version", "2019-08-01")
 	q.Set("resource", resource)
@@ -491,7 +491,7 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*
 		q.Set(miQueryParameterResourceId, string(t))
 	case UserAssignedObjectID:
 		q.Set(miQueryParameterObjectId, string(t))
-	case systemAssignedValue: // not adding anything
+	case systemAssignedValue:
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)
 	}
