@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
@@ -72,7 +73,35 @@ const (
 	imdsEndVar                          = "IMDS_ENDPOINT"
 	msiEndpointEnvVar                   = "MSI_ENDPOINT"
 	identityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
+
+	defaultRetryCount = 3
 )
+
+var retryCodesForIMDS = []int{
+	http.StatusNotFound,                      // 404
+	http.StatusGone,                          // 410
+	http.StatusTooManyRequests,               // 429
+	http.StatusInternalServerError,           // 500
+	http.StatusNotImplemented,                // 501
+	http.StatusBadGateway,                    // 502
+	http.StatusServiceUnavailable,            // 503
+	http.StatusGatewayTimeout,                // 504
+	http.StatusHTTPVersionNotSupported,       // 505
+	http.StatusVariantAlsoNegotiates,         // 506
+	http.StatusInsufficientStorage,           // 507
+	http.StatusLoopDetected,                  // 508
+	http.StatusNotExtended,                   // 510
+	http.StatusNetworkAuthenticationRequired, // 511
+}
+
+var retryStatusCodes = []int{
+	http.StatusRequestTimeout,      // 408
+	http.StatusTooManyRequests,     // 429
+	http.StatusInternalServerError, // 500
+	http.StatusBadGateway,          // 502
+	http.StatusServiceUnavailable,  // 503
+	http.StatusGatewayTimeout,      // 504
+}
 
 var getAzureArcPlatformPath = func(platform string) string {
 	switch platform {
@@ -119,14 +148,16 @@ func SystemAssigned() ID {
 var cacheManager *storage.Manager = storage.New(nil)
 
 type Client struct {
-	httpClient ops.HTTPClient
-	miType     ID
-	source     Source
-	authParams authority.AuthParams
+	httpClient         ops.HTTPClient
+	miType             ID
+	source             Source
+	authParams         authority.AuthParams
+	retryPolicyEnabled bool
 }
 
 type ClientOptions struct {
-	httpClient ops.HTTPClient
+	httpClient         ops.HTTPClient
+	retryPolicyEnabled bool
 }
 
 type AcquireTokenOptions struct {
@@ -152,6 +183,12 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	}
 }
 
+func WithRetryPolicyDisabled() ClientOption {
+	return func(o *ClientOptions) {
+		o.retryPolicyEnabled = false
+	}
+}
+
 // Client to be used to acquire tokens for managed identity.
 // ID: [SystemAssigned], [UserAssignedClientID], [UserAssignedResourceID], [UserAssignedObjectID]
 //
@@ -170,7 +207,8 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		}
 	}
 	opts := ClientOptions{
-		httpClient: shared.DefaultClient,
+		httpClient:         shared.DefaultClient,
+		retryPolicyEnabled: true,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -193,9 +231,10 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
 	client := Client{
-		miType:     id,
-		httpClient: opts.httpClient,
-		source:     source,
+		miType:             id,
+		httpClient:         opts.httpClient,
+		retryPolicyEnabled: opts.retryPolicyEnabled,
+		source:             source,
 	}
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
@@ -323,9 +362,55 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 	return ar, err
 }
 
-func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
-	var r accesstokens.TokenResponse
-	resp, err := client.httpClient.Do(req)
+// contains checks if the element is present in the list.
+func contains[T comparable](list []T, element T) bool {
+	for _, v := range list {
+		if v == element {
+			return true
+		}
+	}
+	return false
+}
+
+// retry performs an HTTP request with retries based on the provided options.
+func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error) {
+	var resp *http.Response
+	var err error
+	for attempt := 0; attempt < maxRetries; attempt++ {
+		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
+		defer tryCancel()
+		if resp != nil && resp.Body != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
+		cloneReq := req.Clone(tryCtx)
+		resp, err = c.httpClient.Do(cloneReq)
+		retrylist := retryStatusCodes
+		if c.source == DefaultToIMDS {
+			retrylist = retryCodesForIMDS
+		}
+		if err == nil && !contains(retrylist, resp.StatusCode) {
+			return resp, nil
+		}
+		select {
+		case <-time.After(time.Second):
+		case <-req.Context().Done():
+			err = req.Context().Err()
+			return resp, err
+		}
+	}
+	return resp, err
+}
+
+func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
+	r := accesstokens.TokenResponse{}
+	var resp *http.Response
+	var err error
+	if c.retryPolicyEnabled {
+		resp, err = c.retry(defaultRetryCount, req)
+	} else {
+		resp, err = c.httpClient.Do(req)
+	}
 	if err != nil {
 		return r, err
 	}

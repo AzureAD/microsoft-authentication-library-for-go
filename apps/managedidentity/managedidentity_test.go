@@ -3,8 +3,11 @@
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -138,6 +141,181 @@ func TestSource(t *testing.T) {
 			}
 			if actualSource != testCase {
 				t.Fatalf(errorExpectedButGot, testCase, actualSource)
+			}
+		})
+	}
+}
+
+func TestRetryFunction(t *testing.T) {
+	tests := []struct {
+		name          string
+		mockResponses []struct {
+			body       string
+			statusCode int
+		}
+		expectedStatus int
+		expectedBody   string
+		maxRetries     int
+		source         Source
+	}{
+		{
+			name: "Successful Request",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusInternalServerError},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     3,
+			source:         AzureArc,
+		},
+		{
+			name: "Successful Request",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusNotFound},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     3,
+			source:         DefaultToIMDS,
+		},
+		{
+			name: "Max Retries Reached",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Error", http.StatusInternalServerError},
+				{"Error", http.StatusInternalServerError},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "Error",
+			maxRetries:     2,
+			source:         AzureArc,
+		},
+		{
+			name: "Max Retries Reached",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Error", http.StatusNotFound},
+				{"Error", http.StatusInternalServerError},
+			},
+			expectedStatus: http.StatusInternalServerError,
+			expectedBody:   "Error",
+			maxRetries:     2,
+			source:         DefaultToIMDS,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockClient := &mock.Client{}
+			for _, resp := range tt.mockResponses {
+				body := bytes.NewBufferString(resp.body)
+				mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode))
+			}
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithRetryPolicyDisabled())
+			if err != nil {
+				t.Fatal(err)
+			}
+			reqBody := bytes.NewBufferString("Test Body")
+			req, err := http.NewRequest("POST", "https://example.com", reqBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			finalResp, err := client.retry(tt.maxRetries, req)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if finalResp.StatusCode != tt.expectedStatus {
+				t.Fatalf("Expected status code %d, got %d", tt.expectedStatus, finalResp.StatusCode)
+			}
+			bodyBytes, err := io.ReadAll(finalResp.Body)
+			if err != nil {
+				t.Fatalf("Failed to read response body: %v", err)
+			}
+			finalResp.Body.Close()
+			if string(bodyBytes) != tt.expectedBody {
+				t.Fatalf("Expected body %q, got %q", tt.expectedBody, bodyBytes)
+			}
+		})
+	}
+}
+
+func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
+	testCases := []struct {
+		numberOfFails int
+		expectedFail  bool
+		disableRetry  bool
+	}{
+		{numberOfFails: 1, expectedFail: false, disableRetry: false},
+		{numberOfFails: 1, expectedFail: true, disableRetry: true},
+		{numberOfFails: 1, expectedFail: true, disableRetry: true},
+		{numberOfFails: 2, expectedFail: false, disableRetry: false},
+		{numberOfFails: 3, expectedFail: true, disableRetry: false},
+	}
+	for _, testCase := range testCases {
+		t.Run(fmt.Sprintf("Testing retry policy with %d ", testCase.numberOfFails), func(t *testing.T) {
+			fakeErrorClient := mock.Client{}
+			responseBody, err := makeResponseWithErrorData("sample error", "sample error desc")
+			if err != nil {
+				t.Fatalf("error while forming json response : %s", err.Error())
+			}
+			errorRetryCounter := 0
+			for i := 0; i < testCase.numberOfFails; i++ {
+				fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusInternalServerError),
+					mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+						errorRetryCounter++
+					}))
+			}
+			if !testCase.expectedFail {
+				successRespBody, err := getSuccessfulResponse(resource)
+				if err != nil {
+					t.Fatalf("error while forming json response : %s", err.Error())
+				}
+				fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusAccepted),
+					mock.WithBody(successRespBody))
+			}
+			var client Client
+			if testCase.disableRetry {
+				client, err = New(SystemAssigned(), WithHTTPClient(&fakeErrorClient), WithRetryPolicyDisabled())
+			} else {
+				client, err = New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+			resp, err := client.AcquireToken(context.Background(), resource, WithClaims("noCache"))
+			if testCase.expectedFail {
+				if err == nil {
+					t.Fatalf("should have encountered the error")
+				}
+				if resp.AccessToken != "" {
+					t.Fatalf("accesstoken should be empty")
+				}
+			} else {
+				if err != nil {
+					t.Fatal(err)
+				}
+				if resp.AccessToken != token {
+					t.Fatalf("wanted %q, got %q", token, resp.AccessToken)
+				}
+			}
+			if testCase.disableRetry {
+				if errorRetryCounter != 1 {
+					t.Fatalf("expected Number of retry of 1, got %d", errorRetryCounter)
+				}
+			} else if errorRetryCounter != testCase.numberOfFails && testCase.numberOfFails < 3 {
+				t.Fatalf("expected Number of retry of %d, got %d", testCase.numberOfFails, errorRetryCounter)
 			}
 		})
 	}
@@ -385,6 +563,10 @@ func TestAzureArcOnlySystemAssignedSupported(t *testing.T) {
 func TestAzureArcPlatformSupported(t *testing.T) {
 	setEnvVars(t, AzureArc)
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
 	mockClient := mock.Client{}
 	headers := http.Header{}
 	headers.Set(wwwAuthenticateHeaderName, "Basic realm=/path/to/secret.key")
@@ -453,6 +635,9 @@ func TestAzureArcErrors(t *testing.T) {
 
 	for _, testCase := range testCases {
 		t.Run(string(testCase.name), func(t *testing.T) {
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
 			mockClient := mock.Client{}
 			mockFilePath := filepath.Join(testCaseFilePath, secretKey)
 			setCustomAzureArcPlatformPath(t, testCaseFilePath)
@@ -507,7 +692,9 @@ func TestSystemAssignedReturnsAcquireTokenFailure(t *testing.T) {
 	for _, testCase := range testCases {
 		t.Run(http.StatusText(testCase.code), func(t *testing.T) {
 			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
-
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
 			fakeErrorClient := mock.Client{}
 			responseBody, err := makeResponseWithErrorData(testCase.err, testCase.desc)
 			if err != nil {
@@ -515,7 +702,7 @@ func TestSystemAssignedReturnsAcquireTokenFailure(t *testing.T) {
 			}
 			fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(testCase.code),
 				mock.WithBody(responseBody))
-			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
+			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient), WithRetryPolicyDisabled())
 			if err != nil {
 				t.Fatal(err)
 			}
