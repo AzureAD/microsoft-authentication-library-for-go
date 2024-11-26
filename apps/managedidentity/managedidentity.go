@@ -77,7 +77,6 @@ const (
 	defaultRetryCount = 3
 )
 
-// retry codes for IMDS
 var retryCodesForIMDS = []int{
 	http.StatusNotFound,                      // 404
 	http.StatusGone,                          // 410
@@ -95,7 +94,6 @@ var retryCodesForIMDS = []int{
 	http.StatusNetworkAuthenticationRequired, // 511
 }
 
-// retry on these codes
 var retryStatusCodes = []int{
 	http.StatusRequestTimeout,      // 408
 	http.StatusTooManyRequests,     // 429
@@ -364,7 +362,7 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 	return ar, err
 }
 
-// Contains checks if the element is present in the list.
+// contains checks if the element is present in the list.
 func contains[T comparable](list []T, element T) bool {
 	for _, v := range list {
 		if v == element {
@@ -382,7 +380,7 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
 		defer tryCancel()
 		if resp != nil && resp.Body != nil {
-			io.Copy(io.Discard, resp.Body)
+			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
 		cloneReq := req.Clone(tryCtx)

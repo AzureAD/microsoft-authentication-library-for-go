@@ -156,7 +156,6 @@ func TestRetryFunction(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 		maxRetries     int
-		requestBody    string
 		source         Source
 	}{
 		{
@@ -171,7 +170,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedBody:   "Success",
 			maxRetries:     3,
-			requestBody:    "Test Body",
 			source:         AzureArc,
 		},
 		{
@@ -186,7 +184,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedBody:   "Success",
 			maxRetries:     3,
-			requestBody:    "Test Body",
 			source:         DefaultToIMDS,
 		},
 		{
@@ -201,7 +198,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Error",
 			maxRetries:     2,
-			requestBody:    "Test Body",
 			source:         AzureArc,
 		},
 		{
@@ -216,7 +212,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Error",
 			maxRetries:     2,
-			requestBody:    "Test Body",
 			source:         DefaultToIMDS,
 		},
 	}
@@ -232,7 +227,7 @@ func TestRetryFunction(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			reqBody := bytes.NewBufferString(tt.requestBody)
+			reqBody := bytes.NewBufferString("Test Body")
 			req, err := http.NewRequest("POST", "https://example.com", reqBody)
 			if err != nil {
 				t.Fatal(err)
