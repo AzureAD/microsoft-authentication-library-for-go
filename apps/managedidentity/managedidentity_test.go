@@ -319,8 +319,7 @@ func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
 				if errorRetryCounter != 1 {
 					t.Fatalf("expected Number of retry of 1, got %d", errorRetryCounter)
 				}
-			} else {
-				if errorRetryCounter != testCase.numberOfFails && testCase.numberOfFails < 3 {
+			} else if errorRetryCounter != testCase.numberOfFails && testCase.numberOfFails < 3 {
 					t.Fatalf("expected Number of retry of %d, got %d", testCase.numberOfFails, errorRetryCounter)
 				}
 			}
