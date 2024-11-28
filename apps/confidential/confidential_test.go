@@ -964,6 +964,8 @@ func TestWithClaims(t *testing.T) {
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithClaims(test.claims))
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithClaims(test.claims))
+				case "password":
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithClaims(test.claims))
 				default:
 					t.Fatalf("test bug: no test for " + method)
 				}
@@ -1222,6 +1224,8 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope)
+				case "password":
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password")
 				default:
 					t.Fatal("test bug: no test for " + method)
 				}
