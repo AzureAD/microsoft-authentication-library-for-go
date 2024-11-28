@@ -81,10 +81,8 @@ const (
 	defaultRetryCount = 3
 )
 
-// retry codes for IMDS
 var retryCodesForIMDS = []int{
 	http.StatusNotFound,                      // 404
-	http.StatusRequestTimeout,                // 408
 	http.StatusGone,                          // 410
 	http.StatusTooManyRequests,               // 429
 	http.StatusInternalServerError,           // 500
@@ -100,12 +98,11 @@ var retryCodesForIMDS = []int{
 	http.StatusNetworkAuthenticationRequired, // 511
 }
 
-// retry on these codes
 var retryStatusCodes = []int{
-	http.StatusNotFound,            // 404
 	http.StatusRequestTimeout,      // 408
 	http.StatusTooManyRequests,     // 429
 	http.StatusInternalServerError, // 500
+	http.StatusBadGateway,          // 502
 	http.StatusServiceUnavailable,  // 503
 	http.StatusGatewayTimeout,      // 504
 }
@@ -411,7 +408,7 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 	return ar, err
 }
 
-// Contains checks if the element is present in the list.
+// contains checks if the element is present in the list.
 func contains[T comparable](list []T, element T) bool {
 	for _, v := range list {
 		if v == element {
@@ -422,28 +419,24 @@ func contains[T comparable](list []T, element T) bool {
 }
 
 // retry performs an HTTP request with retries based on the provided options.
-func retry(maxRetries int, c ops.HTTPClient, req *http.Request, s Source) (*http.Response, error) {
+func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
+		if resp != nil && resp.Body != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			resp.Body.Close()
+		}
 		cloneReq := req.Clone(tryCtx)
-		resp, err = c.Do(cloneReq)
+		resp, err = c.httpClient.Do(cloneReq)
 		retrylist := retryStatusCodes
-		if s == DefaultToIMDS {
+		if c.source == DefaultToIMDS {
 			retrylist = retryCodesForIMDS
 		}
 		if err == nil && !contains(retrylist, resp.StatusCode) {
 			tryCancel()
 			return resp, nil
-		}
-		if attempt == maxRetries-1 {
-			tryCancel()
-			return resp, err
-		}
-		if resp != nil && resp.Body != nil {
-			io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
 		}
 		select {
 		case <-time.After(time.Second):
@@ -457,13 +450,15 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request, s Source) (*http
 	return resp, err
 }
 
-func (client Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
+func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
 	r := accesstokens.TokenResponse{}
-	retryCount := defaultRetryCount
-	if !client.retryPolicyEnabled {
-		retryCount = 1
+	var resp *http.Response
+	var err error
+	if c.retryPolicyEnabled {
+		resp, err = c.retry(defaultRetryCount, req)
+	} else {
+		resp, err = c.httpClient.Do(req)
 	}
-	resp, err := retry(retryCount, client.httpClient, req, client.source)
 	if err != nil {
 		return r, err
 	}

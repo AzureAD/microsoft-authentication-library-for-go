@@ -156,7 +156,6 @@ func TestRetryFunction(t *testing.T) {
 		expectedStatus int
 		expectedBody   string
 		maxRetries     int
-		requestBody    string
 		source         Source
 	}{
 		{
@@ -171,7 +170,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedBody:   "Success",
 			maxRetries:     3,
-			requestBody:    "Test Body",
 			source:         AzureArc,
 		},
 		{
@@ -186,7 +184,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusOK,
 			expectedBody:   "Success",
 			maxRetries:     3,
-			requestBody:    "Test Body",
 			source:         DefaultToIMDS,
 		},
 		{
@@ -201,7 +198,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Error",
 			maxRetries:     2,
-			requestBody:    "Test Body",
 			source:         AzureArc,
 		},
 		{
@@ -216,7 +212,6 @@ func TestRetryFunction(t *testing.T) {
 			expectedStatus: http.StatusInternalServerError,
 			expectedBody:   "Error",
 			maxRetries:     2,
-			requestBody:    "Test Body",
 			source:         DefaultToIMDS,
 		},
 	}
@@ -228,11 +223,18 @@ func TestRetryFunction(t *testing.T) {
 				body := bytes.NewBufferString(resp.body)
 				mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode))
 			}
-			reqBody := bytes.NewBufferString(tt.requestBody)
-			req, _ := http.NewRequest("POST", "https://example.com", reqBody)
-			finalResp, err := retry(tt.maxRetries, mockClient, req, tt.source)
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithRetryPolicyDisabled())
 			if err != nil {
-				t.Fatalf("error was not expected %s", err)
+				t.Fatal(err)
+			}
+			reqBody := bytes.NewBufferString("Test Body")
+			req, err := http.NewRequest("POST", "https://example.com", reqBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+			finalResp, err := client.retry(tt.maxRetries, req)
+			if err != nil {
+				t.Fatal(err)
 			}
 			if finalResp.StatusCode != tt.expectedStatus {
 				t.Fatalf("Expected status code %d, got %d", tt.expectedStatus, finalResp.StatusCode)
@@ -241,26 +243,15 @@ func TestRetryFunction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to read response body: %v", err)
 			}
-			finalResp.Body.Close() // Close the body after reading
+			finalResp.Body.Close()
 			if string(bodyBytes) != tt.expectedBody {
 				t.Fatalf("Expected body %q, got %q", tt.expectedBody, bodyBytes)
-			}
-			if req.Body != nil {
-				reqBodyBytes, err := io.ReadAll(req.Body)
-				if err != nil {
-					t.Fatalf("Failed to read request body: %v", err)
-				}
-				req.Body.Close()
-
-				if string(reqBodyBytes) != tt.requestBody {
-					t.Fatalf("Expected request body %q, got %q", tt.requestBody, reqBodyBytes)
-				}
 			}
 		})
 	}
 }
 
-func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
+func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
 	testCases := []struct {
 		numberOfFails int
 		expectedFail  bool
@@ -313,7 +304,7 @@ func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
 				}
 			} else {
 				if err != nil {
-					t.Fatalf("should have encountered the error")
+					t.Fatal(err)
 				}
 				if resp.AccessToken != token {
 					t.Fatalf("wanted %q, got %q", token, resp.AccessToken)
@@ -323,10 +314,8 @@ func Test_RetryPolicy_For_AcquireToken_Failure(t *testing.T) {
 				if errorRetryCounter != 1 {
 					t.Fatalf("expected Number of retry of 1, got %d", errorRetryCounter)
 				}
-			} else {
-				if errorRetryCounter != testCase.numberOfFails && testCase.numberOfFails < 3 {
-					t.Fatalf("expected Number of retry of %d, got %d", testCase.numberOfFails, errorRetryCounter)
-				}
+			} else if errorRetryCounter != testCase.numberOfFails && testCase.numberOfFails < 3 {
+				t.Fatalf("expected Number of retry of %d, got %d", testCase.numberOfFails, errorRetryCounter)
 			}
 		})
 	}

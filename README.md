@@ -50,6 +50,28 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     }
     confidentialClient, err := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
     ```
+    * Initializing a Managed Identity client for SystemAssigned:
+
+    ```go
+    import mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
+
+    // Managed identity client have a type of ID required, SystemAssigned or UserAssigned
+	miSystemAssigned, err := mi.New(mi.SystemAssigned())
+    if err != nil {
+        // TODO: handle error
+    }
+    ```
+    * Initializing a Managed Identity client for UserAssigned:
+
+    ```go
+    import mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
+
+    // Managed identity client have a type of ID required, SystemAssigned or UserAssigned
+	miSystemAssigned, err := mi.New(mi.UserAssignedClientID("YOUR_CLIENT_ID"))
+    if err != nil {
+        // TODO: handle error
+    }
+    ```
 
 1. Call `AcquireTokenSilent()` to look for a cached token. If `AcquireTokenSilent()` returns an error, call another `AcquireToken...` method to authenticate.
 
@@ -93,6 +115,16 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
             // TODO: handle error
         }
     }
+    accessToken := result.AccessToken
+    ```
+
+    * ManagedIdentity clietn can simply call `AcquireToken()`:
+    ```go
+    resource := "<Your resource>"
+	result, err := miSystemAssigned.AcquireToken(context.TODO(), resource)
+	if err != nil {
+        // TODO: handle error
+	}
     accessToken := result.AccessToken
     ```
 
