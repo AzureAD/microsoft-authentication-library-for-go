@@ -427,7 +427,6 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request, s Source) (*http
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
-		defer tryCancel()
 		cloneReq := req.Clone(tryCtx)
 		resp, err = c.Do(cloneReq)
 		retrylist := retryStatusCodes
@@ -435,9 +434,11 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request, s Source) (*http
 			retrylist = retryCodesForIMDS
 		}
 		if err == nil && !contains(retrylist, resp.StatusCode) {
+			tryCancel()
 			return resp, nil
 		}
 		if attempt == maxRetries-1 {
+			tryCancel()
 			return resp, err
 		}
 		if resp != nil && resp.Body != nil {
@@ -448,8 +449,10 @@ func retry(maxRetries int, c ops.HTTPClient, req *http.Request, s Source) (*http
 		case <-time.After(time.Second):
 		case <-req.Context().Done():
 			err = req.Context().Err()
+			tryCancel()
 			return resp, err
 		}
+		tryCancel()
 	}
 	return resp, err
 }
