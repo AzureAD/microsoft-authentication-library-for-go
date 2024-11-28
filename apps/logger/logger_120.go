@@ -22,18 +22,20 @@ func New121(input interface{}) (*Logger, error) {
 }
 
 // Log method for Go 1.21+ with full support for structured logging and multiple log levels.
-func (a *Logger) Log(level string, message string, fields ...any) {
+func (a *Logger) Log(level Level, message string, fields ...any) {
 	if a.logging == nil {
 		return
 	}
 	var slogLevel slog.Level
 	switch level {
-	case "info":
+	case Info:
 		slogLevel = slog.LevelInfo
-	case "error":
+	case Err:
 		slogLevel = slog.LevelError
-	case "warn":
+	case Warn:
 		slogLevel = slog.LevelWarn
+	case Debug:
+		slogLevel = slog.LevelDebug
 	default:
 		slogLevel = slog.LevelInfo
 	}

@@ -9,6 +9,15 @@ import (
 // we can only have one string to support azure sdk
 type CallbackFunc func(level, message string)
 
+type Level string
+
+const (
+	Info  Level = "info"
+	Err   Level = "err"
+	Warn  Level = "warn"
+	Debug Level = "debug"
+)
+
 // New created a new logger instance, determining the Go version and choosing the appropriate logging method.
 func New(input interface{}) (*Logger, error) {
 	if isGo121OrLater() {
