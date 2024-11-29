@@ -394,7 +394,7 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	var resp *http.Response
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
+		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*60)
 		if resp != nil && resp.Body != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
