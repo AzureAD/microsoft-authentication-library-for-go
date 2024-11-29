@@ -66,6 +66,9 @@ const (
 	himdsExecutableName            = "himds.exe"
 	tokenName                      = "Tokens"
 
+	// App Service
+	appServiceAPIVersion = "2019-08-01"
+
 	// Environment Variables
 	identityEndpointEnvVar              = "IDENTITY_ENDPOINT"
 	identityHeaderEnvVar                = "IDENTITY_HEADER"
@@ -213,6 +216,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
+
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -290,27 +294,40 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 			return ar, err
 		}
 	}
-
 	switch c.source {
 	case AzureArc:
 		return acquireTokenForAzureArc(ctx, c, resource)
 	case DefaultToIMDS:
 		return acquireTokenForIMDS(ctx, c, resource)
+	case AppService:
+		return acquireTokenForAppService(ctx, c, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
 }
 
-func acquireTokenForIMDS(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
-	req, err := createIMDSAuthRequest(ctx, client.miType, resource)
+func acquireTokenForAppService(ctx context.Context, c Client, resource string) (base.AuthResult, error) {
+	req, err := createAppServiceAuthRequest(ctx, c.miType, resource, c)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := client.getTokenForRequest(req)
+	tokenResponse, err := c.getTokenForRequest(req)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(client.authParams, tokenResponse)
+	return authResultFromToken(c.authParams, tokenResponse)
+}
+
+func acquireTokenForIMDS(ctx context.Context, c Client, resource string) (base.AuthResult, error) {
+	req, err := createIMDSAuthRequest(ctx, c.miType, resource, c)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := c.getTokenForRequest(req)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(c.authParams, tokenResponse)
 }
 
 func acquireTokenForAzureArc(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
@@ -377,8 +394,7 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	var resp *http.Response
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
-		defer tryCancel()
+		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*60)
 		if resp != nil && resp.Body != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
@@ -390,14 +406,17 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 			retrylist = retryCodesForIMDS
 		}
 		if err == nil && !contains(retrylist, resp.StatusCode) {
+			tryCancel()
 			return resp, nil
 		}
 		select {
 		case <-time.After(time.Second):
 		case <-req.Context().Done():
 			err = req.Context().Err()
+			tryCancel()
 			return resp, err
 		}
+		tryCancel()
 	}
 	return resp, err
 }
@@ -446,7 +465,32 @@ func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRespons
 	return r, err
 }
 
-func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, c Client) (*http.Request, error) {
+	identityEndpoint := os.Getenv(identityEndpointEnvVar)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-IDENTITY-HEADER", os.Getenv(identityHeaderEnvVar))
+	q := req.URL.Query()
+	q.Set("api-version", appServiceAPIVersion)
+	q.Set("resource", resource)
+	switch t := id.(type) {
+	case UserAssignedClientID:
+		q.Set(miQueryParameterClientId, string(t))
+	case UserAssignedResourceID:
+		q.Set(miQueryParameterResourceId, string(t))
+	case UserAssignedObjectID:
+		q.Set(miQueryParameterObjectId, string(t))
+	case systemAssignedValue:
+	default:
+		return nil, fmt.Errorf("unsupported type %T", id)
+	}
+	req.URL.RawQuery = q.Encode()
+	return req, nil
+}
+
+func createIMDSAuthRequest(ctx context.Context, id ID, resource string, c Client) (*http.Request, error) {
 	msiEndpoint, err := url.Parse(imdsDefaultEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", imdsDefaultEndpoint, err)
