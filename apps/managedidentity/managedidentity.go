@@ -29,7 +29,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/logger"
 )
 
 const (
@@ -157,13 +156,11 @@ type Client struct {
 	source             Source
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
-	logger             *logger.Logger
 }
 
 type ClientOptions struct {
 	httpClient         ops.HTTPClient
 	retryPolicyEnabled bool
-	logger             *logger.Logger
 }
 
 type AcquireTokenOptions struct {
@@ -186,13 +183,6 @@ func WithClaims(claims string) AcquireTokenOption {
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(o *ClientOptions) {
 		o.httpClient = httpClient
-	}
-}
-
-// WithLogger allows for a logger to be set.
-func WithLogger(logger *logger.Logger) ClientOption {
-	return func(o *ClientOptions) {
-		o.logger = logger
 	}
 }
 
@@ -249,21 +239,13 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient:         opts.httpClient,
 		retryPolicyEnabled: opts.retryPolicyEnabled,
 		source:             source,
-		logger:             opts.logger,
 	}
-	client.log(logger.Info, fmt.Sprintf("Managed Identity will use %s", source))
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return Client{}, err
 	}
 	client.authParams = authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
 	return client, nil
-}
-
-func (c Client) log(level logger.Level, message string, fields ...any) {
-	if c.logger != nil {
-		c.logger.Log(level, message, fields)
-	}
 }
 
 // GetSource detects and returns the managed identity source available on the environment.
@@ -293,7 +275,6 @@ func GetSource() (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
-	c.log(logger.Info, fmt.Sprintf("ManagedIdentity AcquireToken for resouce %s", resource))
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 	for _, option := range options {
@@ -309,12 +290,10 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			c.log(logger.Info, "ManagedIdentity AcquireToken from cache")
 			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
 	}
-	c.log(logger.Info, fmt.Sprintf("ManagedIdentity AcquireToken to server for resource %s", resource))
 	switch c.source {
 	case AzureArc:
 		return acquireTokenForAzureArc(ctx, c, resource)
@@ -330,12 +309,10 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 func acquireTokenForAppService(ctx context.Context, c Client, resource string) (base.AuthResult, error) {
 	req, err := createAppServiceAuthRequest(ctx, c.miType, resource, c)
 	if err != nil {
-		c.log(logger.Err, fmt.Sprintf("Error while creasting request for app service : %s", err))
 		return base.AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req)
 	if err != nil {
-		c.log(logger.Err, fmt.Sprintf("Error for acquire token for app service : %s", err))
 		return base.AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
@@ -344,12 +321,10 @@ func acquireTokenForAppService(ctx context.Context, c Client, resource string) (
 func acquireTokenForIMDS(ctx context.Context, c Client, resource string) (base.AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, c.miType, resource, c)
 	if err != nil {
-		c.log(logger.Err, fmt.Sprintf("Error while creasting request for IMDS : %s", err))
 		return base.AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req)
 	if err != nil {
-		c.log(logger.Err, fmt.Sprintf("Error for acquire token for IMDS : %s", err))
 		return base.AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
@@ -358,13 +333,11 @@ func acquireTokenForIMDS(ctx context.Context, c Client, resource string) (base.A
 func acquireTokenForAzureArc(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
 	req, err := createAzureArcAuthRequest(ctx, resource, "")
 	if err != nil {
-		client.log(logger.Err, fmt.Sprintf("Error while creasting request for azure arc : %s", err))
 		return base.AuthResult{}, err
 	}
 
 	response, err := client.httpClient.Do(req)
 	if err != nil {
-		client.log(logger.Err, fmt.Sprintf("Error for azure arc auth request : %s", err))
 		return base.AuthResult{}, err
 	}
 	defer response.Body.Close()
@@ -380,13 +353,11 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 
 	secondRequest, err := createAzureArcAuthRequest(ctx, resource, string(secret))
 	if err != nil {
-		client.log(logger.Err, fmt.Sprintf("Error while creating request for azure arc : %s", err))
 		return base.AuthResult{}, err
 	}
 
 	tokenResponse, err := client.getTokenForRequest(secondRequest)
 	if err != nil {
-		client.log(logger.Err, fmt.Sprintf("Error for acquire token for azure arc : %s", err))
 		return base.AuthResult{}, err
 	}
 	return authResultFromToken(client.authParams, tokenResponse)
@@ -500,26 +471,21 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, c 
 	if err != nil {
 		return nil, err
 	}
-	c.log(logger.Debug, fmt.Sprintf("Creating azure arc managed identity source Endpoint URI: %s", identityEndpoint))
 	req.Header.Set("X-IDENTITY-HEADER", os.Getenv(identityHeaderEnvVar))
 	q := req.URL.Query()
 	q.Set("api-version", appServiceAPIVersion)
 	q.Set("resource", resource)
 	switch t := id.(type) {
 	case UserAssignedClientID:
-		c.log(logger.Debug, "Adding user assigned object id to the request.")
 		q.Set(miQueryParameterClientId, string(t))
 	case UserAssignedResourceID:
-		c.log(logger.Debug, "Adding user assigned object id to the request.")
 		q.Set(miQueryParameterResourceId, string(t))
 	case UserAssignedObjectID:
-		c.log(logger.Debug, "Adding user assigned object id to the request.")
 		q.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue:
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)
 	}
-	c.log(logger.Debug, fmt.Sprintf("IMDS managed identity source. Endpoint URI: %s", identityEndpoint))
 	req.URL.RawQuery = q.Encode()
 	return req, nil
 }
@@ -529,20 +495,16 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, c Client
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", imdsDefaultEndpoint, err)
 	}
-	c.log(logger.Debug, fmt.Sprintf("Creating IMDS managed identity source. Endpoint URI: %s", msiEndpoint))
 	msiParameters := msiEndpoint.Query()
 	msiParameters.Set(apiVersionQueryParameterName, imdsAPIVersion)
 	msiParameters.Set(resourceQueryParameterName, resource)
 
 	switch t := id.(type) {
 	case UserAssignedClientID:
-		c.log(logger.Debug, "Adding user assigned client id to the request.")
 		msiParameters.Set(miQueryParameterClientId, string(t))
 	case UserAssignedResourceID:
-		c.log(logger.Debug, "Adding user assigned resource id to the request.")
 		msiParameters.Set(miQueryParameterResourceId, string(t))
 	case UserAssignedObjectID:
-		c.log(logger.Debug, "Adding user assigned object id to the request.")
 		msiParameters.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue: // not adding anything
 	default:
@@ -554,7 +516,6 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, c Client
 	if err != nil {
 		return nil, fmt.Errorf("error creating http request %s", err)
 	}
-	c.log(logger.Debug, fmt.Sprintf("IMDS managed identity source. Endpoint URI: %s", msiEndpoint))
 	req.Header.Set(metaHTTPHeaderName, "true")
 	return req, nil
 }
