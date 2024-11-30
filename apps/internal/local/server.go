@@ -169,13 +169,8 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 
 		errDesc := q.Get("error_description")
 
-		if bytes.Contains(s.errorPage, code) {
-			s.errorPage = bytes.Replace(s.errorPage, code, []byte(html.EscapeString(headerErr)), 1) // provides XSS protection
-		}
-
-		if bytes.Contains(s.errorPage, err) {
-			s.errorPage = bytes.Replace(s.errorPage, err, []byte(html.EscapeString(errDesc)), 1) // provides XSS protection
-		}
+		s.errorPage = bytes.ReplaceAll(s.errorPage, code, []byte(html.EscapeString(headerErr))) // provides XSS protection
+		s.errorPage = bytes.ReplaceAll(s.errorPage, err, []byte(html.EscapeString(errDesc)))    // provides XSS protection
 
 		_, _ = w.Write(s.errorPage)
 
