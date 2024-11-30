@@ -32,6 +32,7 @@ func TestServer(t *testing.T) {
 		testTemplate          bool
 		testErrCodeXSS        bool
 		testErrDescriptionXSS bool
+		expected              string
 	}{
 		{
 			desc:       "Error: Query Values has 'error' key",
@@ -77,6 +78,7 @@ func TestServer(t *testing.T) {
 			statusCode:   200,
 			errorPage:    []byte("test option error page {{.Code}} {{.Err}}"),
 			testTemplate: true,
+			expected:     "test option error page error_code error_description",
 		},
 		{
 			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having only code",
@@ -86,6 +88,7 @@ func TestServer(t *testing.T) {
 			statusCode:   200,
 			errorPage:    []byte("test option error page {{.Code}}"),
 			testTemplate: true,
+			expected:     "test option error page error_code",
 		},
 		{
 			desc:         "Error: Query Values missing 'state' key, and optional error page, with template having only error",
@@ -95,6 +98,7 @@ func TestServer(t *testing.T) {
 			statusCode:   200,
 			errorPage:    []byte("test option error page {{.Err}}"),
 			testTemplate: true,
+			expected:     "test option error page error_description",
 		},
 		{
 			desc:         "Error: Query Values missing 'state' key, and optional error page, having no code or error",
@@ -104,6 +108,7 @@ func TestServer(t *testing.T) {
 			statusCode:   200,
 			errorPage:    []byte("test option error page"),
 			testTemplate: true,
+			expected:     "test option error page",
 		},
 		{
 			desc:         "Error: Query Values missing 'state' key, using default fail error page",
@@ -112,6 +117,7 @@ func TestServer(t *testing.T) {
 			q:            url.Values{"error": []string{"error_code"}, "error_description": []string{"error_description"}},
 			statusCode:   200,
 			testTemplate: true,
+			expected:     "<p>Error details: error error_code, error description: error_description</p>",
 		},
 		{
 			desc:           "Error: Query Values missing 'state' key, using default fail error page - Error Code XSS test",
@@ -140,6 +146,7 @@ func TestServer(t *testing.T) {
 			errorPage:      []byte("error: {{.Code}} error_description: {{.Err}}"),
 			testTemplate:   true,
 			testErrCodeXSS: true,
+			expected:       "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;",
 		},
 		{
 			desc:                  "Error: Query Values missing 'state' key, using optional fail error page - Error Description XSS test",
@@ -150,6 +157,7 @@ func TestServer(t *testing.T) {
 			errorPage:             []byte("error: {{.Code}} error_description: {{.Err}}"),
 			testTemplate:          true,
 			testErrDescriptionXSS: true,
+			expected:              "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;",
 		},
 	}
 
@@ -226,14 +234,14 @@ func TestServer(t *testing.T) {
 
 		if test.testTemplate {
 			if test.testErrCodeXSS || test.testErrDescriptionXSS {
-				if !strings.Contains(string(content), "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;") {
+				if !strings.Contains(string(content), test.expected) {
 					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
 				}
 				continue
 			}
 
 			if len(test.errorPage) > 0 && (test.testErrCodeXSS || test.testErrDescriptionXSS) {
-				if !strings.Contains(string(content), "&lt;script&gt;alert(&#39;this code snippet was executed&#39;)&lt;/script&gt;") {
+				if !strings.Contains(string(content), test.expected) {
 					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
 				}
 				continue
@@ -244,28 +252,28 @@ func TestServer(t *testing.T) {
 				errDescription := bytes.Contains(test.errorPage, []byte("{{.Err}}"))
 
 				if !errCode && !errDescription {
-					if !strings.Contains(string(content), "test option error page") {
+					if !strings.Contains(string(content), test.expected) {
 						t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
 					}
 				}
 				if errCode && errDescription {
-					if !strings.Contains(string(content), "test option error page error_code error_description") {
+					if !strings.Contains(string(content), test.expected) {
 						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
 					}
 				}
 				if errCode && !errDescription {
-					if !strings.Contains(string(content), "test option error page error_code") {
+					if !strings.Contains(string(content), test.expected) {
 						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code", test.desc)
 					}
 				}
 				if !errCode && errDescription {
-					if !strings.Contains(string(content), "test option error page error_description") {
+					if !strings.Contains(string(content), test.expected) {
 						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_description", test.desc)
 					}
 				}
 				continue
 			} else {
-				if !strings.Contains(string(content), "<p>Error details: error error_code, error description: error_description</p>") {
+				if !strings.Contains(string(content), test.expected) {
 					t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
 				}
 				continue
