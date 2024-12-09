@@ -169,10 +169,10 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 
 		errDesc := q.Get("error_description")
 
-		s.errorPage = bytes.ReplaceAll(s.errorPage, code, []byte(html.EscapeString(headerErr))) // provides XSS protection
-		s.errorPage = bytes.ReplaceAll(s.errorPage, err, []byte(html.EscapeString(errDesc)))    // provides XSS protection
+		errorPage := bytes.ReplaceAll(s.errorPage, code, []byte(html.EscapeString(headerErr))) // provides XSS protection
+		errorPage = bytes.ReplaceAll(errorPage, err, []byte(html.EscapeString(errDesc)))       // provides XSS protection
 
-		_, _ = w.Write(s.errorPage)
+		_, _ = w.Write(errorPage)
 
 		errorDesc := fmt.Errorf(errDesc)
 		s.putResult(Result{Err: errorDesc})
