@@ -233,51 +233,10 @@ func TestServer(t *testing.T) {
 		}
 
 		if test.testTemplate {
-			if test.testErrCodeXSS || test.testErrDescriptionXSS {
-				if !strings.Contains(string(content), test.expected) {
-					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
-				}
-				continue
+			if !strings.Contains(string(content), test.expected) {
+				t.Errorf("TestServer(%s): -want:%s got:%s ", test.desc, test.expected, string(content))
 			}
-
-			if len(test.errorPage) > 0 && (test.testErrCodeXSS || test.testErrDescriptionXSS) {
-				if !strings.Contains(string(content), test.expected) {
-					t.Errorf("TestServer(%s): want escaped html entities", test.desc)
-				}
-				continue
-			}
-
-			if len(test.errorPage) > 0 {
-				errCode := bytes.Contains(test.errorPage, []byte("{{.Code}}"))
-				errDescription := bytes.Contains(test.errorPage, []byte("{{.Err}}"))
-
-				if !errCode && !errDescription {
-					if !strings.Contains(string(content), test.expected) {
-						t.Errorf("TestServer(%s): -want/+got:\ntest option error page", test.desc)
-					}
-				}
-				if errCode && errDescription {
-					if !strings.Contains(string(content), test.expected) {
-						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
-					}
-				}
-				if errCode && !errDescription {
-					if !strings.Contains(string(content), test.expected) {
-						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code", test.desc)
-					}
-				}
-				if !errCode && errDescription {
-					if !strings.Contains(string(content), test.expected) {
-						t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_description", test.desc)
-					}
-				}
-				continue
-			} else {
-				if !strings.Contains(string(content), test.expected) {
-					t.Errorf("TestServer(%s): -want/+got:\ntest option error page error_code error_description", test.desc)
-				}
-				continue
-			}
+			continue
 		}
 
 		if !strings.Contains(string(content), "Authentication Complete") {
