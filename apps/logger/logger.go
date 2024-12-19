@@ -1,5 +1,3 @@
-//go:build go1.21
-
 package logger
 
 import (
@@ -8,17 +6,32 @@ import (
 	"log/slog"
 )
 
+// CallbackFunc defines the signature for callback functions
+// we can only have one string to support azure sdk
+type CallbackFunc func(level, message string)
+
+type Level string
+
+const (
+	Info  Level = "info"
+	Err   Level = "error"
+	Warn  Level = "warn"
+	Debug Level = "debug"
+)
+
 // Logger struct for Go 1.21+ with full `slog` logging support.
 type Logger struct {
-	logging     *slog.Logger
-	logCallback CallbackFunc
+	logging *slog.Logger
 }
 
-func New121(input interface{}) (*Logger, error) {
-	if logger, ok := input.(*slog.Logger); ok {
-		return &Logger{logging: logger}, nil
+// New creates a new logger instance
+func New(slogLogger *slog.Logger) (*Logger, error) {
+	// Return a logger instance for Go 1.21+
+	if slogLogger == nil {
+		return nil, fmt.Errorf("invalid input for Go 1.21+; expected *slog.Logger")
 	}
-	return nil, fmt.Errorf("invalid input for Go 1.21+; expected *slog.Logger")
+
+	return &Logger{logging: slogLogger}, nil
 }
 
 // Log method for Go 1.21+ with full support for structured logging and multiple log levels.
