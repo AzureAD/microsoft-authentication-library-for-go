@@ -5,7 +5,7 @@ import (
 	"log/slog"
 	"os"
 
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/logger"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/logger"
 )
 
 func main() {

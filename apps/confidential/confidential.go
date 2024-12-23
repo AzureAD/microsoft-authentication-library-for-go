@@ -24,6 +24,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/logger"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -250,10 +251,23 @@ type clientOptions struct {
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
 	httpClient                        ops.HTTPClient
+	logger                            logger.LoggerInterface
 }
 
 // Option is an optional argument to New().
 type Option func(o *clientOptions)
+
+//  WithLogger allows for a custom logger to be set.
+func WithLogger(l interface{}) Option {
+	return func(o *clientOptions) {
+		logInstance, err := logger.New(l)
+		if err != nil {
+			fmt.Println("Error creating logger with slog:", err)
+			return
+		}
+		o.logger = logInstance
+	}
+}
 
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
@@ -318,12 +332,17 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		return Client{}, err
 	}
 	autoEnabledRegion := os.Getenv("MSAL_FORCE_REGION")
+	defaultLogger, err := logger.New(nil)
+	if err != nil {
+		return Client{}, err
+	}
 	opts := clientOptions{
 		authority: authority,
 		// if the caller specified a token provider, it will handle all details of authentication, using Client only as a token cache
 		disableInstanceDiscovery: cred.tokenProvider != nil,
 		httpClient:               shared.DefaultClient,
 		azureRegion:              autoEnabledRegion,
+		logger:                   defaultLogger,
 	}
 	for _, o := range options {
 		o(&opts)
@@ -345,6 +364,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	base.AuthParams.IsConfidentialClient = true
 
+	opts.logger.Log(context.Background(), logger.Info, "Created confidential client", logger.Field("authority", opts.authority), logger.Field("clientID", clientID))
 	return Client{base: base, cred: internalCred}, nil
 }
 

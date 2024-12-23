@@ -182,6 +182,9 @@ func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
 	}
 	defer os.Unsetenv("MSAL_FORCE_REGION")
 
+	// handlerOptions := &slog.HandlerOptions{}
+	// slogLogger := slog.New(slog.NewTextHandler(os.Stdout, handlerOptions))
+
 	lmo := "login.microsoftonline.com"
 	tenant := "tenant"
 	mockClient := mock.Client{}
