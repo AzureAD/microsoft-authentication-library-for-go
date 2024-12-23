@@ -2,8 +2,6 @@
 
 package logger
 
-import "context"
-
 type logger struct{}
 
 func NewLogger(loggerInterface interface{}) (LoggerInterface, error) {
@@ -11,7 +9,7 @@ func NewLogger(loggerInterface interface{}) (LoggerInterface, error) {
 }
 
 // Log method for Go 1.21+ with full support for structured logging and multiple log levels.
-func (a *logger) Log(ctx context.Context, level Level, message string, fields ...any) {
+func (a *logger) Log(level Level, message string, fields ...any) {
 	return
 }
 

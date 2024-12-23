@@ -364,7 +364,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	base.AuthParams.IsConfidentialClient = true
 
-	opts.logger.Log(context.Background(), logger.Info, "Created confidential client", logger.Field("clientID", clientID))
+	opts.logger.Log(logger.Info, "Created confidential client", logger.Field("clientID", clientID))
 	return Client{base: base, cred: internalCred}, nil
 }
 

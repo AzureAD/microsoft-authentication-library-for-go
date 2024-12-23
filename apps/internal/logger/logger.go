@@ -1,7 +1,5 @@
 package logger
 
-import "context"
-
 type Level string
 
 const (
@@ -13,7 +11,7 @@ const (
 
 // LoggerInterface defines the methods that a logger should implement
 type LoggerInterface interface {
-	Log(ctx context.Context, level Level, message string, fields ...any)
+	Log(level Level, message string, fields ...any)
 }
 
 func New(loggerInterface interface{}) (LoggerInterface, error) {

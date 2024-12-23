@@ -27,7 +27,7 @@ func NewLogger(loggerInterface interface{}) (LoggerInterface, error) {
 }
 
 // Log method for Go 1.21+ with full support for structured logging and multiple log levels.
-func (a *logger) Log(ctx context.Context, level Level, message string, fields ...any) {
+func (a *logger) Log(level Level, message string, fields ...any) {
 	if a == nil || a.logging == nil {
 		return
 	}
@@ -47,7 +47,7 @@ func (a *logger) Log(ctx context.Context, level Level, message string, fields ..
 
 	// Log the entry with the message and fields
 	a.logging.Log(
-		ctx,
+		context.Background(),
 		slogLevel,
 		message,
 		fields...,

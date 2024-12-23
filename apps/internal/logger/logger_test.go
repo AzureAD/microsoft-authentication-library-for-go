@@ -2,7 +2,6 @@ package logger
 
 import (
 	"bytes"
-	"context"
 	"log/slog"
 	"testing"
 )
@@ -22,10 +21,10 @@ func TestLogger_Log_ConsoleOutput(t *testing.T) {
 	}
 
 	// Log messages
-	logInstance.Log(context.Background(), Info, "This is an info message via slog.", Field("username", "john_doe"), slog.Int("age", 30))
-	logInstance.Log(context.Background(), Err, "This is an error message via slog.", slog.String("module", "user-service"), slog.Int("retry", 3))
-	logInstance.Log(context.Background(), Warn, "This is a warn message via slog.", slog.Int("free_space_mb", 100))
-	logInstance.Log(context.Background(), Debug, "This is a debug message via slog.", slog.String("module", "main"))
+	logInstance.Log(Info, "This is an info message via slog.", Field("username", "john_doe"), slog.Int("age", 30))
+	logInstance.Log(Err, "This is an error message via slog.", slog.String("module", "user-service"), slog.Int("retry", 3))
+	logInstance.Log(Warn, "This is a warn message via slog.", slog.Int("free_space_mb", 100))
+	logInstance.Log(Debug, "This is a debug message via slog.", slog.String("module", "main"))
 
 	// Check the output
 	output := buf.String()
