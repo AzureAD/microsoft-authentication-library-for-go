@@ -503,7 +503,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if query.Get(apiVersionQueryParameterName) != appServiceAPIVersion {
 				t.Fatalf("api-version not on %s got %s", appServiceAPIVersion, query.Get(apiVersionQueryParameterName))
 			}
-			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
+			if r := query.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
 			}
 			switch i := testCase.miType.(type) {

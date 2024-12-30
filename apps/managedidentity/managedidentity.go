@@ -296,17 +296,17 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	}
 	switch c.source {
 	case AzureArc:
-		return acquireTokenForAzureArc(ctx, c, resource)
+		return c.acquireTokenForAzureArc(ctx, resource)
 	case DefaultToIMDS:
-		return acquireTokenForIMDS(ctx, c, resource)
+		return c.acquireTokenForIMDS(ctx, resource)
 	case AppService:
-		return acquireTokenForAppService(ctx, c, resource)
+		return c.acquireTokenForAppService(ctx, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
 }
 
-func acquireTokenForAppService(ctx context.Context, c Client, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForAppService(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createAppServiceAuthRequest(ctx, c.miType, resource, c)
 	if err != nil {
 		return base.AuthResult{}, err
@@ -318,7 +318,7 @@ func acquireTokenForAppService(ctx context.Context, c Client, resource string) (
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func acquireTokenForIMDS(ctx context.Context, c Client, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, c.miType, resource, c)
 	if err != nil {
 		return base.AuthResult{}, err
@@ -330,13 +330,13 @@ func acquireTokenForIMDS(ctx context.Context, c Client, resource string) (base.A
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func acquireTokenForAzureArc(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createAzureArcAuthRequest(ctx, resource, "")
 	if err != nil {
 		return base.AuthResult{}, err
 	}
 
-	response, err := client.httpClient.Do(req)
+	response, err := c.httpClient.Do(req)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -346,7 +346,7 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 		return base.AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
 	}
 
-	secret, err := client.getAzureArcSecretKey(response, runtime.GOOS)
+	secret, err := c.getAzureArcSecretKey(response, runtime.GOOS)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -356,11 +356,11 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 		return base.AuthResult{}, err
 	}
 
-	tokenResponse, err := client.getTokenForRequest(secondRequest)
+	tokenResponse, err := c.getTokenForRequest(secondRequest)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(client.authParams, tokenResponse)
+	return authResultFromToken(c.authParams, tokenResponse)
 }
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
@@ -394,7 +394,8 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	var resp *http.Response
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*60)
+		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Minute)
+		defer tryCancel()
 		if resp != nil && resp.Body != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
