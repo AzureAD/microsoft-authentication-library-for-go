@@ -308,7 +308,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 }
 
 func (c Client) acquireTokenForAppService(ctx context.Context, resource string) (base.AuthResult, error) {
-	req, err := createAppServiceAuthRequest(ctx, c.miType, resource, c)
+	req, err := createAppServiceAuthRequest(ctx, c.miType, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -320,7 +320,7 @@ func (c Client) acquireTokenForAppService(ctx context.Context, resource string) 
 }
 
 func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.AuthResult, error) {
-	req, err := createIMDSAuthRequest(ctx, c.miType, resource, c)
+	req, err := createIMDSAuthRequest(ctx, c.miType, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -467,7 +467,7 @@ func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRespons
 	return r, err
 }
 
-func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, c Client) (*http.Request, error) {
+func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
 	if err != nil {
@@ -492,7 +492,7 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, c 
 	return req, nil
 }
 
-func createIMDSAuthRequest(ctx context.Context, id ID, resource string, c Client) (*http.Request, error) {
+func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
 	msiEndpoint, err := url.Parse(imdsDefaultEndpoint)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", imdsDefaultEndpoint, err)
