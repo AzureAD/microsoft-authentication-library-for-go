@@ -418,8 +418,8 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
 				}
 			case UserAssignedResourceID:
-				if query.Get(miQueryParameterResourceId) != i.value() {
-					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
+				if query.Get(miQueryParameterResourceIdIMDS) != i.value() {
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceIdIMDS))
 				}
 			case UserAssignedObjectID:
 				if query.Get(miQueryParameterObjectId) != i.value() {

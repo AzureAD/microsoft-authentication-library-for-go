@@ -48,7 +48,8 @@ const (
 	// UAMI query parameter name
 	miQueryParameterClientId   = "client_id"
 	miQueryParameterObjectId   = "object_id"
-	miQueryParameterResourceId = "msi_res_id"
+	miQueryParameterResourceIdIMDS = "msi_res_id"
+	miQueryParameterResourceId = "mi_res_id"
 
 	// IMDS
 	imdsDefaultEndpoint           = "http://169.254.169.254/metadata/identity/oauth2/token"
@@ -504,7 +505,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, c Client
 	case UserAssignedClientID:
 		msiParameters.Set(miQueryParameterClientId, string(t))
 	case UserAssignedResourceID:
-		msiParameters.Set(miQueryParameterResourceId, string(t))
+		msiParameters.Set(miQueryParameterResourceIdIMDS, string(t))
 	case UserAssignedObjectID:
 		msiParameters.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue: // not adding anything
