@@ -768,7 +768,29 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86399, 0)},
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Second * 86399)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success",
+			payload: fmt.Sprintf(`
+				{
+					"access_token": "secret",
+					"expires_on": %d,
+					"ext_expires_in": 86399,
+					"client_info": {"uid":  "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`, time.Now().Add(time.Hour).Unix()),
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -795,7 +817,9 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 		case err != nil:
 			continue
 		}
-
+		if got.ExpiresOn.T.Unix() != test.want.ExpiresOn.T.Unix() {
+			t.Errorf("TestCreateTokenResponse: got %v, want %v", got.ExpiresOn.T.Unix(), test.want.ExpiresOn.T.Unix())
+		}
 		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
 		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, got); diff != "" {
 			t.Errorf("TestCreateTokenResponse: -want/+got:\n%s", diff)

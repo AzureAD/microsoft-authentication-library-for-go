@@ -173,7 +173,7 @@ type TokenResponse struct {
 	FamilyID       string                    `json:"foci"`
 	IDToken        IDToken                   `json:"id_token"`
 	ClientInfo     ClientInfo                `json:"client_info"`
-	ExpiresOn      internalTime.DurationTime `json:"expires_in"`
+	ExpiresOn      internalTime.DurationTime `json:"-"`
 	ExtExpiresOn   internalTime.DurationTime `json:"ext_expires_in"`
 	GrantedScopes  Scopes                    `json:"scope"`
 	DeclinedScopes []string                  // This is derived
@@ -181,6 +181,64 @@ type TokenResponse struct {
 	AdditionalFields map[string]interface{}
 
 	scopesComputed bool
+}
+
+func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
+	type Alias TokenResponse
+	aux := &struct {
+		ExpiresIn json.Number `json:"expires_in"`
+		ExpiresOn json.Number `json:"expires_on"`
+		*Alias
+	}{
+		Alias: (*Alias)(tr),
+	}
+
+	// Unmarshal the JSON data into the aux struct
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	// Helper function to parse JSON number into int64
+	parseDuration := func(num json.Number) (int64, error) {
+		if num == "" {
+			return 0, nil
+		}
+		return num.Int64()
+	}
+
+	// Try to parse ExpiresIn first, then fallback to ExpiresOn
+	if duration, err := parseDuration(aux.ExpiresIn); err != nil {
+		println("122121@@")
+		return err
+	} else if duration > 0 {
+		println("122121@")
+
+		tr.ExpiresOn = internalTime.DurationTime{T: time.Now().Add(time.Duration(duration) * time.Second)}
+	} else if duration == 0 || aux.ExpiresOn != "" {
+		println("122121@@@@@")
+		// If ExpiresIn is zero, check ExpiresOn
+		if duration, err := parseDuration(aux.ExpiresOn); err != nil {
+			println("122121@@@@@!")
+
+			return err
+		} else if duration > 0 {
+			println("122121@@@@@!!")
+
+			tr.ExpiresOn = internalTime.DurationTime{T: time.Unix(duration, 0)}
+			println(tr.ExpiresOn.T.String())
+
+		} else {
+			println("122121@@@@@!!!!!")
+
+			return errors.New("expires_in and expires_on are both missing or invalid")
+		}
+	} else {
+		println("122121")
+
+		return errors.New("expires_in or expires_on must be present in the response")
+	}
+
+	return nil
 }
 
 // ComputeScope computes the final scopes based on what was granted by the server and

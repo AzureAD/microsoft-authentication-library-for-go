@@ -38,6 +38,7 @@ const (
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
 	ExpiresIn   int64  `json:"expires_in"`
+	ExpiresOn   int64  `json:"expires_on"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
 }
@@ -47,14 +48,26 @@ type ErrorResponse struct {
 	Desc string `json:"error_description"`
 }
 
-func getSuccessfulResponse(resource string) ([]byte, error) {
-	duration := 10 * time.Minute
-	expiresIn := duration.Seconds()
-	response := SuccessfulResponse{
-		AccessToken: token,
-		ExpiresIn:   int64(expiresIn),
-		Resource:    resource,
-		TokenType:   "Bearer",
+func getSuccessfulResponse(resource string, doesHaveExpireIn bool) ([]byte, error) {
+	var response SuccessfulResponse
+	if doesHaveExpireIn {
+		duration := 10 * time.Minute
+		expiresIn := duration.Seconds()
+		response = SuccessfulResponse{
+			AccessToken: token,
+			ExpiresIn:   int64(expiresIn),
+			Resource:    resource,
+			TokenType:   "Bearer",
+		}
+	} else {
+		println(time.Now().Add(time.Hour).Unix())
+		response = SuccessfulResponse{
+			AccessToken: token,
+			ExpiresOn:   time.Now().Add(time.Hour).Unix(),
+			Resource:    resource,
+			TokenType:   "Bearer",
+		}
+		println(response.ExpiresOn)
 	}
 	jsonResponse, err := json.Marshal(response)
 	return jsonResponse, err
@@ -278,7 +291,7 @@ func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
 					}))
 			}
 			if !testCase.expectedFail {
-				successRespBody, err := getSuccessfulResponse(resource)
+				successRespBody, err := getSuccessfulResponse(resource, true)
 				if err != nil {
 					t.Fatalf("error while forming json response : %s", err.Error())
 				}
@@ -380,7 +393,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 			var localUrl *url.URL
 			mockClient := mock.Client{}
-			responseBody, err := getSuccessfulResponse(resource)
+			responseBody, err := getSuccessfulResponse(resource, true)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
@@ -467,16 +480,15 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 		{resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId")},
 	}
 	for _, testCase := range testCases {
-		t.Run(string(DefaultToIMDS)+"-"+testCase.miType.value(), func(t *testing.T) {
+		t.Run(string(AppService)+"-"+testCase.miType.value(), func(t *testing.T) {
 			endpoint := "http://127.0.0.1:41564/msi/token"
 
 			var localUrl *url.URL
 			mockClient := mock.Client{}
-			responseBody, err := getSuccessfulResponse(resource)
+			responseBody, err := getSuccessfulResponse(resource, false)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
-
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK),
 				mock.WithBody(responseBody),
 				mock.WithCallback(func(r *http.Request) {
@@ -571,7 +583,7 @@ func TestAzureArc(t *testing.T) {
 			localUrl = r.URL
 		}))
 
-	responseBody, err := getSuccessfulResponse(resource)
+	responseBody, err := getSuccessfulResponse(resource, true)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
@@ -742,7 +754,7 @@ func TestAzureArcErrors(t *testing.T) {
 				mock.WithHTTPHeader(headers),
 			)
 
-			responseBody, err := getSuccessfulResponse(resource)
+			responseBody, err := getSuccessfulResponse(resource, true)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}

@@ -46,10 +46,10 @@ const (
 	wwwAuthenticateHeaderName    = "www-authenticate"
 
 	// UAMI query parameter name
-	miQueryParameterClientId   = "client_id"
-	miQueryParameterObjectId   = "object_id"
+	miQueryParameterClientId       = "client_id"
+	miQueryParameterObjectId       = "object_id"
 	miQueryParameterResourceIdIMDS = "msi_res_id"
-	miQueryParameterResourceId = "mi_res_id"
+	miQueryParameterResourceId     = "mi_res_id"
 
 	// IMDS
 	imdsDefaultEndpoint           = "http://169.254.169.254/metadata/identity/oauth2/token"
@@ -408,17 +408,14 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 			retrylist = retryCodesForIMDS
 		}
 		if err == nil && !contains(retrylist, resp.StatusCode) {
-			tryCancel()
 			return resp, nil
 		}
 		select {
 		case <-time.After(time.Second):
 		case <-req.Context().Done():
 			err = req.Context().Err()
-			tryCancel()
 			return resp, err
 		}
-		tryCancel()
 	}
 	return resp, err
 }
