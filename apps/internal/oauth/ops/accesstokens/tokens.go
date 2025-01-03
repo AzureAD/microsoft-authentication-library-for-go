@@ -208,33 +208,21 @@ func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 
 	// Try to parse ExpiresIn first, then fallback to ExpiresOn
 	if duration, err := parseDuration(aux.ExpiresIn); err != nil {
-		println("122121@@")
 		return err
 	} else if duration > 0 {
-		println("122121@")
-
 		tr.ExpiresOn = internalTime.DurationTime{T: time.Now().Add(time.Duration(duration) * time.Second)}
 	} else if duration == 0 || aux.ExpiresOn != "" {
-		println("122121@@@@@")
 		// If ExpiresIn is zero, check ExpiresOn
 		if duration, err := parseDuration(aux.ExpiresOn); err != nil {
-			println("122121@@@@@!")
-
 			return err
 		} else if duration > 0 {
-			println("122121@@@@@!!")
-
 			tr.ExpiresOn = internalTime.DurationTime{T: time.Unix(duration, 0)}
 			println(tr.ExpiresOn.T.String())
 
 		} else {
-			println("122121@@@@@!!!!!")
-
 			return errors.New("expires_in and expires_on are both missing or invalid")
 		}
 	} else {
-		println("122121")
-
 		return errors.New("expires_in or expires_on must be present in the response")
 	}
 
