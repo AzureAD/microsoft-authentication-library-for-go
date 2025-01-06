@@ -57,13 +57,13 @@ func TestOBOAccessTokenScopes(t *testing.T) {
 		_, err := mgr.Write(
 			ap,
 			accesstokens.TokenResponse{
-				AccessToken:   scope[0] + "-at",
-				ClientInfo:    accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-				GrantedScopes: accesstokens.Scopes{Slice: scope},
-				IDToken:       idt,
-				RefreshToken:  upn + "-rt",
-				TokenType:     "Bearer",
+				AccessToken:         scope[0] + "-at",
+				ClientInfo:          accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
+				ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+				GrantedScopes:       accesstokens.Scopes{Slice: scope},
+				IDToken:             idt,
+				RefreshToken:        upn + "-rt",
+				TokenType:           "Bearer",
 			},
 		)
 		if err != nil {
@@ -119,13 +119,13 @@ func TestOBOPartitioning(t *testing.T) {
 		account, err := mgr.Write(
 			authParams[i],
 			accesstokens.TokenResponse{
-				AccessToken:   upn + "-at",
-				ClientInfo:    accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-				GrantedScopes: accesstokens.Scopes{Slice: scopes},
-				IDToken:       idt,
-				RefreshToken:  upn + "-rt",
-				TokenType:     "Bearer",
+				AccessToken:         upn + "-at",
+				ClientInfo:          accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
+				ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+				GrantedScopes:       accesstokens.Scopes{Slice: scopes},
+				IDToken:             idt,
+				RefreshToken:        upn + "-rt",
+				TokenType:           "Bearer",
 			},
 		)
 		if err != nil {

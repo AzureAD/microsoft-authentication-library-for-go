@@ -48,6 +48,7 @@ const (
 	// UAMI query parameter name
 	miQueryParameterClientId       = "client_id"
 	miQueryParameterObjectId       = "object_id"
+	miQueryParameterPrincipalId    = "principal_id"
 	miQueryParameterResourceIdIMDS = "msi_res_id"
 	miQueryParameterResourceId     = "mi_res_id"
 
@@ -480,7 +481,7 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*
 	case UserAssignedResourceID:
 		q.Set(miQueryParameterResourceId, string(t))
 	case UserAssignedObjectID:
-		q.Set(miQueryParameterObjectId, string(t))
+		q.Set(miQueryParameterPrincipalId, string(t))
 	case systemAssignedValue:
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)

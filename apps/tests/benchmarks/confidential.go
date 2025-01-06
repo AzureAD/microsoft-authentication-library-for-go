@@ -39,9 +39,9 @@ func fakeClient() (base.Client, error) {
 	return base.New("fake_client_id", "https://fake_authority/fake", &oauth.Client{
 		AccessTokens: &fake.AccessTokens{
 			AccessToken: accesstokens.TokenResponse{
-				AccessToken:   accessToken,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+				AccessToken:         accessToken,
+				ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				GrantedScopes:       accesstokens.Scopes{Slice: tokenScope},
 			},
 		},
 		Authority: &fake.Authority{
@@ -88,9 +88,9 @@ func populateTokenCache(client base.Client, params testParams) execTime {
 				// we use this to add a fake token to the cache.
 				// each token has a different scope which is what makes them unique
 				_, err := client.AuthResultFromToken(context.Background(), authParams, accesstokens.TokenResponse{
-					AccessToken:   accessToken,
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-					GrantedScopes: accesstokens.Scopes{Slice: []string{strconv.FormatInt(int64(i), 10)}},
+					AccessToken:         accessToken,
+					ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+					GrantedScopes:       accesstokens.Scopes{Slice: []string{strconv.FormatInt(int64(i), 10)}},
 				}, true)
 				if err != nil {
 					panic(err)

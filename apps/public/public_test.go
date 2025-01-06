@@ -306,12 +306,12 @@ func TestADFSTokenCaching(t *testing.T) {
 	}
 	fakeAT := fake.AccessTokens{
 		AccessToken: accesstokens.TokenResponse{
-			AccessToken:   "at1",
-			RefreshToken:  "rt",
-			TokenType:     "Bearer",
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+			AccessToken:         "at1",
+			RefreshToken:        "rt",
+			TokenType:           "Bearer",
+			ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExtExpiresOn:        internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			GrantedScopes:       accesstokens.Scopes{Slice: tokenScope},
 			IDToken: accesstokens.IDToken{
 				ExpirationTime: time.Now().Add(time.Hour).Unix(),
 				Name:           "A",

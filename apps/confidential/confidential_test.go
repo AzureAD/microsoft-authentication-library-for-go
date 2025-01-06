@@ -342,11 +342,11 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	} {
 		t.Run("", func(t *testing.T) {
 			tr := accesstokens.TokenResponse{
-				AccessToken:   token,
-				RefreshToken:  refresh,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+				AccessToken:         token,
+				RefreshToken:        refresh,
+				ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExtExpiresOn:        internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				GrantedScopes:       accesstokens.Scopes{Slice: tokenScope},
 				IDToken: accesstokens.IDToken{
 					PreferredUsername: params.preferredUsername,
 					UPN:               params.upn,
@@ -461,12 +461,12 @@ func TestADFSTokenCaching(t *testing.T) {
 	}
 	fakeAT := fake.AccessTokens{
 		AccessToken: accesstokens.TokenResponse{
-			AccessToken:   "at1",
-			RefreshToken:  "rt",
-			TokenType:     "bearer",
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+			AccessToken:         "at1",
+			RefreshToken:        "rt",
+			TokenType:           "bearer",
+			ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExtExpiresOn:        internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			GrantedScopes:       accesstokens.Scopes{Slice: tokenScope},
 			IDToken: accesstokens.IDToken{
 				ExpirationTime: time.Now().Add(time.Hour).Unix(),
 				Name:           "A",
@@ -593,9 +593,9 @@ func TestNewCredFromCert(t *testing.T) {
 			}
 			t.Run(fmt.Sprintf("%s/%v", filepath.Base(file.path), sendX5c), func(t *testing.T) {
 				client, err := fakeClient(accesstokens.TokenResponse{
-					AccessToken:   token,
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+					AccessToken:         token,
+					ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+					GrantedScopes:       accesstokens.Scopes{Slice: tokenScope},
 				}, cred, fakeAuthority, opts...)
 				if err != nil {
 					t.Fatal(err)
@@ -743,7 +743,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 		t.Fatal("token provider wasn't invoked")
 	}
 	if v := int(time.Until(ar.ExpiresOn).Seconds()); v < expiresIn-2 || v > expiresIn {
-		t.Fatalf("expected ExpiresOn ~= %d seconds, got %d", expiresIn, v)
+		t.Fatalf("expected ExpiresOnCalculated ~= %d seconds, got %d", expiresIn, v)
 	}
 	if ar.AccessToken != expectedToken {
 		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
@@ -1383,11 +1383,11 @@ func TestWithAuthenticationScheme(t *testing.T) {
 		t.Fatal(err)
 	}
 	client, err := fakeClient(accesstokens.TokenResponse{
-		AccessToken:   token,
-		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-		TokenType:     "TokenType",
+		AccessToken:         token,
+		ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		ExtExpiresOn:        internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		GrantedScopes:       accesstokens.Scopes{Slice: tokenScope},
+		TokenType:           "TokenType",
 	}, cred, fakeAuthority)
 	if err != nil {
 		t.Fatal(err)
@@ -1423,11 +1423,11 @@ func TestAcquireTokenByCredentialFromDSTS(t *testing.T) {
 				t.Fatal(err)
 			}
 			client, err := fakeClient(accesstokens.TokenResponse{
-				AccessToken:   token,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-				TokenType:     "Bearer",
+				AccessToken:         token,
+				ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExtExpiresOn:        internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				GrantedScopes:       accesstokens.Scopes{Slice: tokenScope},
+				TokenType:           "Bearer",
 			}, cred, "https://fake_authority/dstsv2/"+authority.DSTSTenant)
 			if err != nil {
 				t.Fatal(err)
