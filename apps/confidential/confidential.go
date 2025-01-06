@@ -257,18 +257,6 @@ type clientOptions struct {
 // Option is an optional argument to New().
 type Option func(o *clientOptions)
 
-//  WithLogger allows for a custom logger to be set.
-func WithLogger(l interface{}) Option {
-	return func(o *clientOptions) {
-		logInstance, err := logger.New(l)
-		if err != nil {
-			fmt.Println("Error creating logger with slog:", err)
-			return
-		}
-		o.logger = logInstance
-	}
-}
-
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
 	return func(o *clientOptions) {
