@@ -3,19 +3,15 @@
 package confidential
 
 import (
-	"fmt"
+	"log/slog"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/logger"
 )
 
-//  WithLogger allows for a custom logger to be set.
-func WithLogger(l interface{}) Option {
+// WithLogger allows for a custom logger to be set.
+func WithLogger(l *slog.Logger) Option {
 	return func(o *clientOptions) {
-		logInstance, err := logger.New(l)
-		if err != nil {
-			fmt.Println("Error creating logger with slog:", err)
-			return
-		}
+		logInstance := logger.NewLogger(l)
 		o.logger = logInstance
 	}
 }

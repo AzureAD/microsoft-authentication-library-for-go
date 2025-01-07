@@ -320,10 +320,8 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		return Client{}, err
 	}
 	autoEnabledRegion := os.Getenv("MSAL_FORCE_REGION")
-	defaultLogger, err := logger.New(nil)
-	if err != nil {
-		return Client{}, err
-	}
+	defaultLogger := logger.New(nil)
+
 	opts := clientOptions{
 		authority: authority,
 		// if the caller specified a token provider, it will handle all details of authentication, using Client only as a token cache
@@ -352,7 +350,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	base.AuthParams.IsConfidentialClient = true
 
-	opts.logger.Log(logger.Info, "Created confidential client", logger.Field("clientID", clientID))
+	opts.logger.Log(context.Background(), logger.Info, "Created confidential client", logger.Field("clientID", clientID))
 	return Client{base: base, cred: internalCred}, nil
 }
 

@@ -4,8 +4,8 @@ package logger
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
+	"os"
 )
 
 // logger struct for Go 1.21+ with full `slog` logging support.
@@ -13,21 +13,24 @@ type logger struct {
 	logging *slog.Logger
 }
 
-// New creates a new logger instance
-func NewLogger(loggerInterface interface{}) (LoggerInterface, error) {
+// New creates a new logger instance for Go 1.21+ with full `slog` logging support.
+// A default logger instance is provided if the loggerInterface is nil or there is an issue with type assertion of the loggerInterface
+func NewLogger(loggerInterface interface{}) LoggerInterface {
 	if loggerInterface == nil {
-		return &logger{logging: nil}, nil
+		// Provide a default logger instance
+		defaultLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+		return &logger{logging: defaultLogger}
 	}
-
-	if loggerInterface, ok := loggerInterface.(*slog.Logger); ok {
-		return &logger{logging: loggerInterface}, nil
+	if slogLogger, ok := loggerInterface.(*slog.Logger); ok {
+		return &logger{logging: slogLogger}
 	}
-
-	return nil, fmt.Errorf("invalid input for Go 1.21+; expected *slog.Logger")
+	// Handle the case where the type assertion fails
+	defaultLogger := slog.New(slog.NewTextHandler(os.Stdout, nil))
+	return &logger{logging: defaultLogger}
 }
 
 // Log method for Go 1.21+ with full support for structured logging and multiple log levels.
-func (a *logger) Log(level Level, message string, fields ...any) {
+func (a *logger) Log(ctx context.Context, level Level, message string, fields ...any) {
 	if a == nil || a.logging == nil {
 		return
 	}
@@ -47,7 +50,7 @@ func (a *logger) Log(level Level, message string, fields ...any) {
 
 	// Log the entry with the message and fields
 	a.logging.Log(
-		context.Background(),
+		ctx,
 		slogLevel,
 		message,
 		fields...,
