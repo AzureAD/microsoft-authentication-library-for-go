@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 	"time"
 
@@ -221,6 +222,10 @@ func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 	}
 
 	if expiresOnStr, ok := aux.ExpiresOn.(string); ok {
+		if ts, err := strconv.ParseInt(expiresOnStr, 10, 64); err == nil {
+			tr.ExpiresOn = internalTime.DurationTime{T: time.Unix(ts, 0)}
+			return nil
+		}
 		if expiresOnStr != "" {
 			if t, err := parseExpiresOn(expiresOnStr); err != nil {
 				return err

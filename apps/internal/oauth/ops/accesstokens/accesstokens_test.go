@@ -762,7 +762,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				{
 					"access_token": "secret",
 					"expires_on": %d,
-					"expires_in": 3600,
+					"expires_in": "3600",
 					"ext_expires_in": 86399,
 					"client_info": {"uid": "uid","utid": "utid"},
 					"scope": "openid profile"
