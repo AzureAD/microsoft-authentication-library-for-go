@@ -37,8 +37,8 @@ const (
 
 type SuccessfulResponse struct {
 	AccessToken string `json:"access_token"`
-	ExpiresIn   int64  `json:"expires_in"`
-	ExpiresOn   int64  `json:"expires_on"`
+	ExpiresIn   int64  `json:"expires_in,omitempty"`
+	ExpiresOn   int64  `json:"expires_on,omitempty"`
 	Resource    string `json:"resource"`
 	TokenType   string `json:"token_type"`
 }
@@ -60,14 +60,12 @@ func getSuccessfulResponse(resource string, doesHaveExpireIn bool) ([]byte, erro
 			TokenType:   "Bearer",
 		}
 	} else {
-		println(time.Now().Add(time.Hour).Unix())
 		response = SuccessfulResponse{
 			AccessToken: token,
 			ExpiresOn:   time.Now().Add(time.Hour).Unix(),
 			Resource:    resource,
 			TokenType:   "Bearer",
 		}
-		println(response.ExpiresOn)
 	}
 	jsonResponse, err := json.Marshal(response)
 	return jsonResponse, err
@@ -524,8 +522,8 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
 				}
 			case UserAssignedResourceID:
-				if query.Get(miQueryParameterResourceId) != i.value() {
-					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
+				if query.Get(miQueryParameterPrincipalId) != i.value() {
+					t.Fatalf("resource principal-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterPrincipalId))
 				}
 			case UserAssignedObjectID:
 				if query.Get(miQueryParameterObjectId) != i.value() {
