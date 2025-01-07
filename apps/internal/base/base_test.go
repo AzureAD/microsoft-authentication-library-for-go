@@ -49,12 +49,12 @@ func fakeClient(t *testing.T, opts ...Option) Client {
 	}
 	client.Token.AccessTokens = &fake.AccessTokens{
 		AccessToken: accesstokens.TokenResponse{
-			AccessToken:         fakeAccessToken,
-			ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-			FamilyID:            "family-id",
-			GrantedScopes:       accesstokens.Scopes{Slice: testScopes},
-			IDToken:             fakeIDToken,
-			RefreshToken:        fakeRefreshToken,
+			AccessToken:   fakeAccessToken,
+			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			FamilyID:      "family-id",
+			GrantedScopes: accesstokens.Scopes{Slice: testScopes},
+			IDToken:       fakeIDToken,
+			RefreshToken:  fakeRefreshToken,
 		},
 	}
 	client.Token.Authority = &fake.Authority{
@@ -133,12 +133,12 @@ func TestAcquireTokenSilentScopes(t *testing.T) {
 					AuthnScheme: &authority.BearerAuthenticationScheme{},
 				},
 				accesstokens.TokenResponse{
-					AccessToken:         fakeAccessToken,
-					ClientInfo:          accesstokens.ClientInfo{UID: "uid", UTID: "utid"},
-					ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(-time.Hour)},
-					GrantedScopes:       accesstokens.Scopes{Slice: test.cachedTokenScopes},
-					IDToken:             fakeIDToken,
-					RefreshToken:        fakeRefreshToken,
+					AccessToken:   fakeAccessToken,
+					ClientInfo:    accesstokens.ClientInfo{UID: "uid", UTID: "utid"},
+					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(-time.Hour)},
+					GrantedScopes: accesstokens.Scopes{Slice: test.cachedTokenScopes},
+					IDToken:       fakeIDToken,
+					RefreshToken:  fakeRefreshToken,
 				},
 			)
 			storage.FakeValidate = nil
@@ -177,10 +177,10 @@ func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
 			AuthnScheme: &authority.BearerAuthenticationScheme{},
 		},
 		accesstokens.TokenResponse{
-			AccessToken:         expectedToken,
-			ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(time.Hour)},
-			GrantedScopes:       accesstokens.Scopes{Slice: grantedScopes},
-			TokenType:           "Bearer",
+			AccessToken:   expectedToken,
+			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			GrantedScopes: accesstokens.Scopes{Slice: grantedScopes},
+			TokenType:     "Bearer",
 		},
 	)
 	if err != nil {
@@ -334,10 +334,10 @@ func TestCreateAuthenticationResult(t *testing.T) {
 		{
 			desc: "no declined scopes",
 			input: accesstokens.TokenResponse{
-				AccessToken:         "accessToken",
-				ExpiresOnCalculated: internalTime.DurationTime{T: future},
-				GrantedScopes:       accesstokens.Scopes{Slice: []string{"user.read"}},
-				DeclinedScopes:      nil,
+				AccessToken:    "accessToken",
+				ExpiresOn:      internalTime.DurationTime{T: future},
+				GrantedScopes:  accesstokens.Scopes{Slice: []string{"user.read"}},
+				DeclinedScopes: nil,
 			},
 			want: AuthResult{
 				AccessToken:    "accessToken",
@@ -352,10 +352,10 @@ func TestCreateAuthenticationResult(t *testing.T) {
 		{
 			desc: "declined scopes",
 			input: accesstokens.TokenResponse{
-				AccessToken:         "accessToken",
-				ExpiresOnCalculated: internalTime.DurationTime{T: future},
-				GrantedScopes:       accesstokens.Scopes{Slice: []string{"user.read"}},
-				DeclinedScopes:      []string{"openid"},
+				AccessToken:    "accessToken",
+				ExpiresOn:      internalTime.DurationTime{T: future},
+				GrantedScopes:  accesstokens.Scopes{Slice: []string{"user.read"}},
+				DeclinedScopes: []string{"openid"},
 			},
 			err: true,
 		},

@@ -52,11 +52,11 @@ func populateCache(users int, tokens int, authParams authority.AuthParams, clien
 			scope := fmt.Sprintf("scope%d", token)
 
 			_, err := client.AuthResultFromToken(context.Background(), authParams, accesstokens.TokenResponse{
-				AccessToken:         fmt.Sprintf("fake_access_token%d", user),
-				RefreshToken:        "fake_refresh_token",
-				ClientInfo:          accesstokens.ClientInfo{UID: "my_uid", UTID: fmt.Sprintf("%dmy_utid", user)},
-				ExpiresOnCalculated: internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-				GrantedScopes:       accesstokens.Scopes{Slice: []string{scope}},
+				AccessToken:   fmt.Sprintf("fake_access_token%d", user),
+				RefreshToken:  "fake_refresh_token",
+				ClientInfo:    accesstokens.ClientInfo{UID: "my_uid", UTID: fmt.Sprintf("%dmy_utid", user)},
+				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				GrantedScopes: accesstokens.Scopes{Slice: []string{scope}},
 				IDToken: accesstokens.IDToken{
 					RawToken: "x.e30",
 				},

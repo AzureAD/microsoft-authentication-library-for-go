@@ -145,19 +145,12 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
-		ExpiresOn:     getExpiryTime(tokenResponse),
+		ExpiresOn:     tokenResponse.ExpiresOn.T,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 		Metadata: AuthResultMetadata{
 			TokenSource: IdentityProvider,
 		},
 	}, nil
-}
-
-func getExpiryTime(tokenResponse accesstokens.TokenResponse) time.Time {
-	if tokenResponse.ExpiresOnCalculated.T.IsZero() || tokenResponse.ExpiresOnCalculated.T.Equal(time.Unix(0, 0)) {
-		return tokenResponse.ExpiresOn.T
-	}
-	return tokenResponse.ExpiresOnCalculated.T
 }
 
 // Client is a base client that provides access to common methods and primatives that

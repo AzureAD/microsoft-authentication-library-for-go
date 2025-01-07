@@ -194,7 +194,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			realm,
 			clientID,
 			cachedAt,
-			getExpiryTime(tokenResponse),
+			tokenResponse.ExpiresOn.T,
 			tokenResponse.ExtExpiresOn.T,
 			target,
 			tokenResponse.AccessToken,

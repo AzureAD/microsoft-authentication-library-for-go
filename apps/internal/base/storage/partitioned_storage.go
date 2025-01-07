@@ -114,7 +114,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			realm,
 			clientID,
 			cachedAt,
-			getExpiryTime(tokenResponse),
+			tokenResponse.ExpiresOn.T,
 			tokenResponse.ExtExpiresOn.T,
 			target,
 			tokenResponse.AccessToken,
@@ -175,13 +175,6 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 		return shared.Account{}, err
 	}
 	return account, nil
-}
-
-func getExpiryTime(tokenResponse accesstokens.TokenResponse) time.Time {
-	if tokenResponse.ExpiresOnCalculated.T.IsZero() || tokenResponse.ExpiresOnCalculated.T.Equal(time.Unix(0, 0)) {
-		return tokenResponse.ExpiresOn.T
-	}
-	return tokenResponse.ExpiresOnCalculated.T
 }
 
 func (m *PartitionedManager) getMetadataEntry(ctx context.Context, authorityInfo authority.Info) (authority.InstanceDiscoveryMetadata, error) {

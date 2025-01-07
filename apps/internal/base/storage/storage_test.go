@@ -1009,15 +1009,15 @@ func TestWrite(t *testing.T) {
 	}
 	expiresOn := internalTime.DurationTime{T: now.Add(1000 * time.Second)}
 	tokenResponse := accesstokens.TokenResponse{
-		AccessToken:         "accessToken",
-		RefreshToken:        "refreshToken",
-		IDToken:             idToken,
-		FamilyID:            "fid",
-		ClientInfo:          clientInfo,
-		GrantedScopes:       accesstokens.Scopes{Slice: []string{"openid", "profile"}},
-		ExpiresOnCalculated: expiresOn,
-		ExtExpiresOn:        internalTime.DurationTime{T: now},
-		TokenType:           "Bearer",
+		AccessToken:   "accessToken",
+		RefreshToken:  "refreshToken",
+		IDToken:       idToken,
+		FamilyID:      "fid",
+		ClientInfo:    clientInfo,
+		GrantedScopes: accesstokens.Scopes{Slice: []string{"openid", "profile"}},
+		ExpiresOn:     expiresOn,
+		ExtExpiresOn:  internalTime.DurationTime{T: now},
+		TokenType:     "Bearer",
 	}
 	authInfo := authority.Info{Host: "env", Tenant: "realm", AuthorityType: accAuth}
 	authParams := authority.AuthParams{
