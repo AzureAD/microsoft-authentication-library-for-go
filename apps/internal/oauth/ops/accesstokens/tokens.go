@@ -174,7 +174,7 @@ type TokenResponse struct {
 	FamilyID       string                    `json:"foci"`
 	IDToken        IDToken                   `json:"id_token"`
 	ClientInfo     ClientInfo                `json:"client_info"`
-	ExpiresOn      internalTime.DurationTime `json:"-"`
+	ExpiresOn      time.Time                 `json:"-"`
 	ExtExpiresOn   internalTime.DurationTime `json:"ext_expires_in"`
 	GrantedScopes  Scopes                    `json:"scope"`
 	DeclinedScopes []string                  // This is derived
@@ -186,8 +186,8 @@ type TokenResponse struct {
 func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 	type Alias TokenResponse
 	aux := &struct {
-		ExpiresIn json.Number `json:"expires_in,omitempty"`
-		ExpiresOn interface{} `json:"expires_on,omitempty"`
+		ExpiresIn internalTime.DurationTime `json:"expires_in,omitempty"`
+		ExpiresOn interface{}               `json:"expires_on,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(tr),
@@ -196,13 +196,6 @@ func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 	// Unmarshal the JSON data into the aux struct
 	if err := json.Unmarshal(data, &aux); err != nil {
 		return err
-	}
-
-	parseDuration := func(num json.Number) (int64, error) {
-		if num == "" {
-			return 0, nil
-		}
-		return num.Int64()
 	}
 
 	// Function to parse different date formats
@@ -223,14 +216,14 @@ func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 
 	if expiresOnStr, ok := aux.ExpiresOn.(string); ok {
 		if ts, err := strconv.ParseInt(expiresOnStr, 10, 64); err == nil {
-			tr.ExpiresOn = internalTime.DurationTime{T: time.Unix(ts, 0)}
+			tr.ExpiresOn = time.Unix(ts, 0)
 			return nil
 		}
 		if expiresOnStr != "" {
 			if t, err := parseExpiresOn(expiresOnStr); err != nil {
 				return err
 			} else {
-				tr.ExpiresOn = internalTime.DurationTime{T: t}
+				tr.ExpiresOn = t
 				return nil
 			}
 		}
@@ -238,13 +231,12 @@ func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 
 	// Check if ExpiresOn is a number (Unix timestamp or ISO 8601)
 	if expiresOnNum, ok := aux.ExpiresOn.(float64); ok {
-		tr.ExpiresOn = internalTime.DurationTime{T: time.Unix(int64(expiresOnNum), 0)}
+		tr.ExpiresOn = time.Unix(int64(expiresOnNum), 0)
 		return nil
 	}
-	if duration, err := parseDuration(aux.ExpiresIn); err != nil {
-		return err
-	} else if duration > 0 {
-		tr.ExpiresOn = internalTime.DurationTime{T: time.Now().Add(time.Duration(duration) * time.Second)}
+
+	if !aux.ExpiresIn.T.IsZero() {
+		tr.ExpiresOn = aux.ExpiresIn.T
 		return nil
 	}
 	return errors.New("expires_in and expires_on are both missing or invalid")

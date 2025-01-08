@@ -769,7 +769,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`, time.Now().Add(time.Hour).Unix()),
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)}, // from expires_on
+				ExpiresOn:     time.Now().Add(time.Hour), // from expires_on
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -791,7 +791,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)},
+				ExpiresOn:     time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -813,7 +813,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)},
+				ExpiresOn:     time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -835,7 +835,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC)},
+				ExpiresOn:     time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -858,7 +858,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+				ExpiresOn:     time.Now().Add(time.Hour),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -911,8 +911,8 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 		case err != nil:
 			continue
 		}
-		if got.ExpiresOn.T.Unix() != test.want.ExpiresOn.T.Unix() {
-			t.Errorf("TestCreateTokenResponse: got %v, want %v", got.ExpiresOn.T.Unix(), test.want.ExpiresOn.T.Unix())
+		if got.ExpiresOn.Unix() != test.want.ExpiresOn.Unix() {
+			t.Errorf("TestCreateTokenResponse: got %v, want %v", got.ExpiresOn.Unix(), test.want.ExpiresOn.Unix())
 		}
 		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
 		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, got); diff != "" {
