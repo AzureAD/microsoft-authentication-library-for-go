@@ -199,6 +199,8 @@ func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 	}
 
 	// Function to parse different date formats
+	// This is a workaround for the issue described here:
+	// AzureAD/microsoft-authentication-library-for-dotnet#4963
 	parseExpiresOn := func(expiresOn string) (time.Time, error) {
 		var formats = []string{
 			"01/02/2006 15:04:05", // MM/dd/yyyy HH:mm:ss
