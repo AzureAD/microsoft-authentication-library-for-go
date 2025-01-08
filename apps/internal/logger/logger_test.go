@@ -18,13 +18,13 @@ func TestLogger_Log_ConsoleOutput(t *testing.T) {
 
 	// Create a new logger instance
 	slogLogger := slog.New(handler)
-	logInstance := New(slogLogger)
+	loggerInstance := New(slogLogger)
 
 	// Log messages
-	logInstance.Log(context.Background(), Info, "This is an info message via slog.", Field("username", "john_doe"), slog.Int("age", 30))
-	logInstance.Log(context.Background(), Err, "This is an error message via slog.", slog.String("module", "user-service"), slog.Int("retry", 3))
-	logInstance.Log(context.Background(), Warn, "This is a warn message via slog.", slog.Int("free_space_mb", 100))
-	logInstance.Log(context.Background(), Debug, "This is a debug message via slog.", slog.String("module", "main"))
+	loggerInstance.Log(context.Background(), slog.LevelInfo, "This is an info message via slog.", slog.Any("username", "john_doe"), slog.Int("age", 30))
+	loggerInstance.Log(context.Background(), slog.LevelError, "This is an error message via slog.", slog.String("module", "user-service"), slog.Int("retry", 3))
+	loggerInstance.Log(context.Background(), slog.LevelWarn, "This is a warn message via slog.", slog.Int("free_space_mb", 100))
+	loggerInstance.Log(context.Background(), slog.LevelDebug, "This is a debug message via slog.", slog.String("module", "main"))
 
 	// Check the output
 	output := buf.String()
@@ -43,29 +43,21 @@ func TestLogger_Log_ConsoleOutput(t *testing.T) {
 }
 
 func TestNewLogger_NilLoggerInterface(t *testing.T) {
-	// Test case where loggerInterface is nil
-	logInstance := NewLogger(nil)
+	// Test case where slogLogger is nil
+	logInstance := New(nil)
 	if logInstance == nil {
 		t.Fatalf("expected non-nil logInstance, got nil")
 	}
 }
 
 func TestNewLogger_ValidSlogLogger(t *testing.T) {
-	// Test case where loggerInterface is a valid *slog.Logger
+	// Test case where slogLogger is a valid *slog.Logger
 	var buf bytes.Buffer
 	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
 	slogLogger := slog.New(handler)
-	logInstance := NewLogger(slogLogger)
-	if logInstance == nil {
-		t.Fatalf("expected non-nil logInstance, got nil")
-	}
-}
-
-func TestNewLogger_InvalidLoggerInterface(t *testing.T) {
-	// Test case where loggerInterface is an invalid type
-	logInstance := NewLogger("invalid type")
+	logInstance := New(slogLogger)
 	if logInstance == nil {
 		t.Fatalf("expected non-nil logInstance, got nil")
 	}

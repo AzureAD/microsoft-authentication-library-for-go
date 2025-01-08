@@ -11,7 +11,7 @@ import (
 // WithLogger allows for a custom logger to be set.
 func WithLogger(l *slog.Logger) Option {
 	return func(o *clientOptions) {
-		logInstance := logger.NewLogger(l)
+		logInstance := logger.New(l)
 		o.logger = logInstance
 	}
 }
