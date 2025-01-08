@@ -24,4 +24,6 @@ func Field(key string, value any) any {
 	return nil
 }
 
-func (*Logger) Log(context.Context, Level, string, ...any) {}
+func (l *Logger) Log(ctx context.Context, level Level, msg string, args ...any) {
+	// No-op
+}

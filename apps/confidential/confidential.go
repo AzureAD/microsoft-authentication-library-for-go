@@ -320,7 +320,6 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		return Client{}, err
 	}
 	autoEnabledRegion := os.Getenv("MSAL_FORCE_REGION")
-	defaultLogger := logger.New(nil)
 
 	opts := clientOptions{
 		authority: authority,
@@ -328,7 +327,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		disableInstanceDiscovery: cred.tokenProvider != nil,
 		httpClient:               shared.DefaultClient,
 		azureRegion:              autoEnabledRegion,
-		logger:                   defaultLogger,
+		logger:                   nil,
 	}
 	for _, o := range options {
 		o(&opts)
