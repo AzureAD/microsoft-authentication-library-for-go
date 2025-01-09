@@ -11,7 +11,8 @@ import (
 // This can be used with confidential client when creating a New instance similar to this:
 // customSlogLogger := slog.Default()
 // confidentialClient, err := New(authority, clientID, cred, WithLogger(customSlogLogger))
-func WithLogger(l slog.Logger) Option {
+// Just to note that WithLogger(nil) == WithLogger(slog.Default())
+func WithLogger(l *slog.Logger) Option {
 	return func(o *clientOptions) {
 		o.logger = l
 	}

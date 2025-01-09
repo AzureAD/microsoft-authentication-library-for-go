@@ -251,7 +251,7 @@ type clientOptions struct {
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
 	httpClient                        ops.HTTPClient
-	logger                            slog.Logger
+	logger                            *slog.Logger
 }
 
 // Option is an optional argument to New().
