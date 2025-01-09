@@ -348,7 +348,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			if ar.RefreshIn.After(time.Now()) {
+			if ar.RefreshIn.IsZero() || ar.RefreshIn.After(time.Now()) {
 				return ar, err
 			}
 		}

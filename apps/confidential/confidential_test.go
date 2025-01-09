@@ -138,6 +138,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		}
 		client, err := fakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
+			RefreshIn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
@@ -463,6 +464,7 @@ func TestADFSTokenCaching(t *testing.T) {
 			AccessToken:   "at1",
 			RefreshToken:  "rt",
 			TokenType:     "bearer",
+			RefreshIn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},

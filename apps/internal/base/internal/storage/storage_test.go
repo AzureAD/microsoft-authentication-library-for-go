@@ -1013,6 +1013,8 @@ func TestWrite(t *testing.T) {
 		PreferredUsername: "username",
 	}
 	expiresOn := internalTime.DurationTime{T: now.Add(1000 * time.Second)}
+	timeRemaining := expiresOn.T.Sub(now) / 2
+	refreshIn := internalTime.DurationTime{T: now.Add(timeRemaining)}
 	tokenResponse := accesstokens.TokenResponse{
 		AccessToken:   "accessToken",
 		RefreshToken:  "refreshToken",
@@ -1020,6 +1022,7 @@ func TestWrite(t *testing.T) {
 		FamilyID:      "fid",
 		ClientInfo:    clientInfo,
 		GrantedScopes: accesstokens.Scopes{Slice: []string{"openid", "profile"}},
+		RefreshIn:     refreshIn,
 		ExpiresOn:     expiresOn,
 		ExtExpiresOn:  internalTime.DurationTime{T: now},
 		TokenType:     "Bearer",
@@ -1044,7 +1047,7 @@ func TestWrite(t *testing.T) {
 		"realm",
 		"cid",
 		now,
-		now,
+		now.Add(500*time.Second),
 		now.Add(1000*time.Second),
 		now,
 		"openid profile",
