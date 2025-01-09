@@ -778,6 +778,50 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			},
 			jwtDecoder: jwtDecoderFake,
 		},
+		{
+			desc: "Success",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_in": 3600,
+					"ext_expires_in": 86399,
+					"client_info": {"uid":  "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     internalTime.DurationTime{T: time.Unix(3600, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_in": 36000,
+					"ext_expires_in": 86399,
+					"client_info": {"uid":  "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     internalTime.DurationTime{T: time.Unix(36000, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
 	}
 
 	for _, test := range tests {
@@ -794,6 +838,21 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			continue
 		case err != nil:
 			continue
+		}
+		now := time.Now()
+		timeRemaining := got.ExpiresOn.T.Sub(now)
+		if got.ExpiresOn.T.Before(time.Now().Add(time.Hour * 2)) {
+			expectedRefreshIn := now.Add(timeRemaining)
+			const tolerance = 100 * time.Millisecond
+			if got.RefreshIn.T.Sub(expectedRefreshIn) > tolerance {
+				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshIn.T, expectedRefreshIn)
+			}
+		} else {
+			expectedRefreshIn := now.Add(timeRemaining / 2)
+			const tolerance = 100 * time.Millisecond
+			if got.RefreshIn.T.Sub(expectedRefreshIn) > tolerance {
+				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshIn.T, expectedRefreshIn)
+			}
 		}
 
 		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.

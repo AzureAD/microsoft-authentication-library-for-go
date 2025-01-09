@@ -94,6 +94,23 @@ func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, e
 	return []byte(body)
 }
 
+func GetAccessTokenBodyWithRefreshIn(accessToken, idToken, refreshToken, clientInfo string, expiresIn int, refreshIn int) []byte {
+	body := fmt.Sprintf(
+		`{"access_token": "%s","expires_in": %d,"refresh_in":%d ,"expires_on": %d,"token_type": "Bearer"`,
+		accessToken, expiresIn, refreshIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix(),
+	)
+	if clientInfo != "" {
+		body += fmt.Sprintf(`, "client_info": "%s"`, clientInfo)
+	}
+	if idToken != "" {
+		body += fmt.Sprintf(`, "id_token": "%s"`, idToken)
+	}
+	if refreshToken != "" {
+		body += fmt.Sprintf(`, "refresh_token": "%s"`, refreshToken)
+	}
+	body += "}"
+	return []byte(body)
+}
 func GetIDToken(tenant, issuer string) string {
 	now := time.Now().Unix()
 	payload := []byte(fmt.Sprintf(`{"aud": "%s","exp": %d,"iat": %d,"iss": "%s","tid": "%s"}`, tenant, now+3600, now, issuer, tenant))

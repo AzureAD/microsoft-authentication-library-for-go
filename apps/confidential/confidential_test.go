@@ -812,6 +812,62 @@ func (c testCache) Replace(ctx context.Context, u cache.Unmarshaler, h cache.Rep
 	return nil
 }
 
+func TestAcquireTokenSilentRefreshIn(t *testing.T) {
+
+	for _, test := range []struct {
+		expireOn  int
+		refreshIn int
+	}{
+		{3600, 1},
+		{7200, 3600},
+	} {
+		cache := make(testCache)
+		accessToken := "*"
+		lmo := "login.microsoftonline.com"
+		tenantA, tenantB := "a", "b"
+		authorityA, authorityB := fmt.Sprintf(authorityFmt, lmo, tenantA), fmt.Sprintf(authorityFmt, lmo, tenantB)
+		mockClient := mock.Client{}
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(accessToken, mock.GetIDToken(tenantA, authorityA), "", "", test.expireOn, test.refreshIn)))
+
+		cred, err := NewCredFromSecret(fakeSecret)
+		if err != nil {
+			t.Fatal(err)
+		}
+		client, err := New(authorityA, fakeClientID, cred, WithCache(&cache), WithHTTPClient(&mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// The particular flow isn't important, we just need to populate the cache. Auth code is the simplest for this test
+		ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+		}
+		account := ar.Account
+		if actual := account.Realm; actual != tenantA {
+			t.Fatalf(`unexpected realm "%s"`, actual)
+		}
+
+		// a client configured for a different tenant should be able to authenticate silently with the shared cache's data
+		client, err = New(authorityB, fakeClientID, cred, WithCache(&cache), WithHTTPClient(&mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// this should succeed because the cache contains an access token from tenantA
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
+		ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account), WithTenantID(tenantA))
+		if err != nil && test.refreshIn > 1 {
+			t.Fatal(err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+		}
+	}
+}
+
 func TestWithCache(t *testing.T) {
 	cache := make(testCache)
 	accessToken := "*"

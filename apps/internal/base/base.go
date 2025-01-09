@@ -86,6 +86,7 @@ type AuthResult struct {
 	Account        shared.Account
 	IDToken        accesstokens.IDToken
 	AccessToken    string
+	RefreshIn      time.Time
 	ExpiresOn      time.Time
 	GrantedScopes  []string
 	DeclinedScopes []string
@@ -128,6 +129,7 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 		Account:        account,
 		IDToken:        idToken,
 		AccessToken:    accessToken,
+		RefreshIn:      storageTokenResponse.AccessToken.RefreshIn.T,
 		ExpiresOn:      storageTokenResponse.AccessToken.ExpiresOn.T,
 		GrantedScopes:  grantedScopes,
 		DeclinedScopes: nil,
@@ -346,7 +348,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			return ar, err
+			if ar.RefreshIn.After(time.Now()) {
+				return ar, err
+			}
 		}
 	}
 

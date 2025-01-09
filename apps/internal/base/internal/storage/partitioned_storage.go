@@ -114,6 +114,7 @@ func (m *PartitionedManager) Write(authParameters authority.AuthParams, tokenRes
 			realm,
 			clientID,
 			cachedAt,
+			tokenResponse.RefreshIn.T,
 			tokenResponse.ExpiresOn.T,
 			tokenResponse.ExtExpiresOn.T,
 			target,
