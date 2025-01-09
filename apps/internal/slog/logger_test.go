@@ -1,6 +1,6 @@
 //go:build go1.21
 
-package logger
+package slog
 
 import (
 	"bytes"
@@ -28,16 +28,24 @@ func TestLogger_Log_ConsoleOutput(t *testing.T) {
 
 	// Check the output
 	output := buf.String()
-	expectedMessages := []string{
-		"This is an info message via slog.",
-		"This is an error message via slog.",
-		"This is a warn message via slog.",
-		"This is a debug message via slog.",
+	expectedMessages := []struct {
+		msg      string
+		contains []string
+	}{
+		{"This is an info message via slog.", []string{`"username":"john_doe"`, `"age":30}`}},
+		{"This is an error message via slog.", []string{`"module":"user-service"`, `"retry":3}`}},
+		{"This is a warn message via slog.", []string{`"free_space_mb":100}`}},
+		{"This is a debug message via slog.", []string{`"module":"main"`}},
 	}
 
-	for _, msg := range expectedMessages {
-		if !bytes.Contains([]byte(output), []byte(msg)) {
-			t.Errorf("expected log message %q not found in output", msg)
+	for _, expected := range expectedMessages {
+		if !bytes.Contains([]byte(output), []byte(expected.msg)) {
+			t.Errorf("expected log message %q not found in output", expected.msg)
+		}
+		for _, attr := range expected.contains {
+			if !bytes.Contains([]byte(output), []byte(attr)) {
+				t.Errorf("expected attribute %q not found in output for message %q", attr, expected.msg)
+			}
 		}
 	}
 }

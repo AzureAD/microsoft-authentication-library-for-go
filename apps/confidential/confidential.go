@@ -24,13 +24,13 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/logger"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/slog"
 )
 
 /*
@@ -251,7 +251,7 @@ type clientOptions struct {
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
 	httpClient                        ops.HTTPClient
-	logger                            *logger.Logger
+	logger                            slog.Logger
 }
 
 // Option is an optional argument to New().
@@ -327,7 +327,6 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		disableInstanceDiscovery: cred.tokenProvider != nil,
 		httpClient:               shared.DefaultClient,
 		azureRegion:              autoEnabledRegion,
-		logger:                   nil,
 	}
 	for _, o := range options {
 		o(&opts)
@@ -349,7 +348,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	base.AuthParams.IsConfidentialClient = true
 
-	opts.logger.Log(context.Background(), logger.Info, "Created confidential client", logger.Field("clientID", clientID))
+	opts.logger.Log(context.Background(), slog.LevelInfo, "Created confidential client", slog.Field("clientID", clientID))
 	return Client{base: base, cred: internalCred}, nil
 }
 

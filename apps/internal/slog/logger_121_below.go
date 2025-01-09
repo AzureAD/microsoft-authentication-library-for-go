@@ -1,6 +1,6 @@
 //go:build !go1.21
 
-package logger
+package slog
 
 import "context"
 
@@ -24,6 +24,6 @@ func Field(key string, value any) any {
 	return nil
 }
 
-func (l *Logger) Log(ctx context.Context, level Level, msg string, args ...any) {
+func (*Logger) Log(context.Context, Level, string, ...any) {}
 	// No-op
 }
