@@ -24,13 +24,3 @@ time=2024-12-19T01:25:58.730Z level=INFO msg="Default log message." module=main
 
 3. **Structured Logging**:
    - You can pass key-value pairs using `slog.String`, `slog.Int`, etc., for structured logging, which is handled by `slog` in Go 1.21 and later.
-
-### **Sample**
-
-A sample of the logger can be found in the following location:
-
-```plaintext
-microsoft-authentication-library-for-go/apps/devapps
-├── logger/
-│   ├── logger_sample.go
-```
