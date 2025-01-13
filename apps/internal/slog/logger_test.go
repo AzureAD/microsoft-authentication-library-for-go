@@ -50,11 +50,17 @@ func TestLogger_Log_ConsoleOutput(t *testing.T) {
 	}
 }
 
-func TestNewLogger_NilLoggerInterface(t *testing.T) {
-	// Test case where slogLogger is nil
+func TestNewLogger_NilLogger_Returns_Default(t *testing.T) {
+	testLogger := slog.New(slog.Default().Handler())
+	slog.SetDefault(testLogger)
+
 	logInstance := New(nil)
 	if logInstance == nil {
 		t.Fatalf("expected non-nil logInstance, got nil")
+	}
+
+	if logInstance != testLogger {
+		t.Fatalf("expected logInstance to be the default logger, got different logger")
 	}
 }
 

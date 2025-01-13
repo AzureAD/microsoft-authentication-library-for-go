@@ -9,10 +9,10 @@ type Level int
 type Logger struct{}
 
 const (
-	Debug Level = iota
-	Info
-	Warn
-	Error
+	LevelDebug Level = iota
+	LevelInfo 
+	LevelWarn 
+	LevelError
 )
 
 // These are all noop functions for go < 1.21

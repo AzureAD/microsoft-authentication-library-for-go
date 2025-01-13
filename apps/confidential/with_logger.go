@@ -3,7 +3,7 @@
 package confidential
 
 import (
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/slog"
+	"log/slog"
 )
 
 // WithLogger enables logging within the SDK
