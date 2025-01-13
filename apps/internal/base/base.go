@@ -86,7 +86,7 @@ type AuthResult struct {
 	Account        shared.Account
 	IDToken        accesstokens.IDToken
 	AccessToken    string
-	RefreshIn      time.Time
+	RefreshOn      time.Time
 	ExpiresOn      time.Time
 	GrantedScopes  []string
 	DeclinedScopes []string
@@ -125,11 +125,21 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 			return AuthResult{}, fmt.Errorf("problem decoding JWT token: %w", err)
 		}
 	}
+
+	var refreshIn time.Time
+	if !storageTokenResponse.AccessToken.ExpiresOn.T.IsZero() {
+		now := time.Now()
+		timeRemaining := storageTokenResponse.AccessToken.ExpiresOn.T.Sub(now)
+		if timeRemaining > 2*time.Hour {
+			refreshIn = now.Add(timeRemaining / 2)
+		}
+	}
+
 	return AuthResult{
 		Account:        account,
 		IDToken:        idToken,
 		AccessToken:    accessToken,
-		RefreshIn:      storageTokenResponse.AccessToken.RefreshIn.T,
+		RefreshOn:      refreshIn,
 		ExpiresOn:      storageTokenResponse.AccessToken.ExpiresOn.T,
 		GrantedScopes:  grantedScopes,
 		DeclinedScopes: nil,
@@ -348,7 +358,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			if ar.RefreshIn.IsZero() || ar.RefreshIn.After(time.Now()) {
+			if ar.RefreshOn.After(time.Now()) {
 				return ar, err
 			}
 		}
@@ -366,7 +376,16 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if err != nil {
 		return ar, err
 	}
-	return b.AuthResultFromToken(ctx, authParams, token, true)
+
+	result, err := b.AuthResultFromToken(ctx, authParams, token, true)
+	if err != nil {
+		if ar.Metadata.TokenSource == Cache && ar.RefreshOn.IsZero() {
+			return ar, nil
+		} else {
+			return result, err
+		}
+	}
+	return result, nil
 }
 
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
