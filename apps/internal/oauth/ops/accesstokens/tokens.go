@@ -173,7 +173,7 @@ type TokenResponse struct {
 	FamilyID       string                    `json:"foci"`
 	IDToken        IDToken                   `json:"id_token"`
 	ClientInfo     ClientInfo                `json:"client_info"`
-	RefreshIn      internalTime.DurationTime `json:"refresh_in"`
+	RefreshOn      internalTime.DurationTime `json:"refresh_in,omitempty"`
 	ExpiresOn      internalTime.DurationTime `json:"expires_in"`
 	ExtExpiresOn   internalTime.DurationTime `json:"ext_expires_in"`
 	GrantedScopes  Scopes                    `json:"scope"`
@@ -182,32 +182,6 @@ type TokenResponse struct {
 	AdditionalFields map[string]interface{}
 
 	scopesComputed bool
-}
-
-func (t *TokenResponse) UnmarshalJSON(data []byte) error {
-	type Alias TokenResponse
-	aux := &struct {
-		*Alias
-	}{
-		Alias: (*Alias)(t),
-	}
-
-	if err := json.Unmarshal(data, &aux); err != nil {
-		return err
-	}
-
-	// If refresh_in is not set, compute it as (now - expires_on) / 2 if expires_on > 2 hours from now
-	if t.RefreshIn.T.IsZero() && !t.ExpiresOn.T.IsZero() {
-		now := time.Now()
-		timeRemaining := t.ExpiresOn.T.Sub(now)
-		if timeRemaining > 2*time.Hour {
-			t.RefreshIn = internalTime.DurationTime{T: now.Add(timeRemaining / 2)}
-		} else {
-			t.RefreshIn = internalTime.DurationTime{T: t.ExpiresOn.T}
-		}
-	}
-
-	return nil
 }
 
 // ComputeScope computes the final scopes based on what was granted by the server and

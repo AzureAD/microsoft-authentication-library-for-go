@@ -844,14 +844,14 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 		if got.ExpiresOn.T.Before(time.Now().Add(time.Hour * 2)) {
 			expectedRefreshIn := now.Add(timeRemaining)
 			const tolerance = 100 * time.Millisecond
-			if got.RefreshIn.T.Sub(expectedRefreshIn) > tolerance {
-				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshIn.T, expectedRefreshIn)
+			if got.RefreshOn.T.Sub(expectedRefreshIn) > tolerance {
+				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshOn.T, expectedRefreshIn)
 			}
 		} else {
 			expectedRefreshIn := now.Add(timeRemaining / 2)
 			const tolerance = 100 * time.Millisecond
-			if got.RefreshIn.T.Sub(expectedRefreshIn) > tolerance {
-				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshIn.T, expectedRefreshIn)
+			if got.RefreshOn.T.Sub(expectedRefreshIn) > tolerance {
+				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshOn.T, expectedRefreshIn)
 			}
 		}
 

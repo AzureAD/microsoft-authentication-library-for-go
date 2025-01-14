@@ -5,8 +5,8 @@ package base
 
 import (
 	"context"
-	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -83,9 +84,10 @@ type AcquireTokenOnBehalfOfParameters struct {
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult struct {
-	Account        shared.Account
-	IDToken        accesstokens.IDToken
-	AccessToken    string
+	Account     shared.Account
+	IDToken     accesstokens.IDToken
+	AccessToken string
+	//RefreshOn indicates the recommended time to request a new access token, or zero if no refresh time is suggested
 	RefreshOn      time.Time
 	ExpiresOn      time.Time
 	GrantedScopes  []string
@@ -125,21 +127,11 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 			return AuthResult{}, fmt.Errorf("problem decoding JWT token: %w", err)
 		}
 	}
-
-	var refreshIn time.Time
-	if !storageTokenResponse.AccessToken.ExpiresOn.T.IsZero() {
-		now := time.Now()
-		timeRemaining := storageTokenResponse.AccessToken.ExpiresOn.T.Sub(now)
-		if timeRemaining > 2*time.Hour {
-			refreshIn = now.Add(timeRemaining / 2)
-		}
-	}
-
 	return AuthResult{
 		Account:        account,
 		IDToken:        idToken,
 		AccessToken:    accessToken,
-		RefreshOn:      refreshIn,
+		RefreshOn:      storageTokenResponse.AccessToken.RefreshOn.T,
 		ExpiresOn:      storageTokenResponse.AccessToken.ExpiresOn.T,
 		GrantedScopes:  grantedScopes,
 		DeclinedScopes: nil,
@@ -158,6 +150,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
+		RefreshOn:     tokenResponse.RefreshOn.T,
 		ExpiresOn:     tokenResponse.ExpiresOn.T,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 		Metadata: AuthResultMetadata{
@@ -357,10 +350,28 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			if ar.RefreshOn.After(time.Now()) {
-				return ar, err
+			if shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
+				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+				defer cancel()
+				if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
+					return b.AuthResultFromToken(ctx, authParams, tr, true)
+				} else if callErr, ok := er.(*errors.CallErr); ok {
+					// Check if the error is of type CallErr and matches the relevant status codes
+					switch callErr.Resp.StatusCode {
+					case http.StatusRequestTimeout, // 408
+						http.StatusTooManyRequests,     // 429
+						http.StatusInternalServerError, // 500
+						http.StatusBadGateway,          // 502
+						http.StatusServiceUnavailable,  // 503
+						http.StatusGatewayTimeout:      // 504
+					default:
+						// Handle non-retryable errors
+						return AuthResult{}, er
+					}
+				}
 			}
+			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+			return ar, err
 		}
 	}
 
@@ -376,16 +387,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if err != nil {
 		return ar, err
 	}
-
-	result, err := b.AuthResultFromToken(ctx, authParams, token, true)
-	if err != nil {
-		if ar.Metadata.TokenSource == Cache && ar.RefreshOn.IsZero() {
-			return ar, nil
-		} else {
-			return result, err
-		}
-	}
-	return result, nil
+	return b.AuthResultFromToken(ctx, authParams, token, true)
 }
 
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
@@ -479,6 +481,11 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
+}
+
+// shouldRefresh returns true if the token should be refreshed.
+func shouldRefresh(t time.Time) bool {
+	return !t.IsZero() && t.Before(time.Now().Add(2*time.Hour))
 }
 
 func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {

@@ -444,3 +444,46 @@ func TestAuthResultFromStorage(t *testing.T) {
 		}
 	}
 }
+
+func TestShouldRefresh(t *testing.T) {
+	// Get current time
+	now := time.Now()
+
+	// Test cases
+	tests := []struct {
+		name     string
+		input    time.Time
+		expected bool
+	}{
+		{
+			name:     "Zero time",
+			input:    time.Time{},
+			expected: false,
+		},
+		{
+			name:     "More than 2 hours ago",
+			input:    now.Add(3 * time.Hour).Add(time.Second),
+			expected: false,
+		},
+		{
+			name:     "Exactly 2 hours ago",
+			input:    now.Add(2 * time.Hour).Add(time.Second),
+			expected: false,
+		},
+		{
+			name:     "Less than 2 hours ago",
+			input:    now.Add(1 * time.Hour).Add(time.Second),
+			expected: true,
+		},
+	}
+
+	// Run the test cases
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := shouldRefresh(tt.input)
+			if actual != tt.expected {
+				t.Errorf("expected %v, got %v", tt.expected, actual)
+			}
+		})
+	}
+}

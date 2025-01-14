@@ -138,7 +138,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		}
 		client, err := fakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
-			RefreshIn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+			RefreshOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
@@ -256,7 +256,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token, "", "rt", "", 3600)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token, "", "rt", "", 3600, 7400)))
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
 	if err != nil {
@@ -279,7 +279,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	}
 	// new assertion should trigger new token request
 	token2 := token + "2"
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token2, "", "rt", "", 3600)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token2, "", "rt", "", 3600, 360)))
 	tk, err = client.AcquireTokenOnBehalfOf(context.Background(), assertion+"2", tokenScope)
 	if err != nil {
 		t.Fatal(err)
@@ -464,7 +464,6 @@ func TestADFSTokenCaching(t *testing.T) {
 			AccessToken:   "at1",
 			RefreshToken:  "rt",
 			TokenType:     "bearer",
-			RefreshIn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
@@ -710,7 +709,8 @@ func TestNewCredFromCertError(t *testing.T) {
 func TestNewCredFromTokenProvider(t *testing.T) {
 	expectedToken := "expected token"
 	called := false
-	expiresIn := 4200
+	expiresIn := 18000
+	refreshOn := expiresIn / 2
 	key := struct{}{}
 	ctx := context.WithValue(context.Background(), key, true)
 	cred := NewCredFromTokenProvider(func(c context.Context, tp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
@@ -730,6 +730,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 		return exported.TokenProviderResult{
 			AccessToken:      expectedToken,
 			ExpiresInSeconds: expiresIn,
+			RefreshInSeconds: refreshOn,
 		}, nil
 	})
 	client, err := New(fakeAuthority, fakeClientID, cred, WithHTTPClient(&errorClient{}))
@@ -746,6 +747,9 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	if v := int(time.Until(ar.ExpiresOn).Seconds()); v < expiresIn-2 || v > expiresIn {
 		t.Fatalf("expected ExpiresOn ~= %d seconds, got %d", expiresIn, v)
 	}
+	if v := int(time.Until(ar.RefreshOn).Seconds()); v < refreshOn-2 || v > refreshOn {
+		t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshOn, v)
+	}
 	if ar.AccessToken != expectedToken {
 		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
 	}
@@ -755,6 +759,70 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	}
 	if ar.AccessToken != expectedToken {
 		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
+	}
+}
+
+func TestRefreshIn(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstToken := "first token"
+	secondToken := "new token"
+	refreshIn := 8200
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+
+	for _, needsRefresh := range []bool{false, true} {
+		name := "token doesn't need refresh"
+		if needsRefresh {
+			name = "token needs refresh"
+			refreshIn = 83
+		}
+		t.Run(name, func(t *testing.T) {
+			// Create a mock client and append mock responses
+			mockClient := mock.Client{}
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			mockClient.AppendResponse(
+				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":14400,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, refreshIn))),
+			)
+			// mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(firstToken, "", "", "", 14400)))
+			mockClient.AppendResponse(
+				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":14400,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, refreshIn))),
+			)
+			// mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(secondToken, "", "", "", 14400)))
+
+			// Create the client instance
+			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Acquire the first token
+			ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			// Assert the first token is returned
+			if ar.AccessToken != firstToken {
+				t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+			}
+			if ar.RefreshOn.IsZero() {
+				t.Fatal("RefreshOn shouldn't be zero")
+			}
+			if v := int(time.Until(ar.RefreshOn).Seconds()); v < refreshIn-102 || v > refreshIn {
+				t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshIn, v)
+			}
+
+			ar, err = client.AcquireTokenSilent(context.Background(), tokenScope)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if (ar.AccessToken == secondToken) != needsRefresh {
+				t.Fatalf("wanted %q, got %q", secondToken, ar.AccessToken)
+			}
+		})
 	}
 }
 
@@ -812,62 +880,6 @@ func (c testCache) Replace(ctx context.Context, u cache.Unmarshaler, h cache.Rep
 		_ = u.Unmarshal(v)
 	}
 	return nil
-}
-
-func TestAcquireTokenSilentRefreshIn(t *testing.T) {
-
-	for _, test := range []struct {
-		expireOn  int
-		refreshIn int
-	}{
-		{3600, 1},
-		{7200, 3600},
-	} {
-		cache := make(testCache)
-		accessToken := "*"
-		lmo := "login.microsoftonline.com"
-		tenantA, tenantB := "a", "b"
-		authorityA, authorityB := fmt.Sprintf(authorityFmt, lmo, tenantA), fmt.Sprintf(authorityFmt, lmo, tenantB)
-		mockClient := mock.Client{}
-		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
-		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(accessToken, mock.GetIDToken(tenantA, authorityA), "", "", test.expireOn, test.refreshIn)))
-
-		cred, err := NewCredFromSecret(fakeSecret)
-		if err != nil {
-			t.Fatal(err)
-		}
-		client, err := New(authorityA, fakeClientID, cred, WithCache(&cache), WithHTTPClient(&mockClient))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// The particular flow isn't important, we just need to populate the cache. Auth code is the simplest for this test
-		ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ar.AccessToken != accessToken {
-			t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
-		}
-		account := ar.Account
-		if actual := account.Realm; actual != tenantA {
-			t.Fatalf(`unexpected realm "%s"`, actual)
-		}
-
-		// a client configured for a different tenant should be able to authenticate silently with the shared cache's data
-		client, err = New(authorityB, fakeClientID, cred, WithCache(&cache), WithHTTPClient(&mockClient))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// this should succeed because the cache contains an access token from tenantA
-		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenantA)))
-		ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account), WithTenantID(tenantA))
-		if err != nil && test.refreshIn > 1 {
-			t.Fatal(err)
-		}
-		if ar.AccessToken != accessToken {
-			t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
-		}
-	}
 }
 
 func TestWithCache(t *testing.T) {
