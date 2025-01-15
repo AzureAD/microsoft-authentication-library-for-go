@@ -479,7 +479,7 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*
 	case UserAssignedClientID:
 		q.Set(miQueryParameterClientId, string(t))
 	case UserAssignedResourceID:
-		q.Set(miQueryParameterPrincipalId, string(t))
+		q.Set(miQueryParameterResourceId, string(t))
 	case UserAssignedObjectID:
 		q.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue:
