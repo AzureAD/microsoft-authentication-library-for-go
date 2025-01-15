@@ -130,7 +130,7 @@ func setCustomAzureArcFilePath(t *testing.T, path string) {
 }
 
 func TestSource(t *testing.T) {
-	for _, testCase := range []Source{AzureArc, DefaultToIMDS} {
+	for _, testCase := range []Source{AzureArc, DefaultToIMDS, CloudShell} {
 		t.Run(string(testCase), func(t *testing.T) {
 			setEnvVars(t, testCase)
 			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
@@ -454,6 +454,94 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 }
 
+func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
+	testCases := []struct {
+		resource string
+		miType   ID
+	}{
+		{resource: resource, miType: SystemAssigned()},
+		{resource: resourceDefaultSuffix, miType: SystemAssigned()},
+		{resource: resource, miType: UserAssignedClientID("clientId")},
+		{resource: resourceDefaultSuffix, miType: UserAssignedResourceID("resourceId")},
+		{resource: resourceDefaultSuffix, miType: UserAssignedObjectID("objectId")},
+	}
+	for _, testCase := range testCases {
+		t.Run(string(CloudShell)+"-"+testCase.miType.value(), func(t *testing.T) {
+			endpoint := os.Getenv(msiEndpointEnvVar)
+
+			var localUrl *url.URL
+			mockClient := mock.Client{}
+			responseBody, err := getSuccessfulResponse(resource)
+			if err != nil {
+				t.Fatalf(errorFormingJsonResponse, err.Error())
+			}
+
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				localUrl = r.URL
+			}))
+			// resetting cache
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
+
+			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
+				t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
+			}
+			query := localUrl.Query()
+
+			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
+				t.Fatal("suffix /.default was not removed.")
+			}
+			switch i := testCase.miType.(type) {
+			case UserAssignedClientID:
+				if query.Get(miQueryParameterClientId) != i.value() {
+					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
+				}
+			case UserAssignedResourceID:
+				if query.Get(miQueryParameterResourceId) != i.value() {
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
+				}
+			case UserAssignedObjectID:
+				if query.Get(miQueryParameterObjectId) != i.value() {
+					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
+				}
+			}
+			if result.Metadata.TokenSource != base.IdentityProvider {
+				t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
+			}
+			if result.AccessToken != token {
+				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+			}
+			result, err = client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err = secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+		})
+	}
+}
+
 func TestAzureArc(t *testing.T) {
 	testCaseFilePath := filepath.Join(t.TempDir(), azureConnectedMachine)
 
@@ -550,16 +638,18 @@ func TestAzureArcOnlySystemAssignedSupported(t *testing.T) {
 		UserAssignedObjectID("ObjectId"),
 		UserAssignedResourceID("resourceid")} {
 		_, err := New(testCase, WithHTTPClient(&mockClient))
+		fmt.Printf("%v", err)
 		if err == nil {
-			t.Fatal(`expected error: azure arc not supported error"`)
+			t.Fatal(`expected error: AzureArc not supported error"`)
 
 		}
-		if err.Error() != "azure Arc doesn't support user assigned managed identities" {
-			t.Fatalf(`expected error: azure arc not supported error, got error: "%v"`, err)
+		if err.Error() != "AzureArc doesn't support user-assigned managed identities" {
+			t.Fatalf(`expected error: AzureArc not supported error, got error: "%v"`, err)
 		}
 
 	}
 }
+
 func TestAzureArcPlatformSupported(t *testing.T) {
 	setEnvVars(t, AzureArc)
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
@@ -671,6 +761,27 @@ func TestAzureArcErrors(t *testing.T) {
 				t.Fatal("access token should be empty")
 			}
 		})
+	}
+}
+
+func TestCloudShellOnlySystemAssignedSupported(t *testing.T) {
+	setEnvVars(t, CloudShell)
+	mockClient := mock.Client{}
+
+	for _, testCase := range []ID{
+		UserAssignedClientID("client"),
+		UserAssignedObjectID("ObjectId"),
+		UserAssignedResourceID("resourceid")} {
+		_, err := New(testCase, WithHTTPClient(&mockClient))
+		fmt.Printf("%v", err)
+		if err == nil {
+			t.Fatal(`expected error: CloudShell not supported error"`)
+
+		}
+		if err.Error() != "CloudShell doesn't support user-assigned managed identities" {
+			t.Fatalf(`expected error: AzureArc not supported error, got error: "%v"`, err)
+		}
+
 	}
 }
 

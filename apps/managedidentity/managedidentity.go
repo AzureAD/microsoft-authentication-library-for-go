@@ -37,6 +37,7 @@ const (
 	AzureArc      Source = "AzureArc"
 	ServiceFabric Source = "ServiceFabric"
 	CloudShell    Source = "CloudShell"
+	AzureML       Source = "AzureML"
 	AppService    Source = "AppService"
 
 	// General request query parameter names
@@ -72,10 +73,14 @@ const (
 	azurePodIdentityAuthorityHostEnvVar = "AZURE_POD_IDENTITY_AUTHORITY_HOST"
 	imdsEndVar                          = "IMDS_ENDPOINT"
 	msiEndpointEnvVar                   = "MSI_ENDPOINT"
+	msiSecretEnvVar                     = "MSI_SECRET"
 	identityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
 
 	defaultRetryCount = 3
 )
+
+// UnsupportedSources is a list of sources that don't support user-assigned managed identities.
+var UnsupportedSources = []Source{ServiceFabric, AzureArc, AzureML, CloudShell}
 
 var retryCodesForIMDS = []int{
 	http.StatusNotFound,                      // 404
@@ -199,11 +204,13 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, err
 	}
 
-	// If source is Azure Arc return an error, as Azure Arc allow accepts System Assigned managed identities.
-	if source == AzureArc {
-		switch id.(type) {
-		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
-			return Client{}, errors.New("azure Arc doesn't support user assigned managed identities")
+	// If source is unsupported, return an error, as some sources allow System Assigned managed identities, but not user assigned.
+	for _, unsupportedSource := range UnsupportedSources {
+		if source == unsupportedSource {
+			switch id.(type) {
+			case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+				return Client{}, errors.New(string(source) + " doesn't support user-assigned managed identities")
+			}
 		}
 	}
 	opts := ClientOptions{
@@ -250,6 +257,7 @@ func GetSource() (Source, error) {
 	identityHeader := os.Getenv(identityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(identityServerThumbprintEnvVar)
 	msiEndpoint := os.Getenv(msiEndpointEnvVar)
+	msiSecret := os.Getenv(msiSecretEnvVar)
 	imdsEndpoint := os.Getenv(imdsEndVar)
 
 	if identityEndpoint != "" && identityHeader != "" {
@@ -258,7 +266,11 @@ func GetSource() (Source, error) {
 		}
 		return AppService, nil
 	} else if msiEndpoint != "" {
-		return CloudShell, nil
+		if msiSecret != "" {
+			return AzureML, nil
+		} else {
+			return CloudShell, nil
+		}
 	} else if isAzureArcEnvironment(identityEndpoint, imdsEndpoint) {
 		return AzureArc, nil
 	}
@@ -294,6 +306,8 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	switch c.source {
 	case AzureArc:
 		return acquireTokenForAzureArc(ctx, c, resource)
+	case CloudShell:
+		return acquireTokenForCloudShell(ctx, c, resource)
 	case DefaultToIMDS:
 		return acquireTokenForIMDS(ctx, c, resource)
 	default:
