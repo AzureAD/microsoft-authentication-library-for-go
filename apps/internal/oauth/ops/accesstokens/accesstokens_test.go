@@ -757,7 +757,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			jwtDecoder: jwtDecoderFake,
 		},
 		{
-			desc: "Success",
+			desc: "Success with same expires_in and ext_expires_in",
 			payload: `
 				{
 					"access_token": "secret",
@@ -779,7 +779,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			jwtDecoder: jwtDecoderFake,
 		},
 		{
-			desc: "Success",
+			desc: "Success with different expires_in and ext_expires_in",
 			payload: `
 				{
 					"access_token": "secret",
@@ -801,7 +801,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			jwtDecoder: jwtDecoderFake,
 		},
 		{
-			desc: "Success",
+			desc: "Success with refresh_in not provided in response",
 			payload: `
 				{
 					"access_token": "secret",

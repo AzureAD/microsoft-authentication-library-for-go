@@ -786,11 +786,9 @@ func TestRefreshIn(t *testing.T) {
 			mockClient.AppendResponse(
 				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":14400,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, refreshIn))),
 			)
-			// mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(firstToken, "", "", "", 14400)))
 			mockClient.AppendResponse(
 				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":14400,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, refreshIn))),
 			)
-			// mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(secondToken, "", "", "", 14400)))
 
 			// Create the client instance
 			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
