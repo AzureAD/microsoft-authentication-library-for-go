@@ -762,6 +762,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				{
 					"access_token": "secret",
 					"expires_in": 86399,
+					"refresh_in": 43199,
 					"ext_expires_in": 86399,
 					"client_info": {"uid":  "uid","utid": "utid"},
 					"scope": "openid profile"
@@ -769,6 +770,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			want: TokenResponse{
 				AccessToken:   "secret",
 				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86399, 0)},
+				RefreshOn:     internalTime.DurationTime{T: time.Unix(43199, 0)},
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -779,11 +781,12 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			jwtDecoder: jwtDecoderFake,
 		},
 		{
-			desc: "Success with different expires_in and ext_expires_in",
+			desc: "Success with different expires_in and refresh On",
 			payload: `
 				{
 					"access_token": "secret",
 					"expires_in": 3600,
+					"refresh_in": 43199,
 					"ext_expires_in": 86399,
 					"client_info": {"uid":  "uid","utid": "utid"},
 					"scope": "openid profile"
@@ -791,6 +794,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			want: TokenResponse{
 				AccessToken:   "secret",
 				ExpiresOn:     internalTime.DurationTime{T: time.Unix(3600, 0)},
+				RefreshOn:     internalTime.DurationTime{T: time.Unix(43199, 0)},
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -838,21 +842,6 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			continue
 		case err != nil:
 			continue
-		}
-		now := time.Now()
-		timeRemaining := got.ExpiresOn.T.Sub(now)
-		if got.ExpiresOn.T.Before(time.Now().Add(time.Hour * 2)) {
-			expectedRefreshIn := now.Add(timeRemaining)
-			const tolerance = 100 * time.Millisecond
-			if got.RefreshOn.T.Sub(expectedRefreshIn) > tolerance {
-				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshOn.T, expectedRefreshIn)
-			}
-		} else {
-			expectedRefreshIn := now.Add(timeRemaining / 2)
-			const tolerance = 100 * time.Millisecond
-			if got.RefreshOn.T.Sub(expectedRefreshIn) > tolerance {
-				t.Errorf("Expected refresh_in to be half of expires_on, but got %v, expected %v", got.RefreshOn.T, expectedRefreshIn)
-			}
 		}
 
 		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
