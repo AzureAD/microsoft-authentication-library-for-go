@@ -187,7 +187,7 @@ func (tr *TokenResponse) UnmarshalJSON(data []byte) error {
 	type Alias TokenResponse
 	aux := &struct {
 		ExpiresIn internalTime.DurationTime `json:"expires_in,omitempty"`
-		ExpiresOn interface{}               `json:"expires_on,omitempty"`
+		ExpiresOn any                       `json:"expires_on,omitempty"`
 		*Alias
 	}{
 		Alias: (*Alias)(tr),

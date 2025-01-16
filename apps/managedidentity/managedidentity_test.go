@@ -518,11 +518,11 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			}
 			switch i := testCase.miType.(type) {
 			case UserAssignedClientID:
-				if query.Get(miQueryParameterClientId) != i.value() {
-					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
+				if actual := query.Get(miQueryParameterClientId); actual != i.value() {
+					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), actual)
 				}
 			case UserAssignedResourceID:
-				if query.Get(miQueryParameterPrincipalId) != i.value() {
+				if query.Get(miQueryParameterResourceId) != i.value() {
 					t.Fatalf("resource principal-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterPrincipalId))
 				}
 			case UserAssignedObjectID:
