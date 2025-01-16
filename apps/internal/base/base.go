@@ -88,7 +88,6 @@ type AuthResult struct {
 	IDToken     accesstokens.IDToken
 	AccessToken string
 	//RefreshOn indicates the recommended time to request a new access token, or zero if no refresh time is suggested
-	RefreshOn      time.Time
 	ExpiresOn      time.Time
 	GrantedScopes  []string
 	DeclinedScopes []string
@@ -97,6 +96,7 @@ type AuthResult struct {
 
 // AuthResultMetadata which contains meta data for the AuthResult
 type AuthResultMetadata struct {
+	RefreshOn   time.Time
 	TokenSource TokenSource
 }
 
@@ -131,12 +131,12 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 		Account:        account,
 		IDToken:        idToken,
 		AccessToken:    accessToken,
-		RefreshOn:      storageTokenResponse.AccessToken.RefreshOn.T,
 		ExpiresOn:      storageTokenResponse.AccessToken.ExpiresOn.T,
 		GrantedScopes:  grantedScopes,
 		DeclinedScopes: nil,
 		Metadata: AuthResultMetadata{
 			TokenSource: Cache,
+			RefreshOn:   storageTokenResponse.AccessToken.RefreshOn.T,
 		},
 	}, nil
 }
@@ -150,11 +150,11 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
-		RefreshOn:     tokenResponse.RefreshOn.T,
 		ExpiresOn:     tokenResponse.ExpiresOn.T,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 		Metadata: AuthResultMetadata{
 			TokenSource: IdentityProvider,
+			RefreshOn:   tokenResponse.RefreshOn.T,
 		},
 	}, nil
 }
@@ -351,8 +351,6 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			if shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
-				ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-				defer cancel()
 				if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
 					return b.AuthResultFromToken(ctx, authParams, tr, true)
 				} else if callErr, ok := er.(*errors.CallErr); ok {
@@ -483,9 +481,13 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	return ar, err
 }
 
+// This function wraps time.Now() and is used for refreshing the application
+// was created to test the function against refreshin
+var GetCurrentTime = time.Now
+
 // shouldRefresh returns true if the token should be refreshed.
 func shouldRefresh(t time.Time) bool {
-	return !t.IsZero() && t.Before(time.Now().Add(2*time.Hour))
+	return !t.IsZero() && t.Before(GetCurrentTime())
 }
 
 func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {

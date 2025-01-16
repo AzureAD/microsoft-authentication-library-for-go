@@ -46,6 +46,12 @@ func WithCallback(callback func(*http.Request)) responseOption {
 	})
 }
 
+func WithCode(code int) responseOption {
+	return respOpt(func(r *response) {
+		r.code = code
+	})
+}
+
 // Client is a mock HTTP client that returns a sequence of responses. Use AppendResponse to specify the sequence.
 type Client struct {
 	resp []response

@@ -25,6 +25,7 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
@@ -747,7 +748,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	if v := int(time.Until(ar.ExpiresOn).Seconds()); v < expiresIn-2 || v > expiresIn {
 		t.Fatalf("expected ExpiresOn ~= %d seconds, got %d", expiresIn, v)
 	}
-	if v := int(time.Until(ar.RefreshOn).Seconds()); v < refreshOn-2 || v > refreshOn {
+	if v := int(time.Until(ar.Metadata.RefreshOn).Seconds()); v < refreshOn-2 || v > refreshOn {
 		t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshOn, v)
 	}
 	if ar.AccessToken != expectedToken {
@@ -769,55 +770,76 @@ func TestRefreshIn(t *testing.T) {
 	}
 	firstToken := "first token"
 	secondToken := "new token"
-	refreshIn := 8200
 	lmo := "login.microsoftonline.com"
 	tenant := "tenant"
-
-	for _, needsRefresh := range []bool{false, true} {
+	refreshIn := 43200
+	expiresIn := 86400
+	for _, tt := range []struct {
+		shouldGetNewToken  bool
+		secondRequestAfter int
+		shouldReturnError  bool
+	}{
+		{secondRequestAfter: 40000, shouldGetNewToken: false},                          // from cache
+		{secondRequestAfter: 43400, shouldGetNewToken: true},                           // refresh in expired so new token
+		{secondRequestAfter: 40000, shouldGetNewToken: false, shouldReturnError: true}, // refresh in not expired but refresh failed so new token
+		{secondRequestAfter: 80000, shouldGetNewToken: true, shouldReturnError: false}, // refresh in expired but refresh failed so new token
+		{secondRequestAfter: 1003400, shouldGetNewToken: true},
+	} {
 		name := "token doesn't need refresh"
-		if needsRefresh {
-			name = "token needs refresh"
-			refreshIn = 83
-		}
 		t.Run(name, func(t *testing.T) {
+			originalTime := base.GetCurrentTime
+			defer func() {
+				base.GetCurrentTime = originalTime
+			}()
 			// Create a mock client and append mock responses
 			mockClient := mock.Client{}
 			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
 			mockClient.AppendResponse(
-				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":14400,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, refreshIn))),
+				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
 			)
-			mockClient.AppendResponse(
-				mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":14400,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, refreshIn))),
-			)
+			if tt.shouldReturnError {
+				mockClient.AppendResponse(
+					mock.WithCode(http.StatusBadGateway),
+					mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+				)
+			} else {
+				mockClient.AppendResponse(
+					mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn))),
+				)
+			}
 
 			// Create the client instance
 			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			// Acquire the first token
 			ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
 			if err != nil {
 				t.Fatal(err)
 			}
-
 			// Assert the first token is returned
 			if ar.AccessToken != firstToken {
 				t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
 			}
-			if ar.RefreshOn.IsZero() {
+			if ar.Metadata.RefreshOn.IsZero() {
 				t.Fatal("RefreshOn shouldn't be zero")
 			}
-			if v := int(time.Until(ar.RefreshOn).Seconds()); v < refreshIn-102 || v > refreshIn {
+			if v := int(time.Until(ar.Metadata.RefreshOn).Seconds()); v < refreshIn-10 || v > refreshIn+10 {
 				t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshIn, v)
 			}
-
+			fixedTime := time.Now().Add(time.Duration(tt.secondRequestAfter) * time.Second)
+			base.GetCurrentTime = func() time.Time {
+				return fixedTime
+			}
 			ar, err = client.AcquireTokenSilent(context.Background(), tokenScope)
 			if err != nil {
 				t.Fatal(err)
 			}
-			if (ar.AccessToken == secondToken) != needsRefresh {
+			if ar.Metadata.TokenSource != base.Cache && !tt.shouldGetNewToken {
+				t.Fatal("should have returned from cache.")
+			}
+			if (ar.AccessToken == secondToken) != tt.shouldGetNewToken {
 				t.Fatalf("wanted %q, got %q", secondToken, ar.AccessToken)
 			}
 		})

@@ -445,11 +445,11 @@ func TestAuthResultFromStorage(t *testing.T) {
 	}
 }
 
+// TestShouldRefresh tests the shouldRefresh function
 func TestShouldRefresh(t *testing.T) {
-	// Get current time
+	// Get the current time to use for comparison
 	now := time.Now()
 
-	// Test cases
 	tests := []struct {
 		name     string
 		input    time.Time
@@ -457,32 +457,26 @@ func TestShouldRefresh(t *testing.T) {
 	}{
 		{
 			name:     "Zero time",
-			input:    time.Time{},
-			expected: false,
+			input:    time.Time{}, // Zero time
+			expected: false,       // Should return false because it's zero time
 		},
 		{
-			name:     "More than 2 hours ago",
-			input:    now.Add(3 * time.Hour).Add(time.Second),
-			expected: false,
+			name:     "Future time",
+			input:    now.Add(time.Hour), // 1 hour in the future
+			expected: false,              // Should return false because it's in the future
 		},
 		{
-			name:     "Exactly 2 hours ago",
-			input:    now.Add(2 * time.Hour).Add(time.Second),
-			expected: false,
-		},
-		{
-			name:     "Less than 2 hours ago",
-			input:    now.Add(1 * time.Hour).Add(time.Second),
-			expected: true,
+			name:     "Past time",
+			input:    now.Add(-time.Hour), // 1 hour in the past
+			expected: true,                // Should return true because it's in the past
 		},
 	}
 
-	// Run the test cases
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := shouldRefresh(tt.input)
-			if actual != tt.expected {
-				t.Errorf("expected %v, got %v", tt.expected, actual)
+			result := shouldRefresh(tt.input)
+			if result != tt.expected {
+				t.Errorf("shouldRefresh(%v) = %v; expected %v", tt.input, result, tt.expected)
 			}
 		})
 	}
