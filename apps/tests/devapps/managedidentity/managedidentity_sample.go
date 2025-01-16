@@ -18,8 +18,13 @@ func runIMDSSystemAssigned() {
 	if err != nil {
 		log.Fatal(err)
 	}
+	source, err := mi.GetSource()
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("source: ", source)
 	fmt.Println("token expire at : ", result.ExpiresOn)
-
+	fmt.Println("tokenSource: ", result.Metadata.TokenSource)
 }
 
 func runIMDSUserAssigned() {
