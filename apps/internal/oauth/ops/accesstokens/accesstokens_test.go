@@ -869,6 +869,28 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			jwtDecoder: jwtDecoderFake,
 		},
 		{
+			desc: "Success: Only expires_in",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_in": 3600,
+					"ext_expires_in": 86399,
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Now().Add(time.Hour),
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
 			desc: "Error: Missing both expires_on and expires_in",
 			payload: `
 				{
@@ -911,7 +933,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 		case err != nil:
 			continue
 		}
-		if !got.ExpiresOn.Equal(test.want.ExpiresOn) {
+		if !got.ExpiresOn.Round(time.Second).Equal(test.want.ExpiresOn.Round(time.Second)) {
 			t.Errorf("TestCreateTokenResponse: got %v, want %v", got.ExpiresOn.Unix(), test.want.ExpiresOn.Unix())
 		}
 		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
