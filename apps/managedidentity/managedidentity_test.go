@@ -470,6 +470,7 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			endpoint := os.Getenv(msiEndpointEnvVar)
 
 			var localUrl *url.URL
+			var requestBody string
 			mockClient := mock.Client{}
 			responseBody, err := getSuccessfulResponse(resource)
 			if err != nil {
@@ -478,7 +479,13 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
+				bodyBytes, err := io.ReadAll(r.Body)
+				if err != nil {
+					t.Fatalf("error reading request body: %s", err)
+				}
+				requestBody = string(bodyBytes)
 			}))
+
 			// resetting cache
 			before := cacheManager
 			defer func() { cacheManager = before }()
@@ -488,18 +495,22 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			result, err := client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
 				t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
 			}
+
 			query := localUrl.Query()
 
 			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
 			}
+
 			switch i := testCase.miType.(type) {
 			case UserAssignedClientID:
 				if query.Get(miQueryParameterClientId) != i.value() {
@@ -514,27 +525,44 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
 			}
+
+			// Verify the request body
+			expectedBody := url.Values{}
+			expectedBody.Set(resourceQueryParameterName, strings.TrimSuffix(testCase.resource, "/.default"))
+			if requestBody != expectedBody.Encode() {
+				t.Fatalf("expected request body %q, got %q", expectedBody.Encode(), requestBody)
+			}
+
 			if result.Metadata.TokenSource != base.IdentityProvider {
 				t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
+
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
 			}
+
 			result, err = client.AcquireToken(context.Background(), testCase.resource)
+
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
+
 			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			result, err = secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+
 			if err != nil {
 				t.Fatal(err)
 			}
+
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 			}

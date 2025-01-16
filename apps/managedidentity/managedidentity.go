@@ -10,6 +10,7 @@ without using credentials.
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -390,20 +391,42 @@ func contains[T comparable](list []T, element T) bool {
 func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
+	var bodyBytes []byte
+
+	// Read and buffer the request body
+	if req.Body != nil {
+		bodyBytes, err = io.ReadAll(req.Body)
+		if err != nil {
+			return nil, err
+		}
+		req.Body.Close() // Close the original body
+	}
+
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
+		cloneReq := req.Clone(tryCtx)
+
 		defer tryCancel()
+
+		// Set the buffered body for the cloned request
+		if bodyBytes != nil {
+			cloneReq.Body = io.NopCloser(bytes.NewReader(bodyBytes))
+		}
+
 		if resp != nil && resp.Body != nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
+			_, err := io.Copy(io.Discard, resp.Body)
+			if err != nil {
+				return nil, err
+			}
 			resp.Body.Close()
 		}
-		cloneReq := req.Clone(tryCtx)
+
 		resp, err = c.httpClient.Do(cloneReq)
-		retrylist := retryStatusCodes
+		retryList := retryStatusCodes
 		if c.source == DefaultToIMDS {
-			retrylist = retryCodesForIMDS
+			retryList = retryCodesForIMDS
 		}
-		if err == nil && !contains(retrylist, resp.StatusCode) {
+		if err == nil && !contains(retryList, resp.StatusCode) {
 			return resp, nil
 		}
 		select {
