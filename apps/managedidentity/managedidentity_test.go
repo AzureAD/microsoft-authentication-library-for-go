@@ -523,7 +523,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 				}
 			case UserAssignedResourceID:
 				if query.Get(miQueryParameterResourceId) != i.value() {
-					t.Fatalf("resource principal-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
+					t.Fatalf("resource resource id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceId))
 				}
 			case UserAssignedObjectID:
 				if query.Get(miQueryParameterObjectId) != i.value() {
