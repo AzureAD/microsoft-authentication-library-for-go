@@ -933,7 +933,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 		case err != nil:
 			continue
 		}
-		if !got.ExpiresOn.Round(time.Second).Equal(test.want.ExpiresOn.Round(time.Second)) {
+		if got.ExpiresOn.Unix() != test.want.ExpiresOn.Unix() {
 			t.Errorf("TestCreateTokenResponse: got %v, want %v", got.ExpiresOn.Unix(), test.want.ExpiresOn.Unix())
 		}
 		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
