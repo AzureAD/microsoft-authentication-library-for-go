@@ -3,9 +3,11 @@ package managedidentity
 import (
 	"context"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/url"
 	"os"
+	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 )
@@ -31,14 +33,16 @@ func createCloudShellAuthRequest(ctx context.Context, resource string) (*http.Re
 
 	msiParameters := msiEndpointParsed.Query()
 	msiParameters.Set(resourceQueryParameterName, resource)
-	msiEndpointParsed.RawQuery = msiParameters.Encode()
+	msiDataEncoded := msiParameters.Encode()
+	body := ioutil.NopCloser(strings.NewReader(msiDataEncoded))
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpointParsed.String(), nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, msiEndpointParsed.String(), body)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http request %s", err)
 	}
 
 	req.Header.Set(metaHTTPHeaderName, "true")
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
 	return req, nil
 }
