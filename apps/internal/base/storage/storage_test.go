@@ -1007,7 +1007,7 @@ func TestWrite(t *testing.T) {
 		Oid:               "lid",
 		PreferredUsername: "username",
 	}
-	expiresOn := internalTime.DurationTime{T: now.Add(1000 * time.Second)}
+	expiresOn := now.Add(1000 * time.Second)
 	tokenResponse := accesstokens.TokenResponse{
 		AccessToken:   "accessToken",
 		RefreshToken:  "refreshToken",

@@ -46,9 +46,11 @@ const (
 	wwwAuthenticateHeaderName    = "www-authenticate"
 
 	// UAMI query parameter name
-	miQueryParameterClientId   = "client_id"
-	miQueryParameterObjectId   = "object_id"
-	miQueryParameterResourceId = "msi_res_id"
+	miQueryParameterClientId       = "client_id"
+	miQueryParameterObjectId       = "object_id"
+	miQueryParameterPrincipalId    = "principal_id"
+	miQueryParameterResourceIdIMDS = "msi_res_id"
+	miQueryParameterResourceId     = "mi_res_id"
 
 	// IMDS
 	imdsDefaultEndpoint           = "http://169.254.169.254/metadata/identity/oauth2/token"
@@ -65,6 +67,9 @@ const (
 	azureConnectedMachine          = "AzureConnectedMachineAgent"
 	himdsExecutableName            = "himds.exe"
 	tokenName                      = "Tokens"
+
+	// App Service
+	appServiceAPIVersion = "2019-08-01"
 
 	// Environment Variables
 	identityEndpointEnvVar              = "IDENTITY_ENDPOINT"
@@ -213,6 +218,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
+
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -290,36 +296,49 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 			return ar, err
 		}
 	}
-
 	switch c.source {
 	case AzureArc:
-		return acquireTokenForAzureArc(ctx, c, resource)
+		return c.acquireTokenForAzureArc(ctx, resource)
 	case DefaultToIMDS:
-		return acquireTokenForIMDS(ctx, c, resource)
+		return c.acquireTokenForIMDS(ctx, resource)
+	case AppService:
+		return c.acquireTokenForAppService(ctx, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
 }
 
-func acquireTokenForIMDS(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
-	req, err := createIMDSAuthRequest(ctx, client.miType, resource)
+func (c Client) acquireTokenForAppService(ctx context.Context, resource string) (base.AuthResult, error) {
+	req, err := createAppServiceAuthRequest(ctx, c.miType, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := client.getTokenForRequest(req)
+	tokenResponse, err := c.getTokenForRequest(req)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(client.authParams, tokenResponse)
+	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func acquireTokenForAzureArc(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.AuthResult, error) {
+	req, err := createIMDSAuthRequest(ctx, c.miType, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := c.getTokenForRequest(req)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(c.authParams, tokenResponse)
+}
+
+func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createAzureArcAuthRequest(ctx, resource, "")
 	if err != nil {
 		return base.AuthResult{}, err
 	}
 
-	response, err := client.httpClient.Do(req)
+	response, err := c.httpClient.Do(req)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -329,7 +348,7 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 		return base.AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
 	}
 
-	secret, err := client.getAzureArcSecretKey(response, runtime.GOOS)
+	secret, err := c.getAzureArcSecretKey(response, runtime.GOOS)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -339,11 +358,11 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 		return base.AuthResult{}, err
 	}
 
-	tokenResponse, err := client.getTokenForRequest(secondRequest)
+	tokenResponse, err := c.getTokenForRequest(secondRequest)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(client.authParams, tokenResponse)
+	return authResultFromToken(c.authParams, tokenResponse)
 }
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
@@ -377,7 +396,7 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	var resp *http.Response
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
-		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Second*15)
+		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Minute)
 		defer tryCancel()
 		if resp != nil && resp.Body != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -446,6 +465,31 @@ func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRespons
 	return r, err
 }
 
+func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+	identityEndpoint := os.Getenv(identityEndpointEnvVar)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("X-IDENTITY-HEADER", os.Getenv(identityHeaderEnvVar))
+	q := req.URL.Query()
+	q.Set("api-version", appServiceAPIVersion)
+	q.Set("resource", resource)
+	switch t := id.(type) {
+	case UserAssignedClientID:
+		q.Set(miQueryParameterClientId, string(t))
+	case UserAssignedResourceID:
+		q.Set(miQueryParameterResourceId, string(t))
+	case UserAssignedObjectID:
+		q.Set(miQueryParameterObjectId, string(t))
+	case systemAssignedValue:
+	default:
+		return nil, fmt.Errorf("unsupported type %T", id)
+	}
+	req.URL.RawQuery = q.Encode()
+	return req, nil
+}
+
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
 	msiEndpoint, err := url.Parse(imdsDefaultEndpoint)
 	if err != nil {
@@ -459,7 +503,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 	case UserAssignedClientID:
 		msiParameters.Set(miQueryParameterClientId, string(t))
 	case UserAssignedResourceID:
-		msiParameters.Set(miQueryParameterResourceId, string(t))
+		msiParameters.Set(miQueryParameterResourceIdIMDS, string(t))
 	case UserAssignedObjectID:
 		msiParameters.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue: // not adding anything

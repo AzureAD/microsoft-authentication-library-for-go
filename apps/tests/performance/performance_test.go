@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
-	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -55,7 +54,7 @@ func populateCache(users int, tokens int, authParams authority.AuthParams, clien
 				AccessToken:   fmt.Sprintf("fake_access_token%d", user),
 				RefreshToken:  "fake_refresh_token",
 				ClientInfo:    accesstokens.ClientInfo{UID: "my_uid", UTID: fmt.Sprintf("%dmy_utid", user)},
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExpiresOn:     time.Now().Add(1 * time.Hour),
 				GrantedScopes: accesstokens.Scopes{Slice: []string{scope}},
 				IDToken: accesstokens.IDToken{
 					RawToken: "x.e30",

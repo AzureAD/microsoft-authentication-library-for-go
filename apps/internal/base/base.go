@@ -145,7 +145,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
-		ExpiresOn:     tokenResponse.ExpiresOn.T,
+		ExpiresOn:     tokenResponse.ExpiresOn,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 		Metadata: AuthResultMetadata{
 			TokenSource: IdentityProvider,
