@@ -3,6 +3,7 @@
 package slog
 
 import (
+	"context"
 	"log/slog"
 )
 
@@ -15,19 +16,27 @@ const (
 	LevelError = slog.LevelError
 )
 
+type Handler = slog.Handler
+
 type Logger = slog.Logger
+
+type NopHandler struct{}
+
+func (*NopHandler) Enabled(context.Context, slog.Level) bool { return false }
+
+func (*NopHandler) Handle(context.Context, slog.Record) error { return nil }
+
+func (h *NopHandler) WithAttrs([]slog.Attr) slog.Handler { return h }
+
+func (h *NopHandler) WithGroup(string) slog.Handler { return h }
 
 // New creates a new logger instance for Go 1.21+ with full `slog` logging support.
 // If nil is provided a default logger instance is created.
-func New(slogLogger *slog.Logger) *Logger {
-	if slogLogger == nil {
-		defaultLogger := slog.Default()
-		return defaultLogger
-	}
-	return slogLogger
+func New(h Handler) *Logger {
+	return slog.New(h)
 }
 
-// Field creates a slog field for any value
-func Field(key string, value any) any {
+// Any creates a slog field for any value
+func Any(key string, value any) any {
 	return slog.Any(key, value)
 }

@@ -327,6 +327,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		disableInstanceDiscovery: cred.tokenProvider != nil,
 		httpClient:               shared.DefaultClient,
 		azureRegion:              autoEnabledRegion,
+		logger:                   slog.New(&slog.NopHandler{}),
 	}
 	for _, o := range options {
 		o(&opts)
@@ -348,6 +349,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	base.AuthParams.IsConfidentialClient = true
 
+	// opts.logger.Log(context.Background(), slog.LevelInfo, "confidential.Client.New", slog.Any("one", "Created confidential client"))
 	return Client{base: base, cred: internalCred}, nil
 }
 
@@ -376,6 +378,7 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
 	ap.DomainHint = o.domainHint
+
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
