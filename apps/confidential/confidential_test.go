@@ -39,6 +39,7 @@ import (
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
+type contextKey struct{}
 
 func (*errorClient) Do(req *http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("expected no requests but received one for %s", req.URL.String())
@@ -142,7 +143,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		}
 		client, err := fakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+			ExpiresOn:     time.Now().Add(1 * time.Hour),
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			TokenType:     "Bearer",
@@ -295,7 +296,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 
 func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
-	key := struct{}{}
+	key := contextKey{}
 	ctx := context.WithValue(context.Background(), key, true)
 	getAssertion := func(c context.Context, o AssertionRequestOptions) (string, error) {
 		if v := c.Value(key); v == nil || !v.(bool) {
@@ -348,7 +349,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 			tr := accesstokens.TokenResponse{
 				AccessToken:   token,
 				RefreshToken:  refresh,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExpiresOn:     time.Now().Add(1 * time.Hour),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 				IDToken: accesstokens.IDToken{
@@ -468,7 +469,7 @@ func TestADFSTokenCaching(t *testing.T) {
 			AccessToken:   "at1",
 			RefreshToken:  "rt",
 			TokenType:     "bearer",
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExpiresOn:     time.Now().Add(time.Hour),
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			IDToken: accesstokens.IDToken{
@@ -598,7 +599,7 @@ func TestNewCredFromCert(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%v", filepath.Base(file.path), sendX5c), func(t *testing.T) {
 				client, err := fakeClient(accesstokens.TokenResponse{
 					AccessToken:   token,
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+					ExpiresOn:     time.Now().Add(time.Hour),
 					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 				}, cred, fakeAuthority, opts...)
 				if err != nil {
@@ -714,7 +715,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	expectedToken := "expected token"
 	called := false
 	expiresIn := 4200
-	key := struct{}{}
+	key := contextKey{}
 	ctx := context.WithValue(context.Background(), key, true)
 	cred := NewCredFromTokenProvider(func(c context.Context, tp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
 		if called {
@@ -970,7 +971,7 @@ func TestWithClaims(t *testing.T) {
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithClaims(test.claims))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -1080,7 +1081,7 @@ func TestWithTenantID(t *testing.T) {
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if err != nil {
 					if test.expectError {
@@ -1388,7 +1389,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 	}
 	client, err := fakeClient(accesstokens.TokenResponse{
 		AccessToken:   token,
-		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		ExpiresOn:     time.Now().Add(1 * time.Hour),
 		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 		TokenType:     "TokenType",
@@ -1428,7 +1429,7 @@ func TestAcquireTokenByCredentialFromDSTS(t *testing.T) {
 			}
 			client, err := fakeClient(accesstokens.TokenResponse{
 				AccessToken:   token,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExpiresOn:     time.Now().Add(1 * time.Hour),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 				TokenType:     "Bearer",

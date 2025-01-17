@@ -305,7 +305,7 @@ func TestContractUnmarshalJSON(t *testing.T) {
 	}
 	if diff := pretty.Compare(want, got); diff != "" {
 		t.Errorf("TestContractUnmarshalJSON: -want/+got:\n%s", diff)
-		t.Errorf(string(got.AdditionalFields["unknownEntity"].(stdJSON.RawMessage)))
+		t.Errorf("%s", string(got.AdditionalFields["unknownEntity"].(stdJSON.RawMessage)))
 	}
 }
 
