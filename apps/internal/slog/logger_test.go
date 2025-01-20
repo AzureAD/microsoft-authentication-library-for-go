@@ -12,13 +12,14 @@ import (
 func TestLogger_Log_ConsoleOutput(t *testing.T) {
 	// Capture the console output
 	var buf bytes.Buffer
+
+	// Create a new JSON handler
 	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
 		Level: slog.LevelDebug, // Set the log level to Debug to capture all log levels
 	})
 
-	// Create a new logger instance
-	slogLogger := slog.New(handler)
-	loggerInstance := New(slogLogger)
+	// Create a new logger instance with the handler
+	loggerInstance := New(handler)
 
 	// Log messages
 	loggerInstance.Log(context.Background(), slog.LevelInfo, "This is an info message via slog.", slog.Any("username", "john_doe"), slog.Int("age", 30))
@@ -50,28 +51,13 @@ func TestLogger_Log_ConsoleOutput(t *testing.T) {
 	}
 }
 
-func TestNewLogger_NilLogger_Returns_Default(t *testing.T) {
-	testLogger := slog.New(slog.Default().Handler())
-	slog.SetDefault(testLogger)
-
-	logInstance := New(nil)
-	if logInstance == nil {
-		t.Fatalf("expected non-nil logInstance, got nil")
-	}
-
-	if logInstance != testLogger {
-		t.Fatalf("expected logInstance to be the default logger, got different logger")
-	}
-}
-
-func TestNewLogger_ValidSlogLogger(t *testing.T) {
-	// Test case where slogLogger is a valid *slog.Logger
+func TestNewLogger_ValidSlogHandler(t *testing.T) {
+	// Test case where handler is a valid slog.Handler
 	var buf bytes.Buffer
 	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	})
-	slogLogger := slog.New(handler)
-	logInstance := New(slogLogger)
+	logInstance := New(handler)
 	if logInstance == nil {
 		t.Fatalf("expected non-nil logInstance, got nil")
 	}

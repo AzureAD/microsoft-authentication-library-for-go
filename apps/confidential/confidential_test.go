@@ -13,7 +13,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"log/slog"
 
 	// "log/slog"
 
@@ -190,8 +189,8 @@ func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
 	lmo := "login.microsoftonline.com"
 	tenant := "tenant"
 	mockClient := mock.Client{}
-	slogLogger := slog.Default()
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithLogger(slogLogger))
+
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -29,6 +29,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/slog"
 )
 
 const (
@@ -158,11 +159,13 @@ type Client struct {
 	source             Source
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
+	logger             *slog.Logger
 }
 
 type ClientOptions struct {
 	httpClient         ops.HTTPClient
 	retryPolicyEnabled bool
+	logger             *slog.Logger
 }
 
 type AcquireTokenOptions struct {
@@ -197,8 +200,17 @@ func WithRetryPolicyDisabled() ClientOption {
 // Client to be used to acquire tokens for managed identity.
 // ID: [SystemAssigned], [UserAssignedClientID], [UserAssignedResourceID], [UserAssignedObjectID]
 //
-// Options: [WithHTTPClient]
+// Options: [WithHTTPClient], [WithLogger]
 func New(id ID, options ...ClientOption) (Client, error) {
+	opts := ClientOptions{
+		httpClient:         shared.DefaultClient,
+		retryPolicyEnabled: true,
+		logger:             slog.New(&slog.NopHandler{}),
+	}
+	for _, option := range options {
+		option(&opts)
+	}
+
 	source, err := GetSource()
 	if err != nil {
 		return Client{}, err
@@ -210,13 +222,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
 			return Client{}, errors.New("azure Arc doesn't support user assigned managed identities")
 		}
-	}
-	opts := ClientOptions{
-		httpClient:         shared.DefaultClient,
-		retryPolicyEnabled: true,
-	}
-	for _, option := range options {
-		option(&opts)
 	}
 
 	switch t := id.(type) {
@@ -236,17 +241,22 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
+
 	client := Client{
 		miType:             id,
 		httpClient:         opts.httpClient,
 		retryPolicyEnabled: opts.retryPolicyEnabled,
 		source:             source,
+		logger:             opts.logger,
 	}
+
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return Client{}, err
 	}
+
 	client.authParams = authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
+
 	return client, nil
 }
 
@@ -282,9 +292,11 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	for _, option := range options {
 		option(&o)
 	}
-	c.authParams.Scopes = []string{resource}
 
-	// ignore cached access tokens when given claims
+	c.authParams.Scopes = []string{resource}
+	c.logger.Log(ctx, slog.LevelInfo, "Managed Identity", slog.String("source", string(c.source)))
+
+	// when claims are empty, we get token from the cache, otherwise acquire a new one
 	if o.claims == "" {
 		storageTokenResponse, err := cacheManager.Read(ctx, c.authParams)
 		if err != nil {
@@ -296,6 +308,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 			return ar, err
 		}
 	}
+
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
@@ -397,6 +410,8 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Minute)
+		c.logger.Log(tryCtx, slog.LevelInfo, "Managed Identity retrying request", slog.String("attempt", fmt.Sprint(attempt)))
+
 		defer tryCancel()
 		if resp != nil && resp.Body != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -404,11 +419,11 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 		}
 		cloneReq := req.Clone(tryCtx)
 		resp, err = c.httpClient.Do(cloneReq)
-		retrylist := retryStatusCodes
+		retryList := retryStatusCodes
 		if c.source == DefaultToIMDS {
-			retrylist = retryCodesForIMDS
+			retryList = retryCodesForIMDS
 		}
-		if err == nil && !contains(retrylist, resp.StatusCode) {
+		if err == nil && !contains(retryList, resp.StatusCode) {
 			return resp, nil
 		}
 		select {

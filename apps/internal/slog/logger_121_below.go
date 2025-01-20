@@ -2,7 +2,9 @@
 
 package slog
 
-import "context"
+import (
+	"context"
+)
 
 type Level int
 
@@ -22,11 +24,11 @@ func New(h any) *Logger {
 	return &Logger{}
 }
 
-// func New(logger *Logger) *Logger {
-// 	return &Logger{}
-// }
+func Any(key string, value any) any {
+	return nil
+}
 
-func Field(key string, value any) any {
+func String(key, value string) any {
 	return nil
 }
 
