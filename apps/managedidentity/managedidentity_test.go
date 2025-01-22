@@ -664,7 +664,7 @@ func TestAzureArcOnlySystemAssignedSupported(t *testing.T) {
 			t.Fatal(`expected error: AzureArc not supported error"`)
 
 		}
-		if err.Error() != "Azure Arc doesn't support user-assigned managed identities at runtime" {
+		if err.Error() != "Azure Arc doesn't support user-assigned managed identities" {
 			t.Fatalf(`expected error: AzureArc not supported error, got error: "%v"`, err)
 		}
 

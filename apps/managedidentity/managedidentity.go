@@ -83,7 +83,7 @@ const (
 // sourceRestrictions is a list of sources that have some form of restriction, such as user-assigned managed identities not being supported, or being supported through different means
 var sourceRestrictions = map[Source]string{
 	ServiceFabric: "Service Fabric API doesn't support specifying a user-assigned identity at runtime. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi",
-	AzureArc:      "Azure Arc doesn't support user-assigned managed identities at runtime",
+	AzureArc:      "Azure Arc doesn't support user-assigned managed identities",
 	AzureML:       "Azure ML supports specifying a user-assigned managed identity by client ID only",
 	CloudShell:    "Cloud Shell doesn't support user-assigned managed identities at runtime",
 }
