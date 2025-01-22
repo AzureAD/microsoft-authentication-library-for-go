@@ -80,8 +80,14 @@ const (
 	defaultRetryCount = 3
 )
 
-// UnsupportedSources is a list of sources that don't support user-assigned managed identities.
-var UnsupportedSources = []Source{ServiceFabric, AzureArc, AzureML, CloudShell}
+// sourceRestrictions is a list of sources that have some form of restriction, such as user-assigned managed identities not being supported, or being supported through different means
+
+var sourceRestrictions = map[Source]string{
+	ServiceFabric: "Service Fabric API doesn't support specifying a user-assigned identity at runtime. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi",
+	AzureArc:      "Azure Arc doesn't support user-assigned managed identities at runtime",
+	AzureML:       "Azure ML supports specifying a user-assigned managed identity by client ID only",
+	CloudShell:    "Cloud Shell doesn't support user-assigned managed identities at runtime",
+}
 
 var retryCodesForIMDS = []int{
 	http.StatusNotFound,                      // 404
@@ -205,13 +211,11 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, err
 	}
 
-	// If source is unsupported, return an error, as some sources allow System Assigned managed identities, but not user assigned.
-	for _, unsupportedSource := range UnsupportedSources {
-		if source == unsupportedSource {
-			switch id.(type) {
-			case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
-				return Client{}, errors.New(string(source) + " doesn't support user-assigned managed identities")
-			}
+	// If source has some restriction, return an error, as some sources allow System Assigned managed identities, but not user assigned, or user assigned through another method.
+	if errMsg, unsupported := sourceRestrictions[source]; unsupported {
+		switch id.(type) {
+		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+			return Client{}, errors.New(errMsg)
 		}
 	}
 	opts := ClientOptions{
@@ -318,6 +322,18 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 
 func acquireTokenForIMDS(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, client.miType, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := client.getTokenForRequest(req)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(client.authParams, tokenResponse)
+}
+
+func acquireTokenForCloudShell(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
+	req, err := createCloudShellAuthRequest(ctx, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}

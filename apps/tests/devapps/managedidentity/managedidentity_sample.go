@@ -19,6 +19,7 @@ func runIMDSSystemAssigned() {
 		log.Fatal(err)
 	}
 	fmt.Println("token expire at : ", result.ExpiresOn)
+
 }
 
 func runIMDSUserAssigned() {

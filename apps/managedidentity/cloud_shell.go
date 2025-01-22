@@ -11,32 +11,23 @@ import (
 	"net/url"
 	"os"
 	"strings"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 )
-
-func acquireTokenForCloudShell(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
-	req, err := createCloudShellAuthRequest(ctx, resource)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	tokenResponse, err := client.getTokenForRequest(req)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	return authResultFromToken(client.authParams, tokenResponse)
-}
 
 func createCloudShellAuthRequest(ctx context.Context, resource string) (*http.Request, error) {
 	msiEndpoint := os.Getenv(msiEndpointEnvVar)
 	msiEndpointParsed, err := url.Parse(msiEndpoint)
+
+	println("createCloudShellAuthRequest - msiEndpoint " + msiEndpoint)
+	println("createCloudShellAuthRequest - msiEndpointParsed " + msiEndpoint)
+	println("createCloudShellAuthRequest - resource " + resource)
 	if err != nil {
 		return nil, fmt.Errorf("couldn't parse %q: %s", msiEndpoint, err)
 	}
 
-	msiParameters := msiEndpointParsed.Query()
-	msiParameters.Set(resourceQueryParameterName, resource)
-	msiDataEncoded := msiParameters.Encode()
+	data := url.Values{}
+	data.Set(resourceQueryParameterName, resource)
+	println("createCloudShellAuthRequest - dataGet " + data.Get(resourceQueryParameterName))
+	msiDataEncoded := data.Encode()
 	body := ioutil.NopCloser(strings.NewReader(msiDataEncoded))
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, msiEndpointParsed.String(), body)
