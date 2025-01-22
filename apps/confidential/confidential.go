@@ -318,7 +318,6 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		return Client{}, err
 	}
 	autoEnabledRegion := os.Getenv("MSAL_FORCE_REGION")
-
 	opts := clientOptions{
 		authority: authority,
 		// if the caller specified a token provider, it will handle all details of authentication, using Client only as a token cache
@@ -374,7 +373,6 @@ func (cca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
 	ap.DomainHint = o.domainHint
-
 	return cca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 

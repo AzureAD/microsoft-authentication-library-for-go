@@ -210,7 +210,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	for _, option := range options {
 		option(&opts)
 	}
-
 	source, err := GetSource()
 	if err != nil {
 		return Client{}, err
@@ -241,7 +240,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
-
 	client := Client{
 		miType:             id,
 		httpClient:         opts.httpClient,
@@ -254,9 +252,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	if err != nil {
 		return Client{}, err
 	}
-
 	client.authParams = authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
-
 	return client, nil
 }
 
@@ -292,7 +288,6 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	for _, option := range options {
 		option(&o)
 	}
-
 	c.authParams.Scopes = []string{resource}
 	c.logger.Log(ctx, slog.LevelInfo, "Managed Identity", slog.String("source", string(c.source)))
 
@@ -308,7 +303,6 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 			return ar, err
 		}
 	}
-
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
