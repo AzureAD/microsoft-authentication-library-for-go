@@ -74,6 +74,8 @@ const (
 
 	// AzureML
 	azureMLAPIVersion = "2017-09-01"
+	// Service Fabric
+	serviceFabricAPIVersion = "2019-07-01-preview"
 
 	// Environment Variables
 	identityEndpointEnvVar              = "IDENTITY_ENDPOINT"
@@ -264,6 +266,13 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		retryPolicyEnabled: opts.retryPolicyEnabled,
 		source:             source,
 	}
+	if source == ServiceFabric {
+		h, err := NewHTTPClientWithCustomCertValidation()
+		if err != nil {
+			return Client{}, err
+		}
+		client.httpClient = h
+	}
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return Client{}, err
@@ -334,6 +343,8 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		return c.acquireTokenForIMDS(ctx, resource)
 	case AppService:
 		return c.acquireTokenForAppService(ctx, resource)
+	case ServiceFabric:
+		return c.acquireTokenForServiceFabric(ctx, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
@@ -381,6 +392,18 @@ func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (ba
 		return base.AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(c.authParams, tokenResponse)
+}
+
+func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string) (base.AuthResult, error) {
+	req, err := createServiceFabricAuthRequest(ctx, c.miType, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := c.getTokenForRequest(req)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
