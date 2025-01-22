@@ -252,8 +252,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, err
 	}
 	client.authParams = authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
-
-	println("SOURCE: " + string(source))
 	return client, nil
 }
 
@@ -289,7 +287,6 @@ func GetSource() (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
-	println("in Acquire Token")
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 	for _, option := range options {
@@ -300,12 +297,10 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
 		storageTokenResponse, err := cacheManager.Read(ctx, c.authParams)
-		println("storage response " + storageTokenResponse.AccessToken.ClientID)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
-		println("auth result from storage response " + ar.AccessToken)
 		if err == nil {
 			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
@@ -342,11 +337,9 @@ func acquireTokenForCloudShell(ctx context.Context, client Client, resource stri
 		return base.AuthResult{}, err
 	}
 	tokenResponse, err := client.getTokenForRequest(req)
-	println("acquire token after response")
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	println("acquire token about to return")
 	return authResultFromToken(client.authParams, tokenResponse)
 }
 
@@ -385,15 +378,12 @@ func acquireTokenForAzureArc(ctx context.Context, client Client, resource string
 
 func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
 	if cacheManager == nil {
-		println("nil cache manager")
 		return base.AuthResult{}, errors.New("cache instance is nil")
 	}
 	account, err := cacheManager.Write(authParams, token)
-	println("after cache manager write:, " + account.Name)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	println("authResultfromToken - about to do NewAuthResult")
 	ar, err := base.NewAuthResult(token, account)
 	if err != nil {
 		return base.AuthResult{}, err
@@ -468,10 +458,28 @@ func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRespons
 	r := accesstokens.TokenResponse{}
 	var resp *http.Response
 	var err error
+	var cloudScope string
+	var reqBodyBytes []byte
+
+	if req.Body != nil {
+		reqBodyBytes, _ = io.ReadAll(req.Body)
+	}
+
+	req.Body = io.NopCloser(bytes.NewBuffer(reqBodyBytes))
+
+	if c.source == CloudShell {
+		err = req.ParseForm()
+		if err != nil {
+			return r, err
+		}
+
+		cloudScope = req.FormValue(resourceQueryParameterName)
+		req.Body = io.NopCloser(bytes.NewBuffer(reqBodyBytes))
+	}
+
 	if c.retryPolicyEnabled {
 		resp, err = c.retry(defaultRetryCount, req)
 	} else {
-		println("getTokenForRequest going to Do()")
 		resp, err = c.httpClient.Do(req)
 	}
 	if err != nil {
@@ -505,7 +513,13 @@ func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRespons
 	}
 
 	err = json.Unmarshal(responseBytes, &r)
-	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, req.URL.Query().Get(resourceQueryParameterName))
+
+	if c.source == CloudShell {
+		r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, cloudScope)
+	} else {
+		r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, req.URL.Query().Get(resourceQueryParameterName))
+	}
+
 	return r, err
 }
 

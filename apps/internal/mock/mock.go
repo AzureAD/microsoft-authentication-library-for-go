@@ -74,7 +74,6 @@ func (c *Client) AppendResponse(opts ...responseOption) {
 }
 
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
-	println("In Mock Do")
 	if len(c.resp) == 0 {
 		panic(fmt.Sprintf(`no response for "%s"`, req.URL.String()))
 	}
