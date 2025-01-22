@@ -556,8 +556,8 @@ func TestCloudShellOnlySystemAssignedSupported(t *testing.T) {
 			t.Fatal(`expected error: CloudShell not supported error"`)
 
 		}
-		if err.Error() != "Cloud Shell doesn't support user-assigned managed identities at runtime" {
-			t.Fatalf(`expected error: Cloud Shell doesn't support user-assigned managed identities at runtime, got error: "%v"`, err)
+		if err.Error() != "Cloud Shell doesn't support user-assigned managed identities" {
+			t.Fatalf(`expected error: Cloud Shell doesn't support user-assigned managed identities, got error: "%v"`, err)
 		}
 
 	}
