@@ -309,7 +309,7 @@ func TestADFSTokenCaching(t *testing.T) {
 			AccessToken:   "at1",
 			RefreshToken:  "rt",
 			TokenType:     "Bearer",
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExpiresOn:     time.Now().Add(time.Hour),
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			IDToken: accesstokens.IDToken{
