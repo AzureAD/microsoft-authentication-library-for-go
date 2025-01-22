@@ -6,7 +6,7 @@ package managedidentity
 import (
 	"context"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -28,15 +28,18 @@ func createCloudShellAuthRequest(ctx context.Context, resource string) (*http.Re
 	data.Set(resourceQueryParameterName, resource)
 	println("createCloudShellAuthRequest - dataGet " + data.Get(resourceQueryParameterName))
 	msiDataEncoded := data.Encode()
-	body := ioutil.NopCloser(strings.NewReader(msiDataEncoded))
+	body := io.NopCloser(strings.NewReader(msiDataEncoded))
 
+	println("createCloudShellAuthRequest - did body stuff " + resource)
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, msiEndpointParsed.String(), body)
 	if err != nil {
+		println("createCloudShellAuthRequest - error for request " + resource)
 		return nil, fmt.Errorf("error creating http request %s", err)
 	}
 
 	req.Header.Set(metaHTTPHeaderName, "true")
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
+	println("createCloudShellAuthRequest - end of func " + resource)
 	return req, nil
 }
