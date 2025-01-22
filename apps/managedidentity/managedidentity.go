@@ -316,7 +316,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
 	case CloudShell:
-		return acquireTokenForCloudShell(ctx, c, resource)
+		return c.acquireTokenForCloudShell(ctx, c, resource)
 	case DefaultToIMDS:
 		return c.acquireTokenForIMDS(ctx, resource)
 	case AppService:
@@ -340,18 +340,6 @@ func (c Client) acquireTokenForAppService(ctx context.Context, resource string) 
 
 func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, c.miType, resource)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	tokenResponse, err := c.getTokenForRequest(req)
-	if err != nil {
-		return base.AuthResult{}, err
-	}
-	return authResultFromToken(c.authParams, tokenResponse)
-}
-
-func acquireTokenForCloudShell(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
-	req, err := createCloudShellAuthRequest(ctx, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
