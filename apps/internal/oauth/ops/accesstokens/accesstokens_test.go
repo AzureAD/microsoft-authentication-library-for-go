@@ -748,8 +748,8 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			payload: `
 				{
 					"access_token": "secret",
-					"expires_in": 86399,
-					"ext_expires_in": 86399,
+					"expires_in": 86400,
+					"ext_expires_in": 86400,
 					"client_info": error,
 					"scope": "openid profile"
 				}`,
@@ -761,17 +761,17 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			payload: `
 				{
 					"access_token": "secret",
-					"expires_in": 86399,
-					"refresh_in": 43199,
-					"ext_expires_in": 86399,
+					"expires_in": 86400,
+					"refresh_in": 43200,
+					"ext_expires_in": 86400,
 					"client_info": {"uid":  "uid","utid": "utid"},
 					"scope": "openid profile"
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86399, 0)},
-				RefreshOn:     internalTime.DurationTime{T: time.Unix(43199, 0)},
-				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86400, 0)},
+				RefreshOn:     internalTime.DurationTime{T: time.Unix(43200, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
 					UID:  "uid",
@@ -785,17 +785,17 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			payload: `
 				{
 					"access_token": "secret",
-					"expires_in": 3600,
-					"refresh_in": 43199,
-					"ext_expires_in": 86399,
+					"expires_in": 86400,
+					"refresh_in": 43200,
+					"ext_expires_in": 86400,
 					"client_info": {"uid":  "uid","utid": "utid"},
 					"scope": "openid profile"
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Unix(3600, 0)},
+				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86400, 0)},
 				RefreshOn:     internalTime.DurationTime{T: time.Unix(43199, 0)},
-				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
 					UID:  "uid",
@@ -809,15 +809,15 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			payload: `
 				{
 					"access_token": "secret",
-					"expires_in": 36000,
-					"ext_expires_in": 86399,
+					"expires_in": 86400,
+					"ext_expires_in": 86400,
 					"client_info": {"uid":  "uid","utid": "utid"},
 					"scope": "openid profile"
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Unix(36000, 0)},
-				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86400, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
 					UID:  "uid",

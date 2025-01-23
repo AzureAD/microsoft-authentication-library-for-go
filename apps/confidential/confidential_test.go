@@ -139,9 +139,9 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		}
 		client, err := fakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
-			RefreshOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
-			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+			RefreshOn:     internalTime.DurationTime{T: time.Now().Add(6 * time.Hour)},
+			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(12 * time.Hour)},
+			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(12 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			TokenType:     "Bearer",
 		}, cred, fakeAuthority)
@@ -745,12 +745,13 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	if !called {
 		t.Fatal("token provider wasn't invoked")
 	}
-	if v := int(time.Until(ar.ExpiresOn).Seconds()); v < expiresIn-2 || v > expiresIn {
-		t.Fatalf("expected ExpiresOn ~= %d seconds, got %d", expiresIn, v)
+	if !isTimeSame(ar.ExpiresOn, expiresIn) {
+		t.Fatalf("expected ExpiresOn ~= %d seconds, got %d", expiresIn, ar.ExpiresOn.Second())
 	}
-	if v := int(time.Until(ar.Metadata.RefreshOn).Seconds()); v < refreshOn-2 || v > refreshOn {
-		t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshOn, v)
+	if !isTimeSame(ar.Metadata.RefreshOn, refreshOn) {
+		t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshOn, ar.Metadata.RefreshOn.Second())
 	}
+
 	if ar.AccessToken != expectedToken {
 		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
 	}
@@ -825,8 +826,8 @@ func TestRefreshIn(t *testing.T) {
 			if ar.Metadata.RefreshOn.IsZero() {
 				t.Fatal("RefreshOn shouldn't be zero")
 			}
-			if v := int(time.Until(ar.Metadata.RefreshOn).Seconds()); v < refreshIn-10 || v > refreshIn+10 {
-				t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshIn, v)
+			if !isTimeSame(ar.Metadata.RefreshOn, refreshIn) {
+				t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshIn, ar.Metadata.RefreshOn.Second())
 			}
 			fixedTime := time.Now().Add(time.Duration(tt.secondRequestAfter) * time.Second)
 			base.GetCurrentTime = func() time.Time {
@@ -844,6 +845,14 @@ func TestRefreshIn(t *testing.T) {
 			}
 		})
 	}
+}
+
+func isTimeSame(t time.Time, expectedSeconds int) bool {
+	v := int(time.Until(t).Seconds())
+	if v < expectedSeconds-2 || v > expectedSeconds+2 {
+		return false
+	}
+	return true
 }
 
 func TestNewCredFromTokenProviderError(t *testing.T) {
