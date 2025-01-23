@@ -85,14 +85,6 @@ const (
 	defaultRetryCount = 3
 )
 
-// sourceRestrictions is a list of sources that have some form of restriction, such as user-assigned managed identities not being supported, or being supported through different means
-var sourceRestrictions = map[Source]string{
-	ServiceFabric: "Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi",
-	AzureArc:      "Azure Arc doesn't support user-assigned managed identities",
-	AzureML:       "Azure ML supports specifying a user-assigned managed identity by client ID only",
-	CloudShell:    "Cloud Shell doesn't support user-assigned managed identities",
-}
-
 var retryCodesForIMDS = []int{
 	http.StatusNotFound,                      // 404
 	http.StatusGone,                          // 410
@@ -215,13 +207,30 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, err
 	}
 
-	// If source has some restriction, return an error, as some sources allow System Assigned managed identities, but not user assigned, or user assigned through another method.
-	if errMsg, unsupported := sourceRestrictions[source]; unsupported {
+	// Check for user-assigned restrictions based on the source
+	switch source {
+	case "AzureArc":
 		switch id.(type) {
 		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
-			return Client{}, errors.New(errMsg)
+			return Client{}, errors.New("Azure Arc doesn't support user-assigned managed identities")
+		}
+	case "AzureML":
+		switch id.(type) {
+		case UserAssignedObjectID, UserAssignedResourceID:
+			return Client{}, errors.New("Azure ML supports specifying a user-assigned managed identity by client ID only")
+		}
+	case "CloudShell":
+		switch id.(type) {
+		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+			return Client{}, errors.New("Cloud Shell doesn't support user-assigned managed identities")
+		}
+	case "ServiceFabric":
+		switch id.(type) {
+		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+			return Client{}, errors.New("Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi")
 		}
 	}
+
 	opts := ClientOptions{
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
@@ -323,6 +332,24 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		return c.acquireTokenForAppService(ctx, resource)
 	default:
 		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
+	}
+}
+
+func checkForUserAssignedRestrictions(source Source, id ID) error {
+	switch source {
+	case ServiceFabric:
+		return errors.New("Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi")
+	case AzureArc:
+		return errors.New("Azure Arc doesn't support user-assigned managed identities")
+	case AzureML:
+		if _, ok := id.(UserAssignedClientID); ok {
+			return nil
+		}
+		return errors.New("Azure ML supports specifying a user-assigned managed identity by client ID only")
+	case CloudShell:
+		return errors.New("Cloud Shell doesn't support user-assigned managed identities")
+	default:
+		return nil
 	}
 }
 
