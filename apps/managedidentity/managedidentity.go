@@ -331,7 +331,7 @@ func (c Client) acquireTokenForAppService(ctx context.Context, resource string) 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := c.getTokenForRequest(req)
+	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -343,7 +343,7 @@ func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := c.getTokenForRequest(req)
+	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -355,7 +355,7 @@ func (c Client) acquireTokenForCloudShell(ctx context.Context, client Client, re
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := client.getTokenForRequest(req)
+	tokenResponse, err := client.getTokenForRequest(req, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -388,7 +388,7 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (b
 		return base.AuthResult{}, err
 	}
 
-	tokenResponse, err := c.getTokenForRequest(secondRequest)
+	tokenResponse, err := c.getTokenForRequest(secondRequest, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -473,28 +473,10 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	return resp, err
 }
 
-func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
+func (c Client) getTokenForRequest(req *http.Request, resource string) (accesstokens.TokenResponse, error) {
 	r := accesstokens.TokenResponse{}
 	var resp *http.Response
 	var err error
-	var cloudScope string
-	var reqBodyBytes []byte
-
-	if req.Body != nil {
-		reqBodyBytes, _ = io.ReadAll(req.Body)
-	}
-
-	req.Body = io.NopCloser(bytes.NewBuffer(reqBodyBytes))
-
-	if c.source == CloudShell {
-		err = req.ParseForm()
-		if err != nil {
-			return r, err
-		}
-
-		cloudScope = req.FormValue(resourceQueryParameterName)
-		req.Body = io.NopCloser(bytes.NewBuffer(reqBodyBytes))
-	}
 
 	if c.retryPolicyEnabled {
 		resp, err = c.retry(defaultRetryCount, req)
@@ -532,12 +514,7 @@ func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRespons
 	}
 
 	err = json.Unmarshal(responseBytes, &r)
-
-	if c.source == CloudShell {
-		r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, cloudScope)
-	} else {
-		r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, req.URL.Query().Get(resourceQueryParameterName))
-	}
+	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, resource)
 
 	return r, err
 }

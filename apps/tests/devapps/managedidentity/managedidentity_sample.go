@@ -9,7 +9,6 @@ import (
 )
 
 func runIMDSSystemAssigned() {
-
 	miSystemAssigned, err := mi.New(mi.SystemAssigned())
 	if err != nil {
 		log.Fatal(err)
@@ -18,8 +17,13 @@ func runIMDSSystemAssigned() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("token expire at : ", result.ExpiresOn)
+	fmt.Println("token expire at : ", result.ExpiresOn, "metadata: ", result.Metadata.TokenSource)
 
+	result2, err := miSystemAssigned.AcquireToken(context.TODO(), "https://management.azure.com")
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Println("token expire at : ", result2.ExpiresOn, "metadata: ", result2.Metadata.TokenSource)
 }
 
 func runIMDSUserAssigned() {
