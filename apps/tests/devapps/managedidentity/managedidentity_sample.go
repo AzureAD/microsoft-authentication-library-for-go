@@ -17,13 +17,7 @@ func runIMDSSystemAssigned() {
 	if err != nil {
 		log.Fatal(err)
 	}
-	fmt.Println("token expire at : ", result.ExpiresOn, "metadata: ", result.Metadata.TokenSource)
-
-	result2, err := miSystemAssigned.AcquireToken(context.TODO(), "https://management.azure.com")
-	if err != nil {
-		log.Fatal(err)
-	}
-	fmt.Println("token expire at : ", result2.ExpiresOn, "metadata: ", result2.Metadata.TokenSource)
+	fmt.Println("token expire at : ", result.ExpiresOn)
 }
 
 func runIMDSUserAssigned() {
