@@ -335,24 +335,6 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	}
 }
 
-func checkForUserAssignedRestrictions(source Source, id ID) error {
-	switch source {
-	case ServiceFabric:
-		return errors.New("Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi")
-	case AzureArc:
-		return errors.New("Azure Arc doesn't support user-assigned managed identities")
-	case AzureML:
-		if _, ok := id.(UserAssignedClientID); ok {
-			return nil
-		}
-		return errors.New("Azure ML supports specifying a user-assigned managed identity by client ID only")
-	case CloudShell:
-		return errors.New("Cloud Shell doesn't support user-assigned managed identities")
-	default:
-		return nil
-	}
-}
-
 func (c Client) acquireTokenForAppService(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createAppServiceAuthRequest(ctx, c.miType, resource)
 	if err != nil {
