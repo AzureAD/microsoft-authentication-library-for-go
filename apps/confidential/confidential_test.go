@@ -257,7 +257,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token, "", "rt", "", 3600, 7400)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token, "", "rt", "", 86400, 43200)))
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
 	if err != nil {
@@ -280,7 +280,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	}
 	// new assertion should trigger new token request
 	token2 := token + "2"
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token2, "", "rt", "", 3600, 360)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token2, "", "rt", "", 86400, 43200)))
 	tk, err = client.AcquireTokenOnBehalfOf(context.Background(), assertion+"2", tokenScope)
 	if err != nil {
 		t.Fatal(err)
