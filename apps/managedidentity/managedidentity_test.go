@@ -465,6 +465,115 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 }
 
+func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
+	testCases := []struct {
+		resource string
+		miType   ID
+	}{
+		{resource: resource, miType: SystemAssigned()},
+		{resource: resourceDefaultSuffix, miType: SystemAssigned()},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(string(CloudShell)+"-"+testCase.miType.value(), func(t *testing.T) {
+			setEnvVars(t, CloudShell)
+			endpoint := os.Getenv(msiEndpointEnvVar)
+
+			var localUrl *url.URL
+			var resourceString string
+			mockClient := mock.Client{}
+			responseBody, err := getSuccessfulResponse(resource, false)
+			if err != nil {
+				t.Fatalf(errorFormingJsonResponse, err.Error())
+			}
+
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				localUrl = r.URL
+				err = r.ParseForm()
+				if err != nil {
+					t.Fatal(err)
+				}
+				resourceString = string(r.FormValue(resourceQueryParameterName))
+			}))
+
+			// resetting cache
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
+
+			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
+				t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
+			}
+
+			if resourceString != strings.TrimSuffix(testCase.resource, "/.default") {
+				t.Fatal("suffix /.default was not removed.")
+			}
+
+			if result.Metadata.TokenSource != base.IdentityProvider {
+				t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
+			}
+
+			if result.AccessToken != token {
+				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+			}
+
+			result, err = client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			result, err = secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+		})
+	}
+}
+
+func TestCloudShellOnlySystemAssignedSupported(t *testing.T) {
+	setEnvVars(t, CloudShell)
+	mockClient := mock.Client{}
+
+	for _, testCase := range []ID{
+		UserAssignedClientID("client"),
+		UserAssignedObjectID("ObjectId"),
+		UserAssignedResourceID("resourceid")} {
+		_, err := New(testCase, WithHTTPClient(&mockClient))
+		fmt.Printf("%v", err)
+		if err == nil {
+			t.Fatal(`expected error: CloudShell not supported error"`)
+
+		}
+		if err.Error() != "Cloud Shell doesn't support user-assigned managed identities" {
+			t.Fatalf(`expected error: Cloud Shell doesn't support user-assigned managed identities, got error: "%v"`, err)
+		}
+
+	}
+}
+
 func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	setEnvVars(t, AppService)
 	testCases := []struct {
