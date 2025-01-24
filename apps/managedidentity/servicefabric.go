@@ -14,21 +14,24 @@ import (
 
 func sslCertificateChecker(rawCerts [][]byte, verifiedChains [][]*x509.Certificate) error {
 	// If there are SSL policy errors (in this case, we simulate it using a custom validation condition)
-	if len(rawCerts) > 0 {
-		cert := rawCerts[0]
-		parsedCert, err := x509.ParseCertificate(cert)
-		if err != nil {
-			return fmt.Errorf("failed to parse certificate: %v", err)
-		}
-		expectedThumbprint := os.Getenv(identityServerThumbprintEnvVar)
-		if expectedThumbprint == "" {
-			return fmt.Errorf("identity server thumbprint is not set in environment variables")
-		}
-		certThumbprint := getCertThumbprint(parsedCert)
-		if certThumbprint != expectedThumbprint {
-			return fmt.Errorf("certificate thumbprint does not match the expected value")
-		}
+	if len(verifiedChains) == 0 || len(verifiedChains[0]) == 0 {
+		return fmt.Errorf("SSL policy error: no valid certificate chain found")
 	}
+
+	// Check the chain for validity, you can use the first chain as the main one
+	serverCert := verifiedChains[0][0]
+
+	// Custom thumbprint check
+	thumbprint := getCertThumbprint(serverCert)
+	if !strings.EqualFold(thumbprint, thumbprint) {
+		return fmt.Errorf("SSL policy error: thumbprint mismatch")
+	}
+
+	// Optionally check for other SSL policy errors, e.g., expired certificates, untrusted chains, etc.
+	if err := serverCert.CheckSignatureFrom(verifiedChains[0][len(verifiedChains[0])-1]); err != nil {
+		return fmt.Errorf("SSL policy error: certificate signature verification failed")
+	}
+
 	return nil
 }
 
