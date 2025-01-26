@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 //go:build go1.21
 
 package slog
@@ -18,7 +21,6 @@ const (
 
 type Handler = slog.Handler
 type Logger = slog.Logger
-type NopHandler struct{}
 
 func (*NopHandler) Enabled(context.Context, slog.Level) bool  { return false }
 func (*NopHandler) Handle(context.Context, slog.Record) error { return nil }

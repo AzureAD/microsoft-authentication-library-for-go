@@ -663,7 +663,6 @@ func TestAzureArcOnlySystemAssignedSupported(t *testing.T) {
 
 	}
 }
-
 func TestAzureArcPlatformSupported(t *testing.T) {
 	setEnvVars(t, AzureArc)
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)

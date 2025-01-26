@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
 //go:build !go1.21
 
 package slog
@@ -16,8 +19,6 @@ const (
 	LevelWarn
 	LevelError
 )
-
-type NopHandler struct{}
 
 // These are all noop functions for go < 1.21
 func New(h any) *Logger {
