@@ -9,6 +9,7 @@ import (
 )
 
 func runIMDSSystemAssigned() {
+
 	miSystemAssigned, err := mi.New(mi.SystemAssigned())
 	if err != nil {
 		log.Fatal(err)
@@ -18,6 +19,7 @@ func runIMDSSystemAssigned() {
 		log.Fatal(err)
 	}
 	fmt.Println("token expire at : ", result.ExpiresOn)
+
 }
 
 func runIMDSUserAssigned() {

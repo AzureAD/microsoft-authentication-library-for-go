@@ -208,22 +208,22 @@ func New(id ID, options ...ClientOption) (Client, error) {
 
 	// Check for user-assigned restrictions based on the source
 	switch source {
-	case "AzureArc":
+	case AzureArc:
 		switch id.(type) {
 		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
 			return Client{}, errors.New("Azure Arc doesn't support user-assigned managed identities")
 		}
-	case "AzureML":
+	case AzureML:
 		switch id.(type) {
 		case UserAssignedObjectID, UserAssignedResourceID:
 			return Client{}, errors.New("Azure ML supports specifying a user-assigned managed identity by client ID only")
 		}
-	case "CloudShell":
+	case CloudShell:
 		switch id.(type) {
 		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
 			return Client{}, errors.New("Cloud Shell doesn't support user-assigned managed identities")
 		}
-	case "ServiceFabric":
+	case ServiceFabric:
 		switch id.(type) {
 		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
 			return Client{}, errors.New("Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi")
@@ -324,7 +324,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
 	case CloudShell:
-		return c.acquireTokenForCloudShell(ctx, c, resource)
+		return c.acquireTokenForCloudShell(ctx, resource)
 	case DefaultToIMDS:
 		return c.acquireTokenForIMDS(ctx, resource)
 	case AppService:
@@ -358,16 +358,16 @@ func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForCloudShell(ctx context.Context, client Client, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForCloudShell(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createCloudShellAuthRequest(ctx, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := client.getTokenForRequest(req, resource)
+	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	return authResultFromToken(client.authParams, tokenResponse)
+	return authResultFromToken(c.authParams, tokenResponse)
 }
 
 func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (base.AuthResult, error) {
