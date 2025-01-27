@@ -14,8 +14,8 @@ func WithLogger(l *slog.Logger) ClientOption {
 }
 
 // WithPiiLogging enables logging of Personally Identifiable Information (PII) within the SDK
-func WithPiiLogging(enablePiiLogging bool) ClientOption {
+func WithPiiLogging() ClientOption {
 	return func(o *ClientOptions) {
-		o.piiLogging = enablePiiLogging
+		o.piiLogging = true
 	}
 }
