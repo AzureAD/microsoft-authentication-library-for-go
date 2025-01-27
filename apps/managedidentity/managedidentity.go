@@ -202,7 +202,7 @@ func WithRetryPolicyDisabled() ClientOption {
 // Client to be used to acquire tokens for managed identity.
 // ID: [SystemAssigned], [UserAssignedClientID], [UserAssignedResourceID], [UserAssignedObjectID]
 //
-// Options: [WithHTTPClient], [WithLogger]
+// Options: [WithHTTPClient], [WithLogger], [WithPiiLogging]
 func New(id ID, options ...ClientOption) (Client, error) {
 	opts := ClientOptions{
 		httpClient:         shared.DefaultClient,
