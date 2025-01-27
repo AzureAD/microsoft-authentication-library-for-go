@@ -160,12 +160,14 @@ type Client struct {
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	logger             *slog.Logger
+	piiLogging         bool
 }
 
 type ClientOptions struct {
 	httpClient         ops.HTTPClient
 	retryPolicyEnabled bool
 	logger             *slog.Logger
+	piiLogging         bool
 }
 
 type AcquireTokenOptions struct {
@@ -206,6 +208,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
 		logger:             slog.New(&slog.NopHandler{}),
+		piiLogging:         false,
 	}
 	for _, option := range options {
 		option(&opts)
@@ -246,6 +249,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		retryPolicyEnabled: opts.retryPolicyEnabled,
 		source:             source,
 		logger:             opts.logger,
+		piiLogging:         opts.piiLogging,
 	}
 
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
