@@ -241,8 +241,7 @@ func TestRegionAutoEnable_SpecifiedEmptyRegion_EnvRegion(t *testing.T) {
 			tenant := "tenant"
 			mockClient := mock.Client{}
 
-			var client Client
-			client, err = New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(test.region))
+			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(test.region))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -251,10 +250,8 @@ func TestRegionAutoEnable_SpecifiedEmptyRegion_EnvRegion(t *testing.T) {
 				if client.base.AuthParams.AuthorityInfo.Region != "" {
 					t.Fatalf("wanted %q, got %q", test.resultRegion, client.base.AuthParams.AuthorityInfo.Region)
 				}
-			} else {
-				if client.base.AuthParams.AuthorityInfo.Region != test.resultRegion {
-					t.Fatalf("wanted %q, got %q", test.resultRegion, client.base.AuthParams.AuthorityInfo.Region)
-				}
+			} else if client.base.AuthParams.AuthorityInfo.Region != test.resultRegion {
+				t.Fatalf("wanted %q, got %q", test.resultRegion, client.base.AuthParams.AuthorityInfo.Region)
 			}
 		})
 	}
