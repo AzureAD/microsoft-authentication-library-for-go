@@ -466,7 +466,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 }
 
 func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
-	resource := "https://resource"
+	resource := "https://resource/.default"
 	miType := SystemAssigned()
 
 	setEnvVars(t, CloudShell)
@@ -551,7 +551,8 @@ func TestCloudShellOnlySystemAssignedSupported(t *testing.T) {
 	for _, testCase := range []ID{
 		UserAssignedClientID("client"),
 		UserAssignedObjectID("ObjectId"),
-		UserAssignedResourceID("resourceid")} {
+		UserAssignedResourceID("resourceid"),
+	} {
 		_, err := New(testCase, WithHTTPClient(&mockClient))
 		if err == nil {
 			t.Fatal(`expected error: CloudShell not supported error"`)
