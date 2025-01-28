@@ -73,7 +73,7 @@ const (
 	appServiceAPIVersion = "2019-08-01"
 
 	// AzureML
-	azureMLAPIVersion = "2017-09-01"
+	azureMlApiVersion = "2017-09-01"
 
 	// Environment Variables
 	identityEndpointEnvVar              = "IDENTITY_ENDPOINT"

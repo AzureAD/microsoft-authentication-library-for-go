@@ -11,16 +11,15 @@ import (
 )
 
 func createAzureMLAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
-	msiSecretEndpoint := os.Getenv(msiSecretEnvVar)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiSecretEndpoint, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, os.Getenv(msiEndpointEnvVar), nil)
 	if err != nil {
 		return nil, err
 	}
 
-	req.Header.Set("secret", os.Getenv(msiSecretEndpoint))
+	req.Header.Set("secret", os.Getenv(msiSecretEnvVar))
 	q := req.URL.Query()
-	q.Set("api-version", azureMLAPIVersion)
-	q.Set("resource", resource)
+	q.Set(apiVersionQueryParameterName, azureMlApiVersion)
+	q.Set(resourceQueryParameterName, resource)
 
 	switch t := id.(type) {
 	case UserAssignedClientID:
