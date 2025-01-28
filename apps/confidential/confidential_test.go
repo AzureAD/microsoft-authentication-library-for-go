@@ -235,13 +235,8 @@ func TestRegionAutoEnable_SpecifiedEmptyRegion_EnvRegion(t *testing.T) {
 				t.Fatal(err)
 			}
 			if test.envRegion != "" {
-				err = os.Setenv("MSAL_FORCE_REGION", test.envRegion)
-				if err != nil {
-					t.Fatal(err)
-				}
-				defer os.Unsetenv("MSAL_FORCE_REGION")
+				t.Setenv("MSAL_FORCE_REGION", test.envRegion)
 			}
-
 			lmo := "login.microsoftonline.com"
 			tenant := "tenant"
 			mockClient := mock.Client{}
@@ -256,7 +251,6 @@ func TestRegionAutoEnable_SpecifiedEmptyRegion_EnvRegion(t *testing.T) {
 				if client.base.AuthParams.AuthorityInfo.Region != "" {
 					t.Fatalf("wanted %q, got %q", test.resultRegion, client.base.AuthParams.AuthorityInfo.Region)
 				}
-				return
 			} else {
 				if client.base.AuthParams.AuthorityInfo.Region != test.resultRegion {
 					t.Fatalf("wanted %q, got %q", test.resultRegion, client.base.AuthParams.AuthorityInfo.Region)
