@@ -38,6 +38,7 @@ const (
 	AzureArc      Source = "AzureArc"
 	ServiceFabric Source = "ServiceFabric"
 	CloudShell    Source = "CloudShell"
+	AzureML       Source = "AzureML"
 	AppService    Source = "AppService"
 
 	// General request query parameter names
@@ -78,6 +79,7 @@ const (
 	azurePodIdentityAuthorityHostEnvVar = "AZURE_POD_IDENTITY_AUTHORITY_HOST"
 	imdsEndVar                          = "IMDS_ENDPOINT"
 	msiEndpointEnvVar                   = "MSI_ENDPOINT"
+	msiSecretEnvVar                     = "MSI_SECRET"
 	identityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
 
 	defaultRetryCount = 3
@@ -204,6 +206,35 @@ func WithRetryPolicyDisabled() ClientOption {
 //
 // Options: [WithHTTPClient], [WithLogger]
 func New(id ID, options ...ClientOption) (Client, error) {
+	source, err := GetSource()
+	if err != nil {
+		return Client{}, err
+	}
+
+	// Check for user-assigned restrictions based on the source
+	switch source {
+	case AzureArc:
+		switch id.(type) {
+		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+			return Client{}, errors.New("Azure Arc doesn't support user-assigned managed identities")
+		}
+	case AzureML:
+		switch id.(type) {
+		case UserAssignedObjectID, UserAssignedResourceID:
+			return Client{}, errors.New("Azure ML supports specifying a user-assigned managed identity by client ID only")
+		}
+	case CloudShell:
+		switch id.(type) {
+		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+			return Client{}, errors.New("Cloud Shell doesn't support user-assigned managed identities")
+		}
+	case ServiceFabric:
+		switch id.(type) {
+		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
+			return Client{}, errors.New("Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi")
+		}
+	}
+
 	opts := ClientOptions{
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
@@ -212,18 +243,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	}
 	for _, option := range options {
 		option(&opts)
-	}
-	source, err := GetSource()
-	if err != nil {
-		return Client{}, err
-	}
-
-	// If source is Azure Arc return an error, as Azure Arc allow accepts System Assigned managed identities.
-	if source == AzureArc {
-		switch id.(type) {
-		case UserAssignedClientID, UserAssignedResourceID, UserAssignedObjectID:
-			return Client{}, errors.New("azure Arc doesn't support user assigned managed identities")
-		}
 	}
 
 	switch t := id.(type) {
@@ -266,6 +285,7 @@ func GetSource() (Source, error) {
 	identityHeader := os.Getenv(identityHeaderEnvVar)
 	identityServerThumbprint := os.Getenv(identityServerThumbprintEnvVar)
 	msiEndpoint := os.Getenv(msiEndpointEnvVar)
+	msiSecret := os.Getenv(msiSecretEnvVar)
 	imdsEndpoint := os.Getenv(imdsEndVar)
 
 	if identityEndpoint != "" && identityHeader != "" {
@@ -274,7 +294,11 @@ func GetSource() (Source, error) {
 		}
 		return AppService, nil
 	} else if msiEndpoint != "" {
-		return CloudShell, nil
+		if msiSecret != "" {
+			return AzureML, nil
+		} else {
+			return CloudShell, nil
+		}
 	} else if isAzureArcEnvironment(identityEndpoint, imdsEndpoint) {
 		return AzureArc, nil
 	}
@@ -310,6 +334,8 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
+	case CloudShell:
+		return c.acquireTokenForCloudShell(ctx, resource)
 	case DefaultToIMDS:
 		return c.acquireTokenForIMDS(ctx, resource)
 	case AppService:
@@ -324,7 +350,7 @@ func (c Client) acquireTokenForAppService(ctx context.Context, resource string) 
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := c.getTokenForRequest(req)
+	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -336,7 +362,19 @@ func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := c.getTokenForRequest(req)
+	tokenResponse, err := c.getTokenForRequest(req, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(c.authParams, tokenResponse)
+}
+
+func (c Client) acquireTokenForCloudShell(ctx context.Context, resource string) (base.AuthResult, error) {
+	req, err := createCloudShellAuthRequest(ctx, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -369,7 +407,7 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (b
 		return base.AuthResult{}, err
 	}
 
-	tokenResponse, err := c.getTokenForRequest(secondRequest)
+	tokenResponse, err := c.getTokenForRequest(secondRequest, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
@@ -434,10 +472,11 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	return resp, err
 }
 
-func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenResponse, error) {
+func (c Client) getTokenForRequest(req *http.Request, resource string) (accesstokens.TokenResponse, error) {
 	r := accesstokens.TokenResponse{}
 	var resp *http.Response
 	var err error
+
 	if c.retryPolicyEnabled {
 		resp, err = c.retry(defaultRetryCount, req)
 	} else {
@@ -474,7 +513,8 @@ func (c Client) getTokenForRequest(req *http.Request) (accesstokens.TokenRespons
 	}
 
 	err = json.Unmarshal(responseBytes, &r)
-	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, req.URL.Query().Get(resourceQueryParameterName))
+	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, resource)
+
 	return r, err
 }
 

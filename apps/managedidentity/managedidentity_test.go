@@ -114,7 +114,7 @@ func setEnvVars(t *testing.T, source Source) {
 		t.Setenv(identityEndpointEnvVar, "http://127.0.0.1:41564/msi/token")
 		t.Setenv(identityHeaderEnvVar, "secret")
 	case CloudShell:
-		t.Setenv(msiEndpointEnvVar, "http://localhost:40342/metadata/identity/oauth2/token")
+		t.Setenv(msiEndpointEnvVar, "http://localhost:50342/oauth2/token")
 	case ServiceFabric:
 		t.Setenv(identityEndpointEnvVar, "http://localhost:40342/metadata/identity/oauth2/token")
 		t.Setenv(identityHeaderEnvVar, "secret")
@@ -141,7 +141,7 @@ func setCustomAzureArcFilePath(t *testing.T, path string) {
 }
 
 func TestSource(t *testing.T) {
-	for _, testCase := range []Source{AzureArc, DefaultToIMDS} {
+	for _, testCase := range []Source{AzureArc, DefaultToIMDS, CloudShell} {
 		t.Run(string(testCase), func(t *testing.T) {
 			setEnvVars(t, testCase)
 			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
@@ -465,6 +465,106 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 }
 
+func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
+	resource := "https://resource/.default"
+	miType := SystemAssigned()
+
+	setEnvVars(t, CloudShell)
+	endpoint := os.Getenv(msiEndpointEnvVar)
+
+	var localUrl *url.URL
+	var resourceString string
+	mockClient := mock.Client{}
+	responseBody, err := getSuccessfulResponse(resource, false)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+		localUrl = r.URL
+		err = r.ParseForm()
+		if err != nil {
+			t.Fatal(err)
+		}
+		resourceString = r.FormValue(resourceQueryParameterName)
+	}))
+
+	// Resetting cache
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	client, err := New(miType, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
+		t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
+	}
+
+	if resourceString != strings.TrimSuffix(resource, "/.default") {
+		t.Fatal("suffix /.default was not removed.")
+	}
+
+	if result.Metadata.TokenSource != base.IdentityProvider {
+		t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
+	}
+
+	if result.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+	}
+
+	result, err = client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Metadata.TokenSource != base.Cache {
+		t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
+	}
+
+	secondFakeClient, err := New(miType, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	result, err = secondFakeClient.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if result.Metadata.TokenSource != base.Cache {
+		t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
+	}
+}
+
+func TestCloudShellOnlySystemAssignedSupported(t *testing.T) {
+	setEnvVars(t, CloudShell)
+	mockClient := mock.Client{}
+
+	for _, testCase := range []ID{
+		UserAssignedClientID("client"),
+		UserAssignedObjectID("ObjectId"),
+		UserAssignedResourceID("resourceid"),
+	} {
+		_, err := New(testCase, WithHTTPClient(&mockClient))
+		if err == nil {
+			t.Fatal(`expected error: CloudShell not supported error"`)
+
+		}
+		if err.Error() != "Cloud Shell doesn't support user-assigned managed identities" {
+			t.Fatalf("expected error: Cloud Shell doesn't support user-assigned managed identities, got error: %q", err)
+		}
+
+	}
+}
+
 func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	setEnvVars(t, AppService)
 	testCases := []struct {
@@ -654,15 +754,16 @@ func TestAzureArcOnlySystemAssignedSupported(t *testing.T) {
 		UserAssignedResourceID("resourceid")} {
 		_, err := New(testCase, WithHTTPClient(&mockClient))
 		if err == nil {
-			t.Fatal(`expected error: azure arc not supported error"`)
+			t.Fatal(`expected error: AzureArc not supported error"`)
 
 		}
-		if err.Error() != "azure Arc doesn't support user assigned managed identities" {
-			t.Fatalf(`expected error: azure arc not supported error, got error: "%v"`, err)
+		if err.Error() != "Azure Arc doesn't support user-assigned managed identities" {
+			t.Fatalf("expected error: AzureArc not supported error, got error: %q", err)
 		}
 
 	}
 }
+
 func TestAzureArcPlatformSupported(t *testing.T) {
 	setEnvVars(t, AzureArc)
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
