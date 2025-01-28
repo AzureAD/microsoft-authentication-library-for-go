@@ -42,7 +42,7 @@ func TestClientLogging(t *testing.T) {
 	bufferHandler := &BufferHandler{}
 	customLogger := slog.New(bufferHandler)
 
-	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient), WithLogger(customLogger))
+	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient), WithLogger(customLogger, false))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +65,7 @@ func TestClientLogging_CustomHandler(t *testing.T) {
 	filteredBufferHandler := &BufferHandler{level: slog.LevelDebug}
 	customLogger := slog.New(filteredBufferHandler)
 
-	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient), WithLogger(customLogger))
+	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient), WithLogger(customLogger, false))
 	if err != nil {
 		t.Fatal(err)
 	}

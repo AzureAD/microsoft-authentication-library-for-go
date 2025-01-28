@@ -22,4 +22,4 @@ time=2024-12-19T01:25:58.730Z level=INFO msg="Default log message." module=main
    - You can pass key-value pairs using `slog.String`, `slog.Int`, etc., for structured logging, which is handled by `slog` in Go 1.21 and later.
 5rf
 3. **PII Logging (Personally Identifiable Information)**
-   - You can allow for Pii logging in the SDK by using WithPiiLogging() when creating the client. This defaults to false
+   - You can allow for Pii logging in the SDK by passing 'true' for piiLogging when using WithLogger() when creating the client. This defaults to false
