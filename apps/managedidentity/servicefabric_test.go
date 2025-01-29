@@ -11,6 +11,8 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
 // Mock certificate type that embeds x509.Certificate
@@ -181,4 +183,23 @@ func TestSslCertificateChecker_FailedSignatureVerification(t *testing.T) {
 // Helper function to check if a string contains a substring (alternative to assert.Contains)
 func containsString(str, substr string) bool {
 	return strings.Contains(str, substr)
+}
+
+func TestAzureMLErrors(t *testing.T) {
+	setEnvVars(t, ServiceFabric)
+	mockClient := mock.Client{}
+
+	for _, testCase := range []ID{
+		UserAssignedObjectID("ObjectId"),
+		UserAssignedResourceID("resourceid"),
+		UserAssignedClientID("ClientID")} {
+		_, err := New(testCase, WithHTTPClient(&mockClient))
+		if err == nil {
+			t.Fatal("expected error: Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi")
+		}
+		if err.Error() != "Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi" {
+			t.Fatalf("expected error: Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi, got error: %q", err)
+		}
+
+	}
 }

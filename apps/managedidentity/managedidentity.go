@@ -241,6 +241,13 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
 	}
+	if source == ServiceFabric {
+		h, err := NewHTTPClientWithCustomCertValidation()
+		if err != nil {
+			return Client{}, err
+		}
+		opts.httpClient = h
+	}
 	for _, option := range options {
 		option(&opts)
 	}
@@ -267,13 +274,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient:         opts.httpClient,
 		retryPolicyEnabled: opts.retryPolicyEnabled,
 		source:             source,
-	}
-	if source == ServiceFabric {
-		h, err := NewHTTPClientWithCustomCertValidation()
-		if err != nil {
-			return Client{}, err
-		}
-		client.httpClient = h
 	}
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {

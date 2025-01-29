@@ -124,13 +124,13 @@ func createServiceFabricAuthRequest(ctx context.Context, id ID, resource string)
 	q := req.URL.Query()
 	q.Set("api-version", serviceFabricAPIVersion)
 	q.Set("resource", resource)
-	switch t := id.(type) {
+	switch id.(type) {
 	case UserAssignedClientID:
-		q.Set(miQueryParameterClientId, string(t))
+		return nil, fmt.Errorf("unsupported type %T", id)
 	case UserAssignedResourceID:
-		q.Set(miQueryParameterResourceId, string(t))
+		return nil, fmt.Errorf("unsupported type %T", id)
 	case UserAssignedObjectID:
-		q.Set(miQueryParameterObjectId, string(t))
+		return nil, fmt.Errorf("unsupported type %T", id)
 	case systemAssignedValue:
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)
