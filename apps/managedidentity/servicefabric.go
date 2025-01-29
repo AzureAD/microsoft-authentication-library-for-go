@@ -12,7 +12,7 @@ import (
 	"strings"
 )
 
-func customVerifyCertificate(cert *x509.Certificate, verifiedChain [][]*x509.Certificate, customPool *x509.CertPool) error {
+func miVerifyCertificate(cert *x509.Certificate, verifiedChain [][]*x509.Certificate, customPool *x509.CertPool) error {
 	// If no verified chain is provided, return an error
 	if len(verifiedChain) == 0 || len(verifiedChain[0]) == 0 {
 		return fmt.Errorf("SSL policy error: no valid certificate chain found")
@@ -66,7 +66,7 @@ func sslCertificateChecker(rawCerts [][]byte, verifiedChains [][]*x509.Certifica
 	}
 
 	// Use the custom certificate verification method
-	err := customVerifyCertificate(serverCert, verifiedChains, customPool)
+	err := miVerifyCertificate(serverCert, verifiedChains, customPool)
 	if err != nil {
 		return fmt.Errorf("SSL policy error: certificate verification failed: %v", err)
 	}
@@ -113,7 +113,7 @@ func NewHTTPClientWithCustomCertValidation() (*http.Client, error) {
 	return client, nil
 }
 
-func createServiceFabricAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+func createServiceFabricAuthRequest(ctx context.Context, resource string) (*http.Request, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
 	if err != nil {
@@ -124,17 +124,6 @@ func createServiceFabricAuthRequest(ctx context.Context, id ID, resource string)
 	q := req.URL.Query()
 	q.Set("api-version", serviceFabricAPIVersion)
 	q.Set("resource", resource)
-	switch id.(type) {
-	case UserAssignedClientID:
-		return nil, fmt.Errorf("unsupported type %T", id)
-	case UserAssignedResourceID:
-		return nil, fmt.Errorf("unsupported type %T", id)
-	case UserAssignedObjectID:
-		return nil, fmt.Errorf("unsupported type %T", id)
-	case systemAssignedValue:
-	default:
-		return nil, fmt.Errorf("unsupported type %T", id)
-	}
 	req.URL.RawQuery = q.Encode()
 	return req, nil
 }

@@ -401,7 +401,7 @@ func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (ba
 }
 
 func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string) (base.AuthResult, error) {
-	req, err := createServiceFabricAuthRequest(ctx, c.miType, resource)
+	req, err := createServiceFabricAuthRequest(ctx, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
