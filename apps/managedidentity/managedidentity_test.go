@@ -698,15 +698,13 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			println(localUrl.String())
-			println(endpoint)
 			if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
 				t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
 			}
 			query := localUrl.Query()
 
-			if query.Get(apiVersionQueryParameterName) != azureMlApiVersion {
-				t.Fatalf("api-version not on %s got %s", azureMlApiVersion, query.Get(apiVersionQueryParameterName))
+			if query.Get(apiVersionQueryParameterName) != azureMLAPIVersion {
+				t.Fatalf("api-version not on %s got %s", azureMLAPIVersion, query.Get(apiVersionQueryParameterName))
 			}
 			if r := query.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
 				t.Fatal("suffix /.default was not removed.")

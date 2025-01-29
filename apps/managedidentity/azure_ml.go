@@ -18,16 +18,12 @@ func createAzureMLAuthRequest(ctx context.Context, id ID, resource string) (*htt
 
 	req.Header.Set("secret", os.Getenv(msiSecretEnvVar))
 	q := req.URL.Query()
-	q.Set(apiVersionQueryParameterName, azureMlApiVersion)
+	q.Set(apiVersionQueryParameterName, azureMLAPIVersion)
 	q.Set(resourceQueryParameterName, resource)
 
 	switch t := id.(type) {
 	case UserAssignedClientID:
-		q.Set(miQueryParameterClientId, string(t))
-	case UserAssignedResourceID:
-		return nil, fmt.Errorf("unsupported type %T", id)
-	case UserAssignedObjectID:
-		return nil, fmt.Errorf("unsupported type %T", id)
+		q.Set("clientid", string(t))
 	case systemAssignedValue:
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)
