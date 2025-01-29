@@ -257,7 +257,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token, "", "rt", "", 86400, 43200)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token, "", "rt", "", 86400, 43200)))
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
 	if err != nil {
@@ -280,7 +280,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	}
 	// new assertion should trigger new token request
 	token2 := token + "2"
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBodyWithRefreshIn(token2, "", "rt", "", 86400, 43200)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token2, "", "rt", "", 86400, 43200)))
 	tk, err = client.AcquireTokenOnBehalfOf(context.Background(), assertion+"2", tokenScope)
 	if err != nil {
 		t.Fatal(err)
@@ -434,7 +434,7 @@ func TestAcquireTokenSilentTenants(t *testing.T) {
 			t.Fatal("silent auth should fail because the cache is empty")
 		}
 		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(tenant, "", "", "", 3600)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(tenant, "", "", "", 3600, 0)))
 		if _, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant)); err != nil {
 			t.Fatal(err)
 		}
@@ -800,7 +800,7 @@ func TestRefreshIn(t *testing.T) {
 			)
 			if tt.shouldReturnError {
 				mockClient.AppendResponse(
-					mock.WithCode(http.StatusBadGateway),
+					mock.WithHTTPStatusCode(http.StatusBadGateway),
 					mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
 				)
 			} else {
@@ -870,6 +870,33 @@ func TestNewCredFromTokenProviderError(t *testing.T) {
 	}
 }
 
+func TestTokenProviderResultForRefreshIn(t *testing.T) {
+	accessToken, claims, tenant := "at", "claims", "tenant"
+	cred := NewCredFromTokenProvider(func(ctx context.Context, tpp TokenProviderParameters) (TokenProviderResult, error) {
+		if tpp.Claims != claims {
+			t.Fatalf(`unexpected claims "%s"`, tpp.Claims)
+		}
+		if tpp.TenantID != tenant {
+			t.Fatalf(`unexpected tenant "%s"`, tpp.TenantID)
+		}
+		return TokenProviderResult{AccessToken: accessToken, ExpiresInSeconds: 36000, RefreshInSeconds: 18000}, nil
+	})
+	client, err := New(fakeAuthority, fakeClientID, cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithClaims(claims), WithTenantID(tenant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isTimeSame(ar.Metadata.RefreshOn, 18000) {
+		t.Fatal("RefreshOn should be 18000 seconds from now")
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
+	}
+}
+
 func TestTokenProviderOptions(t *testing.T) {
 	accessToken, claims, tenant := "at", "claims", "tenant"
 	cred := NewCredFromTokenProvider(func(ctx context.Context, tpp TokenProviderParameters) (TokenProviderResult, error) {
@@ -919,7 +946,7 @@ func TestWithCache(t *testing.T) {
 	authorityA, authorityB := fmt.Sprintf(authorityFmt, lmo, tenantA), fmt.Sprintf(authorityFmt, lmo, tenantB)
 	mockClient := mock.Client{}
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenantA, authorityA), "", "", 3600)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenantA, authorityA), "", "", 3600, 0)))
 
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
@@ -1030,7 +1057,7 @@ func TestWithClaims(t *testing.T) {
 				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
 				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600)),
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0)),
 					mock.WithCallback(func(r *http.Request) {
 						if err := r.ParseForm(); err != nil {
 							t.Fatal(err)
@@ -1094,7 +1121,7 @@ func TestWithClaims(t *testing.T) {
 						// client has cached access and refresh tokens. When given claims, it should redeem a refresh token for a new access token.
 						newToken := "new-access-token"
 						mockClient.AppendResponse(
-							mock.WithBody(mock.GetAccessTokenBody(newToken, idToken, "", clientInfo, 3600)),
+							mock.WithBody(mock.GetAccessTokenBody(newToken, idToken, "", clientInfo, 3600, 0)),
 							mock.WithCallback(func(r *http.Request) {
 								if err := r.ParseForm(); err != nil {
 									t.Fatal(err)
@@ -1154,7 +1181,7 @@ func TestWithTenantID(t *testing.T) {
 				mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
 				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600, 0)),
 					mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 				)
 				client, err := New(test.authority, fakeClientID, cred, WithHTTPClient(&mockClient))
@@ -1211,7 +1238,7 @@ func TestWithTenantID(t *testing.T) {
 				otherTenant := "not-" + test.tenant
 				if method == "obo" {
 					mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
-					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)))
+					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600, 0)))
 					if _, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(otherTenant)); err != nil {
 						t.Fatal(err)
 					}
@@ -1249,7 +1276,7 @@ func TestWithTenantID(t *testing.T) {
 			mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)), mock.WithCallback(checkForWrongTenant))
 			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)), mock.WithCallback(checkForWrongTenant))
 			mockClient.AppendResponse(
-				mock.WithBody(mock.GetAccessTokenBody(accessToken, "", "", "", 3600)),
+				mock.WithBody(mock.GetAccessTokenBody(accessToken, "", "", "", 3600, 0)),
 				mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 			)
 			if i == 0 {
@@ -1305,7 +1332,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 				}
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(stackurl, tenant)))
 				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600, 0)),
 				)
 				client, err := New(authority, fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
 				if err != nil {
@@ -1367,7 +1394,7 @@ func TestWithPortAuthority(t *testing.T) {
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
 	mockClient.AppendResponse(
-		mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600)),
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600, 0)),
 		mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 	)
 	client, err := New(authority, fakeClientID, cred, WithHTTPClient(&mockClient))

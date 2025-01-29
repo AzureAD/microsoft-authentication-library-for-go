@@ -91,7 +91,7 @@ func populateTokenCache(client base.Client, params testParams) execTime {
 					AccessToken:   accessToken,
 					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 					GrantedScopes: accesstokens.Scopes{Slice: []string{strconv.FormatInt(int64(i), 10)}},
-				}, true)
+				})
 				if err != nil {
 					panic(err)
 				}

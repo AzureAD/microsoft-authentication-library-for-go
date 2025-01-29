@@ -46,7 +46,7 @@ func WithCallback(callback func(*http.Request)) responseOption {
 	})
 }
 
-func WithCode(code int) responseOption {
+func WithHTTPStatusCode(code int) responseOption {
 	return respOpt(func(r *response) {
 		r.code = code
 	})
@@ -82,11 +82,19 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // CloseIdleConnections implements the comm.HTTPClient interface
 func (*Client) CloseIdleConnections() {}
 
-func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, expiresIn int) []byte {
+func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, expiresIn, refreshIn int) []byte {
+	// Start building the body with the common fields
 	body := fmt.Sprintf(
 		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
 		accessToken, expiresIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix(),
 	)
+
+	// Conditionally add the "refresh_in" field if refreshIn is provided
+	if refreshIn > 0 {
+		body += fmt.Sprintf(`, "refresh_in": %d`, refreshIn)
+	}
+
+	// Add the optional fields if they are provided
 	if clientInfo != "" {
 		body += fmt.Sprintf(`, "client_info": "%s"`, clientInfo)
 	}
@@ -96,27 +104,13 @@ func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, e
 	if refreshToken != "" {
 		body += fmt.Sprintf(`, "refresh_token": "%s"`, refreshToken)
 	}
+
+	// Close the JSON string
 	body += "}"
+
 	return []byte(body)
 }
 
-func GetAccessTokenBodyWithRefreshIn(accessToken, idToken, refreshToken, clientInfo string, expiresIn int, refreshIn int) []byte {
-	body := fmt.Sprintf(
-		`{"access_token": "%s","expires_in": %d,"refresh_in":%d ,"expires_on": %d,"token_type": "Bearer"`,
-		accessToken, expiresIn, refreshIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix(),
-	)
-	if clientInfo != "" {
-		body += fmt.Sprintf(`, "client_info": "%s"`, clientInfo)
-	}
-	if idToken != "" {
-		body += fmt.Sprintf(`, "id_token": "%s"`, idToken)
-	}
-	if refreshToken != "" {
-		body += fmt.Sprintf(`, "refresh_token": "%s"`, refreshToken)
-	}
-	body += "}"
-	return []byte(body)
-}
 func GetIDToken(tenant, issuer string) string {
 	now := time.Now().Unix()
 	payload := []byte(fmt.Sprintf(`{"aud": "%s","exp": %d,"iat": %d,"iss": "%s","tid": "%s"}`, tenant, now+3600, now, issuer, tenant))

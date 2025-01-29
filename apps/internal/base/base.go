@@ -352,7 +352,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		if err == nil {
 			if shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
 				if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
-					return b.AuthResultFromToken(ctx, authParams, tr, true)
+					return b.AuthResultFromToken(ctx, authParams, tr)
 				} else if callErr, ok := er.(*errors.CallErr); ok {
 					// Check if the error is of type CallErr and matches the relevant status codes
 					switch callErr.Resp.StatusCode {
@@ -385,7 +385,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if err != nil {
 		return ar, err
 	}
-	return b.AuthResultFromToken(ctx, authParams, token, true)
+	return b.AuthResultFromToken(ctx, authParams, token)
 }
 
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
@@ -414,7 +414,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 		return AuthResult{}, err
 	}
 
-	return b.AuthResultFromToken(ctx, authParams, token, true)
+	return b.AuthResultFromToken(ctx, authParams, token)
 }
 
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
@@ -443,15 +443,12 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 	authParams.UserAssertion = onBehalfOfParams.UserAssertion
 	token, err := b.Token.OnBehalfOf(ctx, authParams, onBehalfOfParams.Credential)
 	if err == nil {
-		ar, err = b.AuthResultFromToken(ctx, authParams, token, true)
+		ar, err = b.AuthResultFromToken(ctx, authParams, token)
 	}
 	return ar, err
 }
 
-func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthResult, error) {
-	if !cacheWrite {
-		return NewAuthResult(token, shared.Account{})
-	}
+func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse) (AuthResult, error) {
 	var m manager = b.manager
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		m = b.pmanager
