@@ -36,7 +36,7 @@ func runIMDSUserAssigned() {
 }
 
 func main() {
-	exampleType := "1"
+	exampleType := "2"
 
 	if exampleType == "1" {
 		runIMDSSystemAssigned()
