@@ -5,7 +5,6 @@ package managedidentity
 
 import (
 	"context"
-	"fmt"
 	"net/http"
 	"os"
 )
@@ -20,13 +19,9 @@ func createAzureMLAuthRequest(ctx context.Context, id ID, resource string) (*htt
 	q := req.URL.Query()
 	q.Set(apiVersionQueryParameterName, azureMLAPIVersion)
 	q.Set(resourceQueryParameterName, resource)
-
-	switch t := id.(type) {
-	case UserAssignedClientID:
-		q.Set("clientid", string(t))
-	case systemAssignedValue:
-	default:
-		return nil, fmt.Errorf("unsupported type %T", id)
+	q.Set("clientid", os.Getenv("DEFAULT_IDENTITY_CLIENT_ID"))
+	if cid, ok := id.(UserAssignedClientID); ok {
+		q.Set("clientid", string(cid))
 	}
 	req.URL.RawQuery = q.Encode()
 	return req, nil

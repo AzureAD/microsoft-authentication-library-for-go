@@ -710,10 +710,19 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 				t.Fatal("suffix /.default was not removed.")
 			}
 			if result.Metadata.TokenSource != base.IdentityProvider {
-				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
+				t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+			}
+			if testCase.miType.value() == "clientId" {
+				if query.Get("clientid") != "clientId" {
+					t.Fatalf("expected clientid to be set to clientId, got %s", query.Get("clientid"))
+				}
+			} else {
+				if query.Get("clientid") != os.Getenv("DEFAULT_IDENTITY_CLIENT_ID") {
+					t.Fatalf("expected clientid to be set to default identity client id, got %s", query.Get("clientid"))
+				}
 			}
 			result, err = client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
