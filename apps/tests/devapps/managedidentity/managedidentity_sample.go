@@ -23,7 +23,7 @@ func runIMDSSystemAssigned() {
 }
 
 func runIMDSUserAssigned() {
-	miUserAssigned, err := mi.New(mi.UserAssignedClientID("fd0f0256-9a81-412b-a8dc-d745498b580b"))
+	miUserAssigned, err := mi.New(mi.UserAssignedClientID("YOUR_CLIENT_ID"))
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -36,7 +36,7 @@ func runIMDSUserAssigned() {
 }
 
 func main() {
-	exampleType := "2"
+	exampleType := "1"
 
 	if exampleType == "1" {
 		runIMDSSystemAssigned()
