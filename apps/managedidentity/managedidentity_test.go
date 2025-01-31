@@ -661,14 +661,20 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 }
 
 func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
+	// Set the DEFAULT_IDENTITY_CLIENT_ID environment variable
+	defaultClientID := "A"
+	os.Setenv("DEFAULT_IDENTITY_CLIENT_ID", defaultClientID)
+	defer os.Unsetenv("DEFAULT_IDENTITY_CLIENT_ID")
+
 	setEnvVars(t, AzureML)
 	testCases := []struct {
-		resource string
-		miType   ID
+		resource         string
+		miType           ID
+		expectedClientID string
 	}{
-		{resource: resource, miType: SystemAssigned()},
-		{resource: resourceDefaultSuffix, miType: SystemAssigned()},
-		{resource: resource, miType: UserAssignedClientID("clientId")},
+		{resource: resource, miType: SystemAssigned(), expectedClientID: defaultClientID},
+		{resource: resourceDefaultSuffix, miType: SystemAssigned(), expectedClientID: defaultClientID},
+		{resource: resource, miType: UserAssignedClientID("B"), expectedClientID: "B"},
 	}
 	for _, testCase := range testCases {
 		t.Run(string(AzureML)+"-"+testCase.miType.value(), func(t *testing.T) {
@@ -715,15 +721,10 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if result.AccessToken != token {
 				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
 			}
-			if testCase.miType.value() == "clientId" {
-				if query.Get("clientid") != "clientId" {
-					t.Fatalf("expected clientid to be set to clientId, got %s", query.Get("clientid"))
-				}
-			} else {
-				if query.Get("clientid") != os.Getenv("DEFAULT_IDENTITY_CLIENT_ID") {
-					t.Fatalf("expected clientid to be set to default identity client id, got %s", query.Get("clientid"))
-				}
+			if query.Get("clientid") != testCase.expectedClientID {
+				t.Fatalf("expected clientid to be set to %s, got %s", testCase.expectedClientID, query.Get("clientid"))
 			}
+
 			result, err = client.AcquireToken(context.Background(), testCase.resource)
 			if err != nil {
 				t.Fatal(err)
