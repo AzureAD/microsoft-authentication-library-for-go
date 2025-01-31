@@ -119,6 +119,9 @@ func setEnvVars(t *testing.T, source Source) {
 		t.Setenv(identityEndpointEnvVar, "http://localhost:40342/metadata/identity/oauth2/token")
 		t.Setenv(identityHeaderEnvVar, "secret")
 		t.Setenv(identityServerThumbprintEnvVar, "thumbprint")
+	case AzureML:
+		t.Setenv(msiEndpointEnvVar, "http://127.0.0.1:41564/msi/token")
+		t.Setenv(msiSecretEnvVar, "redacted")
 	}
 }
 
@@ -141,7 +144,7 @@ func setCustomAzureArcFilePath(t *testing.T, path string) {
 }
 
 func TestSource(t *testing.T) {
-	for _, testCase := range []Source{AzureArc, DefaultToIMDS, CloudShell} {
+	for _, testCase := range []Source{AzureArc, DefaultToIMDS, CloudShell, AzureML, AppService} {
 		t.Run(string(testCase), func(t *testing.T) {
 			setEnvVars(t, testCase)
 			setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
@@ -657,6 +660,111 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 		})
 	}
 }
+
+func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
+	defaultClientID := "A"
+	t.Setenv("DEFAULT_IDENTITY_CLIENT_ID", defaultClientID)
+
+	setEnvVars(t, AzureML)
+	testCases := []struct {
+		resource         string
+		miType           ID
+		expectedClientID string
+	}{
+		{resource: resource, miType: SystemAssigned(), expectedClientID: defaultClientID},
+		{resource: resourceDefaultSuffix, miType: SystemAssigned(), expectedClientID: defaultClientID},
+		{resource: resource, miType: UserAssignedClientID("B"), expectedClientID: "B"},
+	}
+	for _, testCase := range testCases {
+		t.Run(string(AzureML)+"-"+testCase.miType.value(), func(t *testing.T) {
+			endpoint := "http://127.0.0.1:41564/msi/token"
+
+			var localUrl *url.URL
+			mockClient := mock.Client{}
+			responseBody, err := getSuccessfulResponse(resource, false)
+			if err != nil {
+				t.Fatalf(errorFormingJsonResponse, err.Error())
+			}
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK),
+				mock.WithBody(responseBody),
+				mock.WithCallback(func(r *http.Request) {
+					localUrl = r.URL
+				}))
+			// resetting cache
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
+
+			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err := client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
+				t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
+			}
+			query := localUrl.Query()
+
+			if query.Get(apiVersionQueryParameterName) != azureMLAPIVersion {
+				t.Fatalf("api-version not on %s got %s", azureMLAPIVersion, query.Get(apiVersionQueryParameterName))
+			}
+			if r := query.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
+				t.Fatal("suffix /.default was not removed.")
+			}
+			if result.Metadata.TokenSource != base.IdentityProvider {
+				t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
+			}
+			if result.AccessToken != token {
+				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+			}
+			if actual := query.Get("clientid"); actual != testCase.expectedClientID {
+				t.Fatalf("expected clientid to be set to %s, got %s", testCase.expectedClientID, actual)
+			}
+
+			result, err = client.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			result, err = secondFakeClient.AcquireToken(context.Background(), testCase.resource)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != base.Cache {
+				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
+			}
+		})
+	}
+}
+
+func TestAzureMLErrors(t *testing.T) {
+	setEnvVars(t, AzureML)
+	mockClient := mock.Client{}
+
+	for _, testCase := range []ID{
+		UserAssignedObjectID("ObjectId"),
+		UserAssignedResourceID("resourceid")} {
+		_, err := New(testCase, WithHTTPClient(&mockClient))
+		if err == nil {
+			t.Fatal("expected error: Azure ML supports specifying a user-assigned managed identity by client ID only")
+
+		}
+		if err.Error() != "Azure ML supports specifying a user-assigned managed identity by client ID only" {
+			t.Fatalf("expected error: Azure ML supports specifying a user-assigned managed identity by client ID only, got error: %q", err)
+		}
+
+	}
+}
+
 func TestAzureArc(t *testing.T) {
 	testCaseFilePath := filepath.Join(t.TempDir(), azureConnectedMachine)
 

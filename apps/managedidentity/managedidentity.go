@@ -72,6 +72,9 @@ const (
 	// App Service
 	appServiceAPIVersion = "2019-08-01"
 
+	// AzureML
+	azureMLAPIVersion = "2017-09-01"
+
 	// Environment Variables
 	identityEndpointEnvVar              = "IDENTITY_ENDPOINT"
 	identityHeaderEnvVar                = "IDENTITY_HEADER"
@@ -323,6 +326,8 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
+	case AzureML:
+		return c.acquireTokenForAzureML(ctx, resource)
 	case CloudShell:
 		return c.acquireTokenForCloudShell(ctx, resource)
 	case DefaultToIMDS:
@@ -360,6 +365,18 @@ func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.
 
 func (c Client) acquireTokenForCloudShell(ctx context.Context, resource string) (base.AuthResult, error) {
 	req, err := createCloudShellAuthRequest(ctx, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	tokenResponse, err := c.getTokenForRequest(req, resource)
+	if err != nil {
+		return base.AuthResult{}, err
+	}
+	return authResultFromToken(c.authParams, tokenResponse)
+}
+
+func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (base.AuthResult, error) {
+	req, err := createAzureMLAuthRequest(ctx, c.miType, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
