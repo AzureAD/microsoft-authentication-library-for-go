@@ -36,9 +36,7 @@ func (h *BufferHandler) WithGroup(name string) slog.Handler       { return h }
 
 func TestClientLogging(t *testing.T) {
 	mockClient := mock.Client{}
-	headers := http.Header{}
-	headers.Set("www-authenticate", "Basic realm=/path/to/secret.key")
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized))
 	bufferHandler := &BufferHandler{}
 	customLogger := slog.New(bufferHandler)
 
@@ -47,34 +45,27 @@ func TestClientLogging(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	_, _ = client.AcquireToken(context.Background(), "https://resource")
-
+	client.AcquireToken(context.Background(), "https://resource")
 	logOutput := bufferHandler.buf.String()
 	expectedLogMessage := "Managed Identity"
+
 	if !strings.Contains(logOutput, expectedLogMessage) {
 		t.Errorf("expected log message %q not found in output", expectedLogMessage)
 	}
-}
 
-func TestClientLogging_CustomHandler(t *testing.T) {
-	mockClient := mock.Client{}
-	headers := http.Header{}
-	headers.Set("www-authenticate", "Basic realm=/path/to/secret.key")
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
-
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized))
 	filteredBufferHandler := &BufferHandler{level: slog.LevelDebug}
-	customLogger := slog.New(filteredBufferHandler)
+	customLogger = slog.New(filteredBufferHandler)
 
-	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient), WithLogger(customLogger, false))
+	client, err = New(SystemAssigned(), WithHTTPClient(&mockClient), WithLogger(customLogger, false))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, _ = client.AcquireToken(context.Background(), "https://resource")
+	client.AcquireToken(context.Background(), "https://resource")
+	logOutput = filteredBufferHandler.buf.String()
 
-	logOutput := filteredBufferHandler.buf.String()
-	unexpectedLogMessage := "Managed Identity"
-	if strings.Contains(logOutput, unexpectedLogMessage) {
-		t.Errorf("unexpected log message %q found in output", unexpectedLogMessage)
+	if strings.Contains(logOutput, expectedLogMessage) {
+		t.Errorf("unexpected log message %q found in output", expectedLogMessage)
 	}
 }

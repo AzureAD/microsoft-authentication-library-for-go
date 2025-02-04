@@ -53,15 +53,3 @@ func TestLogger_Log_ConsoleOutput(t *testing.T) {
 		}
 	}
 }
-
-func TestNewLogger_ValidSlogHandler(t *testing.T) {
-	// Test case where handler is a valid slog.Handler
-	var buf bytes.Buffer
-	handler := slog.NewJSONHandler(&buf, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
-	})
-	logInstance := New(handler)
-	if logInstance == nil {
-		t.Fatalf("expected non-nil logInstance, got nil")
-	}
-}

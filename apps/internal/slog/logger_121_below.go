@@ -9,9 +9,10 @@ import (
 	"context"
 )
 
-type Level int
-
+type NopHandler struct{}
 type Logger struct{}
+
+type Level int
 
 const (
 	LevelDebug Level = iota

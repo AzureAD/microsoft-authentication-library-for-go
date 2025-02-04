@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -132,6 +133,7 @@ var getAzureArcHimdsFilePath = func(platform string) string {
 		return ""
 	}
 }
+var logOnce sync.Once
 
 type Source string
 
@@ -271,6 +273,10 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		piiLogging:         opts.piiLogging,
 	}
 
+	logOnce.Do(func() {
+		client.logger.Log(context.Background(), slog.LevelInfo, "Managed Identity", slog.String("source", string(client.source)))
+	})
+
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return Client{}, err
@@ -317,7 +323,6 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		option(&o)
 	}
 	c.authParams.Scopes = []string{resource}
-	c.logger.Log(ctx, slog.LevelInfo, "Managed Identity", slog.String("source", string(c.source)))
 
 	// when claims are empty, we get token from the cache, otherwise acquire a new one
 	if o.claims == "" {
