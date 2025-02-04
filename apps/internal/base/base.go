@@ -84,10 +84,9 @@ type AcquireTokenOnBehalfOfParameters struct {
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult struct {
-	Account     shared.Account
-	IDToken     accesstokens.IDToken
-	AccessToken string
-	//RefreshOn indicates the recommended time to request a new access token, or zero if no refresh time is suggested
+	Account        shared.Account
+	IDToken        accesstokens.IDToken
+	AccessToken    string
 	ExpiresOn      time.Time
 	GrantedScopes  []string
 	DeclinedScopes []string
@@ -353,18 +352,20 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 			if shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
 				if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
 					return b.AuthResultFromToken(ctx, authParams, tr)
-				} else if callErr, ok := er.(*errors.CallErr); ok {
-					// Check if the error is of type CallErr and matches the relevant status codes
-					switch callErr.Resp.StatusCode {
-					case http.StatusRequestTimeout, // 408
-						http.StatusTooManyRequests,     // 429
-						http.StatusInternalServerError, // 500
-						http.StatusBadGateway,          // 502
-						http.StatusServiceUnavailable,  // 503
-						http.StatusGatewayTimeout:      // 504
-					default:
-						// Handle non-retryable errors
-						return AuthResult{}, er
+				} else {
+					var callErr *errors.CallErr
+					if errors.As(er, &callErr) {
+						switch callErr.Resp.StatusCode {
+						case http.StatusRequestTimeout, // 408
+							http.StatusTooManyRequests,     // 429
+							http.StatusInternalServerError, // 500
+							http.StatusBadGateway,          // 502
+							http.StatusServiceUnavailable,  // 503
+							http.StatusGatewayTimeout:      // 504
+						default:
+							// return empty token for non handable error
+							return AuthResult{}, er
+						}
 					}
 				}
 			}

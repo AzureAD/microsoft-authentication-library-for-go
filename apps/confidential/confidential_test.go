@@ -849,10 +849,7 @@ func TestRefreshIn(t *testing.T) {
 
 func isTimeSame(t time.Time, expectedSeconds int) bool {
 	v := int(time.Until(t).Seconds())
-	if v < expectedSeconds-2 || v > expectedSeconds+2 {
-		return false
-	}
-	return true
+	return !(v < expectedSeconds-2 || v > expectedSeconds+2)
 }
 
 func TestNewCredFromTokenProviderError(t *testing.T) {
