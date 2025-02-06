@@ -241,13 +241,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
 	}
-	if source == ServiceFabric {
-		h, err := NewHTTPClientWithCustomCertValidation()
-		if err != nil {
-			return Client{}, err
-		}
-		opts.httpClient = h
-	}
+
 	for _, option := range options {
 		option(&opts)
 	}
