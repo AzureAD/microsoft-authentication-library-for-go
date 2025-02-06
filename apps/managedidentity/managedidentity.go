@@ -14,7 +14,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log/slog"
 	"net/http"
 	"net/url"
 	"os"
@@ -128,7 +127,6 @@ var getAzureArcPlatformPath = func(platform string) string {
 }
 
 var getAzureArcHimdsFilePath = func(platform string) string {
-	slog.Debug("getAzureArcHimdsFilePath", "platform", platform)
 	switch platform {
 	case "windows":
 		return filepath.Join(os.Getenv("ProgramData"), azureConnectedMachine, himdsExecutableName)
@@ -399,7 +397,7 @@ func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource strin
 	if err != nil {
 		return base.AuthResult{}, err
 	}
-	tokenResponse, err := c.getTokenForRequest(req)
+	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
 		return base.AuthResult{}, err
 	}
