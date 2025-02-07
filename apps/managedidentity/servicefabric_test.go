@@ -54,8 +54,8 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			}
 			query := localUrl.Query()
 
-			if query.Get(apiVersionQueryParameterName) != serviceFabricAPIVersion {
-				t.Fatalf("api-version not on %s got %s", serviceFabricAPIVersion, query.Get(apiVersionQueryParameterName))
+			if got := query.Get(apiVersionQueryParameterName); got != serviceFabricAPIVersion {
+				t.Fatalf("api-version not on %s got %s", serviceFabricAPIVersion, got)
 			}
 			if query.Get(resourceQueryParameterName) != strings.TrimSuffix(testCase.resource, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
