@@ -883,7 +883,6 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			for s := range ch {
 				mu.Lock() // Acquire lock before modifying expectedResponse
 				gotResponse = append(gotResponse, s)
-				println(s.Token, s.Tenant)
 				mu.Unlock() // Release lock after modifying expectedResponse
 			}
 			if reflect.DeepEqual(gotResponse, expectedResponse) {
