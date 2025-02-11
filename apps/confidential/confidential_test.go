@@ -845,8 +845,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			}),
 		)
 		for i := 0; i < 7; i++ {
-			wg.Add(1)
-			wg.Add(1)
+			wg.Add(2)
 			time.Sleep(50 * time.Millisecond)
 			go func() {
 				defer wg.Done()
