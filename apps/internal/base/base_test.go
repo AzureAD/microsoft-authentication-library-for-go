@@ -448,7 +448,7 @@ func TestAuthResultFromStorage(t *testing.T) {
 func TestShouldRefresh(t *testing.T) {
 	// Get the current time to use for comparison
 	now := time.Now()
-
+	client := fakeClient(t)
 	tests := []struct {
 		name     string
 		input    time.Time
@@ -473,7 +473,7 @@ func TestShouldRefresh(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			result := shouldRefresh(tt.input)
+			result := client.shouldRefresh(tt.input, tt.name)
 			if result != tt.expected {
 				t.Errorf("shouldRefresh(%v) = %v; expected %v", tt.input, result, tt.expected)
 			}

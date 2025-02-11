@@ -11,7 +11,6 @@ import (
 	"reflect"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
@@ -170,8 +169,8 @@ type Client struct {
 	AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
 	cacheAccessor   cache.ExportReplace
 	cacheAccessorMu *sync.RWMutex
-	canRefresh      *atomic.Value
-	refreshMu       *sync.Mutex
+	canRefresh      map[string]struct{}
+	refreshMu       *sync.RWMutex
 }
 
 // Option is an optional argument to the New constructor.
@@ -248,10 +247,9 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		cacheAccessorMu: &sync.RWMutex{},
 		manager:         storage.New(token),
 		pmanager:        storage.NewPartitionedManager(token),
-		canRefresh:      &atomic.Value{},
-		refreshMu:       &sync.Mutex{},
+		canRefresh:      make(map[string]struct{}),
+		refreshMu:       &sync.RWMutex{},
 	}
-	client.canRefresh.Store(make(map[string]struct{}))
 	for _, o := range options {
 		if err = o(&client); err != nil {
 			break
@@ -350,12 +348,16 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if err != nil {
 		return ar, err
 	}
+
+	// go routine call 100 times
 	// ignore cached access tokens when given claims
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			if b.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T, tenant) {
-				defer b.removeTenantFromCanRefresh(tenant)
+				b.refreshMu.Lock()
+				b.removeTenantFromCanRefresh(tenant)
+				defer b.refreshMu.Unlock()
 				if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
 					return b.AuthResultFromToken(ctx, authParams, tr)
 				} else {
@@ -374,6 +376,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 						}
 					}
 				}
+
 			}
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
@@ -490,37 +493,29 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 var GetCurrentTime = time.Now
 
 func (c Client) doesTenantExists(tenant string) bool {
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
-	canrefreshMap := c.canRefresh.Load().(map[string]struct{})
-	_, exists := canrefreshMap[tenant]
+	_, exists := c.canRefresh[tenant]
 	return exists
 }
 
 func (c *Client) addTenantIntoCanRefresh(tenant string) {
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
-	canrefreshMap := c.canRefresh.Load().(map[string]struct{})
-	canrefreshMap[tenant] = struct{}{}
-	c.canRefresh.Store(canrefreshMap)
+	c.canRefresh[tenant] = struct{}{}
 }
 
 func (c *Client) removeTenantFromCanRefresh(tenant string) {
-	c.refreshMu.Lock()
-	defer c.refreshMu.Unlock()
-	canrefreshMap := c.canRefresh.Load().(map[string]struct{})
-	delete(canrefreshMap, tenant)
-	c.canRefresh.Store(canrefreshMap)
+	delete(c.canRefresh, tenant)
 }
 
 // shouldRefresh returns true if the token should be refreshed.
 func (b Client) shouldRefresh(t time.Time, tId string) bool {
+	b.refreshMu.RLock()
 	if !b.doesTenantExists(tId) {
+		b.refreshMu.RUnlock()
+		b.refreshMu.Lock()
+		defer b.refreshMu.Unlock()
 		b.addTenantIntoCanRefresh(tId)
-		println("success")
 		return !t.IsZero() && t.Before(GetCurrentTime())
 	}
-	println("fail the exist")
+	b.refreshMu.RUnlock()
 	return false
 }
 

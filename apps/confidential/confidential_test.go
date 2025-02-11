@@ -17,7 +17,9 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -762,6 +764,136 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	if ar.AccessToken != expectedToken {
 		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
 	}
+}
+
+func TestRefreshInMultipleRequests(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstToken := "first token"
+	secondToken := "new token"
+	lmo := "login.microsoftonline.com"
+	refreshIn := 43200
+	expiresIn := 86400
+
+	t.Run("Test for refresh multiple request", func(t *testing.T) {
+		originalTime := base.GetCurrentTime
+		defer func() {
+			base.GetCurrentTime = originalTime
+		}()
+		// Create a mock client and append mock responses
+		mockClient := mock.Client{}
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "firstTenant")))
+		mockClient.AppendResponse(
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+		)
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "secondTenant")))
+		mockClient.AppendResponse(
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+		)
+		// Create the client instance
+		client, err := New(fmt.Sprintf(authorityFmt, lmo, "firstTenant"), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Acquire the first token for first tenant
+		ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("firstTenant"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Assert the first token is returned
+		if ar.AccessToken != firstToken {
+			t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+		}
+
+		// Acquire the first token for second tenant
+		arSecond, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("secondTenant"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Assert the first token is returned
+		if arSecond.AccessToken != firstToken {
+			t.Fatalf("wanted %q, got %q", firstToken, arSecond.AccessToken)
+		}
+
+		fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
+		base.GetCurrentTime = func() time.Time {
+			return fixedTime
+		}
+		var wg sync.WaitGroup
+		type tokenResult struct {
+			Token  string
+			Tenant string
+		}
+		ch := make(chan tokenResult, 10)
+		var mu sync.Mutex // Mutex to protect access to expectedResponse
+		expectedResponse := []tokenResult{
+			{Token: "new token", Tenant: "firstTentant"},
+			{Token: "new token", Tenant: "firstTentant"},
+			{Token: "first token", Tenant: "secondTentant"},
+			{Token: "first token", Tenant: "secondTentant"},
+			{Token: "first token", Tenant: "secondTentant"},
+			{Token: "first token", Tenant: "firstTentant"},
+			{Token: "first token", Tenant: "secondTentant"},
+			{Token: "new token", Tenant: "firstTentant"},
+			{Token: "new token", Tenant: "firstTentant"},
+			{Token: "first token", Tenant: "secondTentant"},
+		}
+		gotResponse := []tokenResult{}
+		mockClient.AppendResponse(
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
+				time.Sleep(150 * time.Millisecond)
+			}),
+		)
+		mockClient.AppendResponse(
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
+				time.Sleep(100 * time.Millisecond)
+				mu.Lock()
+				base.GetCurrentTime = originalTime
+				mu.Unlock()
+			}),
+		)
+		for i := 0; i < 5; i++ {
+			wg.Add(1)
+			wg.Add(1)
+			time.Sleep(50 * time.Millisecond)
+			go func() {
+				defer wg.Done()
+				ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				ch <- tokenResult{Token: ar.AccessToken, Tenant: "firstTentant"} // Send result to channel
+			}()
+			go func() {
+				time.Sleep(50 * time.Millisecond)
+				defer wg.Done()
+				ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				ch <- tokenResult{Token: ar.AccessToken, Tenant: "secondTentant"} // Send result to channel
+			}()
+		}
+		// Waiting for all goroutines to finish
+		go func() {
+			for s := range ch {
+				mu.Lock() // Acquire lock before modifying expectedResponse
+				gotResponse = append(gotResponse, s)
+				println(s.Token, s.Tenant)
+				mu.Unlock() // Release lock after modifying expectedResponse
+			}
+			if reflect.DeepEqual(gotResponse, expectedResponse) {
+				t.Error("gotResponse and expectedResponse are not equal")
+			}
+		}()
+		wg.Wait()
+		close(ch)
+	})
+
 }
 
 func TestRefreshIn(t *testing.T) {
