@@ -17,7 +17,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 	"sync"
 	"testing"
@@ -826,35 +825,26 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			Token  string
 			Tenant string
 		}
-		ch := make(chan tokenResult, 10)
+		tokenOneCchecker := false
+		tokenTwoCchecker := false
+
+		ch := make(chan tokenResult, 14)
 		var mu sync.Mutex // Mutex to protect access to expectedResponse
-		expectedResponse := []tokenResult{
-			{Token: "new token", Tenant: "firstTentant"},
-			{Token: "new token", Tenant: "firstTentant"},
-			{Token: "first token", Tenant: "secondTentant"},
-			{Token: "first token", Tenant: "secondTentant"},
-			{Token: "first token", Tenant: "secondTentant"},
-			{Token: "first token", Tenant: "firstTentant"},
-			{Token: "first token", Tenant: "secondTentant"},
-			{Token: "new token", Tenant: "firstTentant"},
-			{Token: "new token", Tenant: "firstTentant"},
-			{Token: "first token", Tenant: "secondTentant"},
-		}
 		gotResponse := []tokenResult{}
 		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
 				time.Sleep(150 * time.Millisecond)
 			}),
 		)
 		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
 				time.Sleep(100 * time.Millisecond)
 				mu.Lock()
 				base.GetCurrentTime = originalTime
 				mu.Unlock()
 			}),
 		)
-		for i := 0; i < 5; i++ {
+		for i := 0; i < 7; i++ {
 			wg.Add(1)
 			wg.Add(1)
 			time.Sleep(50 * time.Millisecond)
@@ -864,6 +854,13 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				if err != nil {
 					t.Error(err)
 					return
+				}
+				if ar.AccessToken == secondToken+"firstTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
+					if tokenOneCchecker {
+						t.Error("Error can only call this once")
+					} else {
+						tokenOneCchecker = true
+					}
 				}
 				ch <- tokenResult{Token: ar.AccessToken, Tenant: "firstTentant"} // Send result to channel
 			}()
@@ -875,6 +872,13 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 					t.Error(err)
 					return
 				}
+				if ar.AccessToken == secondToken+"secondTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
+					if tokenTwoCchecker {
+						t.Error("Error can only call this once")
+					} else {
+						tokenTwoCchecker = true
+					}
+				}
 				ch <- tokenResult{Token: ar.AccessToken, Tenant: "secondTentant"} // Send result to channel
 			}()
 		}
@@ -885,8 +889,8 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				gotResponse = append(gotResponse, s)
 				mu.Unlock() // Release lock after modifying expectedResponse
 			}
-			if reflect.DeepEqual(gotResponse, expectedResponse) {
-				t.Error("gotResponse and expectedResponse are not equal")
+			if !tokenOneCchecker && !tokenTwoCchecker {
+				t.Error("Error should be called at least once")
 			}
 		}()
 		wg.Wait()
