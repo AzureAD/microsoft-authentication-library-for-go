@@ -825,8 +825,8 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			Token  string
 			Tenant string
 		}
-		tokenOneCchecker := false
-		tokenTwoCchecker := false
+		firstTenantChecker := false
+		secondTenantChecker := false
 
 		ch := make(chan tokenResult, 14)
 		var mu sync.Mutex // Mutex to protect access to expectedResponse
@@ -855,10 +855,10 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 					return
 				}
 				if ar.AccessToken == secondToken+"firstTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-					if tokenOneCchecker {
+					if firstTenantChecker {
 						t.Error("Error can only call this once")
 					} else {
-						tokenOneCchecker = true
+						firstTenantChecker = true
 					}
 				}
 				ch <- tokenResult{Token: ar.AccessToken, Tenant: "firstTentant"} // Send result to channel
@@ -872,10 +872,10 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 					return
 				}
 				if ar.AccessToken == secondToken+"secondTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-					if tokenTwoCchecker {
+					if secondTenantChecker {
 						t.Error("Error can only call this once")
 					} else {
-						tokenTwoCchecker = true
+						secondTenantChecker = true
 					}
 				}
 				ch <- tokenResult{Token: ar.AccessToken, Tenant: "secondTentant"} // Send result to channel
@@ -888,7 +888,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				gotResponse = append(gotResponse, s)
 				mu.Unlock() // Release lock after modifying expectedResponse
 			}
-			if !tokenOneCchecker && !tokenTwoCchecker {
+			if !firstTenantChecker && !secondTenantChecker {
 				t.Error("Error should be called at least once")
 			}
 		}()
