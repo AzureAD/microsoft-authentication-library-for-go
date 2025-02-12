@@ -273,10 +273,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		piiLogging:         opts.piiLogging,
 	}
 
-	logOnce.Do(func() {
-		client.logger.Log(context.Background(), slog.LevelInfo, "Managed Identity", slog.String("source", string(client.source)))
-	})
-
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return Client{}, err
@@ -317,6 +313,10 @@ func GetSource() (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	logOnce.Do(func() {
+		c.logger.Log(context.Background(), slog.LevelInfo, "Managed Identity", slog.String("source", string(c.source)))
+	})
+
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 	for _, option := range options {
