@@ -167,16 +167,11 @@ type Client struct {
 	retryPolicyEnabled bool
 }
 
-type ClientOptions struct {
-	httpClient         ops.HTTPClient
-	retryPolicyEnabled bool
-}
-
 type AcquireTokenOptions struct {
 	claims string
 }
 
-type ClientOption func(o *ClientOptions)
+type ClientOption func(*Client)
 
 type AcquireTokenOption func(o *AcquireTokenOptions)
 
@@ -190,14 +185,14 @@ func WithClaims(claims string) AcquireTokenOption {
 
 // WithHTTPClient allows for a custom HTTP client to be set.
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
-	return func(o *ClientOptions) {
-		o.httpClient = httpClient
+	return func(c *Client) {
+		c.httpClient = httpClient
 	}
 }
 
 func WithRetryPolicyDisabled() ClientOption {
-	return func(o *ClientOptions) {
-		o.retryPolicyEnabled = false
+	return func(c *Client) {
+		c.retryPolicyEnabled = false
 	}
 }
 
@@ -235,15 +230,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		}
 	}
 
-	opts := ClientOptions{
-		httpClient:         shared.DefaultClient,
-		retryPolicyEnabled: true,
-	}
-
-	for _, option := range options {
-		option(&opts)
-	}
-
 	switch t := id.(type) {
 	case UserAssignedClientID:
 		if len(string(t)) == 0 {
@@ -263,9 +249,12 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	}
 	client := Client{
 		miType:             id,
-		httpClient:         opts.httpClient,
-		retryPolicyEnabled: opts.retryPolicyEnabled,
+		httpClient:         shared.DefaultClient,
+		retryPolicyEnabled: true,
 		source:             source,
+	}
+	for _, option := range options {
+		option(&client)
 	}
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
