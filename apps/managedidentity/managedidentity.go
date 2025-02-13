@@ -314,7 +314,7 @@ func GetSource() (Source, error) {
 // Options: [WithClaims]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
 	logOnce.Do(func() {
-		c.logger.Log(context.Background(), slog.LevelInfo, "Managed Identity", slog.String("source", string(c.source)))
+		c.logger.Log(ctx, slog.LevelInfo, "Managed Identity", slog.String("source", string(c.source)))
 	})
 
 	resource = strings.TrimSuffix(resource, "/.default")
