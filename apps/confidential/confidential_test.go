@@ -828,25 +828,22 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		firstTenantChecker := false
 		secondTenantChecker := false
 
-		ch := make(chan tokenResult, 14)
+		ch := make(chan tokenResult, 10000)
 		var mu sync.Mutex // Mutex to protect access to expectedResponse
 		gotResponse := []tokenResult{}
 		mockClient.AppendResponse(
 			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
-				time.Sleep(150 * time.Millisecond)
 			}),
 		)
 		mockClient.AppendResponse(
 			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
-				time.Sleep(100 * time.Millisecond)
 				mu.Lock()
 				base.GetCurrentTime = originalTime
 				mu.Unlock()
 			}),
 		)
-		for i := 0; i < 7; i++ {
+		for i := 0; i < 10000; i++ {
 			wg.Add(2)
-			time.Sleep(50 * time.Millisecond)
 			go func() {
 				defer wg.Done()
 				ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
@@ -864,7 +861,6 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				ch <- tokenResult{Token: ar.AccessToken, Tenant: "firstTentant"} // Send result to channel
 			}()
 			go func() {
-				time.Sleep(50 * time.Millisecond)
 				defer wg.Done()
 				ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
 				if err != nil {
