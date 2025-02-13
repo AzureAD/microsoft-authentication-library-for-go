@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -29,6 +30,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/slog"
 )
 
 const (
@@ -136,6 +138,7 @@ var getAzureArcHimdsFilePath = func(platform string) string {
 		return ""
 	}
 }
+var logOnce sync.Once
 
 type Source string
 
@@ -165,11 +168,15 @@ type Client struct {
 	source             Source
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
+	logger             *slog.Logger
+	piiLogging         bool
 }
 
 type ClientOptions struct {
 	httpClient         ops.HTTPClient
 	retryPolicyEnabled bool
+	logger             *slog.Logger
+	piiLogging         bool
 }
 
 type AcquireTokenOptions struct {
@@ -204,7 +211,7 @@ func WithRetryPolicyDisabled() ClientOption {
 // Client to be used to acquire tokens for managed identity.
 // ID: [SystemAssigned], [UserAssignedClientID], [UserAssignedResourceID], [UserAssignedObjectID]
 //
-// Options: [WithHTTPClient]
+// Options: [WithHTTPClient], [WithLogger]
 func New(id ID, options ...ClientOption) (Client, error) {
 	source, err := GetSource()
 	if err != nil {
@@ -238,6 +245,8 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	opts := ClientOptions{
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
+		logger:             slog.New(&slog.NopHandler{}),
+		piiLogging:         false,
 	}
 
 	for _, option := range options {
@@ -266,7 +275,10 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient:         opts.httpClient,
 		retryPolicyEnabled: opts.retryPolicyEnabled,
 		source:             source,
+		logger:             opts.logger,
+		piiLogging:         opts.piiLogging,
 	}
+
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
 		return Client{}, err
@@ -307,6 +319,10 @@ func GetSource() (Source, error) {
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+	logOnce.Do(func() {
+		c.logger.Log(ctx, slog.LevelInfo, "Managed Identity", slog.String("source", string(c.source)))
+	})
+
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 	for _, option := range options {
@@ -314,7 +330,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	}
 	c.authParams.Scopes = []string{resource}
 
-	// ignore cached access tokens when given claims
+	// when claims are empty, we get token from the cache, otherwise acquire a new one
 	if o.claims == "" {
 		storageTokenResponse, err := cacheManager.Read(ctx, c.authParams)
 		if err != nil {
@@ -469,6 +485,8 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 	var err error
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Minute)
+		c.logger.Log(tryCtx, slog.LevelInfo, "Managed Identity retrying request", slog.String("attempt", fmt.Sprint(attempt)))
+
 		defer tryCancel()
 		if resp != nil && resp.Body != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
@@ -476,11 +494,11 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 		}
 		cloneReq := req.Clone(tryCtx)
 		resp, err = c.httpClient.Do(cloneReq)
-		retrylist := retryStatusCodes
+		retryList := retryStatusCodes
 		if c.source == DefaultToIMDS {
-			retrylist = retryCodesForIMDS
+			retryList = retryCodesForIMDS
 		}
-		if err == nil && !contains(retrylist, resp.StatusCode) {
+		if err == nil && !contains(retryList, resp.StatusCode) {
 			return resp, nil
 		}
 		select {
