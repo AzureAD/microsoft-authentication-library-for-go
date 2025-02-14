@@ -468,6 +468,39 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 }
 
+func TestInvalidJsonErrReturnOnAcquireToken(t *testing.T) {
+	resource := "https://resource/.default"
+	miType := SystemAssigned()
+
+	setEnvVars(t, DefaultToIMDS)
+	mockClient := mock.Client{}
+	responseBody := fmt.Sprintf(
+		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
+		"tetant", 3600, time.Now().Add(time.Duration(3600)*time.Second).Unix(),
+	)
+
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody([]byte(responseBody)))
+
+	// Resetting cache
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	client, err := New(miType, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.AcquireToken(context.Background(), resource)
+	if err == nil {
+		t.Fatal("should have failed with InvalidJsonErr Response")
+	}
+	var ie errors.InvalidJsonErr
+	if !errors.As(err, &ie) {
+		t.Fatal("should have revieved a InvalidJsonErr, but got", err)
+	}
+}
+
 func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	resource := "https://resource/.default"
 	miType := SystemAssigned()
