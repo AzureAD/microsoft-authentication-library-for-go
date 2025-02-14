@@ -1,4 +1,3 @@
-
 # Managed Identity Public API Design Specification
 
 The purpose of this file is to go over the changes required for adding the Managed Identity feature to MSAL GO
