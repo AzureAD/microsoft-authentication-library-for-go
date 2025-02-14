@@ -436,7 +436,6 @@ func TestInvalidJsonErrFromResponse(t *testing.T) {
 		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
 		tenant, 3600, time.Now().Add(time.Duration(3600)*time.Second).Unix(),
 	)
-	//	body += "}"
 	mockClient.AppendResponse(mock.WithBody([]byte(body)))
 	_, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
 	if err == nil {
