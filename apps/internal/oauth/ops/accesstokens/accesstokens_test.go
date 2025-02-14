@@ -757,18 +757,19 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			jwtDecoder: jwtDecoderFake,
 		},
 		{
-			desc: "Success",
-			payload: `
+			desc: "Success: ExpiresOn as Unix timestamp number, expires_in present",
+			payload: fmt.Sprintf(`
 				{
 					"access_token": "secret",
-					"expires_in": 86399,
+					"expires_on": %d,
+					"expires_in": "3600",
 					"ext_expires_in": 86399,
-					"client_info": {"uid":  "uid","utid": "utid"},
+					"client_info": {"uid": "uid","utid": "utid"},
 					"scope": "openid profile"
-				}`,
+				}`, time.Now().Add(time.Hour).Unix()),
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     internalTime.DurationTime{T: time.Unix(86399, 0)},
+				ExpiresOn:     time.Now().Add(time.Hour), // from expires_on
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
@@ -776,6 +777,143 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 					UTID: "utid",
 				},
 			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success: ExpiresOn as ISO 8601 string",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_on": "2024-12-31T23:59:59Z",
+					"ext_expires_in": 86399,
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC),
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success: ExpiresOn as MM/dd/yyyy HH:mm:ss string",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_on": "12/31/2024 23:59:59",
+					"ext_expires_in": 86399,
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC),
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success: ExpiresOn as yyyy-MM-dd HH:mm:ss string",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_on": "2024-12-31 23:59:59",
+					"ext_expires_in": 86399,
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Date(2024, 12, 31, 23, 59, 59, 0, time.UTC),
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success: ExpiresOn empty, fallback to ExpiresIn",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_on": "",
+					"expires_in": 3600,
+					"ext_expires_in": 86399,
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Now().Add(time.Hour),
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success: Only expires_in",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_in": 3600,
+					"ext_expires_in": 86399,
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Now().Add(time.Hour),
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Error: Missing both expires_on and expires_in",
+			payload: `
+				{
+					"access_token": "secret",
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want:       TokenResponse{},
+			err:        true,
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Error: Invalid ExpiresOn format",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_on": "invalid-date-format",
+					"ext_expires_in": 86399,
+					"client_info": {"uid": "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want:       TokenResponse{},
+			err:        true,
 			jwtDecoder: jwtDecoderFake,
 		},
 	}
@@ -795,7 +933,9 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 		case err != nil:
 			continue
 		}
-
+		if got.ExpiresOn.Unix() != test.want.ExpiresOn.Unix() {
+			t.Errorf("TestCreateTokenResponse: got %v, want %v", got.ExpiresOn.Unix(), test.want.ExpiresOn.Unix())
+		}
 		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
 		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, got); diff != "" {
 			t.Errorf("TestCreateTokenResponse: -want/+got:\n%s", diff)
