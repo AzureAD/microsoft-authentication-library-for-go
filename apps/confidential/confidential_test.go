@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +24,7 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
@@ -410,6 +410,41 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 				t.Fatalf("unexpected access token %s", tk.AccessToken)
 			}
 		})
+	}
+}
+
+func TestInvalidJsonErrFromResponse(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant := "A"
+	lmo := "login.microsoftonline.com"
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// cache an access token for each tenant. To simplify determining their provenance below, the value of each token is the ID of the tenant that provided it.
+	if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant)); err == nil {
+		t.Fatal("silent auth should fail because the cache is empty")
+	}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	body := fmt.Sprintf(
+		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
+		tenant, 3600, time.Now().Add(time.Duration(3600)*time.Second).Unix(),
+	)
+	//	body += "}"
+	mockClient.AppendResponse(mock.WithBody([]byte(body)))
+	_, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
+	if err == nil {
+		t.Fatal("should have failed with InvalidJsonErr Response")
+	}
+	var ie errors.InvalidJsonErr
+	if !errors.As(err, &ie) {
+		t.Fatal("should have revieved a InvalidJsonErr, but got", err)
 	}
 }
 

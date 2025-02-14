@@ -523,6 +523,11 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	}
 
 	err = json.Unmarshal(responseBytes, &r)
+	if err != nil {
+		return r, errors.InvalidJsonErr{
+			Err: fmt.Errorf("error parsing the json error: %s", err),
+		}
+	}
 	r.GrantedScopes.Slice = append(r.GrantedScopes.Slice, resource)
 
 	return r, err
