@@ -347,7 +347,7 @@ func TestCacheScopes(t *testing.T) {
 	}
 
 	for _, r := range []string{"A", "B/.default"} {
-		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600)))
+		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600, 3600)))
 		for i := 0; i < 2; i++ {
 			ar, err := client.AcquireToken(context.Background(), r)
 			if err != nil {

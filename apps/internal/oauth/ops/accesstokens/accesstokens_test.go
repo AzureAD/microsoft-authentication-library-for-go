@@ -769,7 +769,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     time.Unix(86400, 0),
+				ExpiresOn:     time.Now().Add(time.Hour * 24),
 				RefreshOn:     internalTime.DurationTime{T: time.Unix(43200, 0)},
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
@@ -793,7 +793,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     time.Unix(86400, 0),
+				ExpiresOn:     time.Now().Add(time.Hour * 24),
 				RefreshOn:     internalTime.DurationTime{T: time.Unix(43199, 0)},
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
@@ -816,7 +816,7 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     time.Unix(86400, 0),
+				ExpiresOn:     time.Now().Add(time.Hour * 24),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
