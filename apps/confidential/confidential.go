@@ -305,7 +305,9 @@ func WithInstanceDiscovery(enabled bool) Option {
 // If an invalid region name is provided, the non-regional endpoint MIGHT be used or the token request MIGHT fail.
 func WithAzureRegion(val string) Option {
 	return func(o *clientOptions) {
-		o.azureRegion = val
+		if val != "" {
+			o.azureRegion = val
+		}
 	}
 }
 

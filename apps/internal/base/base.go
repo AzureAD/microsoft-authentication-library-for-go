@@ -15,7 +15,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -113,7 +113,6 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 	if err := storageTokenResponse.AccessToken.Validate(); err != nil {
 		return AuthResult{}, fmt.Errorf("problem with access token in StorageTokenResponse: %w", err)
 	}
-
 	account := storageTokenResponse.Account
 	accessToken := storageTokenResponse.AccessToken.Secret
 	grantedScopes := strings.Split(storageTokenResponse.AccessToken.Scopes, scopeSeparator)
@@ -149,7 +148,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Account:       account,
 		IDToken:       tokenResponse.IDToken,
 		AccessToken:   tokenResponse.AccessToken,
-		ExpiresOn:     tokenResponse.ExpiresOn.T,
+		ExpiresOn:     tokenResponse.ExpiresOn,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 		Metadata: AuthResultMetadata{
 			TokenSource: IdentityProvider,

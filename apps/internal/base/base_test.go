@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/internal/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
@@ -50,7 +50,7 @@ func fakeClient(t *testing.T, opts ...Option) Client {
 	client.Token.AccessTokens = &fake.AccessTokens{
 		AccessToken: accesstokens.TokenResponse{
 			AccessToken:   fakeAccessToken,
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExpiresOn:     time.Now().Add(time.Hour),
 			FamilyID:      "family-id",
 			GrantedScopes: accesstokens.Scopes{Slice: testScopes},
 			IDToken:       fakeIDToken,
@@ -135,7 +135,7 @@ func TestAcquireTokenSilentScopes(t *testing.T) {
 				accesstokens.TokenResponse{
 					AccessToken:   fakeAccessToken,
 					ClientInfo:    accesstokens.ClientInfo{UID: "uid", UTID: "utid"},
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(-time.Hour)},
+					ExpiresOn:     time.Now().Add(-time.Hour),
 					GrantedScopes: accesstokens.Scopes{Slice: test.cachedTokenScopes},
 					IDToken:       fakeIDToken,
 					RefreshToken:  fakeRefreshToken,
@@ -178,7 +178,7 @@ func TestAcquireTokenSilentGrantedScopes(t *testing.T) {
 		},
 		accesstokens.TokenResponse{
 			AccessToken:   expectedToken,
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExpiresOn:     time.Now().Add(time.Hour),
 			GrantedScopes: accesstokens.Scopes{Slice: grantedScopes},
 			TokenType:     "Bearer",
 		},
@@ -334,7 +334,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 			desc: "no declined scopes",
 			input: accesstokens.TokenResponse{
 				AccessToken:    "accessToken",
-				ExpiresOn:      internalTime.DurationTime{T: future},
+				ExpiresOn:      future,
 				GrantedScopes:  accesstokens.Scopes{Slice: []string{"user.read"}},
 				DeclinedScopes: nil,
 			},
@@ -352,7 +352,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 			desc: "declined scopes",
 			input: accesstokens.TokenResponse{
 				AccessToken:    "accessToken",
-				ExpiresOn:      internalTime.DurationTime{T: future},
+				ExpiresOn:      future,
 				GrantedScopes:  accesstokens.Scopes{Slice: []string{"user.read"}},
 				DeclinedScopes: []string{"openid"},
 			},

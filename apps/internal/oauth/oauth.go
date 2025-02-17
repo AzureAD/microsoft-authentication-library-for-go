@@ -120,11 +120,9 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 			return accesstokens.TokenResponse{}, err
 		}
 		tr := accesstokens.TokenResponse{
-			TokenType:   authParams.AuthnScheme.AccessTokenType(),
-			AccessToken: pr.AccessToken,
-			ExpiresOn: internalTime.DurationTime{
-				T: now.Add(time.Duration(pr.ExpiresInSeconds) * time.Second),
-			},
+			TokenType:     authParams.AuthnScheme.AccessTokenType(),
+			AccessToken:   pr.AccessToken,
+			ExpiresOn:     now.Add(time.Duration(pr.ExpiresInSeconds) * time.Second),
 			GrantedScopes: accesstokens.Scopes{Slice: authParams.Scopes},
 		}
 		if pr.RefreshInSeconds > 0 {

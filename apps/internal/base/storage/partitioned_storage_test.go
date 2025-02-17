@@ -10,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
@@ -59,7 +58,7 @@ func TestOBOAccessTokenScopes(t *testing.T) {
 			accesstokens.TokenResponse{
 				AccessToken:   scope[0] + "-at",
 				ClientInfo:    accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+				ExpiresOn:     time.Now().Add(time.Hour),
 				GrantedScopes: accesstokens.Scopes{Slice: scope},
 				IDToken:       idt,
 				RefreshToken:  upn + "-rt",
@@ -121,7 +120,7 @@ func TestOBOPartitioning(t *testing.T) {
 			accesstokens.TokenResponse{
 				AccessToken:   upn + "-at",
 				ClientInfo:    accesstokens.ClientInfo{UID: upn, UTID: idt.TenantID},
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+				ExpiresOn:     time.Now().Add(time.Hour),
 				GrantedScopes: accesstokens.Scopes{Slice: scopes},
 				IDToken:       idt,
 				RefreshToken:  upn + "-rt",

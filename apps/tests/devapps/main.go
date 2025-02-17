@@ -5,7 +5,7 @@ import (
 )
 
 var (
-	//config        = CreateConfig("config.json")
+	//config        = CreateConfig("config.json") reenable when config is implemented
 	cacheAccessor = &TokenCache{file: "serialized_cache.json"}
 )
 

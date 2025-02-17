@@ -46,9 +46,17 @@ func WithCallback(callback func(*http.Request)) responseOption {
 	})
 }
 
-func WithHTTPStatusCode(code int) responseOption {
+// WithHTTPHeader sets the HTTP headers of the response to the specified value.
+func WithHTTPHeader(header http.Header) responseOption {
 	return respOpt(func(r *response) {
-		r.code = code
+		r.headers = header
+	})
+}
+
+// WithHTTPStatusCode sets the HTTP statusCode of response to the specified value.
+func WithHTTPStatusCode(statusCode int) responseOption {
+	return respOpt(func(r *response) {
+		r.code = statusCode
 	})
 }
 

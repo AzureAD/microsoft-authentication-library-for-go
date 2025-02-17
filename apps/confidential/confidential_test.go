@@ -10,7 +10,6 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +25,7 @@ import (
 	"github.com/kylelemons/godebug/pretty"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
@@ -37,6 +37,7 @@ import (
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
 type errorClient struct{}
+type contextKey struct{}
 
 func (*errorClient) Do(req *http.Request) (*http.Response, error) {
 	return nil, fmt.Errorf("expected no requests but received one for %s", req.URL.String())
@@ -141,7 +142,7 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		client, err := fakeClient(accesstokens.TokenResponse{
 			AccessToken:   token,
 			RefreshOn:     internalTime.DurationTime{T: time.Now().Add(6 * time.Hour)},
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(12 * time.Hour)},
+			ExpiresOn:     time.Now().Add(12 * time.Hour),
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(12 * time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			TokenType:     "Bearer",
@@ -198,50 +199,65 @@ func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
 	}
 }
 
-func TestRegionAutoEnable_SpecifiedRegion_EnvRegion(t *testing.T) {
-	cred, err := NewCredFromSecret(fakeSecret)
-	if err != nil {
-		t.Fatal(err)
+func TestRegionAutoEnable_SpecifiedEmptyRegion_EnvRegion(t *testing.T) {
+	tests := []struct {
+		name         string
+		envRegion    string
+		region       string
+		resultRegion string
+	}{
+		{
+			name:         "Region is empty, envRegion is set",
+			envRegion:    "region",
+			region:       "",
+			resultRegion: "region",
+		},
+		{
+			name:         "Region is set, envRegion is set",
+			envRegion:    "region",
+			region:       "setRegion",
+			resultRegion: "setRegion",
+		},
+		{
+			name:         "Region is set, envRegion is empty",
+			envRegion:    "",
+			region:       "setRegion",
+			resultRegion: "setRegion",
+		},
+		{
+			name:         "Disable region is set, envRegion is set",
+			envRegion:    "region",
+			region:       "DisableMsalForceRegion",
+			resultRegion: "",
+		},
 	}
 
-	envRegion := "envRegion"
-	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv("MSAL_FORCE_REGION")
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			cred, err := NewCredFromSecret(fakeSecret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if test.envRegion != "" {
+				t.Setenv("MSAL_FORCE_REGION", test.envRegion)
+			}
+			lmo := "login.microsoftonline.com"
+			tenant := "tenant"
+			mockClient := mock.Client{}
 
-	lmo := "login.microsoftonline.com"
-	tenant := "tenant"
-	mockClient := mock.Client{}
-	testRegion := "region"
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
-	if err != nil {
-		t.Fatal(err)
-	}
+			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(test.region))
+			if err != nil {
+				t.Fatal(err)
+			}
 
-	if client.base.AuthParams.AuthorityInfo.Region != testRegion {
-		t.Fatalf("wanted %q, got %q", testRegion, client.base.AuthParams.AuthorityInfo.Region)
-	}
-}
-
-func TestRegionAutoEnable_DisableMsalForceRegion(t *testing.T) {
-	cred, err := NewCredFromSecret(fakeSecret)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	lmo := "login.microsoftonline.com"
-	tenant := "tenant"
-	mockClient := mock.Client{}
-	testRegion := "DisableMsalForceRegion"
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient), WithAzureRegion(testRegion))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if client.base.AuthParams.AuthorityInfo.Region != "" {
-		t.Fatalf("wanted empty, got %q", client.base.AuthParams.AuthorityInfo.Region)
+			if test.resultRegion == "DisableMsalForceRegion" {
+				if client.base.AuthParams.AuthorityInfo.Region != "" {
+					t.Fatalf("wanted %q, got %q", test.resultRegion, client.base.AuthParams.AuthorityInfo.Region)
+				}
+			} else if client.base.AuthParams.AuthorityInfo.Region != test.resultRegion {
+				t.Fatalf("wanted %q, got %q", test.resultRegion, client.base.AuthParams.AuthorityInfo.Region)
+			}
+		})
 	}
 }
 
@@ -293,7 +309,7 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 
 func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
-	key := struct{}{}
+	key := contextKey{}
 	ctx := context.WithValue(context.Background(), key, true)
 	getAssertion := func(c context.Context, o AssertionRequestOptions) (string, error) {
 		if v := c.Value(key); v == nil || !v.(bool) {
@@ -346,7 +362,7 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 			tr := accesstokens.TokenResponse{
 				AccessToken:   token,
 				RefreshToken:  refresh,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExpiresOn:     time.Now().Add(1 * time.Hour),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 				IDToken: accesstokens.IDToken{
@@ -415,6 +431,40 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	}
 }
 
+func TestInvalidJsonErrFromResponse(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant := "A"
+	lmo := "login.microsoftonline.com"
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	// cache an access token for each tenant. To simplify determining their provenance below, the value of each token is the ID of the tenant that provided it.
+	if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant)); err == nil {
+		t.Fatal("silent auth should fail because the cache is empty")
+	}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	body := fmt.Sprintf(
+		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
+		tenant, 3600, time.Now().Add(time.Duration(3600)*time.Second).Unix(),
+	)
+	mockClient.AppendResponse(mock.WithBody([]byte(body)))
+	_, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
+	if err == nil {
+		t.Fatal("should have failed with InvalidJsonErr Response")
+	}
+	var ie errors.InvalidJsonErr
+	if !errors.As(err, &ie) {
+		t.Fatal("should have revieved a InvalidJsonErr, but got", err)
+	}
+}
+
 func TestAcquireTokenSilentTenants(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
@@ -466,7 +516,7 @@ func TestADFSTokenCaching(t *testing.T) {
 			AccessToken:   "at1",
 			RefreshToken:  "rt",
 			TokenType:     "bearer",
-			ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+			ExpiresOn:     time.Now().Add(time.Hour),
 			ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(time.Hour)},
 			GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			IDToken: accesstokens.IDToken{
@@ -596,7 +646,7 @@ func TestNewCredFromCert(t *testing.T) {
 			t.Run(fmt.Sprintf("%s/%v", filepath.Base(file.path), sendX5c), func(t *testing.T) {
 				client, err := fakeClient(accesstokens.TokenResponse{
 					AccessToken:   token,
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(time.Hour)},
+					ExpiresOn:     time.Now().Add(time.Hour),
 					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 				}, cred, fakeAuthority, opts...)
 				if err != nil {
@@ -1220,7 +1270,7 @@ func TestWithClaims(t *testing.T) {
 				case "password":
 					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithClaims(test.claims))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -1330,7 +1380,7 @@ func TestWithTenantID(t *testing.T) {
 				case "obo":
 					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithTenantID(test.tenant))
 				default:
-					t.Fatalf("test bug: no test for " + method)
+					t.Fatalf("test bug: no test for %s", method)
 				}
 				if err != nil {
 					if test.expectError {
@@ -1640,7 +1690,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 	}
 	client, err := fakeClient(accesstokens.TokenResponse{
 		AccessToken:   token,
-		ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+		ExpiresOn:     time.Now().Add(1 * time.Hour),
 		ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 		TokenType:     "TokenType",
@@ -1680,7 +1730,7 @@ func TestAcquireTokenByCredentialFromDSTS(t *testing.T) {
 			}
 			client, err := fakeClient(accesstokens.TokenResponse{
 				AccessToken:   token,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExpiresOn:     time.Now().Add(1 * time.Hour),
 				ExtExpiresOn:  internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
 				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 				TokenType:     "Bearer",
