@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -165,6 +166,7 @@ type Client struct {
 	source             Source
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
+	canRefresh         *atomic.Int32
 }
 
 type AcquireTokenOptions struct {
@@ -247,11 +249,13 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
+	var zero atomic.Int32
 	client := Client{
 		miType:             id,
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
 		source:             source,
+		canRefresh:         &zero,
 	}
 	for _, option := range options {
 		option(&client)
@@ -291,6 +295,18 @@ func GetSource() (Source, error) {
 	return DefaultToIMDS, nil
 }
 
+// This function wraps time.Now() and is used for refreshing the application
+// was created to test the function against refreshin
+var GetCurrentTime = time.Now
+
+// shouldRefresh returns true if the token should be refreshed.
+func (b Client) shouldRefresh(t time.Time) bool {
+	if b.canRefresh.CompareAndSwap(0, 1) {
+		return !t.IsZero() && t.Before(GetCurrentTime())
+	}
+	return false
+}
+
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
@@ -311,10 +327,20 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
+			if c.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
+				defer c.canRefresh.Store(1)
+				if tr, er := c.getToken(ctx, resource); er == nil {
+					return tr, nil
+				}
+			}
 			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
 	}
+	return c.getToken(ctx, resource)
+}
+
+func (c Client) getToken(ctx context.Context, resource string) (base.AuthResult, error) {
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)

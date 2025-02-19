@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -1130,4 +1131,93 @@ func TestCreatingIMDSClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRefreshInMultipleRequests(t *testing.T) {
+	firstToken := "first token"
+	secondToken := "new token"
+	refreshIn := 43200
+	expiresIn := 86400
+	resource := "https://resource/.default"
+	miType := SystemAssigned()
+	setEnvVars(t, CloudShell)
+
+	t.Run("Test for refresh multiple request", func(t *testing.T) {
+		originalTime := GetCurrentTime
+		defer func() {
+			GetCurrentTime = originalTime
+		}()
+		before := cacheManager
+		defer func() { cacheManager = before }()
+		cacheManager = storage.New(nil)
+		// Create a mock client and append mock responses
+		mockClient := mock.Client{}
+		mockClient.AppendResponse(
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+		)
+		// Create the client instance
+		client, err := New(miType, WithHTTPClient(&mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+		ar, err := client.AcquireToken(context.Background(), resource)
+		if err != nil {
+			t.Fatal(err)
+		}
+		// Assert the first token is returned
+		if ar.AccessToken != firstToken {
+			t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+		}
+		fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
+		GetCurrentTime = func() time.Time {
+			return fixedTime
+		}
+		var wg sync.WaitGroup
+
+		requestChecker := false
+
+		ch := make(chan string, 10000)
+		var mu sync.Mutex // Mutex to protect access to expectedResponse
+		gotResponse := []string{}
+		mockClient.AppendResponse(
+			mock.WithCallback(func(*http.Request) {
+				GetCurrentTime = originalTime
+			}),
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
+			}),
+		)
+
+		for i := 0; i < 10000; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				ar, err := client.AcquireToken(context.Background(), resource)
+				if err != nil {
+					t.Error(err)
+					return
+				}
+				if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
+					if requestChecker {
+						t.Error("Error can only call this only once")
+					} else {
+						requestChecker = true
+					}
+				}
+				ch <- ar.AccessToken
+			}()
+		}
+		// Waiting for all goroutines to finish
+		go func() {
+			for s := range ch {
+				mu.Lock() // Acquire lock before modifying expectedResponse
+				gotResponse = append(gotResponse, s)
+				mu.Unlock() // Release lock after modifying expectedResponse
+			}
+			if !requestChecker {
+				t.Error("Error should be called at least once")
+			}
+		}()
+		wg.Wait()
+		close(ch)
+	})
 }

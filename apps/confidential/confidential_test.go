@@ -879,7 +879,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		secondTenantChecker := false
 
 		ch := make(chan tokenResult, 10000)
-		var mu sync.Mutex // Mutex to protect access to expectedResponse
+		var mu sync.Mutex
 		gotResponse := []tokenResult{}
 		mockClient.AppendResponse(
 			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {

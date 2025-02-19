@@ -6,7 +6,6 @@ package base
 import (
 	"context"
 	"fmt"
-	"net/http"
 	"net/url"
 	"reflect"
 	"strings"
@@ -348,7 +347,6 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		return ar, err
 	}
 
-	// go routine call 100 times
 	// ignore cached access tokens when given claims
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
@@ -359,23 +357,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 				defer b.refreshMu.Unlock()
 				if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
 					return b.AuthResultFromToken(ctx, authParams, tr)
-				} else {
-					var callErr *errors.CallErr
-					if errors.As(er, &callErr) {
-						switch callErr.Resp.StatusCode {
-						case http.StatusRequestTimeout, // 408
-							http.StatusTooManyRequests,     // 429
-							http.StatusInternalServerError, // 500
-							http.StatusBadGateway,          // 502
-							http.StatusServiceUnavailable,  // 503
-							http.StatusGatewayTimeout:      // 504
-						default:
-							// return empty token for non handable error
-							return AuthResult{}, er
-						}
-					}
 				}
-
 			}
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
