@@ -5,7 +5,6 @@ package base
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -14,6 +13,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -94,6 +94,7 @@ type AuthResult struct {
 
 // AuthResultMetadata which contains meta data for the AuthResult
 type AuthResultMetadata struct {
+	RefreshOn   time.Time
 	TokenSource TokenSource
 }
 
@@ -132,6 +133,7 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 		DeclinedScopes: nil,
 		Metadata: AuthResultMetadata{
 			TokenSource: Cache,
+			RefreshOn:   storageTokenResponse.AccessToken.RefreshOn.T,
 		},
 	}, nil
 }
@@ -149,6 +151,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 		Metadata: AuthResultMetadata{
 			TokenSource: IdentityProvider,
+			RefreshOn:   tokenResponse.RefreshOn.T,
 		},
 	}, nil
 }
@@ -164,6 +167,8 @@ type Client struct {
 	AuthParams      authority.AuthParams // DO NOT EVER MAKE THIS A POINTER! See "Note" in New().
 	cacheAccessor   cache.ExportReplace
 	cacheAccessorMu *sync.RWMutex
+	canRefresh      map[string]struct{}
+	refreshMu       *sync.RWMutex
 }
 
 // Option is an optional argument to the New constructor.
@@ -240,6 +245,8 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		cacheAccessorMu: &sync.RWMutex{},
 		manager:         storage.New(token),
 		pmanager:        storage.NewPartitionedManager(token),
+		canRefresh:      make(map[string]struct{}),
+		refreshMu:       &sync.RWMutex{},
 	}
 	for _, o := range options {
 		if err = o(&client); err != nil {
@@ -344,6 +351,14 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
+			if b.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T, tenant) {
+				b.refreshMu.Lock()
+				b.removeTenantFromCanRefresh(tenant)
+				defer b.refreshMu.Unlock()
+				if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
+					return b.AuthResultFromToken(ctx, authParams, tr)
+				}
+			}
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
@@ -361,7 +376,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if err != nil {
 		return ar, err
 	}
-	return b.AuthResultFromToken(ctx, authParams, token, true)
+	return b.AuthResultFromToken(ctx, authParams, token)
 }
 
 func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams AcquireTokenAuthCodeParameters) (AuthResult, error) {
@@ -390,7 +405,7 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 		return AuthResult{}, err
 	}
 
-	return b.AuthResultFromToken(ctx, authParams, token, true)
+	return b.AuthResultFromToken(ctx, authParams, token)
 }
 
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
@@ -419,15 +434,12 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 	authParams.UserAssertion = onBehalfOfParams.UserAssertion
 	token, err := b.Token.OnBehalfOf(ctx, authParams, onBehalfOfParams.Credential)
 	if err == nil {
-		ar, err = b.AuthResultFromToken(ctx, authParams, token, true)
+		ar, err = b.AuthResultFromToken(ctx, authParams, token)
 	}
 	return ar, err
 }
 
-func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse, cacheWrite bool) (AuthResult, error) {
-	if !cacheWrite {
-		return NewAuthResult(token, shared.Account{})
-	}
+func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse) (AuthResult, error) {
 	var m manager = b.manager
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		m = b.pmanager
@@ -455,6 +467,37 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
+}
+
+// This function wraps time.Now() and is used for refreshing the application
+// was created to test the function against refreshin
+var GetCurrentTime = time.Now
+
+func (c Client) doesTenantExists(tenant string) bool {
+	_, exists := c.canRefresh[tenant]
+	return exists
+}
+
+func (c *Client) addTenantIntoCanRefresh(tenant string) {
+	c.canRefresh[tenant] = struct{}{}
+}
+
+func (c *Client) removeTenantFromCanRefresh(tenant string) {
+	delete(c.canRefresh, tenant)
+}
+
+// shouldRefresh returns true if the token should be refreshed.
+func (b Client) shouldRefresh(t time.Time, tId string) bool {
+	b.refreshMu.RLock()
+	if !b.doesTenantExists(tId) {
+		b.refreshMu.RUnlock()
+		b.refreshMu.Lock()
+		defer b.refreshMu.Unlock()
+		b.addTenantIntoCanRefresh(tId)
+		return !t.IsZero() && t.Before(GetCurrentTime())
+	}
+	b.refreshMu.RUnlock()
+	return false
 }
 
 func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {

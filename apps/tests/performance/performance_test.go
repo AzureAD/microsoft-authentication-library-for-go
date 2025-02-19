@@ -59,7 +59,7 @@ func populateCache(users int, tokens int, authParams authority.AuthParams, clien
 				IDToken: accesstokens.IDToken{
 					RawToken: "x.e30",
 				},
-			}, true)
+			})
 			if err != nil {
 				panic(err)
 			}
