@@ -1143,15 +1143,15 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	setEnvVars(t, CloudShell)
 
 	t.Run("Test for refresh multiple request", func(t *testing.T) {
-		originalTime := GetCurrentTime
+		originalTime := getCurrentTime
 		defer func() {
-			GetCurrentTime = originalTime
+			getCurrentTime = originalTime
 		}()
 		before := cacheManager
 		defer func() { cacheManager = before }()
 		cacheManager = storage.New(nil)
 		// Create a mock client and append mock responses
-		mockClient := mock.Client{}
+		mockClient := mock.SyncClient{}
 		mockClient.AppendResponse(
 			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
 		)
@@ -1168,25 +1168,18 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		if ar.AccessToken != firstToken {
 			t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
 		}
+
 		fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
-		GetCurrentTime = func() time.Time {
+		getCurrentTime = func() time.Time {
 			return fixedTime
 		}
 		var wg sync.WaitGroup
-
 		requestChecker := false
 
-		ch := make(chan string, 10000)
-		var mu sync.Mutex // Mutex to protect access to expectedResponse
-		gotResponse := []string{}
 		mockClient.AppendResponse(
-			mock.WithCallback(func(*http.Request) {
-				GetCurrentTime = originalTime
-			}),
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+43200))), mock.WithCallback(func(req *http.Request) {
 			}),
 		)
-
 		for i := 0; i < 10000; i++ {
 			wg.Add(1)
 			go func() {
@@ -1203,21 +1196,54 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 						requestChecker = true
 					}
 				}
-				ch <- ar.AccessToken
 			}()
 		}
 		// Waiting for all goroutines to finish
 		go func() {
-			for s := range ch {
-				mu.Lock() // Acquire lock before modifying expectedResponse
-				gotResponse = append(gotResponse, s)
-				mu.Unlock() // Release lock after modifying expectedResponse
-			}
+			wg.Wait()
 			if !requestChecker {
 				t.Error("Error should be called at least once")
 			}
 		}()
 		wg.Wait()
-		close(ch)
 	})
+}
+
+func TestShouldRefresh(t *testing.T) {
+	// Get the current time to use for comparison
+	now := time.Now()
+	tests := []struct {
+		name     string
+		input    time.Time
+		expected bool
+	}{
+		{
+			name:     "Zero time",
+			input:    time.Time{}, // Zero time
+			expected: false,       // Should return false because it's zero time
+		},
+		{
+			name:     "Future time",
+			input:    now.Add(time.Hour), // 1 hour in the future
+			expected: false,              // Should return false because it's in the future
+		},
+		{
+			name:     "Past time",
+			input:    now.Add(-time.Hour), // 1 hour in the past
+			expected: true,                // Should return true because it's in the past
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := New(SystemAssigned())
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := client.shouldRefresh(tt.input)
+			if result != tt.expected {
+				t.Errorf("shouldRefresh(%v) = %v; expected %v", tt.input, result, tt.expected)
+			}
+		})
+	}
 }

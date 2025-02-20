@@ -815,6 +815,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	}
 }
 
+//  go test -race -timeout 30s -run ^TestRefreshInMultipleRequests$ github.com/AzureAD/microsoft-authentication-library-for-go/apps/confideintial
 func TestRefreshInMultipleRequests(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
@@ -832,7 +833,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			base.GetCurrentTime = originalTime
 		}()
 		// Create a mock client and append mock responses
-		mockClient := mock.Client{}
+		mockClient := mock.SyncClient{}
 		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "firstTenant")))
 		mockClient.AppendResponse(
 			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
@@ -871,27 +872,15 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			return fixedTime
 		}
 		var wg sync.WaitGroup
-		type tokenResult struct {
-			Token  string
-			Tenant string
-		}
 		firstTenantChecker := false
 		secondTenantChecker := false
 
-		ch := make(chan tokenResult, 10000)
-		var mu sync.Mutex
-		gotResponse := []tokenResult{}
 		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
-			}),
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))),
 		)
 		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn))), mock.WithCallback(func(req *http.Request) {
-				mu.Lock()
-				base.GetCurrentTime = originalTime
-				mu.Unlock()
-			}),
-		)
+			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))))
+
 		for i := 0; i < 10000; i++ {
 			wg.Add(2)
 			go func() {
@@ -908,7 +897,6 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 						firstTenantChecker = true
 					}
 				}
-				ch <- tokenResult{Token: ar.AccessToken, Tenant: "firstTentant"} // Send result to channel
 			}()
 			go func() {
 				defer wg.Done()
@@ -924,22 +912,16 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 						secondTenantChecker = true
 					}
 				}
-				ch <- tokenResult{Token: ar.AccessToken, Tenant: "secondTentant"} // Send result to channel
 			}()
 		}
 		// Waiting for all goroutines to finish
 		go func() {
-			for s := range ch {
-				mu.Lock() // Acquire lock before modifying expectedResponse
-				gotResponse = append(gotResponse, s)
-				mu.Unlock() // Release lock after modifying expectedResponse
-			}
-			if !firstTenantChecker && !secondTenantChecker {
+			wg.Wait()
+			if !secondTenantChecker && !firstTenantChecker {
 				t.Error("Error should be called at least once")
 			}
 		}()
 		wg.Wait()
-		close(ch)
 	})
 
 }

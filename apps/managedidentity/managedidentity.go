@@ -166,7 +166,7 @@ type Client struct {
 	source             Source
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
-	canRefresh         *atomic.Int32
+	canRefresh         *atomic.Value
 }
 
 type AcquireTokenOptions struct {
@@ -249,7 +249,8 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
-	var zero atomic.Int32
+	var zero atomic.Value = atomic.Value{}
+	zero.Store(false)
 	client := Client{
 		miType:             id,
 		httpClient:         shared.DefaultClient,
@@ -297,14 +298,17 @@ func GetSource() (Source, error) {
 
 // This function wraps time.Now() and is used for refreshing the application
 // was created to test the function against refreshin
-var GetCurrentTime = time.Now
+var getCurrentTime = time.Now
 
 // shouldRefresh returns true if the token should be refreshed.
 func (b Client) shouldRefresh(t time.Time) bool {
-	if b.canRefresh.CompareAndSwap(0, 1) {
-		return !t.IsZero() && t.Before(GetCurrentTime())
+	if t.IsZero() || t.After(getCurrentTime()) {
+		return false
 	}
-	return false
+	if !b.canRefresh.CompareAndSwap(false, true) {
+		return false
+	}
+	return true
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.
@@ -328,7 +332,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			if c.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
-				defer c.canRefresh.Store(1)
+				defer c.canRefresh.Store(false)
 				if tr, er := c.getToken(ctx, resource); er == nil {
 					return tr, nil
 				}
