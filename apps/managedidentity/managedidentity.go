@@ -331,6 +331,10 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
+			timeUntilExpiry := time.Until(ar.ExpiresOn)
+			if timeUntilExpiry > (time.Hour * 2) {
+				ar.Metadata.RefreshOn = time.Now().Add(timeUntilExpiry / 2)
+			}
 			if c.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
 				defer c.canRefresh.Store(false)
 				if tr, er := c.getToken(ctx, resource); er == nil {
