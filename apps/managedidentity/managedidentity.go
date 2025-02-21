@@ -331,10 +331,6 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		}
 		ar, err := base.AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			timeUntilExpiry := time.Until(ar.ExpiresOn)
-			if timeUntilExpiry > (time.Hour * 2) {
-				ar.Metadata.RefreshOn = time.Now().Add(timeUntilExpiry / 2)
-			}
 			if c.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
 				defer c.canRefresh.Store(false)
 				if tr, er := c.getToken(ctx, resource); er == nil {
@@ -467,6 +463,11 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 	account, err := cacheManager.Write(authParams, token)
 	if err != nil {
 		return base.AuthResult{}, err
+	}
+	// if refreshOn is not set, set it to half of the time until expiry if expiry is more than 2 hours away
+	timeUntilExpiry := time.Until(token.ExpiresOn)
+	if token.RefreshOn.T.IsZero() && timeUntilExpiry > (time.Hour*2) {
+		token.RefreshOn.T = time.Now().Add(timeUntilExpiry / 2)
 	}
 	ar, err := base.NewAuthResult(token, account)
 	if err != nil {
