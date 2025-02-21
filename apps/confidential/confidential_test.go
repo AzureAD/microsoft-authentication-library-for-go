@@ -827,102 +827,102 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	refreshIn := 43200
 	expiresIn := 86400
 
-	t.Run("Test for refresh multiple request", func(t *testing.T) {
-		originalTime := base.GetCurrentTime
-		defer func() {
-			base.GetCurrentTime = originalTime
-		}()
-		// Create a mock client and append mock responses
-		mockClient := mock.SyncClient{}
-		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "firstTenant")))
-		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
-		)
-		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "secondTenant")))
-		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
-		)
-		// Create the client instance
-		client, err := New(fmt.Sprintf(authorityFmt, lmo, "firstTenant"), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Acquire the first token for first tenant
-		ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("firstTenant"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Assert the first token is returned
-		if ar.AccessToken != firstToken {
-			t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
-		}
+	originalTime := base.GetCurrentTime
+	defer func() {
+		base.GetCurrentTime = originalTime
+	}()
+	// Create a mock client and append mock responses
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "firstTenant")))
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+	)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "secondTenant")))
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+	)
+	// Create the client instance
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, "firstTenant"), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Acquire the first token for first tenant
+	ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("firstTenant"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Assert the first token is returned
+	if ar.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+	}
+	// Acquire the first token for second tenant
+	arSecond, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("secondTenant"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if arSecond.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, arSecond.AccessToken)
+	}
+	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
+	base.GetCurrentTime = func() time.Time {
+		return fixedTime
+	}
+	var wg sync.WaitGroup
+	done := make(chan struct{})
 
-		// Acquire the first token for second tenant
-		arSecond, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("secondTenant"))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Assert the first token is returned
-		if arSecond.AccessToken != firstToken {
-			t.Fatalf("wanted %q, got %q", firstToken, arSecond.AccessToken)
-		}
+	firstTenantChecker := false
+	secondTenantChecker := false
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))),
+	)
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))))
 
-		fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
-		base.GetCurrentTime = func() time.Time {
-			return fixedTime
-		}
-		var wg sync.WaitGroup
-		firstTenantChecker := false
-		secondTenantChecker := false
-
-		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))),
-		)
-		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))))
-
-		for i := 0; i < 10000; i++ {
-			wg.Add(2)
-			go func() {
-				defer wg.Done()
-				ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				if ar.AccessToken == secondToken+"firstTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-					if firstTenantChecker {
-						t.Error("Error can only call this once")
-					} else {
-						firstTenantChecker = true
-					}
-				}
-			}()
-			go func() {
-				defer wg.Done()
-				ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				if ar.AccessToken == secondToken+"secondTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-					if secondTenantChecker {
-						t.Error("Error can only call this once")
-					} else {
-						secondTenantChecker = true
-					}
-				}
-			}()
-		}
-		// Waiting for all goroutines to finish
+	for i := 0; i < 10000; i++ {
+		wg.Add(2)
 		go func() {
-			wg.Wait()
-			if !secondTenantChecker && !firstTenantChecker {
-				t.Error("Error should be called at least once")
+			defer wg.Done()
+			ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if ar.AccessToken == secondToken+"firstTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
+				if firstTenantChecker {
+					t.Error("Error can only call this once")
+				} else {
+					firstTenantChecker = true
+				}
 			}
 		}()
+		go func() {
+			defer wg.Done()
+			ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if ar.AccessToken == secondToken+"secondTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
+				if secondTenantChecker {
+					t.Error("Error can only call this once")
+				} else {
+					secondTenantChecker = true
+				}
+			}
+		}()
+	}
+	// Wait for all goroutines in a separate goroutine
+	go func() {
 		wg.Wait()
-	})
+		close(done)
+	}()
+
+	// Wait for all goroutines to complete
+	<-done
+
+	if !secondTenantChecker && !firstTenantChecker {
+		t.Error("Error should be called at least once")
+	}
 
 }
 

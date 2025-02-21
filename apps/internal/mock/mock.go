@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -62,10 +63,13 @@ func WithHTTPStatusCode(statusCode int) responseOption {
 
 // Client is a mock HTTP client that returns a sequence of responses. Use AppendResponse to specify the sequence.
 type Client struct {
+	mu   sync.Mutex
 	resp []response
 }
 
 func (c *Client) AppendResponse(opts ...responseOption) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	r := response{code: http.StatusOK, headers: http.Header{}}
 	for _, o := range opts {
 		o.apply(&r)
@@ -74,6 +78,8 @@ func (c *Client) AppendResponse(opts ...responseOption) {
 }
 
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if len(c.resp) == 0 {
 		panic(fmt.Sprintf(`no response for "%s"`, req.URL.String()))
 	}

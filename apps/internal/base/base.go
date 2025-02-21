@@ -169,7 +169,7 @@ type Client struct {
 	cacheAccessor   cache.ExportReplace
 	cacheAccessorMu *sync.RWMutex
 	canRefresh      map[string]*atomic.Value
-	refreshMu       *sync.RWMutex
+	refreshMu       *sync.Mutex
 }
 
 // Option is an optional argument to the New constructor.
@@ -247,7 +247,7 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		manager:         storage.New(token),
 		pmanager:        storage.NewPartitionedManager(token),
 		canRefresh:      make(map[string]*atomic.Value),
-		refreshMu:       &sync.RWMutex{},
+		refreshMu:       &sync.Mutex{},
 	}
 	for _, o := range options {
 		if err = o(&client); err != nil {
@@ -352,14 +352,14 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			if b.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
+			if shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
 				b.refreshMu.Lock()
-				if _, exists := b.canRefresh[tenant]; !exists {
-					var empty atomic.Value
-					empty.Store(false)
-					b.canRefresh[tenant] = &empty
+				refreshValue, exists := b.canRefresh[tenant]
+				if !exists {
+					refreshValue = &atomic.Value{}
+					refreshValue.Store(false)
+					b.canRefresh[tenant] = refreshValue
 				}
-				refreshValue := b.canRefresh[tenant]
 				b.refreshMu.Unlock()
 				if refreshValue.CompareAndSwap(false, true) {
 					defer refreshValue.Store(false)
@@ -483,7 +483,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 var GetCurrentTime = time.Now
 
 // shouldRefresh returns true if the token should be refreshed.
-func (b *Client) shouldRefresh(t time.Time) bool {
+func shouldRefresh(t time.Time) bool {
 	return !t.IsZero() && t.Before(GetCurrentTime())
 }
 

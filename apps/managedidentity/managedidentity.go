@@ -249,7 +249,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
-	var zero atomic.Value = atomic.Value{}
+	zero := atomic.Value{}
 	zero.Store(false)
 	client := Client{
 		miType:             id,

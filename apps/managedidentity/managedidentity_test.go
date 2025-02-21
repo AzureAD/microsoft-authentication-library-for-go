@@ -1142,71 +1142,66 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	miType := SystemAssigned()
 	setEnvVars(t, CloudShell)
 
-	t.Run("Test for refresh multiple request", func(t *testing.T) {
-		originalTime := getCurrentTime
-		defer func() {
-			getCurrentTime = originalTime
-		}()
-		before := cacheManager
-		defer func() { cacheManager = before }()
-		cacheManager = storage.New(nil)
-		// Create a mock client and append mock responses
-		mockClient := mock.SyncClient{}
-		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
-		)
-		// Create the client instance
-		client, err := New(miType, WithHTTPClient(&mockClient))
-		if err != nil {
-			t.Fatal(err)
-		}
-		ar, err := client.AcquireToken(context.Background(), resource)
-		if err != nil {
-			t.Fatal(err)
-		}
-		// Assert the first token is returned
-		if ar.AccessToken != firstToken {
-			t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
-		}
+	originalTime := getCurrentTime
+	defer func() {
+		getCurrentTime = originalTime
+	}()
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+	// Create a mock client and append mock responses
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+	)
+	// Create the client instance
+	client, err := New(miType, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Assert the first token is returned
+	if ar.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+	}
 
-		fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
-		getCurrentTime = func() time.Time {
-			return fixedTime
-		}
-		var wg sync.WaitGroup
-		requestChecker := false
+	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
+	getCurrentTime = func() time.Time {
+		return fixedTime
+	}
+	var wg sync.WaitGroup
+	requestChecker := false
 
-		mockClient.AppendResponse(
-			mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+43200))), mock.WithCallback(func(req *http.Request) {
-			}),
-		)
-		for i := 0; i < 10000; i++ {
-			wg.Add(1)
-			go func() {
-				defer wg.Done()
-				ar, err := client.AcquireToken(context.Background(), resource)
-				if err != nil {
-					t.Error(err)
-					return
-				}
-				if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
-					if requestChecker {
-						t.Error("Error can only call this only once")
-					} else {
-						requestChecker = true
-					}
-				}
-			}()
-		}
-		// Waiting for all goroutines to finish
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+43200))), mock.WithCallback(func(req *http.Request) {
+		}),
+	)
+	for i := 0; i < 10000; i++ {
+		wg.Add(1)
 		go func() {
-			wg.Wait()
-			if !requestChecker {
-				t.Error("Error should be called at least once")
+			defer wg.Done()
+			ar, err := client.AcquireToken(context.Background(), resource)
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
+				if requestChecker {
+					t.Error("Error can only call this only once")
+				} else {
+					requestChecker = true
+				}
 			}
 		}()
-		wg.Wait()
-	})
+	}
+	wg.Wait()
+	if !requestChecker {
+		t.Error("Error should be called at least once")
+	}
+
 }
 
 func TestShouldRefresh(t *testing.T) {
