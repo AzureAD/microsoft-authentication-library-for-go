@@ -1174,7 +1174,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	requestChecker := false
-
+	ch := make(chan error, 1)
 	mockClient.AppendResponse(
 		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+43200))), mock.WithCallback(func(req *http.Request) {
 		}),
@@ -1185,7 +1185,10 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			defer wg.Done()
 			ar, err := client.AcquireToken(context.Background(), resource)
 			if err != nil {
-				t.Error(err)
+				select {
+				case ch <- err:
+				default:
+				}
 				return
 			}
 			if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
@@ -1198,6 +1201,11 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		}()
 	}
 	wg.Wait()
+	select {
+	case err := <-ch:
+		t.Fatal(err)
+	default:
+	}
 	if !requestChecker {
 		t.Error("Error should be called at least once")
 	}

@@ -105,7 +105,7 @@ func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, e
 
 	// Conditionally add the "refresh_in" field if refreshIn is provided
 	if refreshIn > 0 {
-		body += fmt.Sprintf(`, "refresh_in": %d`, refreshIn)
+		body += fmt.Sprintf(`, "refresh_in":"%d"`, refreshIn)
 	}
 
 	// Add the optional fields if they are provided

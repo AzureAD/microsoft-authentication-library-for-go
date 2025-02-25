@@ -814,8 +814,6 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 		t.Fatalf(`unexpected token "%s"`, ar.AccessToken)
 	}
 }
-
-//  go test -race -timeout 30s -run ^TestRefreshInMultipleRequests$ github.com/AzureAD/microsoft-authentication-library-for-go/apps/confideintial
 func TestRefreshInMultipleRequests(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
@@ -869,6 +867,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	done := make(chan struct{})
+	ch := make(chan error, 1)
 
 	firstTenantChecker := false
 	secondTenantChecker := false
@@ -884,7 +883,10 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			defer wg.Done()
 			ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
 			if err != nil {
-				t.Error(err)
+				select {
+				case ch <- err:
+				default:
+				}
 				return
 			}
 			if ar.AccessToken == secondToken+"firstTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
@@ -899,7 +901,10 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			defer wg.Done()
 			ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
 			if err != nil {
-				t.Error(err)
+				select {
+				case ch <- err:
+				default:
+				}
 				return
 			}
 			if ar.AccessToken == secondToken+"secondTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
@@ -915,15 +920,18 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	go func() {
 		wg.Wait()
 		close(done)
+		close(ch)
 	}()
-
+	select {
+	case err := <-ch:
+		t.Fatal(err)
+	default:
+	}
 	// Wait for all goroutines to complete
 	<-done
-
 	if !secondTenantChecker && !firstTenantChecker {
 		t.Error("Error should be called at least once")
 	}
-
 }
 
 func TestRefreshIn(t *testing.T) {
