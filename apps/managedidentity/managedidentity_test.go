@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -347,7 +348,7 @@ func TestCacheScopes(t *testing.T) {
 	}
 
 	for _, r := range []string{"A", "B/.default"} {
-		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600)))
+		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600, 3600)))
 		for i := 0; i < 2; i++ {
 			ar, err := client.AcquireToken(context.Background(), r)
 			if err != nil {
@@ -1127,6 +1128,124 @@ func TestCreatingIMDSClient(t *testing.T) {
 			}
 			if client.miType.value() != tt.id.value() {
 				t.Fatal("client New() did not assign a correct value to type.")
+			}
+		})
+	}
+}
+
+func TestRefreshInMultipleRequests(t *testing.T) {
+	firstToken := "first token"
+	secondToken := "new token"
+	refreshIn := 43200
+	expiresIn := 86400
+	resource := "https://resource/.default"
+	miType := SystemAssigned()
+	setEnvVars(t, CloudShell)
+
+	originalTime := getCurrentTime
+	defer func() {
+		getCurrentTime = originalTime
+	}()
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+	// Create a mock client and append mock responses
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+	)
+	// Create the client instance
+	client, err := New(miType, WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Assert the first token is returned
+	if ar.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+	}
+
+	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
+	getCurrentTime = func() time.Time {
+		return fixedTime
+	}
+	var wg sync.WaitGroup
+	requestChecker := false
+	ch := make(chan error, 1)
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+43200))), mock.WithCallback(func(req *http.Request) {
+		}),
+	)
+	for i := 0; i < 10000; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ar, err := client.AcquireToken(context.Background(), resource)
+			if err != nil {
+				select {
+				case ch <- err:
+				default:
+				}
+				return
+			}
+			if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
+				if requestChecker {
+					t.Error("Error can only call this only once")
+				} else {
+					requestChecker = true
+				}
+			}
+		}()
+	}
+	wg.Wait()
+	select {
+	case err := <-ch:
+		t.Fatal(err)
+	default:
+	}
+	if !requestChecker {
+		t.Error("Error should be called at least once")
+	}
+
+}
+
+func TestShouldRefresh(t *testing.T) {
+	// Get the current time to use for comparison
+	now := time.Now()
+	tests := []struct {
+		name     string
+		input    time.Time
+		expected bool
+	}{
+		{
+			name:     "Zero time",
+			input:    time.Time{}, // Zero time
+			expected: false,       // Should return false because it's zero time
+		},
+		{
+			name:     "Future time",
+			input:    now.Add(time.Hour), // 1 hour in the future
+			expected: false,              // Should return false because it's in the future
+		},
+		{
+			name:     "Past time",
+			input:    now.Add(-time.Hour), // 1 hour in the past
+			expected: true,                // Should return true because it's in the past
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			client, err := New(SystemAssigned())
+			if err != nil {
+				t.Fatal(err)
+			}
+			result := client.shouldRefresh(tt.input)
+			if result != tt.expected {
+				t.Errorf("shouldRefresh(%v) = %v; expected %v", tt.input, result, tt.expected)
 			}
 		})
 	}

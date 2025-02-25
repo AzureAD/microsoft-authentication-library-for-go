@@ -748,8 +748,8 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			payload: `
 				{
 					"access_token": "secret",
-					"expires_in": 86399,
-					"ext_expires_in": 86399,
+					"expires_in": 86400,
+					"ext_expires_in": 86400,
 					"client_info": error,
 					"scope": "openid profile"
 				}`,
@@ -757,20 +757,67 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 			jwtDecoder: jwtDecoderFake,
 		},
 		{
-			desc: "Success: ExpiresOn as Unix timestamp number, expires_in present",
-			payload: fmt.Sprintf(`
+			desc: "Success with same expires_in and ext_expires_in",
+			payload: `
 				{
 					"access_token": "secret",
-					"expires_on": %d,
-					"expires_in": "3600",
-					"ext_expires_in": 86399,
-					"client_info": {"uid": "uid","utid": "utid"},
+					"expires_in": 86400,
+					"refresh_in": 43200,
+					"ext_expires_in": 86400,
+					"client_info": {"uid":  "uid","utid": "utid"},
 					"scope": "openid profile"
-				}`, time.Now().Add(time.Hour).Unix()),
+				}`,
 			want: TokenResponse{
 				AccessToken:   "secret",
-				ExpiresOn:     time.Now().Add(time.Hour), // from expires_on
-				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86399, 0)},
+				ExpiresOn:     time.Now().Add(time.Hour * 24),
+				RefreshOn:     internalTime.DurationTime{T: time.Unix(43200, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success with different expires_in and refresh On",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_in": 86400,
+					"refresh_in": 43200,
+					"ext_expires_in": 86400,
+					"client_info": {"uid":  "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Now().Add(time.Hour * 24),
+				RefreshOn:     internalTime.DurationTime{T: time.Unix(43199, 0)},
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
+				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
+				ClientInfo: ClientInfo{
+					UID:  "uid",
+					UTID: "utid",
+				},
+			},
+			jwtDecoder: jwtDecoderFake,
+		},
+		{
+			desc: "Success with refresh_in not provided in response",
+			payload: `
+				{
+					"access_token": "secret",
+					"expires_in": 86400,
+					"ext_expires_in": 86400,
+					"client_info": {"uid":  "uid","utid": "utid"},
+					"scope": "openid profile"
+				}`,
+			want: TokenResponse{
+				AccessToken:   "secret",
+				ExpiresOn:     time.Now().Add(time.Hour * 24),
+				ExtExpiresOn:  internalTime.DurationTime{T: time.Unix(86400, 0)},
 				GrantedScopes: Scopes{Slice: []string{"openid", "profile"}},
 				ClientInfo: ClientInfo{
 					UID:  "uid",
