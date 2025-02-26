@@ -866,7 +866,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		return fixedTime
 	}
 	var wg sync.WaitGroup
-	done := make(chan struct{})
+	// done := make(chan struct{})
 	ch := make(chan error, 1)
 
 	firstTenantChecker := false
@@ -916,22 +916,16 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 			}
 		}()
 	}
-	// Wait for all goroutines in a separate goroutine
-	go func() {
-		wg.Wait()
-		close(done)
-		close(ch)
-	}()
+	wg.Wait()
 	select {
 	case err := <-ch:
 		t.Fatal(err)
 	default:
 	}
-	// Wait for all goroutines to complete
-	<-done
 	if !secondTenantChecker && !firstTenantChecker {
 		t.Error("Error should be called at least once")
 	}
+	close(ch)
 }
 
 func TestRefreshIn(t *testing.T) {

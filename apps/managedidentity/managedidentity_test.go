@@ -1209,7 +1209,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	if !requestChecker {
 		t.Error("Error should be called at least once")
 	}
-
+	close(ch)
 }
 
 func TestShouldRefresh(t *testing.T) {
