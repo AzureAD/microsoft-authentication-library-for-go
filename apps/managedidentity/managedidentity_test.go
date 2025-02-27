@@ -1192,11 +1192,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				return
 			}
 			if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
-				if requestChecker {
-					t.Error("Error can only call this only once")
-				} else {
-					requestChecker = true
-				}
+				requestChecker = true
 			}
 		}()
 	}

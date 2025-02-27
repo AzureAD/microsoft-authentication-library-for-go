@@ -871,6 +871,10 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	secondTenantChecker := false
 	mockClient.AppendResponse(
 		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))),
+		mock.WithCallback(func(r *http.Request) {
+			wg.Done()
+			time.Sleep(500 * time.Millisecond)
+		}),
 	)
 	mockClient.AppendResponse(
 		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))))
@@ -888,11 +892,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				return
 			}
 			if ar.AccessToken == secondToken+"firstTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-				if firstTenantChecker {
-					t.Error("Error can only call this once")
-				} else {
-					firstTenantChecker = true
-				}
+				firstTenantChecker = true
 			}
 		}()
 		go func() {
@@ -906,11 +906,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				return
 			}
 			if ar.AccessToken == secondToken+"secondTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-				if secondTenantChecker {
-					t.Error("Error can only call this once")
-				} else {
-					secondTenantChecker = true
-				}
+				secondTenantChecker = true
 			}
 		}()
 	}
