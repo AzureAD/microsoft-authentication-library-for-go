@@ -870,12 +870,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	firstTenantChecker := false
 	secondTenantChecker := false
 	mockClient.AppendResponse(
-		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))),
-		mock.WithCallback(func(r *http.Request) {
-			wg.Done()
-			time.Sleep(500 * time.Millisecond)
-		}),
-	)
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))))
 	mockClient.AppendResponse(
 		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))))
 
@@ -919,6 +914,96 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	if !secondTenantChecker && !firstTenantChecker {
 		t.Error("Error should be called at least once")
 	}
+}
+
+func TestConcurrentRequests(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	firstToken := "first token"
+	secondToken := "new token "
+	lmo := "login.microsoftonline.com"
+	refreshIn := 43200
+	expiresIn := 86400
+
+	originalTime := base.Now
+	defer func() {
+		base.Now = originalTime
+	}()
+	// Create a mock client and append mock responses
+	mockClient := mock.Client{}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "firstTenant")))
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+	)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "secondTenant")))
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+	)
+	// Create the client instance
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, "firstTenant"), fakeClientID, cred, WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Acquire the first token for first tenant
+	ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("firstTenant"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Assert the first token is returned
+	if ar.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+	}
+	// Acquire the first token for second tenant
+	arSecond, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithTenantID("secondTenant"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if arSecond.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, arSecond.AccessToken)
+	}
+	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
+	base.Now = func() time.Time {
+		return fixedTime
+	}
+	var wg sync.WaitGroup
+	var wgComeplete sync.WaitGroup
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))),
+	)
+
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))),
+		mock.WithCallback(func(r *http.Request) {
+			time.Sleep(2 * time.Second)
+		}),
+	)
+
+	wg.Add(1)
+	wgComeplete.Add(1)
+	go func() {
+		ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
+		if err != nil {
+			t.Error("Unexpected error", err)
+		}
+		wg.Wait()
+		wgComeplete.Done()
+		if ar.AccessToken != secondToken+"firstTenant" {
+			t.Error("wanted first token, got second")
+		}
+	}()
+	go func() {
+		ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
+		if err != nil {
+			t.Error("Unexpected error", err)
+		}
+		if ar.AccessToken != secondToken+"secondTenant" {
+			t.Error("wanted second token, got first")
+		}
+		wg.Done()
+	}()
+	wgComeplete.Wait()
 }
 
 func TestRefreshIn(t *testing.T) {
