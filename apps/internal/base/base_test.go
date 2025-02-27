@@ -443,39 +443,3 @@ func TestAuthResultFromStorage(t *testing.T) {
 		}
 	}
 }
-
-// TestShouldRefresh tests the shouldRefresh function
-func TestShouldRefresh(t *testing.T) {
-	// Get the current time to use for comparison
-	now := time.Now()
-	tests := []struct {
-		name     string
-		input    time.Time
-		expected bool
-	}{
-		{
-			name:     "Zero time",
-			input:    time.Time{}, // Zero time
-			expected: false,       // Should return false because it's zero time
-		},
-		{
-			name:     "Future time",
-			input:    now.Add(time.Hour), // 1 hour in the future
-			expected: false,              // Should return false because it's in the future
-		},
-		{
-			name:     "Past time",
-			input:    now.Add(-time.Hour), // 1 hour in the past
-			expected: true,                // Should return true because it's in the past
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			result := shouldRefresh(tt.input)
-			if result != tt.expected {
-				t.Errorf("shouldRefresh(%v) = %v; expected %v", tt.input, result, tt.expected)
-			}
-		})
-	}
-}

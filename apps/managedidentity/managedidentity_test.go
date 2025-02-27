@@ -1142,9 +1142,9 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	miType := SystemAssigned()
 	setEnvVars(t, CloudShell)
 
-	originalTime := getCurrentTime
+	originalTime := Now
 	defer func() {
-		getCurrentTime = originalTime
+		Now = originalTime
 	}()
 	before := cacheManager
 	defer func() { cacheManager = before }()
@@ -1169,7 +1169,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	}
 
 	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
-	getCurrentTime = func() time.Time {
+	Now = func() time.Time {
 		return fixedTime
 	}
 	var wg sync.WaitGroup

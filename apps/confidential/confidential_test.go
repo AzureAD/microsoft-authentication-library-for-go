@@ -825,9 +825,9 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	refreshIn := 43200
 	expiresIn := 86400
 
-	originalTime := base.GetCurrentTime
+	originalTime := base.Now
 	defer func() {
-		base.GetCurrentTime = originalTime
+		base.Now = originalTime
 	}()
 	// Create a mock client and append mock responses
 	mockClient := mock.Client{}
@@ -862,13 +862,11 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		t.Fatalf("wanted %q, got %q", firstToken, arSecond.AccessToken)
 	}
 	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
-	base.GetCurrentTime = func() time.Time {
+	base.Now = func() time.Time {
 		return fixedTime
 	}
 	var wg sync.WaitGroup
-	// done := make(chan struct{})
 	ch := make(chan error, 1)
-
 	firstTenantChecker := false
 	secondTenantChecker := false
 	mockClient.AppendResponse(
@@ -925,7 +923,6 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	if !secondTenantChecker && !firstTenantChecker {
 		t.Error("Error should be called at least once")
 	}
-	close(ch)
 }
 
 func TestRefreshIn(t *testing.T) {
@@ -952,9 +949,9 @@ func TestRefreshIn(t *testing.T) {
 	} {
 		name := "token doesn't need refresh"
 		t.Run(name, func(t *testing.T) {
-			originalTime := base.GetCurrentTime
+			originalTime := base.Now
 			defer func() {
-				base.GetCurrentTime = originalTime
+				base.Now = originalTime
 			}()
 			// Create a mock client and append mock responses
 			mockClient := mock.Client{}
@@ -994,7 +991,7 @@ func TestRefreshIn(t *testing.T) {
 				t.Fatalf("expected RefreshOn ~= %d seconds from now, got %d", refreshIn, ar.Metadata.RefreshOn.Second())
 			}
 			fixedTime := time.Now().Add(time.Duration(tt.secondRequestAfter) * time.Second)
-			base.GetCurrentTime = func() time.Time {
+			base.Now = func() time.Time {
 				return fixedTime
 			}
 			ar, err = client.AcquireTokenSilent(context.Background(), tokenScope)

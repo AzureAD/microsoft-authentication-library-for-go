@@ -298,17 +298,11 @@ func GetSource() (Source, error) {
 
 // This function wraps time.Now() and is used for refreshing the application
 // was created to test the function against refreshin
-var getCurrentTime = time.Now
+var Now = time.Now
 
 // shouldRefresh returns true if the token should be refreshed.
 func (b Client) shouldRefresh(t time.Time) bool {
-	if t.IsZero() || t.After(getCurrentTime()) {
-		return false
-	}
-	if !b.canRefresh.CompareAndSwap(false, true) {
-		return false
-	}
-	return true
+	return !t.IsZero() && !t.After(Now()) && b.canRefresh.CompareAndSwap(false, true)
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.
@@ -465,9 +459,10 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 		return base.AuthResult{}, err
 	}
 	// if refreshOn is not set, set it to half of the time until expiry if expiry is more than 2 hours away
-	timeUntilExpiry := time.Until(token.ExpiresOn)
-	if token.RefreshOn.T.IsZero() && timeUntilExpiry > (time.Hour*2) {
-		token.RefreshOn.T = time.Now().Add(timeUntilExpiry / 2)
+	if token.RefreshOn.T.IsZero() {
+		if lifetime := time.Until(token.ExpiresOn); lifetime > 2*time.Hour {
+			token.RefreshOn.T = time.Now().Add(lifetime / 2)
+		}
 	}
 	ar, err := base.NewAuthResult(token, account)
 	if err != nil {

@@ -169,7 +169,7 @@ type Client struct {
 	cacheAccessor   cache.ExportReplace
 	cacheAccessorMu *sync.RWMutex
 	canRefresh      map[string]*atomic.Value
-	refreshMu       *sync.Mutex
+	canRefreshMu    *sync.Mutex
 }
 
 // Option is an optional argument to the New constructor.
@@ -247,7 +247,7 @@ func New(clientID string, authorityURI string, token *oauth.Client, options ...O
 		manager:         storage.New(token),
 		pmanager:        storage.NewPartitionedManager(token),
 		canRefresh:      make(map[string]*atomic.Value),
-		refreshMu:       &sync.Mutex{},
+		canRefreshMu:    &sync.Mutex{},
 	}
 	for _, o := range options {
 		if err = o(&client); err != nil {
@@ -352,15 +352,15 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			if shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
-				b.refreshMu.Lock()
-				refreshValue, exists := b.canRefresh[tenant]
-				if !exists {
+			if !storageTokenResponse.AccessToken.RefreshOn.T.IsZero() && Now().After(storageTokenResponse.AccessToken.RefreshOn.T) {
+				b.canRefreshMu.Lock()
+				refreshValue, ok := b.canRefresh[tenant]
+				if !ok {
 					refreshValue = &atomic.Value{}
 					refreshValue.Store(false)
 					b.canRefresh[tenant] = refreshValue
 				}
-				b.refreshMu.Unlock()
+				b.canRefreshMu.Unlock()
 				if refreshValue.CompareAndSwap(false, true) {
 					defer refreshValue.Store(false)
 					if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
@@ -480,12 +480,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 
 // This function wraps time.Now() and is used for refreshing the application
 // was created to test the function against refreshin
-var GetCurrentTime = time.Now
-
-// shouldRefresh returns true if the token should be refreshed.
-func shouldRefresh(t time.Time) bool {
-	return !t.IsZero() && t.Before(GetCurrentTime())
-}
+var Now = time.Now
 
 func (b Client) AllAccounts(ctx context.Context) ([]shared.Account, error) {
 	if b.cacheAccessor != nil {
