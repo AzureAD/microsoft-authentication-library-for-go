@@ -63,10 +63,13 @@ func WithHTTPStatusCode(statusCode int) responseOption {
 
 // Client is a mock HTTP client that returns a sequence of responses. Use AppendResponse to specify the sequence.
 type Client struct {
-	mu   sync.Mutex
+	mu   *sync.Mutex
 	resp []response
 }
 
+func NewClient() *Client {
+	return &Client{mu: &sync.Mutex{}}
+}
 func (c *Client) AppendResponse(opts ...responseOption) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

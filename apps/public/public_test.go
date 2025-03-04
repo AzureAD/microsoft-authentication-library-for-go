@@ -88,11 +88,11 @@ func TestAcquireTokenSilentHomeTenantAliases(t *testing.T) {
 	))
 	lmo := "login.microsoftonline.com"
 	for _, alias := range []string{"common", "organizations"} {
-		mockClient := mock.Client{}
+		mockClient := mock.NewClient()
 		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, alias)))
 		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 3600, 0)))
 		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, homeTenant)))
-		client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, alias)), WithHTTPClient(&mockClient))
+		client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, alias)), WithHTTPClient(mockClient))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -118,8 +118,8 @@ func TestAcquireTokenSilentHomeTenantAliases(t *testing.T) {
 func TestAcquireTokenSilentWithTenantID(t *testing.T) {
 	tenantA, tenantB := "a", "b"
 	lmo := "login.microsoftonline.com"
-	mockClient := mock.Client{}
-	client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, tenantA)), WithHTTPClient(&mockClient))
+	mockClient := mock.NewClient()
+	client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, tenantA)), WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 		for _, method := range []string{"authcode", "authcodeURL", "devicecode", "interactive", "password"} {
 			t.Run(method, func(t *testing.T) {
 				URL := ""
-				mockClient := mock.Client{}
+				mockClient := mock.NewClient()
 				if method == "obo" {
 					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
@@ -235,7 +235,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(test.tenant, test.authority), "rt", clientInfo, 3600, 0)),
 					mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 				)
-				client, err := New("client-id", WithAuthority(test.authority), WithHTTPClient(&mockClient))
+				client, err := New("client-id", WithAuthority(test.authority), WithHTTPClient(mockClient))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -377,7 +377,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 		for _, method := range []string{"authcode", "devicecode", "interactive", "password"} {
 			t.Run(method, func(t *testing.T) {
 				authority := stackurl + tenant
-				mockClient := mock.Client{}
+				mockClient := mock.NewClient()
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
 				if method == "devicecode" {
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
@@ -388,7 +388,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "rt", clientInfo, 3600, 0)),
 				)
-				client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient), WithInstanceDiscovery(false))
+				client, err := New("client-id", WithAuthority(authority), WithHTTPClient(mockClient), WithInstanceDiscovery(false))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -455,11 +455,11 @@ func TestWithCache(t *testing.T) {
 	lmo := "login.microsoftonline.com"
 	tenantA, tenantB := "a", "b"
 	authorityA, authorityB := fmt.Sprintf(authorityFmt, lmo, tenantA), fmt.Sprintf(authorityFmt, lmo, tenantB)
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenantA)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenantA, authorityA), refreshToken, clientInfo, 3600, 0)))
 
-	client, err := New("client-id", WithAuthority(authorityA), WithCache(&cache), WithHTTPClient(&mockClient))
+	client, err := New("client-id", WithAuthority(authorityA), WithCache(&cache), WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -477,7 +477,7 @@ func TestWithCache(t *testing.T) {
 	}
 
 	// a client configured for a different tenant should be able to authenticate silently with the shared cache's data
-	client, err = New("client-id", WithAuthority(authorityB), WithCache(&cache), WithHTTPClient(&mockClient))
+	client, err = New("client-id", WithAuthority(authorityB), WithCache(&cache), WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -568,7 +568,7 @@ func TestWithClaims(t *testing.T) {
 		}
 		for _, method := range []string{"authcode", "authcodeURL", "devicecode", "interactive", "password", "passwordFederated"} {
 			t.Run(method, func(t *testing.T) {
-				mockClient := mock.Client{}
+				mockClient := mock.NewClient()
 				if method == "obo" {
 					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
@@ -591,7 +591,7 @@ func TestWithClaims(t *testing.T) {
 						validate(t, r.Form)
 					}),
 				)
-				client, err := New("client-id", WithAuthority(authority), WithClientCapabilities(test.capabilities), WithHTTPClient(&mockClient))
+				client, err := New("client-id", WithAuthority(authority), WithClientCapabilities(test.capabilities), WithHTTPClient(mockClient))
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -680,14 +680,14 @@ func TestWithPortAuthority(t *testing.T) {
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
 		fmt.Sprintf(`{"uid":"uid","utid":"%s"}`, tenant),
 	))
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(host, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
 	mockClient.AppendResponse(
 		mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, "issuer"), refreshToken, clientInfo, 3600, 0)),
 		mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
 	)
-	client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient))
+	client, err := New("client-id", WithAuthority(authority), WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -949,7 +949,7 @@ func getNewClientWithMockedResponses(
 ) (Client, error) {
 	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
 
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 	for _, response := range responses {
 		mockClient.AppendResponse(mock.WithBody(response))
 	}
@@ -960,7 +960,7 @@ func getNewClientWithMockedResponses(
 		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0)))
 	}
 
-	client, err := New("client-id", WithAuthority(authority), WithHTTPClient(&mockClient))
+	client, err := New("client-id", WithAuthority(authority), WithHTTPClient(mockClient))
 	if err != nil {
 		return client, fmt.Errorf("failed to create new public client with error: %w", err)
 	}
