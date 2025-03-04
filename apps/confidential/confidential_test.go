@@ -922,7 +922,7 @@ func TestConcurrentRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstToken := "first token"
-	secondToken := "new token "
+	// secondToken := "new token "
 	lmo := "login.microsoftonline.com"
 	refreshIn := 43200
 	expiresIn := 86400
@@ -967,43 +967,53 @@ func TestConcurrentRequests(t *testing.T) {
 	base.Now = func() time.Time {
 		return fixedTime
 	}
-	var wg sync.WaitGroup
-	var wgComeplete sync.WaitGroup
-	mockClient.AppendResponse(
-		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))),
-	)
+	present := make(chan string, 2)
+	proceed := make(chan struct{})
+	wg := sync.WaitGroup{}
+	// need a timeout because a bug could cause deadlock
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	for _, tenant := range []string{"firstTenant", "secondTenant"} {
+		wg.Add(1)
+		mockClient.AppendResponse(
+			mock.WithBody(mock.GetAccessTokenBody(tenant, "", "", "", expiresIn, refreshIn)),
+			mock.WithCallback(func(r *http.Request) {
+				if s := strings.SplitN(r.URL.Path, "/", 3); len(s) == 3 {
+					// send the tenant from the URL, which uniquely identifies the goroutine
+					present <- s[1]
+					<-proceed
+				} else {
+					t.Error("unexpected token request URL: " + r.URL.String())
+				}
+			}),
+		)
+		go func(id string) {
+			defer wg.Done()
+			if _, err := client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(id)); err != nil {
+				t.Error("Unexpected error", err)
+			}
+		}(tenant)
+	}
+	for a, b := false, false; !(a && b); {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for both goroutines to refresh")
+		case g := <-present:
+			switch g {
+			case "firstTenant":
+				a = true
+			case "secondTenant":
+				b = true
+			default:
+				t.Fatal("unexpected goroutine: " + g)
+			}
+			proceed <- struct{}{}
 
-	mockClient.AppendResponse(
-		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))),
-		mock.WithCallback(func(r *http.Request) {
-			time.Sleep(2 * time.Second)
-		}),
-	)
+		}
+	}
 
-	wg.Add(1)
-	wgComeplete.Add(1)
-	go func() {
-		ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
-		if err != nil {
-			t.Error("Unexpected error", err)
-		}
-		wg.Wait()
-		wgComeplete.Done()
-		if ar.AccessToken != secondToken+"firstTenant" {
-			t.Error("wanted first token, got second")
-		}
-	}()
-	go func() {
-		ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
-		if err != nil {
-			t.Error("Unexpected error", err)
-		}
-		if ar.AccessToken != secondToken+"secondTenant" {
-			t.Error("wanted second token, got first")
-		}
-		wg.Done()
-	}()
-	wgComeplete.Wait()
+	close(proceed)
+	wg.Wait()
 }
 
 func TestRefreshIn(t *testing.T) {
