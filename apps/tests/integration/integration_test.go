@@ -21,6 +21,8 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 )
 
@@ -53,7 +55,9 @@ func httpRequest(ctx context.Context, url string, query url.Values, accessToken 
 		return nil, fmt.Errorf("failed to build new http request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	req.URL.RawQuery = query.Encode()
+	if querry := query.Encode(); querry != "" {
+		req.URL.RawQuery = querry
+	}
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -139,6 +143,18 @@ func (l *labClient) labAccessToken() (string, error) {
 		}
 	}
 	return result.AccessToken, nil
+}
+
+func (l *labClient) getLabResponse(url string) (string, error) {
+	accessToken, err := l.labAccessToken()
+	if err != nil {
+		return "", fmt.Errorf("problem getting lab access token: %w", err)
+	}
+	responseBody, err := httpRequest(context.Background(), url, nil, accessToken)
+	if err != nil {
+		return "", err
+	}
+	return string(responseBody), nil
 }
 
 func (l *labClient) user(ctx context.Context, query url.Values) (user, error) {
@@ -479,4 +495,113 @@ func TestAccountFromCache(t *testing.T) {
 		t.Fatal("TestAccountFromCache: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
 	}
 
+}
+
+type urlModifierTransport struct {
+	base       http.RoundTripper
+	modifyFunc func(*http.Request)
+}
+
+// RoundTrip implements the http.RoundTripper interface
+func (t *urlModifierTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	// Create a copy of the request to avoid modifying the original
+	if t.modifyFunc != nil {
+		t.modifyFunc(req)
+	}
+	return t.base.RoundTrip(req)
+}
+
+func TestAcquireMsiTokenExchangeForEstsToken(t *testing.T) {
+	labC, err := newLabClient()
+	if err != nil {
+		t.Log(" error when creating lab client:", err)
+	}
+	baseUrl := "https://service.msidlab.com/"
+	resource := "api://azureadtokenexchange"
+
+	response, err := labC.getLabResponse(baseUrl + "EnvironmentVariables?resource=WebApp")
+	if err != nil {
+		t.Fatalf("Failed to get resource env variable: %v", err)
+	}
+	var result map[string]string
+	err = json.Unmarshal([]byte(response), &result)
+	if err != nil {
+		t.Fatalf("Failed to unmarshal response: %v", err)
+	}
+
+	for key, value := range result {
+		test := "https://service.msidlab.com/MSIToken?azureresource=WebApp&uri=http://127.0.0.1:414882/msi/token/"
+		if key == "IDENTITY_ENDPOINT" {
+			os.Setenv(key, test)
+		} else {
+			os.Setenv(key, value)
+		}
+		defer os.Unsetenv(key)
+	}
+	// Replace your existing http.Client with this one
+	httpClient := http.Client{
+		Transport: &urlModifierTransport{
+			base: http.DefaultTransport,
+			modifyFunc: func(req *http.Request) {
+				req.URL.Host = "service.msidlab.com"
+				req.URL.Path = "/MSIToken"
+				req.URL.Scheme = "https"
+				req.URL.RawQuery = "azureresource=WebApp&uri=http%3A%2F%2F127.0.0.1%3A41488%2Fmsi%2Ftoken%2F%3Fapi-version%3D2019-08-01%26resource%3Dapi%3A%2F%2Fazureadtokenexchange%26client_id%3D4b7a4b0b-ecb2-409e-879a-1e21a15ddaf6"
+				accessToken, err := labC.labAccessToken()
+				if err != nil {
+					t.Fatal("Failed to get access token: ", err)
+				}
+				req.Header.Set("Authorization", "Bearer "+accessToken)
+			},
+		},
+	}
+	ctx := context.Background()
+	msiClient, err := managedidentity.New(managedidentity.UserAssignedClientID("4b7a4b0b-ecb2-409e-879a-1e21a15ddaf6"),
+		managedidentity.WithHTTPClient(&httpClient))
+	if err != nil {
+		t.Fatalf("Failed to create MSI client: %v", err)
+	}
+	token, err := msiClient.AcquireToken(ctx, resource)
+	if err != nil {
+		t.Fatalf("Failed to acquire token: %v", err)
+	}
+	if token.AccessToken == "" {
+		t.Fatal("Expected non-empty access token")
+	}
+	cred := confidential.NewCredFromAssertionCallback(func(ctx context.Context, opt confidential.AssertionRequestOptions) (string, error) {
+		token, err := msiClient.AcquireToken(ctx, resource)
+		if err != nil {
+			t.Fatalf("Failed to acquire token: %v", err)
+			return "", err
+		}
+		return token.AccessToken, nil
+	})
+	confidentialClient, err := confidential.New(microsoftAuthority,
+		defaultClientId,
+		cred,
+		confidential.WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatalf("Failed to create confidential client: %v", err)
+	}
+
+	authResult, err := confidentialClient.AcquireTokenByCredential(ctx, []string{"https://msidlabs.vault.azure.net/.default"})
+	if err != nil {
+		t.Fatalf("Failed to acquire token by credential: %v", err)
+	}
+	if authResult.AccessToken == "" {
+		t.Fatal("Expected non-empty access token")
+	}
+	if authResult.Metadata.TokenSource != base.IdentityProvider {
+		t.Fatalf("Expected token source 'IdentityProvider', got '%d'", authResult.Metadata.TokenSource)
+	}
+	authResult, err = confidentialClient.AcquireTokenSilent(ctx, []string{"https://msidlabs.vault.azure.net/.default"})
+	if err != nil {
+		t.Fatalf("Failed to acquire token by credential: %v", err)
+	}
+	if authResult.AccessToken == "" {
+		t.Fatal("Expected non-empty access token")
+	}
+	if authResult.Metadata.TokenSource != base.Cache {
+		t.Fatalf("Expected token source 'Cache', got '%d'", authResult.Metadata.TokenSource)
+	}
 }
