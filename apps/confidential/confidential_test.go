@@ -873,39 +873,46 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	ch := make(chan error, 1)
 	firstTenantChecker := false
 	secondTenantChecker := false
-	mockClient.AppendResponse(
-		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"firstTenant", expiresIn, refreshIn+44200))))
-	mockClient.AppendResponse(
-		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken+"secondTenant", expiresIn, refreshIn+44200))))
+	respond := func(r *http.Request) {
+		if s := strings.SplitN(r.URL.Path, "/", 3); len(s) == 3 {
+			switch s[1] {
+			case "firstTenant":
+				firstTenantChecker = true
+			case "secondTenant":
+				secondTenantChecker = true
+			default:
+				t.Error("unexpected token request URL: " + r.URL.String())
+			}
+		} else {
+			t.Error("unexpected token request URL: " + r.URL.String())
+		}
+	}
+	body := []byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+44200))
+	mockClient.AppendResponse(mock.WithBody(body), mock.WithCallback(respond))
+	mockClient.AppendResponse(mock.WithBody(body), mock.WithCallback(respond))
 
 	for i := 0; i < 10000; i++ {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
+			_, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("firstTenant"))
 			if err != nil {
 				select {
 				case ch <- err:
 				default:
 				}
 				return
-			}
-			if ar.AccessToken == secondToken+"firstTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-				firstTenantChecker = true
 			}
 		}()
 		go func() {
 			defer wg.Done()
-			ar, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
+			_, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithTenantID("secondTenant"))
 			if err != nil {
 				select {
 				case ch <- err:
 				default:
 				}
 				return
-			}
-			if ar.AccessToken == secondToken+"secondTenant" && ar.Metadata.TokenSource == base.IdentityProvider {
-				secondTenantChecker = true
 			}
 		}()
 	}
@@ -926,7 +933,6 @@ func TestConcurrentRequests(t *testing.T) {
 		t.Fatal(err)
 	}
 	firstToken := "first token"
-	secondToken := "second token"
 	lmo := "login.microsoftonline.com"
 	refreshIn := 43200
 	expiresIn := 86400
@@ -972,43 +978,49 @@ func TestConcurrentRequests(t *testing.T) {
 	base.Now = func() time.Time {
 		return fixedTime
 	}
-
+	present := make(chan string, 2)
+	proceed := make(chan struct{})
 	wg := sync.WaitGroup{}
-	firstTenantChecker := false
-	secondTenantChecker := false
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	respond := func(r *http.Request) {
-		if s := strings.SplitN(r.URL.Path, "/", 3); len(s) == 3 {
-			switch s[1] {
-			case "firstTenant":
-				firstTenantChecker = true
-			case "secondTenant":
-				secondTenantChecker = true
-			default:
-				t.Error("unexpected token request URL: " + r.URL.String())
-			}
-			wg.Done()
-		} else {
-			t.Error("unexpected token request URL: " + r.URL.String())
-		}
-	}
-	body := []byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+44200))
-	mockClient.AppendResponse(mock.WithBody(body), mock.WithCallback(respond))
-	mockClient.AppendResponse(mock.WithBody(body), mock.WithCallback(respond))
 	defer cancel()
 	for _, tenant := range []string{"firstTenant", "secondTenant"} {
 		wg.Add(1)
+		mockClient.AppendResponse(
+			mock.WithBody(mock.GetAccessTokenBody(tenant, "", "", "", expiresIn, refreshIn)),
+			mock.WithCallback(func(r *http.Request) {
+				if s := strings.SplitN(r.URL.Path, "/", 3); len(s) == 3 {
+					present <- s[1]
+					<-proceed
+				} else {
+					t.Error("unexpected token request URL: " + r.URL.String())
+				}
+			}),
+		)
 		go func(id string) {
+			defer wg.Done()
 			if _, err := client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(id)); err != nil {
 				t.Error("Unexpected error", err)
 			}
 		}(tenant)
 	}
-
-	wg.Wait()
-	if !firstTenantChecker && !secondTenantChecker {
-		t.Error("Error should be called at least once")
+	for a, b := false, false; !(a && b); {
+		select {
+		case <-ctx.Done():
+			t.Fatal("timed out waiting for both goroutines to refresh")
+		case g := <-present:
+			switch g {
+			case "firstTenant":
+				a = true
+			case "secondTenant":
+				b = true
+			default:
+				t.Fatal("unexpected goroutine: " + g)
+			}
+			proceed <- struct{}{}
+		}
 	}
+	close(proceed)
+	wg.Wait()
 }
 
 func TestRefreshIn(t *testing.T) {
