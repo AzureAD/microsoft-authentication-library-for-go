@@ -35,7 +35,7 @@ const (
 	organizationsAuthority = microsoftAuthorityHost + "organizations/"
 	microsoftAuthority     = microsoftAuthorityHost + "72f988bf-86f1-41af-91ab-2d7cd011db47"
 	//msIDlabTenantAuthority = microsoftAuthorityHost + "msidlab4.onmicrosoft.com" - Will be needed in the future
-
+	msiClientId = "4b7a4b0b-ecb2-409e-879a-1e21a15ddaf6"
 	// Default values
 	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
 	pemFile         = "../../../cert.pem"
@@ -49,16 +49,12 @@ func httpRequest(ctx context.Context, url string, query url.Values, accessToken 
 		ctx, cancel = context.WithTimeout(ctx, 10*time.Second)
 		defer cancel()
 	}
-
 	req, err := http.NewRequestWithContext(ctx, "GET", url, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to build new http request: %w", err)
 	}
 	req.Header.Set("Authorization", "Bearer "+accessToken)
-	if querry := query.Encode(); querry != "" {
-		req.URL.RawQuery = querry
-	}
-
+	req.URL.RawQuery = query.Encode()
 	resp, err := httpClient.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http.Get(%s) failed: %w", req.URL.String(), err)
@@ -504,17 +500,17 @@ type urlModifierTransport struct {
 
 // RoundTrip implements the http.RoundTripper interface
 func (t *urlModifierTransport) RoundTrip(req *http.Request) (*http.Response, error) {
-	// Create a copy of the request to avoid modifying the original
+	// Modifying the original resquest to have the updated URL
 	if t.modifyFunc != nil {
 		t.modifyFunc(req)
 	}
 	return t.base.RoundTrip(req)
 }
 
-func TestAcquireMsiTokenExchangeForEstsToken(t *testing.T) {
+func TestAcquireMSITokenExchangeForESTSToken(t *testing.T) {
 	labC, err := newLabClient()
 	if err != nil {
-		t.Log(" error when creating lab client:", err)
+		t.Fatal(err)
 	}
 	baseUrl := "https://service.msidlab.com/"
 	resource := "api://azureadtokenexchange"
@@ -530,12 +526,10 @@ func TestAcquireMsiTokenExchangeForEstsToken(t *testing.T) {
 	}
 
 	for key, value := range result {
-		test := "https://service.msidlab.com/MSIToken?azureresource=WebApp&uri=http://127.0.0.1:414882/msi/token/"
 		if key == "IDENTITY_ENDPOINT" {
-			os.Setenv(key, test)
-		} else {
-			os.Setenv(key, value)
+			value = "https://service.msidlab.com/MSIToken?azureresource=WebApp&uri=" + value
 		}
+		os.Setenv(key, value)
 		defer os.Unsetenv(key)
 	}
 	// Replace your existing http.Client with this one
@@ -546,7 +540,7 @@ func TestAcquireMsiTokenExchangeForEstsToken(t *testing.T) {
 				req.URL.Host = "service.msidlab.com"
 				req.URL.Path = "/MSIToken"
 				req.URL.Scheme = "https"
-				req.URL.RawQuery = "azureresource=WebApp&uri=http%3A%2F%2F127.0.0.1%3A41488%2Fmsi%2Ftoken%2F%3Fapi-version%3D2019-08-01%26resource%3Dapi%3A%2F%2Fazureadtokenexchange%26client_id%3D4b7a4b0b-ecb2-409e-879a-1e21a15ddaf6"
+				req.URL.RawQuery = "azureresource=WebApp&uri=http%3A%2F%2F127.0.0.1%3A41488%2Fmsi%2Ftoken%2F%3Fapi-version%3D2019-08-01%26resource%3Dapi%3A%2F%2Fazureadtokenexchange%26client_id%3D" + msiClientId
 				accessToken, err := labC.labAccessToken()
 				if err != nil {
 					t.Fatal("Failed to get access token: ", err)
@@ -556,7 +550,7 @@ func TestAcquireMsiTokenExchangeForEstsToken(t *testing.T) {
 		},
 	}
 	ctx := context.Background()
-	msiClient, err := managedidentity.New(managedidentity.UserAssignedClientID("4b7a4b0b-ecb2-409e-879a-1e21a15ddaf6"),
+	msiClient, err := managedidentity.New(managedidentity.UserAssignedClientID(msiClientId),
 		managedidentity.WithHTTPClient(&httpClient))
 	if err != nil {
 		t.Fatalf("Failed to create MSI client: %v", err)
@@ -572,7 +566,6 @@ func TestAcquireMsiTokenExchangeForEstsToken(t *testing.T) {
 		token, err := msiClient.AcquireToken(ctx, resource)
 		if err != nil {
 			t.Fatalf("Failed to acquire token: %v", err)
-			return "", err
 		}
 		return token.AccessToken, nil
 	})
