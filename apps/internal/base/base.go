@@ -352,45 +352,24 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			if storageTokenResponse.AccessToken.RefreshOn.T.IsZero() || Now().Before(storageTokenResponse.AccessToken.RefreshOn.T) {
-				ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-				return ar, err
-			}
-
-			b.canRefreshMu.Lock()
-			refreshValue, ok := b.canRefresh[tenant]
-			if !ok {
-				refreshValue = &atomic.Value{}
-				refreshValue.Store(false)
-				b.canRefresh[tenant] = refreshValue
-			}
-			b.canRefreshMu.Unlock()
-
-			if !refreshValue.CompareAndSwap(false, true) {
-				ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-				return ar, err
-			}
-			defer refreshValue.Store(false)
-
-			newStorageToken, err := m.Read(ctx, authParams)
-			if err != nil {
-				return ar, err
-			}
-
-			if !newStorageToken.AccessToken.RefreshOn.T.Equal(storageTokenResponse.AccessToken.RefreshOn.T) {
-				if newStorageToken.AccessToken.RefreshOn.T.IsZero() || Now().Before(newStorageToken.AccessToken.RefreshOn.T) {
-					ar, err = AuthResultFromStorage(storageTokenResponse)
-					if err == nil {
-						ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-						return ar, err
+			if !storageTokenResponse.AccessToken.RefreshOn.T.IsZero() && Now().After(storageTokenResponse.AccessToken.RefreshOn.T) {
+				b.canRefreshMu.Lock()
+				refreshValue, ok := b.canRefresh[tenant]
+				if !ok {
+					refreshValue = &atomic.Value{}
+					refreshValue.Store(false)
+					b.canRefresh[tenant] = refreshValue
+				}
+				b.canRefreshMu.Unlock()
+				if refreshValue.CompareAndSwap(false, true) {
+					defer refreshValue.Store(false)
+					if str, err := m.Read(ctx, authParams); err == nil && str.AccessToken.Secret == ar.AccessToken {
+						if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
+							return b.AuthResultFromToken(ctx, authParams, tr)
+						}
 					}
 				}
 			}
-
-			if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
-				return b.AuthResultFromToken(ctx, authParams, tr)
-			}
-
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
