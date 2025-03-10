@@ -1145,9 +1145,9 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	miType := SystemAssigned()
 	setEnvVars(t, CloudShell)
 
-	originalTime := Now
+	originalTime := now
 	defer func() {
-		Now = originalTime
+		now = originalTime
 	}()
 	before := cacheManager
 	defer func() { cacheManager = before }()
@@ -1172,7 +1172,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	}
 
 	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
-	Now = func() time.Time {
+	now = func() time.Time {
 		return fixedTime
 	}
 	var wg sync.WaitGroup
@@ -1209,43 +1209,4 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		t.Error("Error should be called at least once")
 	}
 	close(ch)
-}
-
-func TestShouldRefresh(t *testing.T) {
-	// Get the current time to use for comparison
-	now := time.Now()
-	tests := []struct {
-		name     string
-		input    time.Time
-		expected bool
-	}{
-		{
-			name:     "Zero time",
-			input:    time.Time{}, // Zero time
-			expected: false,       // Should return false because it's zero time
-		},
-		{
-			name:     "Future time",
-			input:    now.Add(time.Hour), // 1 hour in the future
-			expected: false,              // Should return false because it's in the future
-		},
-		{
-			name:     "Past time",
-			input:    now.Add(-time.Hour), // 1 hour in the past
-			expected: true,                // Should return true because it's in the past
-		},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			client, err := New(SystemAssigned())
-			if err != nil {
-				t.Fatal(err)
-			}
-			result := client.shouldRefresh(tt.input)
-			if result != tt.expected {
-				t.Errorf("shouldRefresh(%v) = %v; expected %v", tt.input, result, tt.expected)
-			}
-		})
-	}
 }

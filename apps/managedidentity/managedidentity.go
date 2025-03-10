@@ -298,12 +298,7 @@ func GetSource() (Source, error) {
 
 // This function wraps time.Now() and is used for refreshing the application
 // was created to test the function against refreshin
-var Now = time.Now
-
-// shouldRefresh returns true if the token should be refreshed.
-func (b Client) shouldRefresh(t time.Time) bool {
-	return !t.IsZero() && !t.After(Now()) && b.canRefresh.CompareAndSwap(false, true)
-}
+var now = time.Now
 
 // Acquires tokens from the configured managed identity on an azure resource.
 //
@@ -319,13 +314,13 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		storageTokenResponse, err := cacheManager.Read(ctx, c.authParams)
+		stResp, err := cacheManager.Read(ctx, c.authParams)
 		if err != nil {
 			return base.AuthResult{}, err
 		}
-		ar, err := base.AuthResultFromStorage(storageTokenResponse)
+		ar, err := base.AuthResultFromStorage(stResp)
 		if err == nil {
-			if c.shouldRefresh(storageTokenResponse.AccessToken.RefreshOn.T) {
+			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
 				defer c.canRefresh.Store(false)
 				if tr, er := c.getToken(ctx, resource); er == nil {
 					return tr, nil

@@ -70,6 +70,7 @@ type Client struct {
 func NewClient() *Client {
 	return &Client{mu: &sync.Mutex{}}
 }
+
 func (c *Client) AppendResponse(opts ...responseOption) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

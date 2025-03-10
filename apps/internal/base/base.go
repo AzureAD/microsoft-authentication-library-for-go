@@ -352,7 +352,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			if !storageTokenResponse.AccessToken.RefreshOn.T.IsZero() && Now().After(storageTokenResponse.AccessToken.RefreshOn.T) {
+			if rt := storageTokenResponse.AccessToken.RefreshOn.T; !rt.IsZero() && Now().After(rt) {
 				b.canRefreshMu.Lock()
 				refreshValue, ok := b.canRefresh[tenant]
 				if !ok {
@@ -363,6 +363,10 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 				b.canRefreshMu.Unlock()
 				if refreshValue.CompareAndSwap(false, true) {
 					defer refreshValue.Store(false)
+					// Added a check to see if the token is still same because there is a chance
+					// that the token is already refreshed by another thread.
+					// If the token is not same, we don't need to refresh it.
+					// Which means it refreshed.
 					if str, err := m.Read(ctx, authParams); err == nil && str.AccessToken.Secret == ar.AccessToken {
 						if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
 							return b.AuthResultFromToken(ctx, authParams, tr)
