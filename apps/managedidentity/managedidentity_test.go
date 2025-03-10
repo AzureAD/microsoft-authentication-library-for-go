@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -1130,4 +1131,96 @@ func TestCreatingIMDSClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func BenchmarkAcquireTokenSilentLatency(b *testing.B) {
+	mockClient := mock.Client{}
+	resource := "https://graph.microsoft.com"
+
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		b.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody))
+
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
+	if err != nil {
+		b.Fatal(err)
+	}
+	ctx := context.Background()
+	_, err = client.AcquireToken(ctx, resource)
+	if err != nil {
+		b.Fatal(err)
+	}
+
+	var latencies []time.Duration
+	b.ResetTimer()
+
+	for i := 0; i < b.N; i++ {
+		start := time.Now()
+		_, err := client.AcquireToken(ctx, resource)
+		if err != nil {
+			b.Fatal(err)
+		}
+		latencies = append(latencies, time.Since(start))
+	}
+
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+
+	p50 := latencies[len(latencies)*50/100]
+	p90 := latencies[len(latencies)*90/100]
+	p99 := latencies[len(latencies)*99/100]
+
+	b.ReportMetric(float64(p50.Microseconds()), "p50_us")
+	b.ReportMetric(float64(p90.Microseconds()), "p90_us")
+	b.ReportMetric(float64(p99.Microseconds()), "p99_us")
+}
+func TestAcquireTokenSilentProfileWithPercentiles(t *testing.T) {
+	mockClient := mock.Client{}
+	resource := "https://graph.microsoft.com"
+
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody))
+
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	_, err = client.AcquireToken(ctx, resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var latencies []time.Duration
+	for i := 0; i < 1000; i++ {
+		start := time.Now()
+		_, err := client.AcquireToken(ctx, resource)
+		if err != nil {
+			t.Fatal(err)
+		}
+		latencies = append(latencies, time.Since(start))
+	}
+
+	sort.Slice(latencies, func(i, j int) bool { return latencies[i] < latencies[j] })
+
+	p50 := latencies[len(latencies)*50/100]
+	p90 := latencies[len(latencies)*90/100]
+	p99 := latencies[len(latencies)*99/100]
+
+	t.Logf("AcquireToken latency percentiles: p50=%v, p90=%v, p99=%v", p50, p90, p99)
+
 }
