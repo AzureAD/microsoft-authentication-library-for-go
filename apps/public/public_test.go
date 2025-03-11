@@ -209,7 +209,7 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		UserCode:        "user-code",
 		VerificationURL: "https://device.code.local",
 	}
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody("http://localhost", "tenant")))
 	mockClient.AppendResponse(mock.WithBody([]byte(
 		fmt.Sprintf(
@@ -222,7 +222,7 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		),
 	)))
 	mockClient.AppendResponse(
-		mock.WithBody(mock.GetAccessTokenBody(accessToken, "", "rt", "", 3600)),
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, "", "rt", "", 3600, 3600)),
 		mock.WithCallback(func(r *http.Request) {
 			if r.Method != http.MethodPost {
 				t.Fatalf("unexpected method %q", r.Method)
@@ -238,7 +238,7 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 			}
 		}),
 	)
-	client, err := New(expected.ClientID, WithHTTPClient(&mockClient))
+	client, err := New(expected.ClientID, WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
