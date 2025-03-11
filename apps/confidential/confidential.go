@@ -639,7 +639,7 @@ func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
+	return cca.base.AuthResultFromToken(ctx, authParams, token)
 }
 
 // acquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
@@ -733,7 +733,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return cca.base.AuthResultFromToken(ctx, authParams, token, true)
+	return cca.base.AuthResultFromToken(ctx, authParams, token)
 }
 
 // acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf

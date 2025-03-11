@@ -251,7 +251,7 @@ func TestCacheIOErrors(t *testing.T) {
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
-			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{AuthnScheme: &authority.BearerAuthenticationScheme{}}, accesstokens.TokenResponse{}, true)
+			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{AuthnScheme: &authority.BearerAuthenticationScheme{}}, accesstokens.TokenResponse{})
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
@@ -284,7 +284,6 @@ func TestCacheIOErrors(t *testing.T) {
 				IDToken:       fakeIDToken,
 				RefreshToken:  "rt",
 			},
-			true,
 		)
 		if err != nil {
 			t.Fatal(err)

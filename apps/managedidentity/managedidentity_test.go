@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -232,7 +233,7 @@ func TestRetryFunction(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			mockClient := &mock.Client{}
+			mockClient := mock.NewClient()
 			for _, resp := range tt.mockResponses {
 				body := bytes.NewBufferString(resp.body)
 				mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode))
@@ -279,7 +280,8 @@ func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
 	}
 	for _, testCase := range testCases {
 		t.Run(fmt.Sprintf("Testing retry policy with %d ", testCase.numberOfFails), func(t *testing.T) {
-			fakeErrorClient := mock.Client{}
+			fakeErrorClient := mock.NewClient()
+
 			responseBody, err := makeResponseWithErrorData("sample error", "sample error desc")
 			if err != nil {
 				t.Fatalf("error while forming json response : %s", err.Error())
@@ -301,9 +303,9 @@ func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
 			}
 			var client Client
 			if testCase.disableRetry {
-				client, err = New(SystemAssigned(), WithHTTPClient(&fakeErrorClient), WithRetryPolicyDisabled())
+				client, err = New(SystemAssigned(), WithHTTPClient(fakeErrorClient), WithRetryPolicyDisabled())
 			} else {
-				client, err = New(SystemAssigned(), WithHTTPClient(&fakeErrorClient))
+				client, err = New(SystemAssigned(), WithHTTPClient(fakeErrorClient))
 			}
 			if err != nil {
 				t.Fatal(err)
@@ -340,14 +342,15 @@ func TestCacheScopes(t *testing.T) {
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	mc := mock.Client{}
-	client, err := New(SystemAssigned(), WithHTTPClient(&mc))
+	mc := mock.NewClient()
+
+	client, err := New(SystemAssigned(), WithHTTPClient(mc))
 	if err != nil {
 		t.Fatal(err)
 	}
 
 	for _, r := range []string{"A", "B/.default"} {
-		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600)))
+		mc.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(r, "", "", "", 3600, 3600)))
 		for i := 0; i < 2; i++ {
 			ar, err := client.AcquireToken(context.Background(), r)
 			if err != nil {
@@ -393,7 +396,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			endpoint := imdsDefaultEndpoint
 
 			var localUrl *url.URL
-			mockClient := mock.Client{}
+			mockClient := mock.NewClient()
 			responseBody, err := getSuccessfulResponse(resource, true)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
@@ -407,7 +410,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			defer func() { cacheManager = before }()
 			cacheManager = storage.New(nil)
 
-			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			client, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -453,7 +456,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
-			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -473,7 +476,7 @@ func TestInvalidJsonErrReturnOnAcquireToken(t *testing.T) {
 	miType := SystemAssigned()
 
 	setEnvVars(t, DefaultToIMDS)
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 	responseBody := fmt.Sprintf(
 		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
 		"tetant", 3600, time.Now().Add(time.Duration(3600)*time.Second).Unix(),
@@ -486,7 +489,7 @@ func TestInvalidJsonErrReturnOnAcquireToken(t *testing.T) {
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	client, err := New(miType, WithHTTPClient(&mockClient))
+	client, err := New(miType, WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -510,7 +513,7 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 	var localUrl *url.URL
 	var resourceString string
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 	responseBody, err := getSuccessfulResponse(resource, false)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
@@ -530,7 +533,7 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	client, err := New(miType, WithHTTPClient(&mockClient))
+	client, err := New(miType, WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -565,7 +568,7 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 		t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 	}
 
-	secondFakeClient, err := New(miType, WithHTTPClient(&mockClient))
+	secondFakeClient, err := New(miType, WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -582,14 +585,14 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 func TestCloudShellOnlySystemAssignedSupported(t *testing.T) {
 	setEnvVars(t, CloudShell)
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 
 	for _, testCase := range []ID{
 		UserAssignedClientID("client"),
 		UserAssignedObjectID("ObjectId"),
 		UserAssignedResourceID("resourceid"),
 	} {
-		_, err := New(testCase, WithHTTPClient(&mockClient))
+		_, err := New(testCase, WithHTTPClient(mockClient))
 		if err == nil {
 			t.Fatal(`expected error: CloudShell not supported error"`)
 
@@ -618,7 +621,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			endpoint := "http://127.0.0.1:41564/msi/token"
 
 			var localUrl *url.URL
-			mockClient := mock.Client{}
+			mockClient := mock.NewClient()
 			responseBody, err := getSuccessfulResponse(resource, false)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
@@ -633,7 +636,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			defer func() { cacheManager = before }()
 			cacheManager = storage.New(nil)
 
-			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			client, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -679,7 +682,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
-			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -713,7 +716,7 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			endpoint := "http://127.0.0.1:41564/msi/token"
 
 			var localUrl *url.URL
-			mockClient := mock.Client{}
+			mockClient := mock.NewClient()
 			responseBody, err := getSuccessfulResponse(resource, false)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
@@ -728,7 +731,7 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			defer func() { cacheManager = before }()
 			cacheManager = storage.New(nil)
 
-			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			client, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -764,7 +767,7 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
-			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -781,12 +784,12 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 func TestAzureMLErrors(t *testing.T) {
 	setEnvVars(t, AzureML)
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 
 	for _, testCase := range []ID{
 		UserAssignedObjectID("ObjectId"),
 		UserAssignedResourceID("resourceid")} {
-		_, err := New(testCase, WithHTTPClient(&mockClient))
+		_, err := New(testCase, WithHTTPClient(mockClient))
 		if err == nil {
 			t.Fatal("expected error: Azure ML supports specifying a user-assigned managed identity by client ID only")
 
@@ -806,7 +809,7 @@ func TestAzureArc(t *testing.T) {
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 
 	var localUrl *url.URL
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 
 	mockFilePath := filepath.Join(testCaseFilePath, secretKey)
 	setCustomAzureArcPlatformPath(t, testCaseFilePath)
@@ -836,7 +839,7 @@ func TestAzureArc(t *testing.T) {
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -870,7 +873,7 @@ func TestAzureArc(t *testing.T) {
 	if result.Metadata.TokenSource != base.Cache {
 		t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 	}
-	secondFakeClient, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
+	secondFakeClient, err := New(SystemAssigned(), WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -886,14 +889,14 @@ func TestAzureArc(t *testing.T) {
 
 func TestAzureArcOnlySystemAssignedSupported(t *testing.T) {
 	setEnvVars(t, AzureArc)
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
 	for _, testCase := range []ID{
 		UserAssignedClientID("client"),
 		UserAssignedObjectID("ObjectId"),
 		UserAssignedResourceID("resourceid")} {
-		_, err := New(testCase, WithHTTPClient(&mockClient))
+		_, err := New(testCase, WithHTTPClient(mockClient))
 		if err == nil {
 			t.Fatal(`expected error: AzureArc not supported error"`)
 
@@ -912,7 +915,7 @@ func TestAzureArcPlatformSupported(t *testing.T) {
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 	headers := http.Header{}
 	headers.Set(wwwAuthenticateHeaderName, "Basic realm=/path/to/secret.key")
 
@@ -921,7 +924,7 @@ func TestAzureArcPlatformSupported(t *testing.T) {
 	)
 	setCustomAzureArcPlatformPath(t, "")
 
-	client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -983,7 +986,7 @@ func TestAzureArcErrors(t *testing.T) {
 			before := cacheManager
 			defer func() { cacheManager = before }()
 			cacheManager = storage.New(nil)
-			mockClient := mock.Client{}
+			mockClient := mock.NewClient()
 			mockFilePath := filepath.Join(testCaseFilePath, secretKey)
 			setCustomAzureArcPlatformPath(t, testCaseFilePath)
 			createMockFile(t, mockFilePath, testCase.fileSize)
@@ -1002,7 +1005,7 @@ func TestAzureArcErrors(t *testing.T) {
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
 				mock.WithBody(responseBody))
 
-			client, err := New(SystemAssigned(), WithHTTPClient(&mockClient))
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 				return
@@ -1040,14 +1043,15 @@ func TestSystemAssignedReturnsAcquireTokenFailure(t *testing.T) {
 			before := cacheManager
 			defer func() { cacheManager = before }()
 			cacheManager = storage.New(nil)
-			fakeErrorClient := mock.Client{}
+			fakeErrorClient := mock.NewClient()
+
 			responseBody, err := makeResponseWithErrorData(testCase.err, testCase.desc)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
 			}
 			fakeErrorClient.AppendResponse(mock.WithHTTPStatusCode(testCase.code),
 				mock.WithBody(responseBody))
-			client, err := New(SystemAssigned(), WithHTTPClient(&fakeErrorClient), WithRetryPolicyDisabled())
+			client, err := New(SystemAssigned(), WithHTTPClient(fakeErrorClient), WithRetryPolicyDisabled())
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -1130,4 +1134,79 @@ func TestCreatingIMDSClient(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestRefreshInMultipleRequests(t *testing.T) {
+	firstToken := "first token"
+	secondToken := "new token"
+	refreshIn := 43200
+	expiresIn := 86400
+	resource := "https://resource/.default"
+	miType := SystemAssigned()
+	setEnvVars(t, CloudShell)
+
+	originalTime := now
+	defer func() {
+		now = originalTime
+	}()
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+	// Create a mock client and append mock responses
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, firstToken, expiresIn, refreshIn))),
+	)
+	// Create the client instance
+	client, err := New(miType, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	// Assert the first token is returned
+	if ar.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, ar.AccessToken)
+	}
+
+	fixedTime := time.Now().Add(time.Duration(43400) * time.Second)
+	now = func() time.Time {
+		return fixedTime
+	}
+	var wg sync.WaitGroup
+	requestChecker := false
+	ch := make(chan error, 1)
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, secondToken, expiresIn, refreshIn+43200))), mock.WithCallback(func(req *http.Request) {
+		}),
+	)
+	for i := 0; i < 10000; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ar, err := client.AcquireToken(context.Background(), resource)
+			if err != nil {
+				select {
+				case ch <- err:
+				default:
+				}
+				return
+			}
+			if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
+				requestChecker = true
+			}
+		}()
+	}
+	wg.Wait()
+	select {
+	case err := <-ch:
+		t.Fatal(err)
+	default:
+	}
+	if !requestChecker {
+		t.Error("Error should be called at least once")
+	}
+	close(ch)
 }

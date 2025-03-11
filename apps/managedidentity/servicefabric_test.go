@@ -29,7 +29,7 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			endpoint := imdsDefaultEndpoint
 			var localUrl *url.URL
 			var localHeader http.Header
-			mockClient := mock.Client{}
+			mockClient := mock.NewClient()
 			responseBody, err := getSuccessfulResponse(resource, true)
 			if err != nil {
 				t.Fatalf(errorFormingJsonResponse, err.Error())
@@ -44,7 +44,7 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			defer func() { cacheManager = before }()
 			cacheManager = storage.New(nil)
 
-			client, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			client, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -82,7 +82,7 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if result.Metadata.TokenSource != base.Cache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
-			secondFakeClient, err := New(testCase.miType, WithHTTPClient(&mockClient))
+			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
@@ -98,13 +98,13 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 }
 func TestServiceFabricErrors(t *testing.T) {
 	setEnvVars(t, ServiceFabric)
-	mockClient := mock.Client{}
+	mockClient := mock.NewClient()
 
 	for _, testCase := range []ID{
 		UserAssignedObjectID("ObjectId"),
 		UserAssignedResourceID("resourceid"),
 		UserAssignedClientID("ClientID")} {
-		_, err := New(testCase, WithHTTPClient(&mockClient))
+		_, err := New(testCase, WithHTTPClient(mockClient))
 		if err == nil {
 			t.Fatal("expected error: Service Fabric API doesn't support specifying a user-assigned identity. The identity is determined by cluster resource configuration. See https://aka.ms/servicefabricmi")
 		}
