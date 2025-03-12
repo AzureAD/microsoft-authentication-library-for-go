@@ -584,7 +584,7 @@ func TestAcquireMSITokenExchangeForESTSToken(t *testing.T) {
 	if authResult.AccessToken == "" {
 		t.Fatal("Expected non-empty access token")
 	}
-	if authResult.Metadata.TokenSource != base.IdentityProvider {
+	if authResult.Metadata.TokenSource != 1 {
 		t.Fatalf("Expected token source 'IdentityProvider', got '%d'", authResult.Metadata.TokenSource)
 	}
 	authResult, err = confidentialClient.AcquireTokenSilent(ctx, []string{"https://msidlabs.vault.azure.net/.default"})
