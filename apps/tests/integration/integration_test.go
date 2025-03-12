@@ -141,7 +141,7 @@ func (l *labClient) labAccessToken() (string, error) {
 	return result.AccessToken, nil
 }
 
-func (l *labClient) getLabResponse(url string) (string, error) {
+func (l *labClient) getLabResponse(url string, query url.Values) (string, error) {
 	accessToken, err := l.labAccessToken()
 	if err != nil {
 		return "", fmt.Errorf("problem getting lab access token: %w", err)
