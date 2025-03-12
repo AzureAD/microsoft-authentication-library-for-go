@@ -146,7 +146,7 @@ func (l *labClient) getLabResponse(url string) (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("problem getting lab access token: %w", err)
 	}
-	responseBody, err := httpRequest(context.Background(), url, nil, accessToken)
+	responseBody, err := httpRequest(context.Background(), url, query, accessToken)
 	if err != nil {
 		return "", err
 	}
@@ -514,8 +514,9 @@ func TestAcquireMSITokenExchangeForESTSToken(t *testing.T) {
 	}
 	baseUrl := "https://service.msidlab.com/"
 	resource := "api://azureadtokenexchange"
-
-	response, err := labC.getLabResponse(baseUrl + "EnvironmentVariables?resource=WebApp")
+	query := url.Values{}
+	query.Add("resource", "WebApp")
+	response, err := labC.getLabResponse(baseUrl+"EnvironmentVariables", query)
 	if err != nil {
 		t.Fatalf("Failed to get resource env variable: %v", err)
 	}
@@ -529,8 +530,7 @@ func TestAcquireMSITokenExchangeForESTSToken(t *testing.T) {
 		if key == "IDENTITY_ENDPOINT" {
 			value = "https://service.msidlab.com/MSIToken?azureresource=WebApp&uri=" + value
 		}
-		os.Setenv(key, value)
-		defer os.Unsetenv(key)
+		t.Setenv(key, value)
 	}
 	// Replace your existing http.Client with this one
 	httpClient := http.Client{
