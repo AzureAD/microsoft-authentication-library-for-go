@@ -443,7 +443,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
 			}
-			if result.Metadata.TokenSource != base.IdentityProvider {
+			if result.Metadata.TokenSource != base.TokenSourceIdentityProvider {
 				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
@@ -453,7 +453,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
@@ -464,7 +464,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 		})
@@ -551,7 +551,7 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 		t.Fatal("suffix /.default was not removed.")
 	}
 
-	if result.Metadata.TokenSource != base.IdentityProvider {
+	if result.Metadata.TokenSource != base.TokenSourceIdentityProvider {
 		t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
 	}
 
@@ -564,7 +564,7 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if result.Metadata.TokenSource != base.Cache {
+	if result.Metadata.TokenSource != base.TokenSourceCache {
 		t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 	}
 
@@ -578,7 +578,7 @@ func TestCloudShellAcquireTokenReturnsTokenSuccess(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if result.Metadata.TokenSource != base.Cache {
+	if result.Metadata.TokenSource != base.TokenSourceCache {
 		t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 	}
 }
@@ -669,7 +669,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
 			}
-			if result.Metadata.TokenSource != base.IdentityProvider {
+			if result.Metadata.TokenSource != base.TokenSourceIdentityProvider {
 				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
@@ -679,7 +679,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
@@ -690,7 +690,7 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 		})
@@ -750,7 +750,7 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if r := query.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
 				t.Fatal("suffix /.default was not removed.")
 			}
-			if result.Metadata.TokenSource != base.IdentityProvider {
+			if result.Metadata.TokenSource != base.TokenSourceIdentityProvider {
 				t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
@@ -764,7 +764,7 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
@@ -775,7 +775,7 @@ func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 		})
@@ -860,7 +860,7 @@ func TestAzureArc(t *testing.T) {
 	if query.Get(resourceQueryParameterName) != strings.TrimSuffix(resourceDefaultSuffix, "/.default") {
 		t.Fatal("suffix /.default was not removed.")
 	}
-	if result.Metadata.TokenSource != base.IdentityProvider {
+	if result.Metadata.TokenSource != base.TokenSourceIdentityProvider {
 		t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
 	}
 	if result.AccessToken != token {
@@ -870,7 +870,7 @@ func TestAzureArc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Metadata.TokenSource != base.Cache {
+	if result.Metadata.TokenSource != base.TokenSourceCache {
 		t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 	}
 	secondFakeClient, err := New(SystemAssigned(), WithHTTPClient(mockClient))
@@ -881,7 +881,7 @@ func TestAzureArc(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Metadata.TokenSource != base.Cache {
+	if result.Metadata.TokenSource != base.TokenSourceCache {
 		t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 	}
 
@@ -1194,7 +1194,7 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 				}
 				return
 			}
-			if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.IdentityProvider {
+			if ar.AccessToken == secondToken && ar.Metadata.TokenSource == base.TokenSourceIdentityProvider {
 				requestChecker = true
 			}
 		}()
