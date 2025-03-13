@@ -16,7 +16,8 @@ import (
 	"crypto"
 
 	/* #nosec */
-	"crypto/sha1"
+
+	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -113,7 +114,7 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		return c.AssertionCallback(ctx, options)
 	}
 
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, jwt.MapClaims{
+	token := jwt.NewWithClaims(jwt.SigningMethodPS256, jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
 		"exp": json.Number(strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)),
 		"iss": authParams.ClientID,
@@ -122,9 +123,9 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		"sub": authParams.ClientID,
 	})
 	token.Header = map[string]interface{}{
-		"alg": "RS256",
+		"alg": jwt.SigningMethodPS256.Name,
 		"typ": "JWT",
-		"x5t": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
+		"x5u": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
 	}
 
 	if authParams.SendX5C {
@@ -142,7 +143,7 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 // https://tools.ietf.org/html/rfc7517#section-4.8
 func thumbprint(cert *x509.Certificate) []byte {
 	/* #nosec */
-	a := sha1.Sum(cert.Raw)
+	a := sha256.Sum256(cert.Raw)
 	return a[:]
 }
 

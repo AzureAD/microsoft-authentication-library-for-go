@@ -660,8 +660,8 @@ func TestNewCredFromCert(t *testing.T) {
 				client.base.Token.AccessTokens.(*fake.AccessTokens).ValidateAssertion = func(s string) {
 					validated = true
 					tk, err := jwt.Parse(s, func(tk *jwt.Token) (interface{}, error) {
-						if signingMethod, ok := tk.Method.(*jwt.SigningMethodRSA); !ok {
-							t.Fatalf("unexpected signing method %T", signingMethod)
+						if tk.Method.Alg() != jwt.SigningMethodPS256.Alg() {
+							t.Fatalf("unexpected signing method %v", tk.Method.Alg())
 						}
 						return verifyingKey, nil
 					})
