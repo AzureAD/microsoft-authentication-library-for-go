@@ -387,7 +387,7 @@ func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return pca.base.AuthResultFromToken(ctx, authParams, token, true)
+	return pca.base.AuthResultFromToken(ctx, authParams, token)
 }
 
 type DeviceCodeResult = accesstokens.DeviceCodeResult
@@ -412,7 +412,7 @@ func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error
 	if err != nil {
 		return AuthResult{}, err
 	}
-	return d.client.base.AuthResultFromToken(ctx, d.authParams, token, true)
+	return d.client.base.AuthResultFromToken(ctx, d.authParams, token)
 }
 
 // acquireTokenByDeviceCodeOptions contains optional configuration for AcquireTokenByDeviceCode
@@ -718,7 +718,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 		return AuthResult{}, err
 	}
 
-	return pca.base.AuthResultFromToken(ctx, authParams, token, true)
+	return pca.base.AuthResultFromToken(ctx, authParams, token)
 }
 
 type interactiveAuthResult struct {

@@ -176,6 +176,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 
 		errorDesc := fmt.Errorf(errDesc)
 		s.putResult(Result{Err: errorDesc})
+
 		return
 	}
 

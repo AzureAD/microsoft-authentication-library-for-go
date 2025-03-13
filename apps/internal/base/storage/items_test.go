@@ -56,7 +56,9 @@ var (
 )
 
 func TestCreateAccessToken(t *testing.T) {
+
 	testExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
+	testRefreshOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
 	testExtExpiresOn := time.Date(2020, time.June, 13, 12, 0, 0, 0, time.UTC)
 	testCachedAt := time.Date(2020, time.June, 13, 11, 0, 0, 0, time.UTC)
 	actualAt := NewAccessToken("testHID",
@@ -64,6 +66,7 @@ func TestCreateAccessToken(t *testing.T) {
 		"realm",
 		"clientID",
 		testCachedAt,
+		testRefreshOn,
 		testExpiresOn,
 		testExtExpiresOn,
 		"user.read",
@@ -305,7 +308,7 @@ func TestContractUnmarshalJSON(t *testing.T) {
 	}
 	if diff := pretty.Compare(want, got); diff != "" {
 		t.Errorf("TestContractUnmarshalJSON: -want/+got:\n%s", diff)
-		t.Errorf(string(got.AdditionalFields["unknownEntity"].(stdJSON.RawMessage)))
+		t.Errorf("%s", string(got.AdditionalFields["unknownEntity"].(stdJSON.RawMessage)))
 	}
 }
 

@@ -14,7 +14,6 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
-	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -40,7 +39,7 @@ func fakeClient() (base.Client, error) {
 		AccessTokens: &fake.AccessTokens{
 			AccessToken: accesstokens.TokenResponse{
 				AccessToken:   accessToken,
-				ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+				ExpiresOn:     time.Now().Add(1 * time.Hour),
 				GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 			},
 		},
@@ -89,9 +88,9 @@ func populateTokenCache(client base.Client, params testParams) execTime {
 				// each token has a different scope which is what makes them unique
 				_, err := client.AuthResultFromToken(context.Background(), authParams, accesstokens.TokenResponse{
 					AccessToken:   accessToken,
-					ExpiresOn:     internalTime.DurationTime{T: time.Now().Add(1 * time.Hour)},
+					ExpiresOn:     time.Now().Add(1 * time.Hour),
 					GrantedScopes: accesstokens.Scopes{Slice: []string{strconv.FormatInt(int64(i), 10)}},
-				}, true)
+				})
 				if err != nil {
 					panic(err)
 				}
