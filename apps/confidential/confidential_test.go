@@ -1097,7 +1097,7 @@ func TestRefreshIn(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ar.Metadata.TokenSource != base.Cache && !tt.shouldGetNewToken {
+			if ar.Metadata.TokenSource != TokenSourceCache && !tt.shouldGetNewToken {
 				t.Fatal("should have returned from cache.")
 			}
 			if (ar.AccessToken == secondToken) != tt.shouldGetNewToken {

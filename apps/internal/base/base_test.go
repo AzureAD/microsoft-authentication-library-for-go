@@ -344,7 +344,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 				GrantedScopes:  []string{"user.read"},
 				DeclinedScopes: nil,
 				Metadata: AuthResultMetadata{
-					TokenSource: IdentityProvider,
+					TokenSource: TokenSourceIdentityProvider,
 				},
 			},
 		},
@@ -419,7 +419,7 @@ func TestAuthResultFromStorage(t *testing.T) {
 				ExpiresOn:     future,
 				GrantedScopes: []string{"profile", "openid", "user.read"},
 				Metadata: AuthResultMetadata{
-					TokenSource: Cache,
+					TokenSource: TokenSourceCache,
 				},
 			},
 		},

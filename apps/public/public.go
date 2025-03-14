@@ -51,6 +51,14 @@ type AuthenticationScheme = authority.AuthenticationScheme
 
 type Account = shared.Account
 
+type TokenSource = base.TokenSource
+
+const (
+	TokenSourceUnknown          = base.TokenSourceUnknown
+	TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
+	TokenSourceCache            = base.TokenSourceCache
+)
+
 var errNoAccount = errors.New("no account was specified with public.WithSilentAccount(), or the specified account is invalid")
 
 // clientOptions configures the Client's behavior.
