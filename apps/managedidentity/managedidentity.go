@@ -38,9 +38,11 @@ type AuthResult = base.AuthResult
 
 type TokenSource = base.TokenSource
 
-const TokenSourceUnknown = base.TokenSourceUnknown
-const TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
-const TokenSourceCache = base.TokenSourceCache
+const (
+	TokenSourceUnknown          = base.TokenSourceUnknown
+	TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
+	TokenSourceCache            = base.TokenSourceCache
+)
 
 const (
 	// DefaultToIMDS indicates that the source is defaulted to IMDS when no environment variables are set.

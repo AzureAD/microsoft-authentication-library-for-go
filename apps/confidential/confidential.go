@@ -67,9 +67,11 @@ type Account = shared.Account
 
 type TokenSource = base.TokenSource
 
-const TokenSourceUnknown = base.TokenSourceUnknown
-const TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
-const TokenSourceCache = base.TokenSourceCache
+const (
+	TokenSourceUnknown          = base.TokenSourceUnknown
+	TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
+	TokenSourceCache            = base.TokenSourceCache
+)
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with [NewCredFromCert]. The file
 // must contain the public certificate and the private key. If a PEM block is encrypted and
