@@ -104,6 +104,14 @@ type Credential struct {
 	TokenProvider func(context.Context, exported.TokenProviderParameters) (exported.TokenProviderResult, error)
 }
 
+func thumbprintGen(cert *x509.Certificate) []byte {
+	// Get the SHA-256 hash of the certificate's DER encoding
+	hash := sha256.Sum256(cert.Raw)
+
+	// Return the hash slice
+	return hash[:]
+}
+
 // JWT gets the jwt assertion when the credential is not using a secret.
 func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (string, error) {
 	if c.AssertionCallback != nil {
@@ -123,9 +131,9 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		"sub": authParams.ClientID,
 	})
 	token.Header = map[string]interface{}{
-		"alg": jwt.SigningMethodPS256.Name,
-		"typ": "JWT",
-		"x5u": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
+		"alg":      jwt.SigningMethodPS256.Name,
+		"typ":      "JWT",
+		"x5t#S256": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
 	}
 
 	if authParams.SendX5C {
