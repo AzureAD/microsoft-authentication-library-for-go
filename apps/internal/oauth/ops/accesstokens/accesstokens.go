@@ -16,6 +16,7 @@ import (
 	"crypto"
 
 	/* #nosec */
+	"crypto/sha1"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -112,21 +113,35 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		}
 		return c.AssertionCallback(ctx, options)
 	}
+	var token *jwt.Token
+	var algo string
+	var thumbprintKey string
 
-	token := jwt.NewWithClaims(jwt.SigningMethodPS256, jwt.MapClaims{
+	claims := jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
 		"exp": json.Number(strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)),
 		"iss": authParams.ClientID,
 		"jti": uuid.New().String(),
 		"nbf": json.Number(strconv.FormatInt(time.Now().Unix(), 10)),
 		"sub": authParams.ClientID,
-	})
-	token.Header = map[string]interface{}{
-		"alg":      jwt.SigningMethodPS256.Name,
-		"typ":      "JWT",
-		"x5t#S256": base64.StdEncoding.EncodeToString(thumbprint(c.Cert)),
 	}
 
+	switch {
+	case authParams.AuthorityInfo.AuthorityType == authority.ADFS ||
+		authParams.AuthorityInfo.AuthorityType == authority.DSTS:
+		token = jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+		algo = jwt.SigningMethodRS256.Name
+		thumbprintKey = "x5t"
+	default:
+		token = jwt.NewWithClaims(jwt.SigningMethodPS256, claims)
+		algo = jwt.SigningMethodPS256.Name
+		thumbprintKey = "x5t#S256"
+	}
+	token.Header = map[string]interface{}{
+		"alg":         algo,
+		"typ":         "JWT",
+		thumbprintKey: base64.StdEncoding.EncodeToString(thumbprint(c.Cert, algo)),
+	}
 	if authParams.SendX5C {
 		token.Header["x5c"] = c.X5c
 	}
@@ -140,10 +155,17 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 
 // thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.
 // https://tools.ietf.org/html/rfc7517#section-4.8
-func thumbprint(cert *x509.Certificate) []byte {
-	/* #nosec */
-	a := sha256.Sum256(cert.Raw)
-	return a[:]
+func thumbprint(cert *x509.Certificate, alg string) []byte {
+	switch alg {
+	case jwt.SigningMethodRS256.Name:
+		/* #nosec */
+		hash := sha1.Sum(cert.Raw)
+		return hash[:]
+	default:
+		/* #nosec */
+		hash := sha256.Sum256(cert.Raw)
+		return hash[:]
+	}
 }
 
 // Client represents the REST calls to get tokens from token generator backends.
