@@ -16,7 +16,6 @@ import (
 	"crypto"
 
 	/* #nosec */
-
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -102,14 +101,6 @@ type Credential struct {
 	// TokenProvider is a function provided by the application that implements custom authentication
 	// logic for a confidential client
 	TokenProvider func(context.Context, exported.TokenProviderParameters) (exported.TokenProviderResult, error)
-}
-
-func thumbprintGen(cert *x509.Certificate) []byte {
-	// Get the SHA-256 hash of the certificate's DER encoding
-	hash := sha256.Sum256(cert.Raw)
-
-	// Return the hash slice
-	return hash[:]
 }
 
 // JWT gets the jwt assertion when the credential is not using a secret.
