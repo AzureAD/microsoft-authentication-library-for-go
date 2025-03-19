@@ -113,10 +113,6 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		}
 		return c.AssertionCallback(ctx, options)
 	}
-	var token *jwt.Token
-	var algo string
-	var thumbprintKey string
-
 	claims := jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
 		"exp": json.Number(strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)),
@@ -126,30 +122,33 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		"sub": authParams.ClientID,
 	}
 
-	switch {
-	case authParams.AuthorityInfo.AuthorityType == authority.ADFS ||
-		authParams.AuthorityInfo.AuthorityType == authority.DSTS:
-		token = jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
-		algo = jwt.SigningMethodRS256.Name
+	isADFSorDSTS := authParams.AuthorityInfo.AuthorityType == authority.ADFS ||
+		authParams.AuthorityInfo.AuthorityType == authority.DSTS
+
+	var signingMethod jwt.SigningMethod = jwt.SigningMethodPS256
+	thumbprintKey := "x5t#S256"
+
+	if isADFSorDSTS {
+		signingMethod = jwt.SigningMethodRS256
 		thumbprintKey = "x5t"
-	default:
-		token = jwt.NewWithClaims(jwt.SigningMethodPS256, claims)
-		algo = jwt.SigningMethodPS256.Name
-		thumbprintKey = "x5t#S256"
 	}
+
+	token := jwt.NewWithClaims(signingMethod, claims)
 	token.Header = map[string]interface{}{
-		"alg":         algo,
+		"alg":         signingMethod.Alg(),
 		"typ":         "JWT",
-		thumbprintKey: base64.StdEncoding.EncodeToString(thumbprint(c.Cert, algo)),
+		thumbprintKey: base64.StdEncoding.EncodeToString(thumbprint(c.Cert, signingMethod.Alg())),
 	}
+
 	if authParams.SendX5C {
 		token.Header["x5c"] = c.X5c
 	}
 
 	assertion, err := token.SignedString(c.Key)
 	if err != nil {
-		return "", fmt.Errorf("unable to sign a JWT token using private key: %w", err)
+		return "", fmt.Errorf("unable to sign JWT token: %w", err)
 	}
+
 	return assertion, nil
 }
 
@@ -158,11 +157,9 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 func thumbprint(cert *x509.Certificate, alg string) []byte {
 	switch alg {
 	case jwt.SigningMethodRS256.Name:
-		/* #nosec */
-		hash := sha1.Sum(cert.Raw)
+		hash := sha1.Sum(cert.Raw) /* #nosec */
 		return hash[:]
 	default:
-		/* #nosec */
 		hash := sha256.Sum256(cert.Raw)
 		return hash[:]
 	}

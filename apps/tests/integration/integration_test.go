@@ -10,6 +10,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -22,6 +23,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"golang.org/x/crypto/pkcs12"
 )
 
 const (
@@ -477,6 +479,53 @@ func TestAccountFromCache(t *testing.T) {
 	}
 	if result.AccessToken == "" {
 		t.Fatal("TestAccountFromCache: on AcquireTokenSilent(): got AccessToken == '', want AccessToken != ''")
+	}
+
+}
+
+func TestAdfsToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+	labClient, err := newLabClient()
+	if err != nil {
+		t.Fatalf("TestAccountFromCache: on newLabClient(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	ctx := context.Background()
+
+	secret, err := labClient.secret(ctx, url.Values{"Secret": []string{"IDLABS-APP-Confidential-Client-Cert-OnPrem"}})
+	if err != nil {
+		t.Fatalf("TestAccountFromCache: failed to fetch secret, %s", errors.Verbose(err))
+	}
+	// Decode base64
+	pfxData, err := base64.StdEncoding.DecodeString(secret)
+	if err != nil {
+		t.Fatalf("Failed to decode base64 data: %v", err)
+	}
+
+	// Parse the PFX data
+	privateKey, cert, err := pkcs12.Decode(pfxData, "")
+	if err != nil {
+		t.Fatalf("Failed to decode PFX data: %v", err)
+	}
+
+	cred, err := confidential.NewCredFromCert([]*x509.Certificate{cert}, privateKey)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	clientID := "ConfidentialClientId"
+
+	app, err := confidential.New("https://fs.msidlab8.com/adfs", clientID, cred)
+	if err != nil {
+		panic(errors.Verbose(err))
+	}
+	scopes := []string{"openid"}
+	result, err := app.AcquireTokenByCredential(context.Background(), scopes)
+	if err != nil {
+		t.Fatalf("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got AccessToken == '', want AccessToken != ''")
 	}
 
 }
