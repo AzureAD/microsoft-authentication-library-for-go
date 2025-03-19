@@ -492,18 +492,14 @@ func TestAdfsToken(t *testing.T) {
 		t.Fatalf("TestAccountFromCache: on newLabClient(): got err == %s, want err == nil", errors.Verbose(err))
 	}
 	ctx := context.Background()
-
 	secret, err := labClient.secret(ctx, url.Values{"Secret": []string{"IDLABS-APP-Confidential-Client-Cert-OnPrem"}})
 	if err != nil {
 		t.Fatalf("TestAccountFromCache: failed to fetch secret, %s", errors.Verbose(err))
 	}
-	// Decode base64
 	pfxData, err := base64.StdEncoding.DecodeString(secret)
 	if err != nil {
 		t.Fatalf("Failed to decode base64 data: %v", err)
 	}
-
-	// Parse the PFX data
 	privateKey, cert, err := pkcs12.Decode(pfxData, "")
 	if err != nil {
 		t.Fatalf("Failed to decode PFX data: %v", err)
@@ -511,13 +507,12 @@ func TestAdfsToken(t *testing.T) {
 
 	cred, err := confidential.NewCredFromCert([]*x509.Certificate{cert}, privateKey)
 	if err != nil {
-		panic(errors.Verbose(err))
+		panic(err)
 	}
-	clientID := "ConfidentialClientId"
 
-	app, err := confidential.New("https://fs.msidlab8.com/adfs", clientID, cred)
+	app, err := confidential.New("https://fs.msidlab8.com/adfs", "ConfidentialClientId", cred)
 	if err != nil {
-		panic(errors.Verbose(err))
+		panic(err)
 	}
 	scopes := []string{"openid"}
 	result, err := app.AcquireTokenByCredential(context.Background(), scopes)
