@@ -156,7 +156,7 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 // https://tools.ietf.org/html/rfc7517#section-4.8
 func thumbprint(cert *x509.Certificate, alg string) []byte {
 	switch alg {
-	case jwt.SigningMethodRS256.Name:
+	case jwt.SigningMethodRS256.Name: // identity providers like ADFS don't support SHA256 assertions, so need to support this
 		hash := sha1.Sum(cert.Raw) /* #nosec */
 		return hash[:]
 	default:
