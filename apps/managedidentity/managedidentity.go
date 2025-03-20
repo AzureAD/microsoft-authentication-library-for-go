@@ -39,7 +39,6 @@ type AuthResult = base.AuthResult
 type TokenSource = base.TokenSource
 
 const (
-	TokenSourceUnknown          = base.TokenSourceUnknown
 	TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
 	TokenSourceCache            = base.TokenSourceCache
 )

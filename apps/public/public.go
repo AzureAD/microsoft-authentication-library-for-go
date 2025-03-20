@@ -54,7 +54,6 @@ type Account = shared.Account
 type TokenSource = base.TokenSource
 
 const (
-	TokenSourceUnknown          = base.TokenSourceUnknown
 	TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
 	TokenSourceCache            = base.TokenSourceCache
 )

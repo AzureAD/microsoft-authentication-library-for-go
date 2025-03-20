@@ -103,9 +103,8 @@ type TokenSource int
 
 // These are all the types of token flows.
 const (
-	TokenSourceUnknown          TokenSource = 0
-	TokenSourceIdentityProvider TokenSource = 1
-	TokenSourceCache            TokenSource = 2
+	TokenSourceIdentityProvider TokenSource = 0
+	TokenSourceCache            TokenSource = 1
 )
 
 // AuthResultFromStorage creates an AuthResult from a storage token response (which is generated from the cache).
