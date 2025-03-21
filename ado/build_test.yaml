@@ -6,7 +6,6 @@ pr:
   branches:
     include:
       - main
-      - 4gust/cca-256sha-support
 
 pool:
   vmImage: "ubuntu-latest"
