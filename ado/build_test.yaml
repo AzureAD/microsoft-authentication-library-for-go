@@ -38,7 +38,7 @@ steps:
     inputs:
       azureSubscription: "AuthSdkResourceManager"
       KeyVaultName: "msidlabs"
-      SecretsFilter: "LabAuth"
+      SecretsFilter: "LabAuth,IDLABS-APP-Confidential-Client-Cert-PEM"
   - task: Bash@3
     displayName: Installing certificate
     inputs:
