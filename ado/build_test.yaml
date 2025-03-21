@@ -45,9 +45,9 @@ steps:
       targetType: "inline"
       script: |
         echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
-        openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:''
-        echo $(IDLABS-APP-Confidential-Client-Cert-OnPrem) | base64 -d > $(Build.SourcesDirectory)/ccaCert.pfx
-        openssl pkcs12 -in $(Build.SourcesDirectory)/ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:''
+        OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:'' -legacy
+        echo "$(IDLABS-APP-Confidential-Client-Cert-OnPrem)" | base64 -d > $(Build.SourcesDirectory)/ccaCert.pfx
+        OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:'' -legacy
 
   - task: Go@0
     inputs:
