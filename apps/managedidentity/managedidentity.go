@@ -32,6 +32,17 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
+// AuthResult contains the results of one token acquisition operation.
+// For details see https://aka.ms/msal-net-authenticationresult
+type AuthResult = base.AuthResult
+
+type TokenSource = base.TokenSource
+
+const (
+	TokenSourceIdentityProvider = base.TokenSourceIdentityProvider
+	TokenSourceCache            = base.TokenSourceCache
+)
+
 const (
 	// DefaultToIMDS indicates that the source is defaulted to IMDS when no environment variables are set.
 	DefaultToIMDS Source = "DefaultToIMDS"
@@ -304,7 +315,7 @@ var now = time.Now
 //
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
-func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (base.AuthResult, error) {
+func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (AuthResult, error) {
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 	for _, option := range options {
@@ -316,7 +327,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	if o.claims == "" {
 		stResp, err := cacheManager.Read(ctx, c.authParams)
 		if err != nil {
-			return base.AuthResult{}, err
+			return AuthResult{}, err
 		}
 		ar, err := base.AuthResultFromStorage(stResp)
 		if err == nil {
@@ -333,7 +344,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	return c.getToken(ctx, resource)
 }
 
-func (c Client) getToken(ctx context.Context, resource string) (base.AuthResult, error) {
+func (c Client) getToken(ctx context.Context, resource string) (AuthResult, error) {
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
@@ -348,110 +359,110 @@ func (c Client) getToken(ctx context.Context, resource string) (base.AuthResult,
 	case ServiceFabric:
 		return c.acquireTokenForServiceFabric(ctx, resource)
 	default:
-		return base.AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
+		return AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
 }
 
-func (c Client) acquireTokenForAppService(ctx context.Context, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForAppService(ctx context.Context, resource string) (AuthResult, error) {
 	req, err := createAppServiceAuthRequest(ctx, c.miType, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForIMDS(ctx context.Context, resource string) (AuthResult, error) {
 	req, err := createIMDSAuthRequest(ctx, c.miType, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForCloudShell(ctx context.Context, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForCloudShell(ctx context.Context, resource string) (AuthResult, error) {
 	req, err := createCloudShellAuthRequest(ctx, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (AuthResult, error) {
 	req, err := createAzureMLAuthRequest(ctx, c.miType, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string) (AuthResult, error) {
 	req, err := createServiceFabricAuthRequest(ctx, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	tokenResponse, err := c.getTokenForRequest(req, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (base.AuthResult, error) {
+func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (AuthResult, error) {
 	req, err := createAzureArcAuthRequest(ctx, resource, "")
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 
 	response, err := c.httpClient.Do(req)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	defer response.Body.Close()
 
 	if response.StatusCode != http.StatusUnauthorized {
-		return base.AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
+		return AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
 	}
 
 	secret, err := c.getAzureArcSecretKey(response, runtime.GOOS)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 
 	secondRequest, err := createAzureArcAuthRequest(ctx, resource, string(secret))
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 
 	tokenResponse, err := c.getTokenForRequest(secondRequest, resource)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (base.AuthResult, error) {
+func authResultFromToken(authParams authority.AuthParams, token accesstokens.TokenResponse) (AuthResult, error) {
 	if cacheManager == nil {
-		return base.AuthResult{}, errors.New("cache instance is nil")
+		return AuthResult{}, errors.New("cache instance is nil")
 	}
 	account, err := cacheManager.Write(authParams, token)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	// if refreshOn is not set, set it to half of the time until expiry if expiry is more than 2 hours away
 	if token.RefreshOn.T.IsZero() {
@@ -461,7 +472,7 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 	}
 	ar, err := base.NewAuthResult(token, account)
 	if err != nil {
-		return base.AuthResult{}, err
+		return AuthResult{}, err
 	}
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
