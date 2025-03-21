@@ -47,7 +47,7 @@ steps:
         echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
         openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:''
         echo $(IDLABS-APP-Confidential-Client-Cert-OnPerm) | base64 -d > $(Build.SourcesDirectory)/ccaCert.pfx
-        openssl pkcs12 -in $(Build.SourcesDirectory)ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:''
+        openssl pkcs12 -in $(Build.SourcesDirectory)/ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:''
 
   - task: Go@0
     inputs:
