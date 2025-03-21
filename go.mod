@@ -8,7 +8,6 @@ require (
 	github.com/kylelemons/godebug v1.1.0
 	github.com/montanaflynn/stats v0.7.0
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8
-	golang.org/x/crypto v0.0.0-20220411220226-7b82a4e95df4
 )
 
 require golang.org/x/sys v0.5.0 // indirect

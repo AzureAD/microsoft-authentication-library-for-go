@@ -10,7 +10,6 @@ import (
 	"context"
 	"crypto"
 	"crypto/x509"
-	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -23,7 +22,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"golang.org/x/crypto/pkcs12"
 )
 
 const (
@@ -39,6 +37,7 @@ const (
 	// Default values
 	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
 	pemFile         = "../../../cert.pem"
+	ccaPemFile      = "../../../ccaCert.pem"
 )
 
 var httpClient = http.Client{}
@@ -98,7 +97,7 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-	cert, privateKey, err := getCertDataFromFile()
+	cert, privateKey, err := getCertDataFromFile(pemFile)
 	if err != nil {
 		return nil, fmt.Errorf("Could not get cert data: %w", err)
 	}
@@ -116,8 +115,8 @@ func newLabClient() (*labClient, error) {
 	return &labClient{app: app}, nil
 }
 
-func getCertDataFromFile() ([]*x509.Certificate, crypto.PrivateKey, error) {
-	data, err := os.ReadFile(pemFile)
+func getCertDataFromFile(filePath string) ([]*x509.Certificate, crypto.PrivateKey, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Printf("Error finding certificate: %v\n", err)
 	}
@@ -487,25 +486,13 @@ func TestAdfsToken(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	labClient, err := newLabClient()
+
+	cert, privateKey, err := getCertDataFromFile(ccaPemFile)
 	if err != nil {
-		t.Fatalf("TestAccountFromCache: on newLabClient(): got err == %s, want err == nil", errors.Verbose(err))
-	}
-	ctx := context.Background()
-	secret, err := labClient.secret(ctx, url.Values{"Secret": []string{"IDLABS-APP-Confidential-Client-Cert-OnPrem"}})
-	if err != nil {
-		t.Fatalf("TestAccountFromCache: failed to fetch secret, %s", errors.Verbose(err))
-	}
-	pfxData, err := base64.StdEncoding.DecodeString(secret)
-	if err != nil {
-		t.Fatalf("Failed to decode base64 data: %v", err)
-	}
-	privateKey, cert, err := pkcs12.Decode(pfxData, "")
-	if err != nil {
-		t.Fatalf("Failed to decode PFX data: %v", err)
+		t.Fatal("Could not get cert data: %w", err)
 	}
 
-	cred, err := confidential.NewCredFromCert([]*x509.Certificate{cert}, privateKey)
+	cred, err := confidential.NewCredFromCert(cert, privateKey)
 	if err != nil {
 		panic(err)
 	}
