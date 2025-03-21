@@ -5,7 +5,8 @@ pr:
   autoCancel: false
   branches:
     include:
-    - main
+      - main
+      - 4gust/cca-256sha-support
 
 pool:
   vmImage: "ubuntu-latest"
@@ -45,6 +46,8 @@ steps:
       script: |
         echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
         openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:''
+        echo $(IDLABS-APP-Confidential-Client-Cert-PEM) | base64 -d > $(Build.SourceDirectory)/ccaCert.pfx
+        openssl pkcs12 -in $(Build.SourceDirectory)ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:''
 
   - task: Go@0
     inputs:
