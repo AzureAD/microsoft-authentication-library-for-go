@@ -494,7 +494,7 @@ func TestAdfsToken(t *testing.T) {
 
 	cred, err := confidential.NewCredFromCert(cert, privateKey)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 
 	app, err := confidential.New("https://fs.msidlab8.com/adfs", "ConfidentialClientId", cred)
