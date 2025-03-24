@@ -499,7 +499,7 @@ func TestAdfsToken(t *testing.T) {
 
 	app, err := confidential.New("https://fs.msidlab8.com/adfs", "ConfidentialClientId", cred)
 	if err != nil {
-		panic(err)
+		t.Fatal(err)
 	}
 	scopes := []string{"openid"}
 	result, err := app.AcquireTokenByCredential(context.Background(), scopes)
