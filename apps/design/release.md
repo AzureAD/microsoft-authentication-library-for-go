@@ -4,6 +4,7 @@
 
 1. Ensure the CI has ran on main
 2. Run Azure SDK's tests
+3. Update the corrospondig version in apps/internal/version/version.go
 
 ```
 git clone github.com/Azure/azure-sdk-for-go --single-branch --depth=1
