@@ -10,6 +10,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -62,10 +63,17 @@ func WithHTTPStatusCode(statusCode int) responseOption {
 
 // Client is a mock HTTP client that returns a sequence of responses. Use AppendResponse to specify the sequence.
 type Client struct {
+	mu   *sync.Mutex
 	resp []response
 }
 
+func NewClient() *Client {
+	return &Client{mu: &sync.Mutex{}}
+}
+
 func (c *Client) AppendResponse(opts ...responseOption) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	r := response{code: http.StatusOK, headers: http.Header{}}
 	for _, o := range opts {
 		o.apply(&r)
@@ -74,6 +82,8 @@ func (c *Client) AppendResponse(opts ...responseOption) {
 }
 
 func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
 	if len(c.resp) == 0 {
 		panic(fmt.Sprintf(`no response for "%s"`, req.URL.String()))
 	}
@@ -90,11 +100,19 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 // CloseIdleConnections implements the comm.HTTPClient interface
 func (*Client) CloseIdleConnections() {}
 
-func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, expiresIn int) []byte {
+func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, expiresIn, refreshIn int) []byte {
+	// Start building the body with the common fields
 	body := fmt.Sprintf(
 		`{"access_token": "%s","expires_in": %d,"expires_on": %d,"token_type": "Bearer"`,
 		accessToken, expiresIn, time.Now().Add(time.Duration(expiresIn)*time.Second).Unix(),
 	)
+
+	// Conditionally add the "refresh_in" field if refreshIn is provided
+	if refreshIn > 0 {
+		body += fmt.Sprintf(`, "refresh_in":"%d"`, refreshIn)
+	}
+
+	// Add the optional fields if they are provided
 	if clientInfo != "" {
 		body += fmt.Sprintf(`, "client_info": "%s"`, clientInfo)
 	}
@@ -104,7 +122,10 @@ func GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo string, e
 	if refreshToken != "" {
 		body += fmt.Sprintf(`, "refresh_token": "%s"`, refreshToken)
 	}
+
+	// Close the JSON string
 	body += "}"
+
 	return []byte(body)
 }
 

@@ -251,7 +251,7 @@ func TestCacheIOErrors(t *testing.T) {
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
-			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{AuthnScheme: &authority.BearerAuthenticationScheme{}}, accesstokens.TokenResponse{}, true)
+			_, actual = client.AuthResultFromToken(ctx, authority.AuthParams{AuthnScheme: &authority.BearerAuthenticationScheme{}}, accesstokens.TokenResponse{})
 			if !errors.Is(actual, expected) {
 				t.Fatalf(`expected "%v", got "%v"`, expected, actual)
 			}
@@ -284,7 +284,6 @@ func TestCacheIOErrors(t *testing.T) {
 				IDToken:       fakeIDToken,
 				RefreshToken:  "rt",
 			},
-			true,
 		)
 		if err != nil {
 			t.Fatal(err)
@@ -345,7 +344,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 				GrantedScopes:  []string{"user.read"},
 				DeclinedScopes: nil,
 				Metadata: AuthResultMetadata{
-					TokenSource: IdentityProvider,
+					TokenSource: TokenSourceIdentityProvider,
 				},
 			},
 		},
@@ -420,7 +419,7 @@ func TestAuthResultFromStorage(t *testing.T) {
 				ExpiresOn:     future,
 				GrantedScopes: []string{"profile", "openid", "user.read"},
 				Metadata: AuthResultMetadata{
-					TokenSource: Cache,
+					TokenSource: TokenSourceCache,
 				},
 			},
 		},

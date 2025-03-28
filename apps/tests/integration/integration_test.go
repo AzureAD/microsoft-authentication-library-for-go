@@ -39,6 +39,7 @@ const (
 	// Default values
 	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
 	pemFile         = "../../../cert.pem"
+	ccaPemFile      = "../../../ccaCert.pem"
 )
 
 var httpClient = http.Client{}
@@ -96,7 +97,7 @@ type secret struct {
 }
 
 func newLabClient() (*labClient, error) {
-	cert, privateKey, err := getCertDataFromFile()
+	cert, privateKey, err := getCertDataFromFile(pemFile)
 	if err != nil {
 		return nil, fmt.Errorf("Could not get cert data: %w", err)
 	}
@@ -114,8 +115,8 @@ func newLabClient() (*labClient, error) {
 	return &labClient{app: app}, nil
 }
 
-func getCertDataFromFile() ([]*x509.Certificate, crypto.PrivateKey, error) {
-	data, err := os.ReadFile(pemFile)
+func getCertDataFromFile(filePath string) ([]*x509.Certificate, crypto.PrivateKey, error) {
+	data, err := os.ReadFile(filePath)
 	if err != nil {
 		fmt.Printf("Error finding certificate: %v\n", err)
 	}
@@ -596,5 +597,34 @@ func TestAcquireMSITokenExchangeForESTSToken(t *testing.T) {
 	}
 	if authResult.Metadata.TokenSource != base.Cache {
 		t.Fatalf("Expected token source 'Cache', got '%d'", authResult.Metadata.TokenSource)
+	} 
+}
+
+func TestAdfsToken(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	cert, privateKey, err := getCertDataFromFile(ccaPemFile)
+	if err != nil {
+		t.Fatal("Could not get cert data: %w", err)
+	}
+
+	cred, err := confidential.NewCredFromCert(cert, privateKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app, err := confidential.New("https://fs.msidlab8.com/adfs", "ConfidentialClientId", cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+	scopes := []string{"openid"}
+	result, err := app.AcquireTokenByCredential(context.Background(), scopes)
+	if err != nil {
+		t.Fatalf("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got AccessToken == '', want AccessToken != ''")
 	}
 }
