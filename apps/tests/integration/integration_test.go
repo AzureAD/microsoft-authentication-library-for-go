@@ -585,7 +585,7 @@ func TestAcquireMSITokenExchangeForESTSToken(t *testing.T) {
 	if authResult.AccessToken == "" {
 		t.Fatal("Expected non-empty access token")
 	}
-	if authResult.Metadata.TokenSource != 1 {
+	if authResult.Metadata.TokenSource != base.TokenSourceIdentityProvider {
 		t.Fatalf("Expected token source 'IdentityProvider', got '%d'", authResult.Metadata.TokenSource)
 	}
 	authResult, err = confidentialClient.AcquireTokenSilent(ctx, []string{"https://msidlabs.vault.azure.net/.default"})
@@ -595,9 +595,9 @@ func TestAcquireMSITokenExchangeForESTSToken(t *testing.T) {
 	if authResult.AccessToken == "" {
 		t.Fatal("Expected non-empty access token")
 	}
-	if authResult.Metadata.TokenSource != base.Cache {
+	if authResult.Metadata.TokenSource != base.TokenSourceCache {
 		t.Fatalf("Expected token source 'Cache', got '%d'", authResult.Metadata.TokenSource)
-	} 
+	}
 }
 
 func TestAdfsToken(t *testing.T) {
