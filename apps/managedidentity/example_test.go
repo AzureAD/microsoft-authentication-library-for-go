@@ -22,15 +22,13 @@ func ExampleNew() {
 	_ = miSystemassignedClient
 
 	// User assigned Client
-	clientId := "ClientId" // TODO: replace the correct Client id
+	clientId := "ClientId" // TODO: replace with your Managed Identity Id
 
 	miClientIdAssignedClient, err := mi.New(mi.UserAssignedClientID(clientId))
 	if err != nil {
 		// TODO: Handle error
 	}
 	_ = miClientIdAssignedClient
-
-	// Output: -
 }
 
 func ExampleClient_AcquireToken() {
@@ -46,14 +44,4 @@ func ExampleClient_AcquireToken() {
 
 	// Output: Token expires at: <datetime>
 
-}
-
-func ExampleGetSource() {
-	source, err := mi.GetSource()
-	if err != nil {
-		// TODO: Handle error
-	}
-	print("source is :", source)
-
-	// Output: source is : <source>
 }
