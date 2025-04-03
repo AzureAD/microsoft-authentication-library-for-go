@@ -5,6 +5,8 @@ package managedidentity
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -696,6 +698,71 @@ func TestAppServiceAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 }
 
+// TestAppServiceWithClientCapabilities tests the scenario when App Service includes client capabilities
+func TestAppServiceWithClientCapabilities(t *testing.T) {
+	setEnvVars(t, AppService)
+
+	testCases := []struct {
+		name                 string
+		expectError          bool
+		expectedStatusCode   int
+		expectedToken        string
+		expectedCapabilities string
+		capabilities         []string
+	}{
+		{
+			name:                 "Token Request with Client Capabilities",
+			expectError:          false,
+			expectedStatusCode:   http.StatusOK,
+			expectedToken:        token,
+			expectedCapabilities: "c1,c2",
+			capabilities:         []string{"c1", "c2"},
+		},
+	}
+
+	for _, testCase := range testCases {
+		t.Run(testCase.name, func(t *testing.T) {
+			mockClient := mock.NewClient()
+			localUrl := &url.URL{}
+			responseBody, err := getSuccessfulResponse(resource, false)
+			if err != nil {
+				t.Fatalf(errorFormingJsonResponse, err.Error())
+			}
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK),
+				mock.WithBody(responseBody),
+				mock.WithCallback(func(r *http.Request) {
+					localUrl = r.URL
+				}))
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithClientCapabilities(testCase.capabilities))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			result, err := client.AcquireToken(context.Background(), resource)
+			if testCase.expectError {
+				if err == nil {
+					t.Fatal("Expected error but got nil")
+				}
+				var callErr errors.CallErr
+				if !errors.As(err, &callErr) {
+					t.Fatalf("Expected error of type CallErr, got %T", err)
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("AcquireToken failed: %v", err)
+				}
+				if result.AccessToken != testCase.expectedToken {
+					t.Fatalf("Expected access token %q, got %q", testCase.expectedToken, result.AccessToken)
+				}
+				localUrlQuerry := localUrl.Query()
+				if localUrlQuerry.Get("xms_cc") != testCase.expectedCapabilities {
+					t.Fatalf("Expected client capabilities %q, got %q", testCase.expectedCapabilities, localUrlQuerry.Get("xms_cc"))
+				}
+			}
+		})
+	}
+}
+
 func TestAzureMLAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	defaultClientID := "A"
 	t.Setenv("DEFAULT_IDENTITY_CLIENT_ID", defaultClientID)
@@ -1208,4 +1275,75 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		t.Error("Error should be called at least once")
 	}
 	close(ch)
+}
+
+// TestAppServiceWithClaimsAndBadAccessToken tests the scenario where claims are passed
+// and a bad access token is retrieved from the cache
+func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
+	setEnvVars(t, AppService)
+	localUrl := &url.URL{}
+	mockClient := mock.NewClient()
+	// Second response is a successful token response after retrying with claims
+	responseBody, err := getSuccessfulResponse(resource, false)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+	)
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+		mock.WithCallback(func(r *http.Request) {
+			localUrl = r.URL
+		}))
+	// Reset cache for clean test
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	client, err := New(SystemAssigned(),
+		WithHTTPClient(mockClient),
+		WithClientCapabilities([]string{"c1", "c2"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Call AcquireToken which should trigger token revocation flow
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("AcquireToken failed: %v", err)
+	}
+
+	// Verify token was obtained successfully
+	if result.AccessToken != token {
+		t.Fatalf("Expected access token %q, got %q", token, result.AccessToken)
+	}
+
+	// Call AcquireToken which should trigger token revocation flow
+	result, err = client.AcquireToken(context.Background(), resource, WithClaims("dummyClaims"))
+	if err != nil {
+		t.Fatalf("AcquireToken failed: %v", err)
+	}
+
+	localUrlQuerry := localUrl.Query()
+
+	if localUrlQuerry.Get(apiVersionQueryParameterName) != appServiceAPIVersion {
+		t.Fatalf("api-version not on %s got %s", appServiceAPIVersion, localUrlQuerry.Get(apiVersionQueryParameterName))
+	}
+	if r := localUrlQuerry.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
+		t.Fatal("suffix /.default was not removed.")
+	}
+	if localUrlQuerry.Get("xms_cc") != "c1,c2" {
+		t.Fatalf("Expected client capabilities %q, got %q", "c1,c2", localUrlQuerry.Get("xms_cc"))
+	}
+	hash := sha256.Sum256([]byte(token))
+	if localUrlQuerry.Get("token_sha256_to_refresh") != hex.EncodeToString(hash[:]) {
+		t.Fatalf("Expected token_sha256_to_refresh %q, got %q", hex.EncodeToString(hash[:]), localUrlQuerry.Get("token_sha256_to_refresh"))
+	}
+	// Verify token was obtained successfully
+	if result.AccessToken != token {
+		t.Fatalf("Expected access token %q, got %q", token, result.AccessToken)
+	}
 }
