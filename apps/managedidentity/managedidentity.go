@@ -202,7 +202,7 @@ func WithClaims(claims string) AcquireTokenOption {
 }
 
 // WithClientCapabilities sets the client capabilities to be used in the request.
-// This is used to enable specific features or behaviors in the token request.
+// For details see https://learn.microsoft.com/en-us/entra/identity/conditional-access/concept-continuous-access-evaluation
 // The capabilities are passed as a slice of strings, and empty strings are filtered out.
 func WithClientCapabilities(capabilities []string) ClientOption {
 	return func(o *Client) {
@@ -353,7 +353,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	ar, err := base.AuthResultFromStorage(stResp)
 	if err == nil {
 		if o.claims != "" {
-			// When the claims are set, we need to passon bad/old token
+			// When the claims are set, we need to pass on revoked token to MSIv1 (AppService, ServiceFabric)
 			return c.getToken(ctx, resource, ar.AccessToken)
 		} else {
 			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
