@@ -12,7 +12,7 @@ package managedidentity
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -606,8 +606,7 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, re
 	q.Set("resource", resource)
 
 	if revokedToken != "" {
-		hash := sha256.Sum256([]byte(revokedToken))
-		q.Set("token_sha256_to_refresh", hex.EncodeToString(hash[:]))
+		q.Set("token_sha256_to_refresh", convertTokenToSHA256HashString(revokedToken))
 	}
 
 	if len(cc) > 0 {
@@ -627,6 +626,13 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, re
 	}
 	req.URL.RawQuery = q.Encode()
 	return req, nil
+}
+
+func convertTokenToSHA256HashString(revokedToken string) string {
+	hash := sha256.New()
+	hash.Write([]byte(revokedToken))
+	hashBytes := hash.Sum(nil)
+	return base64.StdEncoding.EncodeToString(hashBytes)
 }
 
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
