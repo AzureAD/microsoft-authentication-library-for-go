@@ -202,7 +202,7 @@ func WithClaims(claims string) AcquireTokenOption {
 }
 
 // WithClientCapabilities sets the client capabilities to be used in the request.
-// For details see https://learn.microsoft.com/en-us/entra/identity/conditional-access/concept-continuous-access-evaluation
+// For details see https://learn.microsoft.com/entra/identity/conditional-access/concept-continuous-access-evaluation
 // The capabilities are passed as a slice of strings, and empty strings are filtered out.
 func WithClientCapabilities(capabilities []string) ClientOption {
 	return func(o *Client) {
@@ -355,21 +355,20 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		if o.claims != "" {
 			// When the claims are set, we need to pass on revoked token to MSIv1 (AppService, ServiceFabric)
 			return c.getToken(ctx, resource, ar.AccessToken)
-		} else {
-			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
-				defer c.canRefresh.Store(false)
-				if tr, er := c.getToken(ctx, resource, o.claims); er == nil {
-					return tr, nil
-				}
-			}
-			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			return ar, err
 		}
+		if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
+			defer c.canRefresh.Store(false)
+			if tr, er := c.getToken(ctx, resource, ""); er == nil {
+				return tr, nil
+			}
+		}
+		ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+		return ar, err
 	}
 	return c.getToken(ctx, resource, "")
 }
 
-func (c Client) getToken(ctx context.Context, resource string, badToken string) (AuthResult, error) {
+func (c Client) getToken(ctx context.Context, resource string, revokedToken string) (AuthResult, error) {
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
@@ -380,7 +379,7 @@ func (c Client) getToken(ctx context.Context, resource string, badToken string) 
 	case DefaultToIMDS:
 		return c.acquireTokenForIMDS(ctx, resource)
 	case AppService:
-		return c.acquireTokenForAppService(ctx, resource, badToken)
+		return c.acquireTokenForAppService(ctx, resource, revokedToken)
 	case ServiceFabric:
 		return c.acquireTokenForServiceFabric(ctx, resource)
 	default:
@@ -388,8 +387,8 @@ func (c Client) getToken(ctx context.Context, resource string, badToken string) 
 	}
 }
 
-func (c Client) acquireTokenForAppService(ctx context.Context, resource string, badToken string) (AuthResult, error) {
-	req, err := createAppServiceAuthRequest(ctx, c.miType, resource, badToken, c.clientCapabilities)
+func (c Client) acquireTokenForAppService(ctx context.Context, resource string, revokedToken string) (AuthResult, error) {
+	req, err := createAppServiceAuthRequest(ctx, c.miType, resource, revokedToken, c.clientCapabilities)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -594,7 +593,7 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	return r, err
 }
 
-func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, badToken string, cc []string) (*http.Request, error) {
+func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, revokedToken string, cc []string) (*http.Request, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
 	if err != nil {
@@ -606,8 +605,8 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, ba
 	q.Set("api-version", appServiceAPIVersion)
 	q.Set("resource", resource)
 
-	if badToken != "" {
-		hash := sha256.Sum256([]byte(badToken))
+	if revokedToken != "" {
+		hash := sha256.Sum256([]byte(revokedToken))
 		q.Set("token_sha256_to_refresh", hex.EncodeToString(hash[:]))
 	}
 
