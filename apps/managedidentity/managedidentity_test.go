@@ -5,6 +5,8 @@ package managedidentity
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -1208,4 +1210,85 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		t.Error("Error should be called at least once")
 	}
 	close(ch)
+}
+
+// TestAppServiceWithClaimsAndBadAccessToken tests the scenario where claims are passed
+// and a bad access token is retrieved from the cache
+func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
+	setEnvVars(t, AppService)
+	localUrl := &url.URL{}
+	mockClient := mock.NewClient()
+	// Second response is a successful token response after retrying with claims
+	responseBody, err := getSuccessfulResponse(resource, false)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+	)
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+		mock.WithCallback(func(r *http.Request) {
+			localUrl = r.URL
+		}))
+	// Reset cache for clean test
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	client, err := New(SystemAssigned(),
+		WithHTTPClient(mockClient),
+		WithClientCapabilities([]string{"c1", "c2"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Call AcquireToken which should trigger token revocation flow
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("AcquireToken failed: %v", err)
+	}
+
+	// Verify token was obtained successfully
+	if result.AccessToken != token {
+		t.Fatalf("Expected access token %q, got %q", token, result.AccessToken)
+	}
+
+	// Call AcquireToken which should trigger token revocation flow
+	result, err = client.AcquireToken(context.Background(), resource, WithClaims("dummyClaims"))
+	if err != nil {
+		t.Fatalf("AcquireToken failed: %v", err)
+	}
+
+	localUrlQuerry := localUrl.Query()
+
+	if localUrlQuerry.Get(apiVersionQueryParameterName) != appServiceAPIVersion {
+		t.Fatalf("api-version not on %s got %s", appServiceAPIVersion, localUrlQuerry.Get(apiVersionQueryParameterName))
+	}
+	if r := localUrlQuerry.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
+		t.Fatal("suffix /.default was not removed.")
+	}
+	if localUrlQuerry.Get("xms_cc") != "c1,c2" {
+		t.Fatalf("Expected client capabilities %q, got %q", "c1,c2", localUrlQuerry.Get("xms_cc"))
+	}
+	hash := sha256.Sum256([]byte(token))
+	if localUrlQuerry.Get("token_sha256_to_refresh") != hex.EncodeToString(hash[:]) {
+		t.Fatalf("Expected token_sha256_to_refresh %q, got %q", hex.EncodeToString(hash[:]), localUrlQuerry.Get("token_sha256_to_refresh"))
+	}
+	// Verify token was obtained successfully
+	if result.AccessToken != token {
+		t.Fatalf("Expected access token %q, got %q", token, result.AccessToken)
+	}
+}
+
+func TestConvertTokenToSHA256HashString(t *testing.T) {
+	// Test with a valid token
+	token := "test_token"
+	expectedHash := "zAr5codUO2XaLH4UdkJgIYJsqxZvHgY+0BK4Vf+BllY="
+	hash := convertTokenToSHA256HashString(token)
+	if hash != expectedHash {
+		t.Fatalf("expected %q, got %q", expectedHash, hash)
+	}
 }
