@@ -966,7 +966,7 @@ func TestAzureArcErrors(t *testing.T) {
 		},
 		{
 			name:          "Invalid file path",
-			headerValue:   "Basic realm=" + filepath.Join("path", "to", secretKey),
+			headerValue:   basicRealm + filepath.Join("path", "to", secretKey),
 			expectedError: "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
 		},
 		{
@@ -1284,11 +1284,28 @@ func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
 }
 
 func TestConvertTokenToSHA256HashString(t *testing.T) {
-	// Test with a valid token
-	token := "test_token"
-	expectedHash := "cc0af97287543b65da2c7e1476426021826cab166f1e063ed012b855ff819656"
-	hash := convertTokenToSHA256HashString(token)
-	if hash != expectedHash {
-		t.Fatalf("expected %q, got %q", expectedHash, hash)
+	tests := []struct {
+		token        string
+		expectedHash string
+	}{
+		{
+			token:        "test_token",
+			expectedHash: "cc0af97287543b65da2c7e1476426021826cab166f1e063ed012b855ff819656",
+		},
+		{
+			token:        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~",
+			expectedHash: "01588d5a948b6c4facd47866877491b42866b5c10a4d342cf168e994101d352a",
+		},
+		{
+			token:        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~",
+			expectedHash: "29c538690068a8ad1797a391bfe23e7fb817b601fc7b78288cb499ab8fd37947",
+		},
+	}
+
+	for _, test := range tests {
+		hash := convertTokenToSHA256HashString(test.token)
+		if hash != test.expectedHash {
+			t.Fatalf("for token %q, expected %q, got %q", test.token, test.expectedHash, hash)
+		}
 	}
 }
