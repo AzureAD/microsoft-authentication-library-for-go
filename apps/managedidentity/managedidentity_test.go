@@ -1286,7 +1286,7 @@ func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
 func TestConvertTokenToSHA256HashString(t *testing.T) {
 	// Test with a valid token
 	token := "test_token"
-	expectedHash := "zAr5codUO2XaLH4UdkJgIYJsqxZvHgY+0BK4Vf+BllY="
+	expectedHash := "cc0af97287543b65da2c7e1476426021826cab166f1e063ed012b855ff819656"
 	hash := convertTokenToSHA256HashString(token)
 	if hash != expectedHash {
 		t.Fatalf("expected %q, got %q", expectedHash, hash)

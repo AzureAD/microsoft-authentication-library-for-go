@@ -12,7 +12,7 @@ package managedidentity
 import (
 	"context"
 	"crypto/sha256"
-	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -632,7 +632,7 @@ func convertTokenToSHA256HashString(revokedToken string) string {
 	hash := sha256.New()
 	hash.Write([]byte(revokedToken))
 	hashBytes := hash.Sum(nil)
-	return base64.StdEncoding.EncodeToString(hashBytes)
+	return hex.EncodeToString(hashBytes)
 }
 
 func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
