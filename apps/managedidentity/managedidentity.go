@@ -381,7 +381,7 @@ func (c Client) getToken(ctx context.Context, resource string, revokedToken stri
 	case AppService:
 		return c.acquireTokenForAppService(ctx, resource, revokedToken)
 	case ServiceFabric:
-		return c.acquireTokenForServiceFabric(ctx, resource)
+		return c.acquireTokenForServiceFabric(ctx, resource, revokedToken)
 	default:
 		return AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
@@ -435,8 +435,8 @@ func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (Au
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string) (AuthResult, error) {
-	req, err := createServiceFabricAuthRequest(ctx, resource)
+func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string, revokedToken string) (AuthResult, error) {
+	req, err := createServiceFabricAuthRequest(ctx, resource, revokedToken, c.clientCapabilities)
 	if err != nil {
 		return AuthResult{}, err
 	}
