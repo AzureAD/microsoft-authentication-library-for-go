@@ -7,10 +7,9 @@ import (
 	"context"
 	"net/http"
 	"os"
-	"strings"
 )
 
-func createServiceFabricAuthRequest(ctx context.Context, resource string, revokedToken string, cc []string) (*http.Request, error) {
+func createServiceFabricAuthRequest(ctx context.Context, resource string, revokedToken string, cc string) (*http.Request, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
 	if err != nil {
@@ -26,7 +25,7 @@ func createServiceFabricAuthRequest(ctx context.Context, resource string, revoke
 	}
 
 	if len(cc) > 0 {
-		q.Set("xms_cc", strings.Join(cc, ","))
+		q.Set("xms_cc", cc)
 	}
 
 	req.URL.RawQuery = q.Encode()

@@ -180,7 +180,7 @@ type Client struct {
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	canRefresh         *atomic.Value
-	clientCapabilities []string
+	clientCapabilities string
 }
 
 type AcquireTokenOptions struct {
@@ -212,7 +212,7 @@ func WithClientCapabilities(capabilities []string) ClientOption {
 				filteredCapabilities = append(filteredCapabilities, cap)
 			}
 		}
-		o.clientCapabilities = filteredCapabilities
+		o.clientCapabilities = strings.Join(filteredCapabilities, ",")
 	}
 }
 
@@ -593,7 +593,7 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	return r, err
 }
 
-func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, revokedToken string, cc []string) (*http.Request, error) {
+func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, revokedToken string, cc string) (*http.Request, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
 	if err != nil {
@@ -610,7 +610,7 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, re
 	}
 
 	if len(cc) > 0 {
-		q.Set("xms_cc", strings.Join(cc, ","))
+		q.Set("xms_cc", cc)
 	}
 
 	switch t := id.(type) {
