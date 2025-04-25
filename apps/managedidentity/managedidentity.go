@@ -11,6 +11,8 @@ package managedidentity
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -178,6 +180,7 @@ type Client struct {
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	canRefresh         *atomic.Value
+	capabilities       []string
 }
 
 type AcquireTokenOptions struct {
@@ -193,6 +196,14 @@ type AcquireTokenOption func(o *AcquireTokenOptions)
 func WithClaims(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
 		o.claims = claims
+	}
+}
+
+// WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
+// that are used to indicate support for features like Continuous Access Evaluation and token revocation.
+func WithClientCapabilities(capabilities []string) ClientOption {
+	return func(c *Client) {
+		c.capabilities = capabilities
 	}
 }
 
@@ -323,28 +334,46 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	}
 	c.authParams.Scopes = []string{resource}
 
-	// ignore cached access tokens when given claims
-	if o.claims == "" {
-		stResp, err := cacheManager.Read(ctx, c.authParams)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		ar, err := base.AuthResultFromStorage(stResp)
-		if err == nil {
-			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
-				defer c.canRefresh.Store(false)
-				if tr, er := c.getToken(ctx, resource); er == nil {
-					return tr, nil
+	// If claims are provided, we should try to use a cached token for revocation flow
+	// If no claims are provided, regular token acquisition flow applies
+	var cachedToken string
+	var tokenSha256ToRefresh string
+
+	// Check if we have a cached token
+	stResp, err := cacheManager.Read(ctx, c.authParams)
+	if err == nil {
+		cachedToken = stResp.AccessToken.Secret
+	}
+
+	// If claims are provided and we have a cached token, it means we need to refresh
+	// due to token revocation scenario
+	if o.claims != "" && cachedToken != "" {
+		// Convert the token to SHA256 for revocation process
+		tokenSha256ToRefresh = convertTokenToSHA256HashString(cachedToken)
+	}
+
+	// For service fabric and app service, we can use claims and client capabilities only
+	if (c.source == ServiceFabric || c.source == AppService) && (o.claims == "" && tokenSha256ToRefresh == "") {
+		// Use cache for regular token acquisition when no claims provided
+		if stResp != nil {
+			ar, err := base.AuthResultFromStorage(stResp)
+			if err == nil {
+				if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
+					defer c.canRefresh.Store(false)
+					if tr, er := c.getToken(ctx, resource, o.claims, tokenSha256ToRefresh); er == nil {
+						return tr, nil
+					}
 				}
+				ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+				return ar, err
 			}
-			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			return ar, err
 		}
 	}
-	return c.getToken(ctx, resource)
+
+	return c.getToken(ctx, resource, o.claims, tokenSha256ToRefresh)
 }
 
-func (c Client) getToken(ctx context.Context, resource string) (AuthResult, error) {
+func (c Client) getToken(ctx context.Context, resource string, claims string, tokenSha256ToRefresh string) (AuthResult, error) {
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
@@ -355,16 +384,16 @@ func (c Client) getToken(ctx context.Context, resource string) (AuthResult, erro
 	case DefaultToIMDS:
 		return c.acquireTokenForIMDS(ctx, resource)
 	case AppService:
-		return c.acquireTokenForAppService(ctx, resource)
+		return c.acquireTokenForAppService(ctx, resource, claims, tokenSha256ToRefresh)
 	case ServiceFabric:
-		return c.acquireTokenForServiceFabric(ctx, resource)
+		return c.acquireTokenForServiceFabric(ctx, resource, claims, tokenSha256ToRefresh)
 	default:
 		return AuthResult{}, fmt.Errorf("unsupported source %q", c.source)
 	}
 }
 
-func (c Client) acquireTokenForAppService(ctx context.Context, resource string) (AuthResult, error) {
-	req, err := createAppServiceAuthRequest(ctx, c.miType, resource)
+func (c Client) acquireTokenForAppService(ctx context.Context, resource string, claims string, tokenSha256ToRefresh string) (AuthResult, error) {
+	req, err := createAppServiceAuthRequest(ctx, c.miType, resource, claims, tokenSha256ToRefresh, c.capabilities)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -411,8 +440,8 @@ func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (Au
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
-func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string) (AuthResult, error) {
-	req, err := createServiceFabricAuthRequest(ctx, resource)
+func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string, claims string, tokenSha256ToRefresh string) (AuthResult, error) {
+	req, err := createServiceFabricAuthRequest(ctx, resource, claims, tokenSha256ToRefresh, c.capabilities)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -569,7 +598,7 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	return r, err
 }
 
-func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
+func createAppServiceAuthRequest(ctx context.Context, id ID, resource string, claims string, tokenSha256ToRefresh string, capabilities []string) (*http.Request, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
 	if err != nil {
@@ -590,6 +619,22 @@ func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*
 	default:
 		return nil, fmt.Errorf("unsupported type %T", id)
 	}
+
+	// Add claims if provided
+	if claims != "" {
+		q.Set("claims", claims)
+	}
+
+	// Add token_sha256_to_refresh if provided
+	if tokenSha256ToRefresh != "" {
+		q.Set(tokenSha256ToRefreshParameter, tokenSha256ToRefresh)
+	}
+
+	// Add client capabilities if provided
+	if len(capabilities) > 0 {
+		q.Set(clientCapabilitiesQueryParameter, url.QueryEscape(strings.Join(capabilities, ",")))
+	}
+
 	req.URL.RawQuery = q.Encode()
 	return req, nil
 }
@@ -714,4 +759,13 @@ func (c *Client) getAzureArcSecretKey(response *http.Response, platform string) 
 	}
 
 	return string(secret), nil
+}
+
+// convertTokenToSHA256HashString converts a token string to its SHA256 hash representation
+// Used for token revocation scenarios to avoid sending the actual token in requests
+func convertTokenToSHA256HashString(token string) string {
+	hash := sha256.New()
+	hash.Write([]byte(token))
+	hashBytes := hash.Sum(nil)
+	return hex.EncodeToString(hashBytes)
 }

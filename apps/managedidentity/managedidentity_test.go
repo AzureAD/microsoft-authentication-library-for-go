@@ -964,7 +964,7 @@ func TestAzureArcErrors(t *testing.T) {
 		},
 		{
 			name:          "Invalid file path",
-			headerValue:   "Basic realm=" + filepath.Join("path", "to", secretKey),
+			headerValue:   basicRealm + filepath.Join("path", "to", secretKey),
 			expectedError: "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
 		},
 		{
@@ -1208,4 +1208,238 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		t.Error("Error should be called at least once")
 	}
 	close(ch)
+}
+
+func TestConvertTokenToSHA256HashString(t *testing.T) {
+	testCases := []struct {
+		input    string
+		expected string
+	}{
+		{
+			input:    "test_token",
+			expected: "cc0af97287543b65da2c7e1476426021826cab166f1e063ed012b855ff819656",
+		},
+		{
+			input:    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~",
+			expected: "01588d5a948b6c4facd47866877491b42866b5c10a4d342cf168e994101d352a",
+		},
+		{
+			input:    "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~",
+			expected: "29c538690068a8ad1797a391bfe23e7fb817b601fc7b78288cb499ab8fd37947",
+		},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.input, func(t *testing.T) {
+			result := convertTokenToSHA256HashString(tc.input)
+			if result != tc.expected {
+				t.Errorf("Expected hash %s for token %s, but got %s", tc.expected, tc.input, result)
+			}
+		})
+	}
+}
+
+func TestAppServiceWithClientCapabilities(t *testing.T) {
+	setEnvVars(t, AppService)
+	endpoint := "http://127.0.0.1:41564/msi/token"
+
+	capabilities := []string{"cp1", "cp2"}
+	claims := `{"access_token":{"xms_cc":{"values":["cp1"]}}}`
+
+	var localUrl *url.URL
+	mockClient := mock.NewClient()
+	responseBody, err := getSuccessfulResponse(resource, false)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+
+	// First response for caching
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+		mock.WithCallback(func(r *http.Request) {
+			localUrl = r.URL
+		}))
+
+	// Second response for token revocation flow
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+		mock.WithCallback(func(r *http.Request) {
+			localUrl = r.URL
+		}))
+
+	// Reset cache
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	// Create client with capabilities
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithClientCapabilities(capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First request - should pass capabilities but no token hash
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
+		t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
+	}
+
+	query := localUrl.Query()
+
+	// Check if client capabilities were included
+	encodedCapabilities := query.Get(clientCapabilitiesQueryParameter)
+	if encodedCapabilities == "" {
+		t.Fatal("client capabilities should be included in the request")
+	}
+
+	// URL decode the capabilities
+	decodedCapabilities, err := url.QueryUnescape(encodedCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check if capabilities match
+	expectedCapabilitiesStr := "cp1,cp2"
+	if decodedCapabilities != expectedCapabilitiesStr {
+		t.Fatalf("expected capabilities %s, got %s", expectedCapabilitiesStr, decodedCapabilities)
+	}
+
+	// Now test token revocation flow with claims and token hash
+	result, err = client.AcquireToken(context.Background(), resource, WithClaims(claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	query = localUrl.Query()
+
+	// Check if claims were included
+	if claimsParam := query.Get("claims"); claimsParam != claims {
+		t.Fatalf("expected claims %s, got %s", claims, claimsParam)
+	}
+
+	// Check if token hash was included in the second request
+	tokenHash := query.Get(tokenSha256ToRefreshParameter)
+	if tokenHash == "" {
+		t.Fatal("token hash should be included in the request for revocation flow")
+	}
+
+	// Verify the hash is the correct format (hex-encoded SHA256 hash)
+	if len(tokenHash) != 64 || !isValidHexString(tokenHash) {
+		t.Fatalf("token hash has invalid format: %s", tokenHash)
+	}
+
+	// Check if the hash matches what we expect
+	expectedHash := convertTokenToSHA256HashString(token)
+	if tokenHash != expectedHash {
+		t.Fatalf("expected token hash %s, got %s", expectedHash, tokenHash)
+	}
+}
+
+// Helper function to check if a string is a valid hex string
+func isValidHexString(s string) bool {
+	for _, c := range s {
+		if !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')) {
+			return false
+		}
+	}
+	return true
+}
+
+func TestServiceFabricWithClientCapabilities(t *testing.T) {
+	setEnvVars(t, ServiceFabric)
+	endpoint := "http://localhost:40342/metadata/identity/oauth2/token"
+
+	capabilities := []string{"cp1"}
+	claims := `{"access_token":{"xms_cc":{"values":["cp1"]}}}`
+
+	var localUrl *url.URL
+	mockClient := mock.NewClient()
+	responseBody, err := getSuccessfulResponse(resource, false)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+
+	// First response for caching
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+		mock.WithCallback(func(r *http.Request) {
+			localUrl = r.URL
+		}))
+
+	// Second response for token revocation flow
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+		mock.WithCallback(func(r *http.Request) {
+			localUrl = r.URL
+		}))
+
+	// Reset cache
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	// Create client with capabilities
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithClientCapabilities(capabilities))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// First request - should pass capabilities but no token hash
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if localUrl == nil || !strings.HasPrefix(localUrl.String(), endpoint) {
+		t.Fatalf("url request is not on %s got %s", endpoint, localUrl)
+	}
+
+	query := localUrl.Query()
+
+	// Check if client capabilities were included
+	encodedCapabilities := query.Get(clientCapabilitiesQueryParameter)
+	if encodedCapabilities == "" {
+		t.Fatal("client capabilities should be included in the request")
+	}
+
+	// URL decode the capabilities
+	decodedCapabilities, err := url.QueryUnescape(encodedCapabilities)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Check if capabilities match
+	expectedCapabilitiesStr := "cp1"
+	if decodedCapabilities != expectedCapabilitiesStr {
+		t.Fatalf("expected capabilities %s, got %s", expectedCapabilitiesStr, decodedCapabilities)
+	}
+
+	// Now test token revocation flow with claims and token hash
+	result, err = client.AcquireToken(context.Background(), resource, WithClaims(claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	query = localUrl.Query()
+
+	// Check if claims were included
+	if claimsParam := query.Get("claims"); claimsParam != claims {
+		t.Fatalf("expected claims %s, got %s", claims, claimsParam)
+	}
+
+	// Check if token hash was included in the second request
+	tokenHash := query.Get(tokenSha256ToRefreshParameter)
+	if tokenHash == "" {
+		t.Fatal("token hash should be included in the request for revocation flow")
+	}
+
+	// Verify the hash matches what we expect
+	expectedHash := convertTokenToSHA256HashString(token)
+	if tokenHash != expectedHash {
+		t.Fatalf("expected token hash %s, got %s", expectedHash, tokenHash)
+	}
 }

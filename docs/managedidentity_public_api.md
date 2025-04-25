@@ -95,6 +95,12 @@ The options available for passing to the client are
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
     // implementation details
 }
+
+// WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
+// that are used to indicate support for features like Continuous Access Evaluation and token revocation.
+func WithClientCapabilities(capabilities []string) Option {
+    // implementation details
+}
 ```
 
 The options available for the request are 
@@ -105,6 +111,37 @@ The options available for the request are
 func WithClaims(claims string) AcquireTokenOption {
     // implementation details
 }
+```
+
+## Token Revocation Support
+
+The Managed Identity client now supports token revocation in App Service and Service Fabric environments. This feature allows the client to refresh a previously revoked access token using a claims challenge.
+
+The implementation follows these steps:
+1. The client detects a token revocation scenario when a claims challenge is provided in the `WithClaims` option
+2. When a claims challenge is provided and a cached token exists, the client calculates the SHA256 hash of the cached token
+3. The token hash is sent in the request as the `token_sha256_to_refresh` parameter
+4. Client capabilities are sent in the request as the `xms_cc` parameter if they were configured with `WithClientCapabilities`
+
+Example usage:
+
+```go
+// Create client with token revocation support
+client, err := mi.New(
+    mi.SystemAssigned(), 
+    mi.WithClientCapabilities([]string{"CP1"}),
+)
+
+// Get a token normally
+result, err := client.AcquireToken(context.Background(), "resource")
+
+// When a token revocation is detected, use WithClaims to pass the claims challenge
+claims := `{"access_token":{"xms_cc":{"values":["CP1"]}}}`
+result, err = client.AcquireToken(
+    context.Background(), 
+    "resource",
+    mi.WithClaims(claims),
+)
 ```
 
 ## Error Handling
