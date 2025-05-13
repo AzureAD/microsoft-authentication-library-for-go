@@ -208,8 +208,9 @@ func WithClientCapabilities(capabilities []string) ClientOption {
 	return func(o *Client) {
 		var filteredCapabilities []string
 		for _, cap := range capabilities {
-			if cap != "" {
-				filteredCapabilities = append(filteredCapabilities, cap)
+			trimmedCap := strings.TrimSpace(cap)
+			if trimmedCap != "" {
+				filteredCapabilities = append(filteredCapabilities, trimmedCap)
 			}
 		}
 		o.clientCapabilities = strings.Join(filteredCapabilities, ",")

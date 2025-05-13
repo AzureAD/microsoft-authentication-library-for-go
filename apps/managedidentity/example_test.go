@@ -49,7 +49,7 @@ func ExampleNew_userAssigned() {
 // In most cases, you won't need to set this unless required by your Azure AD configuration.
 //
 // Learn more:
-// Client capabilities: https://learn.microsoft.com/en-us/entra/msal/python/advanced/client-capabilities
+// Client capabilities: https://learn.microsoft.com/entra/msal/python/advanced/client-capabilities
 func ExampleWithClientCapabilities() {
 	clientID := "your-user-assigned-client-id" // TODO: Replace with actual managed identity client ID
 

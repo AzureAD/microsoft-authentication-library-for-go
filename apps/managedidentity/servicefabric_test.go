@@ -99,7 +99,7 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 	}
 }
 
-// TestAppServiceWithClaimsAndBadAccessToken tests the scenario where claims are passed
+// TestServiceFabricWithClaimsAndBadAccessToken tests the scenario where claims are passed
 // and a bad access token is retrieved from the cache
 func TestServiceFabricWithClaimsAndBadAccessToken(t *testing.T) {
 	setEnvVars(t, ServiceFabric)

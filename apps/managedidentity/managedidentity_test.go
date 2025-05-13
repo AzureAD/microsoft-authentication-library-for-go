@@ -1212,6 +1212,29 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	close(ch)
 }
 
+func TestWithClientCapabilities_TrimsSpaces(t *testing.T) {
+	setEnvVars(t, AppService)
+	mockClient := mock.NewClient()
+	// Reset cache for clean test
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	capabilitiesWithSpaces := []string{" cp1", " cp2   ", " cp3 "}
+	expectedCapabilities := "cp1,cp2,cp3"
+
+	client, err := New(SystemAssigned(),
+		WithHTTPClient(mockClient),
+		WithClientCapabilities(capabilitiesWithSpaces))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.clientCapabilities != expectedCapabilities {
+		t.Errorf("WithClientCapabilities() did not trim spaces correctly, got: %s, want: %s", client.clientCapabilities, expectedCapabilities)
+	}
+}
+
 // TestAppServiceWithClaimsAndBadAccessToken tests the scenario where claims are passed
 // and a bad access token is retrieved from the cache
 func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
@@ -1240,7 +1263,7 @@ func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
 
 	client, err := New(SystemAssigned(),
 		WithHTTPClient(mockClient),
-		WithClientCapabilities([]string{"c1", "c2"}))
+		WithClientCapabilities([]string{"cp1", "cp2"}))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -1262,20 +1285,20 @@ func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
 		t.Fatalf("AcquireToken failed: %v", err)
 	}
 
-	localUrlQuerry := localUrl.Query()
+	localUrlQuery := localUrl.Query()
 
-	if localUrlQuerry.Get(apiVersionQueryParameterName) != appServiceAPIVersion {
-		t.Fatalf("api-version not on %s got %s", appServiceAPIVersion, localUrlQuerry.Get(apiVersionQueryParameterName))
+	if localUrlQuery.Get(apiVersionQueryParameterName) != appServiceAPIVersion {
+		t.Fatalf("api-version not on %s got %s", appServiceAPIVersion, localUrlQuery.Get(apiVersionQueryParameterName))
 	}
-	if r := localUrlQuerry.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
+	if r := localUrlQuery.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
 		t.Fatal("suffix /.default was not removed.")
 	}
-	if localUrlQuerry.Get("xms_cc") != "c1,c2" {
-		t.Fatalf("Expected client capabilities %q, got %q", "c1,c2", localUrlQuerry.Get("xms_cc"))
+	if localUrlQuery.Get("xms_cc") != "cp1,cp2" {
+		t.Fatalf("Expected client capabilities %q, got %q", "cp1,cp2", localUrlQuery.Get("xms_cc"))
 	}
 	hash := sha256.Sum256([]byte(token))
-	if localUrlQuerry.Get("token_sha256_to_refresh") != hex.EncodeToString(hash[:]) {
-		t.Fatalf("Expected token_sha256_to_refresh %q, got %q", hex.EncodeToString(hash[:]), localUrlQuerry.Get("token_sha256_to_refresh"))
+	if localUrlQuery.Get("token_sha256_to_refresh") != hex.EncodeToString(hash[:]) {
+		t.Fatalf("Expected token_sha256_to_refresh %q, got %q", hex.EncodeToString(hash[:]), localUrlQuery.Get("token_sha256_to_refresh"))
 	}
 	// Verify token was obtained successfully
 	if result.AccessToken != token {
