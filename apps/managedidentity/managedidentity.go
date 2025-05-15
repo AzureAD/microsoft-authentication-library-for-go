@@ -21,6 +21,7 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
+	"math"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -508,8 +509,18 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 		if err == nil && !contains(retrylist, resp.StatusCode) {
 			return resp, nil
 		}
+		// For IMDS, use exponential backoff based on attempt number
+		var waitTime time.Duration
+		if c.source == DefaultToIMDS {
+			// Exponential backoff with base of 1 second: 1s, 2s, 4s, 8s, etc.
+			waitTime = time.Second * time.Duration(1<<uint(attempt))
+		} else {
+			// For non-IMDS sources, use the fixed 1 second delay
+			waitTime = time.Second
+		}
+		
 		select {
-		case <-time.After(time.Second):
+		case <-time.After(waitTime):
 		case <-req.Context().Done():
 			err = req.Context().Err()
 			return resp, err
