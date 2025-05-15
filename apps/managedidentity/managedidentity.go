@@ -21,7 +21,6 @@ import (
 	"runtime"
 	"strings"
 	"sync/atomic"
-	"math"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -518,7 +517,6 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 			// For non-IMDS sources, use the fixed 1 second delay
 			waitTime = time.Second
 		}
-		
 		select {
 		case <-time.After(waitTime):
 		case <-req.Context().Done():

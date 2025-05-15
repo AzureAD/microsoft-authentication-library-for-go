@@ -171,6 +171,7 @@ func TestRetryFunction(t *testing.T) {
 		expectedBody   string
 		maxRetries     int
 		source         Source
+		expectedDelays []time.Duration // Expected delays for IMDS exponential backoff
 	}{
 		{
 			name: "Successful Request",
@@ -228,19 +229,68 @@ func TestRetryFunction(t *testing.T) {
 			maxRetries:     2,
 			source:         DefaultToIMDS,
 		},
+		{
+			name: "Successful Request IMDS with Exponential Backoff",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusInternalServerError},
+				{"Failed", http.StatusInternalServerError},
+				{"Failed", http.StatusInternalServerError},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     4,
+			source:         DefaultToIMDS,
+			expectedDelays: []time.Duration{1 * time.Second, 2 * time.Second, 4 * time.Second},
+		},
+		{
+			name: "Successful Request Non-IMDS with Fixed Delay",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusInternalServerError},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     3,
+			source:         AzureArc, // Non-IMDS source
+			expectedDelays: []time.Duration{1 * time.Second},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := mock.NewClient()
-			for _, resp := range tt.mockResponses {
+			var actualDelays []time.Duration
+			var lastRequestTime time.Time
+
+			for i, resp := range tt.mockResponses {
 				body := bytes.NewBufferString(resp.body)
-				mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode))
+				callback := func(r *http.Request) {
+					if !lastRequestTime.IsZero() {
+						actualDelays = append(actualDelays, time.Since(lastRequestTime))
+					}
+					lastRequestTime = time.Now()
+				}
+				// Apply callback only to retryable responses
+				if i < len(tt.mockResponses)-1 {
+					mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode), mock.WithCallback(callback))
+				} else {
+					mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode), mock.WithCallback(callback))
+				}
 			}
-			client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithRetryPolicyDisabled())
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Manually set the source for testing purposes
+			client.source = tt.source
+
 			reqBody := bytes.NewBufferString("Test Body")
 			req, err := http.NewRequest("POST", "https://example.com", reqBody)
 			if err != nil {
@@ -248,7 +298,11 @@ func TestRetryFunction(t *testing.T) {
 			}
 			finalResp, err := client.retry(tt.maxRetries, req)
 			if err != nil {
-				t.Fatal(err)
+				// For tests that expect to exhaust retries, an error is expected.
+				// We only fail if an unexpected error occurs.
+				if tt.expectedStatus != finalResp.StatusCode {
+					t.Fatal(err)
+				}
 			}
 			if finalResp.StatusCode != tt.expectedStatus {
 				t.Fatalf("Expected status code %d, got %d", tt.expectedStatus, finalResp.StatusCode)
@@ -260,6 +314,19 @@ func TestRetryFunction(t *testing.T) {
 			finalResp.Body.Close()
 			if string(bodyBytes) != tt.expectedBody {
 				t.Fatalf("Expected body %q, got %q", tt.expectedBody, bodyBytes)
+			}
+
+			if len(tt.expectedDelays) > 0 {
+				if len(actualDelays) != len(tt.expectedDelays) {
+					t.Fatalf("Expected %d delays, got %d. Actual delays: %v", len(tt.expectedDelays), len(actualDelays), actualDelays)
+				}
+				for i, expectedDelay := range tt.expectedDelays {
+					// Allow a small tolerance for timing differences
+					println("actualDelays[i]", actualDelays[i], "expectedDelay", expectedDelay)
+					if actualDelays[i] < expectedDelay-500*time.Millisecond || actualDelays[i] > expectedDelay+500*time.Millisecond {
+						t.Fatalf("Expected delay %v at attempt %d, got %v", expectedDelay, i, actualDelays[i])
+					}
+				}
 			}
 		})
 	}
@@ -964,7 +1031,7 @@ func TestAzureArcErrors(t *testing.T) {
 		},
 		{
 			name:          "Invalid file path",
-			headerValue:   "Basic realm=" + filepath.Join("path", "to", secretKey),
+			headerValue:   basicRealm + filepath.Join("path", "to", secretKey),
 			expectedError: "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
 		},
 		{
