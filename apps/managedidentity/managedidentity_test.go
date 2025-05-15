@@ -298,8 +298,6 @@ func TestRetryFunction(t *testing.T) {
 			}
 			finalResp, err := client.retry(tt.maxRetries, req)
 			if err != nil {
-				// For tests that expect to exhaust retries, an error is expected.
-				// We only fail if an unexpected error occurs.
 				if tt.expectedStatus != finalResp.StatusCode {
 					t.Fatal(err)
 				}
@@ -321,8 +319,6 @@ func TestRetryFunction(t *testing.T) {
 					t.Fatalf("Expected %d delays, got %d. Actual delays: %v", len(tt.expectedDelays), len(actualDelays), actualDelays)
 				}
 				for i, expectedDelay := range tt.expectedDelays {
-					// Allow a small tolerance for timing differences
-					println("actualDelays[i]", actualDelays[i], "expectedDelay", expectedDelay)
 					if actualDelays[i] < expectedDelay-500*time.Millisecond || actualDelays[i] > expectedDelay+500*time.Millisecond {
 						t.Fatalf("Expected delay %v at attempt %d, got %v", expectedDelay, i, actualDelays[i])
 					}
