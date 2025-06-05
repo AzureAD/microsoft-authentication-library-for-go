@@ -605,12 +605,15 @@ func TestInvalidCredential(t *testing.T) {
 
 func TestNewCredFromCert(t *testing.T) {
 	for _, file := range []struct {
-		path     string
-		numCerts int
+		path          string
+		numCerts      int
+		testAuthority string
 	}{
-		{"../testdata/test-cert.pem", 1},
-		{"../testdata/test-cert-chain.pem", 2},
-		{"../testdata/test-cert-chain-reverse.pem", 2},
+		{"../testdata/test-cert.pem", 1, fakeAuthority},
+		{"../testdata/test-cert.pem", 1, "https://fs.msidlab8.com/adfs"},
+		{"../testdata/test-cert.pem", 1, "https://some.url.dsts.core.azure-test.net/dstsv2/7a433bfc-2514-4697-b467-e0933190487f"},
+		{"../testdata/test-cert-chain.pem", 2, fakeAuthority},
+		{"../testdata/test-cert-chain-reverse.pem", 2, fakeAuthority},
 	} {
 		f, err := os.Open(filepath.Clean(file.path))
 		if err != nil {
@@ -651,7 +654,7 @@ func TestNewCredFromCert(t *testing.T) {
 					AccessToken:   token,
 					ExpiresOn:     time.Now().Add(time.Hour),
 					GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
-				}, cred, fakeAuthority, opts...)
+				}, cred, file.testAuthority, opts...)
 				if err != nil {
 					t.Fatal(err)
 				}
@@ -660,8 +663,12 @@ func TestNewCredFromCert(t *testing.T) {
 				client.base.Token.AccessTokens.(*fake.AccessTokens).ValidateAssertion = func(s string) {
 					validated = true
 					tk, err := jwt.Parse(s, func(tk *jwt.Token) (interface{}, error) {
-						if signingMethod, ok := tk.Method.(*jwt.SigningMethodRSA); !ok {
-							t.Fatalf("unexpected signing method %T", signingMethod)
+						algo := jwt.SigningMethodPS256.Alg()
+						if file.testAuthority != fakeAuthority {
+							algo = jwt.SigningMethodRS256.Alg()
+						}
+						if tk.Method.Alg() != algo {
+							t.Fatalf("unexpected signing method %v", tk.Method.Alg())
 						}
 						return verifyingKey, nil
 					})
@@ -1097,7 +1104,7 @@ func TestRefreshIn(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if ar.Metadata.TokenSource != base.Cache && !tt.shouldGetNewToken {
+			if ar.Metadata.TokenSource != TokenSourceCache && !tt.shouldGetNewToken {
 				t.Fatal("should have returned from cache.")
 			}
 			if (ar.AccessToken == secondToken) != tt.shouldGetNewToken {

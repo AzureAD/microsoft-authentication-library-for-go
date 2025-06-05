@@ -103,9 +103,8 @@ type TokenSource int
 
 // These are all the types of token flows.
 const (
-	SourceUnknown    TokenSource = 0
-	IdentityProvider TokenSource = 1
-	Cache            TokenSource = 2
+	TokenSourceIdentityProvider TokenSource = 0
+	TokenSourceCache            TokenSource = 1
 )
 
 // AuthResultFromStorage creates an AuthResult from a storage token response (which is generated from the cache).
@@ -133,7 +132,7 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 		GrantedScopes:  grantedScopes,
 		DeclinedScopes: nil,
 		Metadata: AuthResultMetadata{
-			TokenSource: Cache,
+			TokenSource: TokenSourceCache,
 			RefreshOn:   storageTokenResponse.AccessToken.RefreshOn.T,
 		},
 	}, nil
@@ -151,7 +150,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		ExpiresOn:     tokenResponse.ExpiresOn,
 		GrantedScopes: tokenResponse.GrantedScopes.Slice,
 		Metadata: AuthResultMetadata{
-			TokenSource: IdentityProvider,
+			TokenSource: TokenSourceIdentityProvider,
 			RefreshOn:   tokenResponse.RefreshOn.T,
 		},
 	}, nil

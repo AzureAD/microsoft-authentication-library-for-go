@@ -167,15 +167,15 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
 
-		errDesc := q.Get("error_description")
+		escapedErrDesc := html.EscapeString(q.Get("error_description")) // provides XSS protection
+		escapedHeaderErr := html.EscapeString(headerErr)                // provides XSS protection
 
-		errorPage := bytes.ReplaceAll(s.errorPage, code, []byte(html.EscapeString(headerErr))) // provides XSS protection
-		errorPage = bytes.ReplaceAll(errorPage, err, []byte(html.EscapeString(errDesc)))       // provides XSS protection
+		errorPage := bytes.ReplaceAll(s.errorPage, code, []byte(escapedHeaderErr))
+		errorPage = bytes.ReplaceAll(errorPage, err, []byte(escapedErrDesc))
 
 		_, _ = w.Write(errorPage)
 
-		errorDesc := fmt.Errorf(errDesc)
-		s.putResult(Result{Err: errorDesc})
+		s.putResult(Result{Err: fmt.Errorf("%s", escapedErrDesc)})
 
 		return
 	}

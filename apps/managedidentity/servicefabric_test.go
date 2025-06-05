@@ -69,7 +69,7 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if localHeader.Get("Secret") != "secret" {
 				t.Fatalf("expected secret to be secret, got %s", query.Get("Secret"))
 			}
-			if result.Metadata.TokenSource != base.IdentityProvider {
+			if result.Metadata.TokenSource != base.TokenSourceIdentityProvider {
 				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
 			}
 			if result.AccessToken != token {
@@ -79,7 +79,7 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 			secondFakeClient, err := New(testCase.miType, WithHTTPClient(mockClient))
@@ -90,7 +90,7 @@ func TestServiceFabricAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if result.Metadata.TokenSource != base.Cache {
+			if result.Metadata.TokenSource != base.TokenSourceCache {
 				t.Fatalf("cache result wanted cache token source, got %d", result.Metadata.TokenSource)
 			}
 		})
