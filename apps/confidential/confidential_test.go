@@ -1599,7 +1599,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					idToken = mock.GetIDToken(tenant, authority)
 					refreshToken = "refresh-token"
 				}
-				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(stackurl, tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, "", 3600, 0)),
 				)

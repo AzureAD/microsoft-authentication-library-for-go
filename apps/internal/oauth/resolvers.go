@@ -61,6 +61,10 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 		return authority.Endpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
 	}
 
+	if err := resp.ValidateIssuerMatchesAuthority(authorityInfo.CanonicalAuthorityURI); err != nil {
+		return authority.Endpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
+	}
+
 	tenant := authorityInfo.Tenant
 
 	endpoints := authority.NewEndpoints(

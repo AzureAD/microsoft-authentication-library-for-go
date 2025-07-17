@@ -210,7 +210,7 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		VerificationURL: "https://device.code.local",
 	}
 	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody("http://localhost", "tenant")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody("login.microsoftonline.com", "tenant")))
 	mockClient.AppendResponse(mock.WithBody([]byte(
 		fmt.Sprintf(
 			`{"device_code":%q,"expires_in":60,"interval":%d,"message":%q,"user_code":%q,"verification_uri":%q}`,

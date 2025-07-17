@@ -98,6 +98,46 @@ func (r *TenantDiscoveryResponse) Validate() error {
 	return nil
 }
 
+// ValidateIssuerMatchesAuthority validates that the issuer in the TenantDiscoveryResponse matches the authority.
+// This is used to prevent token issuers from impersonating legitimate authorities.
+func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI string) error {
+	if authorityURI == "" {
+		return nil
+	}
+
+	// Parse the issuer URL
+	issuerURL, err := url.Parse(r.Issuer)
+	if err != nil {
+		return fmt.Errorf("TenantDiscoveryResponse: failed to parse issuer URL: %w", err)
+	}
+
+	// Even if it doesn't match the authority, issuers from known and trusted Microsoft hosts are valid
+	if TrustedHost(issuerURL.Host) {
+		return nil
+	}
+
+	// Check against other trusted Microsoft hosts
+	switch issuerURL.Host {
+	case loginMicrosoft, loginWindows, loginSTSWindows, defaultHost:
+		return nil
+	}
+
+	// Parse the authority URL for comparison
+	authorityURL, err := url.Parse(authorityURI)
+	if err != nil {
+		return fmt.Errorf("TenantDiscoveryResponse: failed to parse authority URL: %w", err)
+	}
+
+	// Check if the scheme and host match (paths can be ignored when validating the issuer)
+	if issuerURL.Scheme == authorityURL.Scheme && issuerURL.Host == authorityURL.Host {
+		return nil
+	}
+
+	// If we get here, validation failed
+	return fmt.Errorf("TenantDiscoveryResponse: issuer from OIDC discovery '%s' does not match authority '%s' or a known pattern",
+		r.Issuer, authorityURI)
+}
+
 type InstanceDiscoveryMetadata struct {
 	PreferredNetwork string   `json:"preferred_network"`
 	PreferredCache   string   `json:"preferred_cache"`
