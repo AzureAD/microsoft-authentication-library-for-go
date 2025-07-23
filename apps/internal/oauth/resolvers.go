@@ -141,12 +141,14 @@ func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, aut
 		if err != nil {
 			return "", err
 		}
+		authorityInfo.InstanceDiscoveryMetadata = resp.Metadata
 		return resp.TenantDiscoveryEndpoint, nil
 	} else if authorityInfo.Region != "" {
 		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
 		if err != nil {
 			return "", err
 		}
+		authorityInfo.InstanceDiscoveryMetadata = resp.Metadata
 		return resp.TenantDiscoveryEndpoint, nil
 	}
 
