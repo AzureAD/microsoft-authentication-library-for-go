@@ -513,6 +513,7 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 		desc        string
 		issuer      string
 		authority   string
+		aliases     map[string]bool
 		expectError bool
 	}{
 		{
@@ -557,6 +558,48 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			authority:   "https://login.microsoftonline.com/tenant-id",
 			expectError: true,
 		},
+		{
+			desc:        "empty issuer",
+			issuer:      "",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: true,
+		},
+		{
+			desc:        "empty issuer and authority",
+			issuer:      "",
+			authority:   "",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: true,
+		},
+		// New test cases for alias validation
+		{
+			desc:        "issuer matches an alias",
+			issuer:      "https://alias1.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: false,
+		},
+		{
+			desc:        "issuer matches a different alias",
+			issuer:      "https://alias2.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: false,
+		},
+		{
+			desc:        "issuer doesn't match any alias",
+			issuer:      "https://unknown.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: true,
+		},
+		{
+			desc:        "empty aliases map",
+			issuer:      "https://unknown.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{},
+			expectError: true,
+		},
 	}
 
 	for _, test := range tests {
@@ -567,7 +610,7 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 				Issuer:                test.issuer,
 			}
 
-			err := response.ValidateIssuerMatchesAuthority(test.authority)
+			err := response.ValidateIssuerMatchesAuthority(test.authority, test.aliases)
 			if test.expectError && err == nil {
 				t.Errorf("expected error but got none")
 			} else if !test.expectError && err != nil {

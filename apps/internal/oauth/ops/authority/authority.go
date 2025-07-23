@@ -99,10 +99,11 @@ func (r *TenantDiscoveryResponse) Validate() error {
 }
 
 // ValidateIssuerMatchesAuthority validates that the issuer in the TenantDiscoveryResponse matches the authority.
-// This is used to prevent token issuers from impersonating legitimate authorities.
-func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI string) error {
+// This is used to identity security or configuration issues in authorities and the OIDC endpoint
+func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI string, aliases map[string]bool) error {
+
 	if authorityURI == "" {
-		return nil
+		return errors.New("TenantDiscoveryResponse: empty authorityURI provided for validation")
 	}
 
 	// Parse the issuer URL
@@ -111,14 +112,8 @@ func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI st
 		return fmt.Errorf("TenantDiscoveryResponse: failed to parse issuer URL: %w", err)
 	}
 
-	// Even if it doesn't match the authority, issuers from known and trusted Microsoft hosts are valid
-	if TrustedHost(issuerURL.Host) {
-		return nil
-	}
-
-	// Check against other trusted Microsoft hosts
-	switch issuerURL.Host {
-	case loginMicrosoft, loginWindows, loginSTSWindows, defaultHost:
+	// Even if it doesn't match the authority, issuers from known and trusted hosts are valid
+	if aliases != nil && aliases[issuerURL.Host] {
 		return nil
 	}
 
@@ -394,6 +389,8 @@ type Info struct {
 	Tenant                    string
 	Region                    string
 	InstanceDiscoveryDisabled bool
+	// InstanceDiscoveryMetadata stores the metadata from AAD instance discovery
+	InstanceDiscoveryMetadata []InstanceDiscoveryMetadata
 }
 
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
