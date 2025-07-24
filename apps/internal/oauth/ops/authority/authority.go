@@ -46,9 +46,11 @@ type jsonCaller interface {
 	JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error
 }
 
+// For backward compatibility, accept both old and new China endpoints for a transition period.
 var aadTrustedHostList = map[string]bool{
 	"login.windows.net":                true, // Microsoft Azure Worldwide - Used in validation scenarios where host is not this list
-	"login.partner.microsoftonline.cn": true, // Microsoft Azure China
+	"login.partner.microsoftonline.cn": true, // Microsoft Azure China (new)
+	"login.chinacloudapi.cn":           true, // Microsoft Azure China (legacy, backward compatibility)
 	"login.microsoftonline.de":         true, // Microsoft Azure Blackforest
 	"login-us.microsoftonline.com":     true, // Microsoft Azure US Government - Legacy
 	"login.microsoftonline.us":         true, // Microsoft Azure US Government
