@@ -553,8 +553,14 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			expectError: false,
 		},
 		{
-			desc:        "issuer and authority have different hosts",
-			issuer:      "https://other.microsoftonline.com/tenant-id",
+			desc:        "custom authority with a non-matching Entra issuer",
+			issuer:      "https://login.microsoftonline.com/",
+			authority:   "https://contoso.com/tenant-id",
+			expectError: true,
+		},
+		{
+			desc:        "Entra authority with a non-matching custom issuer",
+			issuer:      "https://contoso.com/",
 			authority:   "https://login.microsoftonline.com/tenant-id",
 			expectError: true,
 		},
