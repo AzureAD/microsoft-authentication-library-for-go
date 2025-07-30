@@ -507,3 +507,121 @@ func TestMergeCapabilitiesAndClaims(t *testing.T) {
 		})
 	}
 }
+
+func TestTenantDiscoveryValidateIssuer(t *testing.T) {
+	tests := []struct {
+		desc        string
+		issuer      string
+		authority   string
+		aliases     map[string]bool
+		expectError bool
+	}{
+		{
+			desc:        "issuer exactly matches authority",
+			issuer:      "https://login.microsoftonline.com/tenant-id",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: false,
+		},
+		{
+			desc:        "issuer matches authority with trailing slash in authority",
+			issuer:      "https://login.microsoftonline.com/tenant-id",
+			authority:   "https://login.microsoftonline.com/tenant-id/",
+			expectError: false,
+		},
+		{
+			desc:        "issuer matches authority with trailing slash in issuer",
+			issuer:      "https://login.microsoftonline.com/tenant-id/",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: false,
+		},
+		{
+			desc:        "issuer is shorter than authority but is a prefix",
+			issuer:      "https://login.microsoftonline.com",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: false,
+		},
+		{
+			desc:        "authority is shorter than issuer but is a prefix",
+			issuer:      "https://login.microsoftonline.com/tenant-id/additional-path",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: false,
+		},
+		{
+			desc:        "issuer and authority have different paths",
+			issuer:      "https://login.microsoftonline.com/other-tenant",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: false,
+		},
+		{
+			desc:        "custom authority with a non-matching Entra issuer",
+			issuer:      "https://login.microsoftonline.com/",
+			authority:   "https://contoso.com/tenant-id",
+			expectError: true,
+		},
+		{
+			desc:        "Entra authority with a non-matching custom issuer",
+			issuer:      "https://contoso.com/",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: true,
+		},
+		{
+			desc:        "empty issuer",
+			issuer:      "",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: true,
+		},
+		{
+			desc:        "empty issuer and authority",
+			issuer:      "",
+			authority:   "",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: true,
+		},
+		// New test cases for alias validation
+		{
+			desc:        "issuer matches an alias",
+			issuer:      "https://alias1.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: false,
+		},
+		{
+			desc:        "issuer matches a different alias",
+			issuer:      "https://alias2.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: false,
+		},
+		{
+			desc:        "issuer doesn't match any alias",
+			issuer:      "https://unknown.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true, "alias2.example.com": true},
+			expectError: true,
+		},
+		{
+			desc:        "empty aliases map",
+			issuer:      "https://unknown.example.com/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.desc, func(t *testing.T) {
+			response := &TenantDiscoveryResponse{
+				AuthorizationEndpoint: "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/authorize",
+				TokenEndpoint:         "https://login.microsoftonline.com/tenant-id/oauth2/v2.0/token",
+				Issuer:                test.issuer,
+			}
+
+			err := response.ValidateIssuerMatchesAuthority(test.authority, test.aliases)
+			if test.expectError && err == nil {
+				t.Errorf("expected error but got none")
+			} else if !test.expectError && err != nil {
+				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}

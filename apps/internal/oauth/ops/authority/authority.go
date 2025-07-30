@@ -100,6 +100,41 @@ func (r *TenantDiscoveryResponse) Validate() error {
 	return nil
 }
 
+// ValidateIssuerMatchesAuthority validates that the issuer in the TenantDiscoveryResponse matches the authority.
+// This is used to identity security or configuration issues in authorities and the OIDC endpoint
+func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI string, aliases map[string]bool) error {
+
+	if authorityURI == "" {
+		return errors.New("TenantDiscoveryResponse: empty authorityURI provided for validation")
+	}
+
+	// Parse the issuer URL
+	issuerURL, err := url.Parse(r.Issuer)
+	if err != nil {
+		return fmt.Errorf("TenantDiscoveryResponse: failed to parse issuer URL: %w", err)
+	}
+
+	// Even if it doesn't match the authority, issuers from known and trusted hosts are valid
+	if aliases != nil && aliases[issuerURL.Host] {
+		return nil
+	}
+
+	// Parse the authority URL for comparison
+	authorityURL, err := url.Parse(authorityURI)
+	if err != nil {
+		return fmt.Errorf("TenantDiscoveryResponse: failed to parse authority URL: %w", err)
+	}
+
+	// Check if the scheme and host match (paths can be ignored when validating the issuer)
+	if issuerURL.Scheme == authorityURL.Scheme && issuerURL.Host == authorityURL.Host {
+		return nil
+	}
+
+	// If we get here, validation failed
+	return fmt.Errorf("TenantDiscoveryResponse: issuer from OIDC discovery '%s' does not match authority '%s' or a known pattern",
+		r.Issuer, authorityURI)
+}
+
 type InstanceDiscoveryMetadata struct {
 	PreferredNetwork string   `json:"preferred_network"`
 	PreferredCache   string   `json:"preferred_cache"`
@@ -356,6 +391,8 @@ type Info struct {
 	Tenant                    string
 	Region                    string
 	InstanceDiscoveryDisabled bool
+	// InstanceDiscoveryMetadata stores the metadata from AAD instance discovery
+	InstanceDiscoveryMetadata []InstanceDiscoveryMetadata
 }
 
 // NewInfoFromAuthorityURI creates an AuthorityInfo instance from the authority URL provided.
