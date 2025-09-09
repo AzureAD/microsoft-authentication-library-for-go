@@ -367,10 +367,17 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 					// If the token is not same, we don't need to refresh it.
 					// Which means it refreshed.
 					if str, err := m.Read(ctx, authParams); err == nil && str.AccessToken.Secret == ar.AccessToken {
-						if silent.RequestType == accesstokens.ATConfidential {
+						switch silent.RequestType {
+						case accesstokens.ATConfidential:
 							if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
 								return b.AuthResultFromToken(ctx, authParams, tr)
 							}
+						case accesstokens.ATPublic:
+							token, err := b.Token.Refresh(ctx, silent.RequestType, authParams, silent.Credential, storageTokenResponse.RefreshToken)
+							if err != nil {
+								return ar, err
+							}
+							return b.AuthResultFromToken(ctx, authParams, token)
 						}
 					}
 				}

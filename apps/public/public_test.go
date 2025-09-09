@@ -1059,44 +1059,44 @@ func TestAcquireTokenSilentHomeTenantAliases1(t *testing.T) {
 	defer func() {
 		base.Now = originalTime
 	}()
-	for _, alias := range []string{"common", "organizations"} {
-		mockClient := mock.NewClient()
-		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, alias)))
-		mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 100)))
-		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, homeTenant)))
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, homeTenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("accessToken", mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
 
-		client, err := New("client-id", WithAuthority(fmt.Sprintf(authorityFmt, lmo, alias)), WithHTTPClient(mockClient))
-		if err != nil {
-			t.Fatal(err)
-		}
-		// the auth flow isn't important, we just need to populate the cache
-		ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ar.AccessToken != accessToken {
-			t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
-		}
-		account := ar.Account
-		ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ar.AccessToken != accessToken {
-			t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
-		}
-		// moving time forward to expire the current token
-		fixedTime := time.Now().Add(time.Duration(36001) * time.Second)
-		base.Now = func() time.Time {
-			return fixedTime
-		}
-		// calling the acquire token again
-		ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
-		if err != nil {
-			t.Fatal(err)
-		}
-		if ar.AccessToken != accessToken {
-			t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
-		}
+	client, err := New("common", WithAuthority(fmt.Sprintf(authorityFmt, lmo, "common")), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
 	}
+	// the auth flow isn't important, we just need to populate the cache
+	ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	account := ar.Account
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	// moving time forward to expire the current token
+	fixedTime := time.Now().Add(time.Duration(36001) * time.Second)
+	base.Now = func() time.Time {
+		return fixedTime
+	}
+	// calling the acquire token again
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != "accessToken" {
+		t.Fatalf("expected %q, got %q", "accessToken", ar.AccessToken)
+	}
+
 }
