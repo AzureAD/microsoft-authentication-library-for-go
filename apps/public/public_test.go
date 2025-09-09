@@ -1048,7 +1048,7 @@ func getNewClientWithMockedResponses(
 	return client, nil
 }
 
-func TestAcquireTokenSilentHomeTenantAliases1(t *testing.T) {
+func TestAcquireTokenSilentWithRefreshOnIsExpired(t *testing.T) {
 	accessToken := "*"
 	homeTenant := "home-tenant"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
