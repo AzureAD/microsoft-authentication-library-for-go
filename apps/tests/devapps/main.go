@@ -21,8 +21,8 @@ func main() {
 		acquireByAuthorizationCodePublic()
 		*/
 	} else if exampleType == "3" {
-		// This sample uses a serialized cache in an ecrypted file on Windows / KeyChain on Mac / KeyRing on Linux
-		acquireByUsernamePasswordPublic(ctx)
+		// This sample has been removed due to deprecated AcquireTokenByUsernamePassword API usage
+		panic("username/password sample has been removed - use a more secure authentication flow")
 	} else if exampleType == "4" {
 		panic("currently not implemented")
 		//acquireByAuthorizationCodeConfidential()

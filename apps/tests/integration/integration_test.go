@@ -209,6 +209,7 @@ func testUser(ctx context.Context, desc string, lc *labClient, query url.Values)
 }
 
 func TestUsernamePassword(t *testing.T) {
+	t.Skip("Test skipped due to deprecated AcquireTokenByUsernamePassword API usage")
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
@@ -406,6 +407,7 @@ func TestOnBehalfOf(t *testing.T) {
 }
 
 func TestRemoveAccount(t *testing.T) {
+	t.Skip("Test skipped due to deprecated AcquireTokenByUsernamePassword API usage")
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
