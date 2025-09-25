@@ -369,6 +369,7 @@ type AcquireByUsernamePasswordOption interface {
 }
 
 // Deprecated: This API will be removed in a future release. Use a more secure flow instead. Follow this migration guide: https://aka.ms/msal-ropc-migration
+//
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // Options: [WithClaims], [WithTenantID]
 func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
