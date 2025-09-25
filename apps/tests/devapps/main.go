@@ -22,7 +22,7 @@ func main() {
 		*/
 	} else if exampleType == "3" {
 		// This sample has been removed due to deprecated AcquireTokenByUsernamePassword API usage
-		panic("username/password sample has been removed - use a more secure authentication flow")
+		panic("username/password sample has been removed due to deprecation of the api - use a more secure authentication flow")
 	} else if exampleType == "4" {
 		panic("currently not implemented")
 		//acquireByAuthorizationCodeConfidential()
