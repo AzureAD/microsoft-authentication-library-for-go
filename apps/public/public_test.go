@@ -116,7 +116,6 @@ func TestAcquireTokenSilentHomeTenantAliases(t *testing.T) {
 }
 
 func TestAcquireTokenSilentWithTenantID(t *testing.T) {
-	t.Skip("Test skipped due to deprecated AcquireTokenByUsernamePassword API usage")
 	tenantA, tenantB := "a", "b"
 	lmo := "login.microsoftonline.com"
 	mockClient := mock.NewClient()
@@ -445,7 +444,6 @@ func TestADFSTokenCaching(t *testing.T) {
 }
 
 func TestWithInstanceDiscovery(t *testing.T) {
-	t.Skip("Test skipped due to deprecated AcquireTokenByUsernamePassword API usage")
 	accessToken := "*"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	host := "stack.local"
@@ -598,6 +596,7 @@ func TestWithCache(t *testing.T) {
 
 func TestWithClaims(t *testing.T) {
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+	lmo, tenant := "login.microsoftonline.com", "tenant"
 	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
 	accessToken, idToken, refreshToken := "at", mock.GetIDToken(tenant, lmo), "rt"
 	for _, test := range []struct {
