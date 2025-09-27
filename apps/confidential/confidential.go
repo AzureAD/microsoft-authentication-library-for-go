@@ -621,6 +621,7 @@ type AcquireByUsernamePasswordOption interface {
 }
 
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
+// NOTE: this flow is NOT recommended
 //
 // Options: [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
