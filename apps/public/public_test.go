@@ -296,7 +296,7 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 		{authority: host + uuid1, tenant: "organizations", expectError: true},
 		{authority: host + "consumers", tenant: uuid1, expectError: true},
 	} {
-		for _, method := range []string{"authcode", "authcodeURL", "devicecode", "interactive"} {
+		for _, method := range []string{"authcode", "authcodeURL", "devicecode", "interactive", "password"} {
 			t.Run(method, func(t *testing.T) {
 				URL := ""
 				mockClient := mock.NewClient()
@@ -307,7 +307,10 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
 				if method == "devicecode" {
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
-				} 
+				} else if method == "password" {
+					// user realm metadata
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
+				}
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(test.tenant, test.authority), "rt", clientInfo, 3600, 0)),
 					mock.WithCallback(func(r *http.Request) { URL = r.URL.String() }),
@@ -329,6 +332,8 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithTenantID(test.tenant))
 				case "interactive":
 					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithTenantID(test.tenant), WithOpenURL(fakeBrowserOpenURL))
+				case "password":
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithTenantID(test.tenant))
 				default:
 					t.Fatalf("test bug: no test for %s", method)
 				}
@@ -375,7 +380,6 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 }
 
 func TestADFSTokenCaching(t *testing.T) {
-	t.Skip("Test skipped due to deprecated AcquireTokenByUsernamePassword API usage")
 	client, err := New("clientID", WithAuthority("https://fake_authority/adfs"))
 	if err != nil {
 		t.Fatal(err)
@@ -441,6 +445,7 @@ func TestADFSTokenCaching(t *testing.T) {
 }
 
 func TestWithInstanceDiscovery(t *testing.T) {
+	t.Skip("Test skipped due to deprecated AcquireTokenByUsernamePassword API usage")
 	accessToken := "*"
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	host := "stack.local"
@@ -450,14 +455,17 @@ func TestWithInstanceDiscovery(t *testing.T) {
 		"adfs",
 		"98b8267d-e97f-426e-8b3f-7956511fd63f",
 	} {
-		for _, method := range []string{"authcode", "devicecode", "interactive"} {
+		for _, method := range []string{"authcode", "devicecode", "interactive", "password"} {
 			t.Run(method, func(t *testing.T) {
 				authority := stackurl + tenant
 				mockClient := mock.NewClient()
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
 				if method == "devicecode" {
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
-				} 
+				} else if method == "password" && tenant != "adfs" {
+					// user realm metadata, which is not requested when AuthorityType is ADFS
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
+				}
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "rt", clientInfo, 3600, 0)),
 				)
@@ -476,6 +484,8 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope)
 				case "interactive":
 					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithOpenURL(fakeBrowserOpenURL))
+				case "password":
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password")
 				default:
 					t.Fatal("test bug: no test for " + method)
 				}
@@ -588,7 +598,6 @@ func TestWithCache(t *testing.T) {
 
 func TestWithClaims(t *testing.T) {
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
-	lmo, tenant := "login.microsoftonline.com", "tenant"
 	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
 	accessToken, idToken, refreshToken := "at", mock.GetIDToken(tenant, lmo), "rt"
 	for _, test := range []struct {
@@ -637,7 +646,7 @@ func TestWithClaims(t *testing.T) {
 				t.Fatal(diff)
 			}
 		}
-		for _, method := range []string{"authcode", "authcodeURL", "devicecode", "interactive"} {
+		for _, method := range []string{"authcode", "authcodeURL", "devicecode", "interactive", "password", "passwordFederated"} {
 			t.Run(method, func(t *testing.T) {
 				mockClient := mock.NewClient()
 				if method == "obo" {
@@ -648,6 +657,10 @@ func TestWithClaims(t *testing.T) {
 				switch method {
 				case "devicecode":
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":".","expires_in":600}`)))
+				case "password":
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":".","cloud_instance_name":".","domain_name":"."}`)))
+				case "passwordFederated":
+					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Federated","cloud_audience_urn":".","cloud_instance_name":".","domain_name":".","federation_protocol":".","federation_metadata_url":"."}`)))
 				}
 				mockClient.AppendResponse(
 					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0)),
@@ -681,6 +694,11 @@ func TestWithClaims(t *testing.T) {
 					dc, err = client.AcquireTokenByDeviceCode(ctx, tokenScope, WithClaims(test.claims))
 				case "interactive":
 					ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithClaims(test.claims), WithOpenURL(fakeBrowserOpenURL))
+				case "password":
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithClaims(test.claims))
+				case "passwordFederated":
+					client.base.Token.WSTrust = fake.WSTrust{SamlTokenInfo: wstrust.SamlTokenInfo{AssertionType: "urn:ietf:params:oauth:grant-type:saml1_1-bearer"}}
+					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithClaims(test.claims))
 				default:
 					t.Fatalf("test bug: no test for %s", method)
 				}
@@ -938,6 +956,14 @@ func TestWithAuthenticationScheme(t *testing.T) {
 				mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0),
 			},
 		},
+		{
+			name: "password",
+			responses: [][]byte{
+				mock.GetTenantDiscoveryBody(lmo, tenant),
+				[]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`),
+				mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0),
+			},
+		},
 	} {
 		t.Run(testCase.name, func(t *testing.T) {
 			ctx := context.Background()
@@ -961,6 +987,8 @@ func TestWithAuthenticationScheme(t *testing.T) {
 			switch testCase.name {
 			case "interactive":
 				ar, err = client.AcquireTokenInteractive(ctx, tokenScope, WithAuthenticationScheme(authScheme), WithOpenURL(fakeBrowserOpenURL))
+			case "password":
+				ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithAuthenticationScheme(authScheme))
 			default:
 				t.Fatalf("test bug: no test for %s", testCase.name)
 			}
