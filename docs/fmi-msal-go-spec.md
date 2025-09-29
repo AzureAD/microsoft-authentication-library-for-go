@@ -81,11 +81,12 @@ MSAL Go FMI Architecture
 └─────────────────────┬───────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────┐
-│              Public API Layer                   │
-│                                                 │
-│ confidential.New() + WithFMIPath()             │
-│ .AcquireTokenForClient(WithAttributeTokens())  │
-│                                                 │
+│              Public API Layer                  │
+│                                                │
+│ confidential.New() + WithFMIPath() +           │
+│            WithAttributes()                    │
+│ .AcquireTokenForClient()                       │
+│                                                │
 └─────────────────────┬───────────────────────────┘
                       │
 ┌─────────────────────▼───────────────────────────┐
@@ -121,10 +122,10 @@ MSAL Go FMI Architecture
               └─────────────────┘
 
 FMI Flows:
-  Flow 1: Certificate → FMI Credential
-  Flow 2: Certificate → FMI Token
-  Flow 3: FMI Cred → FMI Credential
-  Flow 5: FMI Cred → FMI Token
+  Flow 1: RMA gets an FMI cred, for a leaf entity or for a sub-RMA
+  Flow 2: RMA gets an FMI token for a leaf entity
+  Flow 3: sub-RMA, who has an FMI credential, gets an FMI credential for a child sub-RMA
+  Flow 4: FMI Cred → FMI Token
 
 Cache Key: {fields}[-{FMIPathHash}]
 ```
@@ -148,10 +149,9 @@ type AccessToken struct {
     TokenType         string            `json:"token_type,omitempty"`
     AuthnSchemeKeyID  string            `json:"keyid,omitempty"`
 
-    // NEW: FMI-specific fields
+    // NEW: FMIPath and Attributes fields
     FMIPath           string            `json:"fmi_path,omitempty"`           // Original FMI path
-    FMIPathHash       string            `json:"fmi_path_hash,omitempty"`      // SHA256 hash for keying
-
+    Attributes       string             `json:"attributes,omitempty"`      	  // Attributes
     AdditionalFields map[string]interface{}
 }
 
@@ -166,33 +166,19 @@ func (a AccessToken) Key() string {
     }
 
     // NEW: Add FMI path hash to key for FMI tokens
-    if a.FMIPathHash != "" {
-        key = strings.Join([]string{key, a.FMIPathHash}, shared.CacheKeySeparator)
-    }
-
+    key = strings.Join([]string{key, generateFMIPathHash}, shared.CacheKeySeparator)
     return strings.ToLower(key)
 }
 
 // Utility function to generate FMI path hash (SHA256, base64url encoded)
-func generateFMIPathHash(fmiPath string) string {
-    if fmiPath == "" {
+func generateFMIPathHash(fmiPath string, attributes string) string {
+    if fmiPath == "" || attributes == "" {
         return ""
     }
-    hash := sha256.Sum256([]byte(fmiPath))
+    hash := sha256.Sum256([]byte("attributes" + attributes + "fmi_path" + fmiPath))
     return base64.RawURLEncoding.EncodeToString(hash[:])
 }
 
-// Constructor extension for FMI AccessTokens
-func NewFMIAccessToken(homeID, env, realm, clientID string, cachedAt, refreshOn, expiresOn, extendedExpiresOn time.Time,
-                      scopes, token, tokenType, authnSchemeKeyID, fmiPath string) AccessToken {
-    at := NewAccessToken(homeID, env, realm, clientID, cachedAt, refreshOn, expiresOn, extendedExpiresOn,
-                        scopes, token, tokenType, authnSchemeKeyID)
-    if fmiPath != "" {
-        at.FMIPath = fmiPath
-        at.FMIPathHash = generateFMIPathHash(fmiPath)
-    }
-    return at
-}
 ```
 
 ### Cache Extension Strategy
@@ -207,7 +193,7 @@ func NewFMIAccessToken(homeID, env, realm, clientID string, cachedAt, refreshOn,
 
 The existing `AccessToken.Key()` method generates keys like:
 - **Current Format**: `{HomeAccountID}-{Environment}-{CredentialType}-{ClientID}-{Realm}-{Scopes}[-{TokenType}]`
-- **FMI Extension**: `{HomeAccountID}-{Environment}-{CredentialType}-{ClientID}-{Realm}-{Scopes}[-{TokenType}][-{FMIPathHash}]`
+- **FMI Extension**: `{HomeAccountID}-{Environment}-{CredentialType}-{ClientID}-{Realm}-{Scopes}[-{TokenType}][-{AttributeFMIPathHash}]`
 
 Where:
 - `HomeAccountID`: Account identifier (empty for app-only tokens)
