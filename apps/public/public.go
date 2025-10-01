@@ -592,13 +592,11 @@ func WithDomainHint(domain string) interface {
 }
 
 // WithPrompt adds the IdP prompt query parameter in the auth url.
-func WithPrompt(prompt string) interface {
-	AcquireInteractiveOption
+func WithPrompt(prompt shared.Prompt) interface {
 	AuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
-		AcquireInteractiveOption
 		AuthCodeURLOption
 		options.CallOption
 	}{
@@ -606,9 +604,7 @@ func WithPrompt(prompt string) interface {
 			func(a any) error {
 				switch t := a.(type) {
 				case *authCodeURLOptions:
-					t.prompt = prompt
-				case *interactiveAuthOptions:
-					t.prompt = prompt
+					t.prompt = prompt.String()
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}

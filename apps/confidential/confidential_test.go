@@ -33,6 +33,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
@@ -1775,7 +1776,7 @@ func TestWithDomainHint(t *testing.T) {
 }
 
 func TestWithPrompt(t *testing.T) {
-	prompt := "login"
+	prompt := shared.PromptLogin
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
 		t.Fatal(err)
@@ -1802,7 +1803,7 @@ func TestWithPrompt(t *testing.T) {
 					return fmt.Errorf("expected no prompt, got %v", v["prompt"][0])
 				}
 
-				if actual := v["prompt"]; len(actual) != 1 || actual[0] != prompt {
+				if actual := v["prompt"]; len(actual) != 1 || actual[0] != prompt.String() {
 					err = fmt.Errorf(`unexpected prompt "%v"`, actual[0])
 				}
 				return err
@@ -1812,7 +1813,6 @@ func TestWithPrompt(t *testing.T) {
 				urlOpts = append(urlOpts, WithPrompt(prompt))
 			}
 			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
-			print("actual URL: " + u)
 			if err == nil {
 				var parsed *url.URL
 				parsed, err = url.Parse(u)
