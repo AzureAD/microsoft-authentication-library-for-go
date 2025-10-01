@@ -1774,6 +1774,59 @@ func TestWithDomainHint(t *testing.T) {
 	}
 }
 
+func TestWithPrompt(t *testing.T) {
+	prompt := "login"
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(fakeAuthority, fakeClientID, cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectPrompt := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectPrompt), func(t *testing.T) {
+			validate := func(v url.Values) error {
+				if !v.Has("prompt") {
+					if !expectPrompt {
+						return nil
+					}
+					return errors.New("expected a prompt")
+				} else if !expectPrompt {
+					return fmt.Errorf("expected no prompt, got %v", v["prompt"][0])
+				}
+
+				if actual := v["prompt"]; len(actual) != 1 || actual[0] != prompt {
+					err = fmt.Errorf(`unexpected prompt "%v"`, actual[0])
+				}
+				return err
+			}
+			var urlOpts []AuthCodeURLOption
+			if expectPrompt {
+				urlOpts = append(urlOpts, WithPrompt(prompt))
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			print("actual URL: " + u)
+			if err == nil {
+				var parsed *url.URL
+				parsed, err = url.Parse(u)
+				if err == nil {
+					err = validate(parsed.Query())
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestWithAuthenticationScheme(t *testing.T) {
 	ctx := context.Background()
 	authScheme := mock.NewTestAuthnScheme()
