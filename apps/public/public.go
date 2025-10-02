@@ -593,10 +593,12 @@ func WithDomainHint(domain string) interface {
 
 // WithPrompt adds the IdP prompt query parameter in the auth url.
 func WithPrompt(prompt shared.Prompt) interface {
+	AcquireInteractiveOption
 	AuthCodeURLOption
 	options.CallOption
 } {
 	return struct {
+		AcquireInteractiveOption
 		AuthCodeURLOption
 		options.CallOption
 	}{
@@ -604,6 +606,8 @@ func WithPrompt(prompt shared.Prompt) interface {
 			func(a any) error {
 				switch t := a.(type) {
 				case *authCodeURLOptions:
+					t.prompt = prompt.String()
+				case *interactiveAuthOptions:
 					t.prompt = prompt.String()
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
@@ -698,7 +702,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.LoginHint = o.loginHint
 	authParams.DomainHint = o.domainHint
 	authParams.State = uuid.New().String()
-	authParams.Prompt = "select_account"
+	authParams.Prompt = o.prompt
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
 	}

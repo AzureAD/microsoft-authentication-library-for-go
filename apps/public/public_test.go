@@ -44,16 +44,16 @@ func fakeBrowserOpenURL(authURL string) error {
 	if m := q.Get("code_challenge_method"); m != "S256" {
 		return fmt.Errorf("unexpected code_challenge_method '%s'", m)
 	}
-	if q.Get("prompt") == "" {
-		return errors.New("missing query param 'prompt")
-	}
+	// if q.Get("prompt") == "" {
+	// 	return errors.New("missing query param 'prompt")
+	// }
 	state := q.Get("state")
 	if state == "" {
 		return errors.New("missing query param 'state'")
 	}
 	redirect := q.Get("redirect_uri")
 	if redirect == "" {
-		return errors.New("missing query param 'redirect_uri'")
+		return errors.New(" 'redirect_uri'")
 	}
 	// now send the info to our local redirect server
 	resp, err := http.DefaultClient.Get(redirect + fmt.Sprintf("/?state=%s&code=fake_auth_code", state))
@@ -937,7 +937,7 @@ func TestWithDomainHint(t *testing.T) {
 }
 
 func TestWithPrompt(t *testing.T) {
-	prompt := shared.PromptSelectAccount
+	prompt := shared.PromptCreate
 	client, err := New("client-id")
 	if err != nil {
 		t.Fatal(err)
@@ -947,6 +947,7 @@ func TestWithPrompt(t *testing.T) {
 	client.base.Token.Resolver = &fake.ResolveEndpoints{}
 	for _, expectPrompt := range []bool{true, false} {
 		t.Run(fmt.Sprint(expectPrompt), func(t *testing.T) {
+			called := false
 			validate := func(v url.Values) error {
 				if !v.Has("prompt") {
 					if !expectPrompt {
@@ -962,9 +963,35 @@ func TestWithPrompt(t *testing.T) {
 				}
 				return err
 			}
+			browserOpenURL := func(authURL string) error {
+				called = true
+				parsed, err := url.Parse(authURL)
+				if err != nil {
+					return err
+				}
+				query, err := url.ParseQuery(parsed.RawQuery)
+				if err != nil {
+					return err
+				}
+				if err = validate(query); err != nil {
+					t.Fatal(err)
+					return err
+				}
+				// this helper validates the other params and completes the redirect
+				return fakeBrowserOpenURL(authURL)
+			}
+			acquireOpts := []AcquireInteractiveOption{WithOpenURL(browserOpenURL)}
 			var urlOpts []AuthCodeURLOption
 			if expectPrompt {
+				acquireOpts = append(acquireOpts, WithPrompt(prompt))
 				urlOpts = append(urlOpts, WithPrompt(prompt))
+			}
+			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, acquireOpts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("browserOpenURL wasn't called")
 			}
 			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
 			if err == nil {
