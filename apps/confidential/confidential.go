@@ -708,8 +708,9 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 
 // acquireTokenByCredentialOptions contains optional configuration for AcquireTokenByCredential
 type acquireTokenByCredentialOptions struct {
-	claims, tenantID string
-	authnScheme      AuthenticationScheme
+	claims, tenantID    string
+	authnScheme         AuthenticationScheme
+	extraBodyParameters map[string]func(context.Context) (string, error)
 }
 
 // AcquireByCredentialOption is implemented by options for AcquireTokenByCredential
@@ -719,7 +720,7 @@ type AcquireByCredentialOption interface {
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options: [WithClaims], [WithTenantID]
+// Options: [WithClaims], [WithTenantID], [WithExtraBodyParameters]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -735,6 +736,9 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authParams.Claims = o.claims
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
+	}
+	if o.extraBodyParameters != nil {
+		authParams.ExtraBodyParameters = o.extraBodyParameters
 	}
 	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
@@ -780,4 +784,42 @@ func (cca Client) Account(ctx context.Context, accountID string) (Account, error
 // RemoveAccount signs the account out and forgets account from token cache.
 func (cca Client) RemoveAccount(ctx context.Context, account Account) error {
 	return cca.base.RemoveAccount(ctx, account)
+}
+
+// WithExtraBodyParameters adds extra body parameters to the token request.
+// These parameters are added to the request body and are also included in the cache key,
+// ensuring that tokens acquired with different parameters are cached separately.
+//
+// The parameter values are provided as functions that are evaluated at request time,
+// allowing for dynamic values that may change between requests.
+//
+// Example:
+//
+//	params := map[string]func(context.Context) (string, error){
+//	    "custom_param": func(ctx context.Context) (string, error) {
+//	        return "custom_value", nil
+//	    },
+//	}
+//	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithExtraBodyParameters(params))
+func WithExtraBodyParameters(params map[string]func(context.Context) (string, error)) interface {
+	AcquireByCredentialOption
+	options.CallOption
+} {
+
+	return struct {
+		AcquireByCredentialOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByCredentialOptions:
+					t.extraBodyParameters = params
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }

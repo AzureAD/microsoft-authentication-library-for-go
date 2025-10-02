@@ -256,6 +256,10 @@ type AuthParams struct {
 	DomainHint string
 	// AuthnScheme is an optional scheme for formatting access tokens
 	AuthnScheme AuthenticationScheme
+	// ExtraBodyParameters are additional parameters to include in token requests.
+	// The functions are evaluated at request time to get the parameter values.
+	// These parameters are also included in the cache key.
+	ExtraBodyParameters map[string]func(context.Context) (string, error)
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -642,8 +646,49 @@ func (a *AuthParams) AssertionHash() string {
 }
 
 func (a *AuthParams) AppKey() string {
+	baseKey := ""
 	if a.AuthorityInfo.Tenant != "" {
-		return fmt.Sprintf("%s_%s_AppTokenCache", a.ClientID, a.AuthorityInfo.Tenant)
+		baseKey = fmt.Sprintf("%s_%s", a.ClientID, a.AuthorityInfo.Tenant)
+	} else {
+		baseKey = fmt.Sprintf("%s_", a.ClientID)
 	}
-	return fmt.Sprintf("%s__AppTokenCache", a.ClientID)
+
+	// Include extra body parameters in the cache key
+	if len(a.ExtraBodyParameters) > 0 {
+		paramHash := a.ExtraBodyParametersHash()
+		if paramHash != "" {
+			baseKey = fmt.Sprintf("%s_%s", baseKey, paramHash)
+		}
+	}
+	return baseKey + "_AppTokenCache"
+}
+
+// ExtraBodyParametersHash computes a hash of the extra body parameter keys
+// to include in the cache key. This ensures tokens acquired with different
+// parameters are cached separately.
+func (a *AuthParams) ExtraBodyParametersHash() string {
+	if len(a.ExtraBodyParameters) == 0 {
+		return ""
+	}
+
+	// Sort keys to ensure consistent hashing
+	keys := make([]string, 0, len(a.ExtraBodyParameters))
+	for k := range a.ExtraBodyParameters {
+		keys = append(keys, k)
+	}
+	// Simple sort implementation
+	for i := 0; i < len(keys); i++ {
+		for j := i + 1; j < len(keys); j++ {
+			if keys[i] > keys[j] {
+				keys[i], keys[j] = keys[j], keys[i]
+			}
+		}
+	}
+
+	// Create a string representation of the keys
+	keyStr := strings.Join(keys, ",")
+
+	hash := sha256.Sum256([]byte(keyStr))
+
+	return base64.URLEncoding.EncodeToString(hash[:])
 }

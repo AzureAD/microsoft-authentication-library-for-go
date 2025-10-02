@@ -628,3 +628,182 @@ func TestAdfsToken(t *testing.T) {
 		t.Fatal("TestConfidentialClientwithSecret: on AcquireTokenByCredential(): got AccessToken == '', want AccessToken != ''")
 	}
 }
+
+// TestConfidentialClientWithExtraBodyParameters tests that extra body parameters
+// are correctly added to token requests and that caching works properly
+func TestConfidentialClientWithExtraBodyParameters(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	cred, err := confidential.NewCredFromSecret(os.Getenv("clientSecret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app, err := confidential.New(microsoftAuthority, defaultClientId, cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scopes := []string{msIDlabDefaultScope}
+
+	// First request with extra body parameters
+	params1 := map[string]func(context.Context) (string, error){
+		"test_param": func(ctx context.Context) (string, error) {
+			return "test_value_1", nil
+		},
+	}
+
+	result1, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+		confidential.WithExtraBodyParameters(params1),
+	)
+	if err != nil {
+		t.Fatalf("first AcquireTokenByCredential failed: %v", errors.Verbose(err))
+	}
+	if result1.AccessToken == "" {
+		t.Fatal("first request: AccessToken is empty")
+	}
+
+	// Second request with different extra body parameters - should get a new token
+	params2 := map[string]func(context.Context) (string, error){
+		"test_param": func(ctx context.Context) (string, error) {
+			return "test_value_2", nil
+		},
+	}
+
+	result2, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+		confidential.WithExtraBodyParameters(params2),
+	)
+	if err != nil {
+		t.Fatalf("second AcquireTokenByCredential failed: %v", errors.Verbose(err))
+	}
+	if result2.AccessToken == "" {
+		t.Fatal("second request: AccessToken is empty")
+	}
+
+	// Third request without extra parameters - should get another token
+	result3, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+	)
+	if err != nil {
+		t.Fatalf("third AcquireTokenByCredential failed: %v", errors.Verbose(err))
+	}
+	if result3.AccessToken == "" {
+		t.Fatal("third request: AccessToken is empty")
+	}
+
+	// Verify cache behavior: request with same params should return cached token
+	// We set expiration far in the future so tokens should be from cache
+	base.Now = func() time.Time {
+		return time.Now().Add(-1 * time.Hour)
+	}
+	defer func() {
+		base.Now = time.Now
+	}()
+
+	result1Cached, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+		confidential.WithExtraBodyParameters(params1),
+	)
+	if err != nil {
+		t.Fatalf("cached request with params1 failed: %v", errors.Verbose(err))
+	}
+	if result1Cached.AccessToken != result1.AccessToken {
+		t.Error("cached token should match the original token with same parameters")
+	}
+
+	result2Cached, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+		confidential.WithExtraBodyParameters(params2),
+	)
+	if err != nil {
+		t.Fatalf("cached request with params2 failed: %v", errors.Verbose(err))
+	}
+	if result2Cached.AccessToken != result2.AccessToken {
+		t.Error("cached token should match the original token with same parameters")
+	}
+
+	result3Cached, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+	)
+	if err != nil {
+		t.Fatalf("cached request without params failed: %v", errors.Verbose(err))
+	}
+	if result3Cached.AccessToken != result3.AccessToken {
+		t.Error("cached token should match the original token without parameters")
+	}
+}
+
+// TestConfidentialClientExtraBodyParametersDynamicValues tests that parameter
+// functions are evaluated at request time with dynamic values
+func TestConfidentialClientExtraBodyParametersDynamicValues(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+
+	cred, err := confidential.NewCredFromSecret(os.Getenv("clientSecret"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	app, err := confidential.New(microsoftAuthority, defaultClientId, cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scopes := []string{msIDlabDefaultScope}
+
+	// Use a dynamic parameter that changes on each call
+	callCount := 0
+	params := map[string]func(context.Context) (string, error){
+		"dynamic_param": func(ctx context.Context) (string, error) {
+			callCount++
+			return fmt.Sprintf("call_%d", callCount), nil
+		},
+	}
+
+	// First call
+	result1, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+		confidential.WithExtraBodyParameters(params),
+	)
+	if err != nil {
+		t.Fatalf("first request failed: %v", errors.Verbose(err))
+	}
+	if result1.AccessToken == "" {
+		t.Fatal("AccessToken is empty")
+	}
+
+	// Verify the function was called
+	if callCount != 1 {
+		t.Errorf("expected parameter function to be called once, was called %d times", callCount)
+	}
+
+	// Second call - function should be evaluated again
+	result2, err := app.AcquireTokenByCredential(
+		context.Background(),
+		scopes,
+		confidential.WithExtraBodyParameters(params),
+	)
+	if err != nil {
+		t.Fatalf("second request failed: %v", errors.Verbose(err))
+	}
+	if result2.AccessToken == "" {
+		t.Fatal("AccessToken is empty")
+	}
+
+	// Verify the function was called again
+	if callCount != 2 {
+		t.Errorf("expected parameter function to be called twice total, was called %d times", callCount)
+	}
+}

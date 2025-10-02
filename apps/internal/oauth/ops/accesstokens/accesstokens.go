@@ -281,6 +281,11 @@ func (c Client) FromClientSecret(ctx context.Context, authParameters authority.A
 	qv.Set(clientID, authParameters.ClientID)
 	addScopeQueryParam(qv, authParameters)
 
+	// Add extra body parameters if provided
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
+
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
@@ -295,6 +300,11 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	qv.Set(clientID, authParameters.ClientID)
 	qv.Set(clientInfo, clientInfoVal)
 	addScopeQueryParam(qv, authParameters)
+
+	// Add extra body parameters if provided
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -328,6 +338,11 @@ func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authPara
 	qv.Set(clientInfo, clientInfoVal)
 	qv.Set("requested_token_use", "on_behalf_of")
 	addScopeQueryParam(qv, authParameters)
+
+	// Add extra body parameters if provided
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -465,4 +480,22 @@ func addClaims(v url.Values, ap authority.AuthParams) error {
 func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthParams) {
 	scopes := AppendDefaultScopes(authParameters)
 	queryParams.Set("scope", strings.Join(scopes, " "))
+}
+
+// addExtraBodyParameters evaluates and adds extra body parameters to the request
+func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.AuthParams) error {
+	if len(ap.ExtraBodyParameters) == 0 {
+		return nil
+	}
+
+	for key, valueFunc := range ap.ExtraBodyParameters {
+		if valueFunc != nil {
+			value, err := valueFunc(ctx)
+			if err != nil {
+				return fmt.Errorf("failed to evaluate extra body parameter %q: %w", key, err)
+			}
+			v.Set(key, value)
+		}
+	}
+	return nil
 }

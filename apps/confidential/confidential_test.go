@@ -1862,3 +1862,271 @@ func TestAcquireTokenByCredentialFromDSTS(t *testing.T) {
 		})
 	}
 }
+
+// TestWithExtraBodyParameters tests the WithExtraBodyParameters option
+func TestWithExtraBodyParameters(t *testing.T) {
+	lmo := "login.microsoftonline.com"
+	tenant := "firstTenant"
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	tests := []struct {
+		name           string
+		params         map[string]func(context.Context) (string, error)
+		expectError    bool
+		validateParams func(*testing.T, url.Values)
+	}{
+		{
+			name: "single parameter",
+			params: map[string]func(context.Context) (string, error){
+				"custom_param": func(ctx context.Context) (string, error) {
+					return "custom_value", nil
+				},
+			},
+			expectError: false,
+			validateParams: func(t *testing.T, v url.Values) {
+				if v.Get("custom_param") != "custom_value" {
+					t.Errorf("expected custom_param=custom_value, got %s", v.Get("custom_param"))
+				}
+			},
+		},
+		{
+			name: "multiple parameters",
+			params: map[string]func(context.Context) (string, error){
+				"param1": func(ctx context.Context) (string, error) {
+					return "value1", nil
+				},
+				"param2": func(ctx context.Context) (string, error) {
+					return "value2", nil
+				},
+			},
+			expectError: false,
+			validateParams: func(t *testing.T, v url.Values) {
+				if v.Get("param1") != "value1" {
+					t.Errorf("expected param1=value1, got %s", v.Get("param1"))
+				}
+				if v.Get("param2") != "value2" {
+					t.Errorf("expected param2=value2, got %s", v.Get("param2"))
+				}
+			},
+		},
+		{
+			name: "dynamic parameter value",
+			params: map[string]func(context.Context) (string, error){
+				"timestamp": func(ctx context.Context) (string, error) {
+					return fmt.Sprintf("%d", time.Now().Unix()), nil
+				},
+			},
+			expectError: false,
+			validateParams: func(t *testing.T, v url.Values) {
+				if v.Get("timestamp") == "" {
+					t.Errorf("expected timestamp to be set")
+				}
+			},
+		},
+		{
+			name: "parameter with error",
+			params: map[string]func(context.Context) (string, error){
+				"failing_param": func(ctx context.Context) (string, error) {
+					return "", fmt.Errorf("intentional error")
+				},
+			},
+			expectError: true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+
+			mockClient := mock.NewClient()
+			var capturedBody url.Values
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			mockClient.AppendResponse(
+				mock.WithBody([]byte(`{"access_token":"fake_token","expires_in":3600,"token_type":"Bearer"}`)),
+				mock.WithCallback(func(r *http.Request) {
+					body, _ := io.ReadAll(r.Body)
+					capturedBody, _ = url.ParseQuery(string(body))
+				}),
+			)
+
+			client, err := New(
+				fmt.Sprintf(authorityFmt, lmo, tenant),
+				fakeClientID,
+				cred,
+				// WithHTTPClient(mockClient)
+				WithHTTPClient(mockClient),
+				WithInstanceDiscovery(false),
+			)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			_, err = client.AcquireTokenByCredential(
+				context.Background(),
+				tokenScope,
+				WithExtraBodyParameters(test.params),
+			)
+
+			if test.expectError {
+				if err == nil {
+					t.Fatal("expected error but got none")
+				}
+			} else {
+				if err != nil {
+					t.Fatalf("unexpected error: %v", err)
+				}
+				if test.validateParams != nil {
+					test.validateParams(t, capturedBody)
+				}
+			}
+		})
+	}
+}
+
+// TestExtraBodyParametersCacheKey tests that tokens acquired with different
+// extra body parameters are cached separately
+func TestExtraBodyParametersCacheKey(t *testing.T) {
+	lmo := "login.microsoftonline.com"
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mockClient := mock.NewClient()
+
+	token1 := "token_with_param1"
+	token2 := "token_with_param2"
+	token3 := "token_without_params"
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "tenant")))
+
+	// Response for first request with param1
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":3600,"token_type":"Bearer"}`, token1))),
+	)
+
+	// Response for second request with param2
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":3600,"token_type":"Bearer"}`, token2))),
+	)
+
+	// Response for third request without params
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(fmt.Sprintf(`{"access_token":%q,"expires_in":3600,"token_type":"Bearer"}`, token3))),
+	)
+
+	client, err := New(
+		fmt.Sprintf(authorityFmt, lmo, "tenant"),
+		fakeClientID,
+		cred,
+		WithHTTPClient(mockClient),
+		WithInstanceDiscovery(false),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Acquire token with first set of parameters
+	params1 := map[string]func(context.Context) (string, error){
+		"custom_param": func(ctx context.Context) (string, error) {
+			return "value1", nil
+		},
+	}
+	result1, err := client.AcquireTokenByCredential(
+		context.Background(),
+		tokenScope,
+		WithExtraBodyParameters(params1),
+	)
+	if err != nil {
+		t.Fatalf("first request failed: %v", err)
+	}
+	if result1.AccessToken != token1 {
+		t.Errorf("expected token %s, got %s", token1, result1.AccessToken)
+	}
+
+	// Acquire token with different parameters - should get different token
+	params2 := map[string]func(context.Context) (string, error){
+		"different_param": func(ctx context.Context) (string, error) {
+			return "value2", nil
+		},
+	}
+	result2, err := client.AcquireTokenByCredential(
+		context.Background(),
+		tokenScope,
+		WithExtraBodyParameters(params2),
+	)
+	if err != nil {
+		t.Fatalf("second request failed: %v", err)
+	}
+	if result2.AccessToken != token2 {
+		t.Errorf("expected token %s, got %s", token2, result2.AccessToken)
+	}
+
+	// Acquire token without parameters - should get different token
+	result3, err := client.AcquireTokenByCredential(
+		context.Background(),
+		tokenScope,
+	)
+	if err != nil {
+		t.Fatalf("third request failed: %v", err)
+	}
+	if result3.AccessToken != token3 {
+		t.Errorf("expected token %s, got %s", token3, result3.AccessToken)
+	}
+}
+
+// TestExtraBodyParametersWithContext tests that context is properly passed to parameter functions
+func TestExtraBodyParametersWithContext(t *testing.T) {
+	lmo := "login.microsoftonline.com"
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "tenant")))
+
+	mockClient.AppendResponse(
+		mock.WithBody([]byte(`{"access_token":"test_token","expires_in":3600,"token_type":"Bearer"}`)),
+	)
+
+	client, err := New(
+		fmt.Sprintf(authorityFmt, lmo, "tenant"),
+		fakeClientID,
+		cred,
+		WithHTTPClient(mockClient),
+		WithInstanceDiscovery(false),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Create a context with a value
+	type contextKey string
+	key := contextKey("test_key")
+	ctx := context.WithValue(context.Background(), key, "test_value")
+
+	contextReceived := false
+	params := map[string]func(context.Context) (string, error){
+		"param_from_context": func(ctx context.Context) (string, error) {
+			contextReceived = true
+			val := ctx.Value(key)
+			if val == nil {
+				return "", fmt.Errorf("context value not found")
+			}
+			return val.(string), nil
+		},
+	}
+
+	_, err = client.AcquireTokenByCredential(
+		ctx,
+		tokenScope,
+		WithExtraBodyParameters(params),
+	)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !contextReceived {
+		t.Error("parameter function was not called with context")
+	}
+}
