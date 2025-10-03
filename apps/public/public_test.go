@@ -53,7 +53,7 @@ func fakeBrowserOpenURL(authURL string) error {
 	}
 	redirect := q.Get("redirect_uri")
 	if redirect == "" {
-		return errors.New(" 'redirect_uri'")
+		return errors.New("missing redirect param 'redirect_uri'")
 	}
 	// now send the info to our local redirect server
 	resp, err := http.DefaultClient.Get(redirect + fmt.Sprintf("/?state=%s&code=fake_auth_code", state))
