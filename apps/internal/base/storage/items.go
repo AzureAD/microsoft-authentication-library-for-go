@@ -20,11 +20,12 @@ import (
 // the internal cache. This design is shared between MSAL versions in many languages.
 // This cannot be changed without design that includes other SDKs.
 type Contract struct {
-	AccessTokens  map[string]AccessToken               `json:"AccessToken,omitempty"`
-	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken,omitempty"`
-	IDTokens      map[string]IDToken                   `json:"IdToken,omitempty"`
-	Accounts      map[string]shared.Account            `json:"Account,omitempty"`
-	AppMetaData   map[string]AppMetaData               `json:"AppMetadata,omitempty"`
+	AccessTokens    map[string]AccessToken               `json:"AccessToken,omitempty"`
+	ExtAccessTokens map[string]AccessToken               `json:"ExtAccessToken,omitempty"`
+	RefreshTokens   map[string]accesstokens.RefreshToken `json:"RefreshToken,omitempty"`
+	IDTokens        map[string]IDToken                   `json:"IdToken,omitempty"`
+	Accounts        map[string]shared.Account            `json:"Account,omitempty"`
+	AppMetaData     map[string]AppMetaData               `json:"AppMetadata,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -34,6 +35,7 @@ type Contract struct {
 // This cannot be changed without design that includes other SDKs.
 type InMemoryContract struct {
 	AccessTokensPartition  map[string]map[string]AccessToken
+	ExtAccessTokens        map[string]map[string]AccessToken
 	RefreshTokensPartition map[string]map[string]accesstokens.RefreshToken
 	IDTokensPartition      map[string]map[string]IDToken
 	AccountsPartition      map[string]map[string]shared.Account
@@ -44,6 +46,7 @@ type InMemoryContract struct {
 func NewInMemoryContract() *InMemoryContract {
 	return &InMemoryContract{
 		AccessTokensPartition:  map[string]map[string]AccessToken{},
+		ExtAccessTokens:        map[string]map[string]AccessToken{},
 		RefreshTokensPartition: map[string]map[string]accesstokens.RefreshToken{},
 		IDTokensPartition:      map[string]map[string]IDToken{},
 		AccountsPartition:      map[string]map[string]shared.Account{},
@@ -55,6 +58,7 @@ func NewInMemoryContract() *InMemoryContract {
 func NewContract() *Contract {
 	return &Contract{
 		AccessTokens:     map[string]AccessToken{},
+		ExtAccessTokens:  map[string]AccessToken{},
 		RefreshTokens:    map[string]accesstokens.RefreshToken{},
 		IDTokens:         map[string]IDToken{},
 		Accounts:         map[string]shared.Account{},
@@ -65,20 +69,21 @@ func NewContract() *Contract {
 
 // AccessToken is the JSON representation of a MSAL access token for encoding to storage.
 type AccessToken struct {
-	HomeAccountID     string            `json:"home_account_id,omitempty"`
-	Environment       string            `json:"environment,omitempty"`
-	Realm             string            `json:"realm,omitempty"`
-	CredentialType    string            `json:"credential_type,omitempty"`
-	ClientID          string            `json:"client_id,omitempty"`
-	Secret            string            `json:"secret,omitempty"`
-	Scopes            string            `json:"target,omitempty"`
-	RefreshOn         internalTime.Unix `json:"refresh_on,omitempty"`
-	ExpiresOn         internalTime.Unix `json:"expires_on,omitempty"`
-	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
-	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
-	UserAssertionHash string            `json:"user_assertion_hash,omitempty"`
-	TokenType         string            `json:"token_type,omitempty"`
-	AuthnSchemeKeyID  string            `json:"keyid,omitempty"`
+	HomeAccountID        string            `json:"home_account_id,omitempty"`
+	Environment          string            `json:"environment,omitempty"`
+	Realm                string            `json:"realm,omitempty"`
+	CredentialType       string            `json:"credential_type,omitempty"`
+	ClientID             string            `json:"client_id,omitempty"`
+	Secret               string            `json:"secret,omitempty"`
+	Scopes               string            `json:"target,omitempty"`
+	RefreshOn            internalTime.Unix `json:"refresh_on,omitempty"`
+	ExpiresOn            internalTime.Unix `json:"expires_on,omitempty"`
+	ExtendedExpiresOn    internalTime.Unix `json:"extended_expires_on,omitempty"`
+	CachedAt             internalTime.Unix `json:"cached_at,omitempty"`
+	UserAssertionHash    string            `json:"user_assertion_hash,omitempty"`
+	TokenType            string            `json:"token_type,omitempty"`
+	AuthnSchemeKeyID     string            `json:"keyid,omitempty"`
+	ExtraBodyParamHashed string            `json:"extra_body_param_hashed,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -113,6 +118,10 @@ func (a AccessToken) Key() string {
 	// preserve fwd and back compat between a common cache and msal clients
 	if !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) {
 		key = strings.Join([]string{key, a.TokenType}, shared.CacheKeySeparator)
+	}
+	// add extra body param hash to key if present
+	if a.ExtraBodyParamHashed != "" {
+		key = strings.Join([]string{key, a.ExtraBodyParamHashed}, shared.CacheKeySeparator)
 	}
 	return strings.ToLower(key)
 }

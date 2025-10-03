@@ -550,9 +550,10 @@ func WithTenantID(tenantID string) interface {
 // acquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
 // These are set by using various AcquireTokenSilentOption functions.
 type acquireTokenSilentOptions struct {
-	account          Account
-	claims, tenantID string
-	authnScheme      AuthenticationScheme
+	account             Account
+	claims, tenantID    string
+	authnScheme         AuthenticationScheme
+	extraBodyParameters map[string]func(context.Context) (string, error)
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -597,13 +598,14 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
-		Scopes:      scopes,
-		Account:     o.account,
-		RequestType: accesstokens.ATConfidential,
-		Credential:  cca.cred,
-		IsAppCache:  o.account.IsZero(),
-		TenantID:    o.tenantID,
-		AuthnScheme: o.authnScheme,
+		Scopes:              scopes,
+		Account:             o.account,
+		RequestType:         accesstokens.ATConfidential,
+		Credential:          cca.cred,
+		IsAppCache:          o.account.IsZero(),
+		TenantID:            o.tenantID,
+		AuthnScheme:         o.authnScheme,
+		ExtraBodyParameters: o.extraBodyParameters,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -803,17 +805,21 @@ func (cca Client) RemoveAccount(ctx context.Context, account Account) error {
 //	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithExtraBodyParameters(params))
 func WithExtraBodyParameters(params map[string]func(context.Context) (string, error)) interface {
 	AcquireByCredentialOption
+	AcquireSilentOption
 	options.CallOption
 } {
 
 	return struct {
 		AcquireByCredentialOption
+		AcquireSilentOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
 			func(a any) error {
 				switch t := a.(type) {
 				case *acquireTokenByCredentialOptions:
+					t.extraBodyParameters = params
+				case *acquireTokenSilentOptions:
 					t.extraBodyParameters = params
 				default:
 					return fmt.Errorf("unexpected options type %T", a)

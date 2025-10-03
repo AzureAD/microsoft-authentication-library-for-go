@@ -2073,6 +2073,34 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 	if result3.AccessToken != token3 {
 		t.Errorf("expected token %s, got %s", token3, result3.AccessToken)
 	}
+
+	// Verify that tokens are cached separately by attempting to retrieve them again
+	// without making new HTTP requests (mock client should not have more responses)
+	// This should get token1 from cache
+	result1Again, err := client.AcquireTokenSilent(
+		context.Background(),
+		tokenScope,
+		WithExtraBodyParameters(params1),
+	)
+	if err != nil {
+		t.Fatalf("retrieving cached token1 failed: %v", err)
+	}
+	if result1Again.AccessToken != token1 {
+		t.Errorf("cached token should be %s, got %s", token1, result1Again.AccessToken)
+	}
+
+	// This should get token2 from cache
+	result2Again, err := client.AcquireTokenSilent(
+		context.Background(),
+		tokenScope,
+		WithExtraBodyParameters(params2),
+	)
+	if err != nil {
+		t.Fatalf("retrieving cached token2 failed: %v", err)
+	}
+	if result2Again.AccessToken != token2 {
+		t.Errorf("cached token should be %s, got %s", token2, result2Again.AccessToken)
+	}
 }
 
 // TestExtraBodyParametersWithContext tests that context is properly passed to parameter functions

@@ -135,7 +135,11 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 		aliases = metadata.Aliases
 	}
 
-	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID)
+	// accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID)
+	accessToken := m.readAccessTokenCache(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID, authParameters.ExtraBodyParametersHash())
+
+	tr.AccessToken = accessToken
+	// accessToken := m.readAccessTokenFromCacheKey(authParameters.CacheKey(true), homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID)
 	tr.AccessToken = accessToken
 
 	if homeAccountID == "" {
@@ -202,6 +206,8 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			tokenResponse.TokenType,
 			authnSchemeKeyID,
 		)
+
+		accessToken.ExtraBodyParamHashed = authParameters.ExtraBodyParametersHash()
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
@@ -291,8 +297,63 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID string) AccessToken {
+func (m *Manager) readAccessTokenCache(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID, extraBodyParamHashed string) AccessToken {
 	m.contractMu.RLock()
+	defer m.contractMu.RUnlock()
+
+	// Try to construct the cache key and do a direct lookup for each environment alias
+	scopesStr := strings.Join(scopes, " ")
+
+	for _, env := range envAliases {
+		// Construct the key the same way as AccessToken.Key() does
+		ks := []string{homeID, env, "AccessToken", clientID, realm, scopesStr}
+		key := strings.Join(ks, shared.CacheKeySeparator)
+
+		// Add token type if not Bearer
+		if !strings.EqualFold(tokenType, authority.AccessTokenTypeBearer) {
+			key = strings.Join([]string{key, tokenType}, shared.CacheKeySeparator)
+		}
+
+		// Add extra body param hash if present
+		if extraBodyParamHashed != "" {
+			key = strings.Join([]string{key, extraBodyParamHashed}, shared.CacheKeySeparator)
+		}
+
+		key = strings.ToLower(key)
+
+		// If we have a hash, look in ExtAccessTokens, otherwise look in AccessTokens
+		var at AccessToken
+		var ok bool
+
+		if extraBodyParamHashed != "" {
+			at, ok = m.contract.ExtAccessTokens[key]
+		} else {
+			at, ok = m.contract.AccessTokens[key]
+		}
+
+		if ok {
+			// Verify the token matches our criteria
+			if isMatchingScopes(scopes, at.Scopes) {
+				// Check if we need to upgrade the token
+				if needsUpgrade(key) {
+					m.contractMu.RUnlock()
+					m.contractMu.Lock()
+					defer m.contractMu.Unlock()
+					if extraBodyParamHashed != "" {
+						at = upgrade(m.contract.ExtAccessTokens, key)
+					} else {
+						at = upgrade(m.contract.AccessTokens, key)
+					}
+				}
+				return at
+			}
+		}
+	}
+
+	return AccessToken{}
+}
+
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID string) AccessToken {
 	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
 	// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
 	// an issue, however if it does become a problem then we know where to look.
@@ -319,7 +380,12 @@ func (m *Manager) writeAccessToken(accessToken AccessToken) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	key := accessToken.Key()
-	m.contract.AccessTokens[key] = accessToken
+	if accessToken.ExtraBodyParamHashed != "" {
+		m.contract.ExtAccessTokens[key] = accessToken
+	} else {
+		m.contract.AccessTokens[key] = accessToken
+	}
+	// m.contract.AccessTokens[key] = accessToken
 	return nil
 }
 

@@ -46,16 +46,17 @@ type accountManager interface {
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
-	Scopes            []string
-	Account           shared.Account
-	RequestType       accesstokens.AppType
-	Credential        *accesstokens.Credential
-	IsAppCache        bool
-	TenantID          string
-	UserAssertion     string
-	AuthorizationType authority.AuthorizeType
-	Claims            string
-	AuthnScheme       authority.AuthenticationScheme
+	Scopes              []string
+	Account             shared.Account
+	RequestType         accesstokens.AppType
+	Credential          *accesstokens.Credential
+	IsAppCache          bool
+	TenantID            string
+	UserAssertion       string
+	AuthorizationType   authority.AuthorizeType
+	Claims              string
+	AuthnScheme         authority.AuthenticationScheme
+	ExtraBodyParameters map[string]func(context.Context) (string, error)
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -328,6 +329,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		authParams.AuthnScheme = silent.AuthnScheme
 	}
 
+	if silent.ExtraBodyParameters != nil {
+		authParams.ExtraBodyParameters = silent.ExtraBodyParameters
+	}
 	m := b.pmanager
 	if authParams.AuthorizationType != authority.ATOnBehalfOf {
 		authParams.AuthorizationType = authority.ATRefreshToken
