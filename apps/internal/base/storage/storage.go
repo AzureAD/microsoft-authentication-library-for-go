@@ -135,11 +135,8 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 		aliases = metadata.Aliases
 	}
 
-	// accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID)
-	accessToken := m.readAccessTokenCache(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID, authParameters.ExtraBodyParametersHash())
+	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID, authParameters.ExtraBodyParametersHash())
 
-	tr.AccessToken = accessToken
-	// accessToken := m.readAccessTokenFromCacheKey(authParameters.CacheKey(true), homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID)
 	tr.AccessToken = accessToken
 
 	if homeAccountID == "" {
@@ -297,13 +294,12 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *Manager) readAccessTokenCache(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID, extraBodyParamHashed string) AccessToken {
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID, extraBodyParamHashed string) AccessToken {
 	m.contractMu.RLock()
-	defer m.contractMu.RUnlock()
 
-	// Try to construct the cache key and do a direct lookup for each environment alias
 	scopesStr := strings.Join(scopes, " ")
 
+	// First try: Direct key lookup for each environment alias
 	for _, env := range envAliases {
 		// Construct the key the same way as AccessToken.Key() does
 		ks := []string{homeID, env, "AccessToken", clientID, realm, scopesStr}
@@ -331,47 +327,59 @@ func (m *Manager) readAccessTokenCache(homeID string, envAliases []string, realm
 			at, ok = m.contract.AccessTokens[key]
 		}
 
-		if ok {
-			// Verify the token matches our criteria
-			if isMatchingScopes(scopes, at.Scopes) {
-				// Check if we need to upgrade the token
-				if needsUpgrade(key) {
-					m.contractMu.RUnlock()
-					m.contractMu.Lock()
-					defer m.contractMu.Unlock()
-					if extraBodyParamHashed != "" {
-						at = upgrade(m.contract.ExtAccessTokens, key)
-					} else {
-						at = upgrade(m.contract.AccessTokens, key)
-					}
+		if ok && isMatchingScopes(scopes, at.Scopes) {
+			// Check if we need to upgrade the token
+			if needsUpgrade(key) {
+				m.contractMu.RUnlock()
+				m.contractMu.Lock()
+
+				if extraBodyParamHashed != "" {
+					at = upgrade(m.contract.ExtAccessTokens, key)
+				} else {
+					at = upgrade(m.contract.AccessTokens, key)
 				}
+
+				m.contractMu.Unlock()
 				return at
 			}
+			// No upgrade needed, just unlock and return
+			m.contractMu.RUnlock()
+			return at
 		}
 	}
 
-	return AccessToken{}
-}
+	// Fallback: Linear search for backward compatibility
+	// Check the appropriate map based on whether we have a hash
+	var tokensToSearch map[string]AccessToken
+	if extraBodyParamHashed != "" {
+		tokensToSearch = m.contract.ExtAccessTokens
+	} else {
+		tokensToSearch = m.contract.AccessTokens
+	}
 
-func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID string) AccessToken {
-	// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
-	// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
-	// an issue, however if it does become a problem then we know where to look.
-	for k, at := range m.contract.AccessTokens {
+	for k, at := range tokensToSearch {
+		// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
+		// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
+		// an issue, however if it does become a problem then we know where to look.
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
 			if (strings.EqualFold(at.TokenType, tokenType) && at.AuthnSchemeKeyID == authnSchemeKeyID) || (at.TokenType == "" && (tokenType == "" || tokenType == "Bearer")) {
 				if checkAlias(at.Environment, envAliases) && isMatchingScopes(scopes, at.Scopes) {
-					m.contractMu.RUnlock()
 					if needsUpgrade(k) {
+						m.contractMu.RUnlock()
 						m.contractMu.Lock()
-						defer m.contractMu.Unlock()
-						at = upgrade(m.contract.AccessTokens, k)
+						at = upgrade(tokensToSearch, k)
+						m.contractMu.Unlock()
+						return at
 					}
+					// No upgrade needed, just unlock and return
+					m.contractMu.RUnlock()
 					return at
 				}
 			}
 		}
 	}
+
+	// Nothing found, unlock and return empty token
 	m.contractMu.RUnlock()
 	return AccessToken{}
 }
