@@ -61,6 +61,18 @@ func (tc *TokenCache) GetToken(scopes []string, tenantID string) string {
 	return cached.Token
 }
 
+// GetCachedTokenData returns the full cached token data
+func (tc *TokenCache) GetCachedTokenData(scopes []string, tenantID string) *CachedToken {
+	tc.mu.RLock()
+	defer tc.mu.RUnlock()
+
+	key := tc.generateKey(scopes, tenantID)
+	if data, exists := tc.tokens[key]; exists && data.ExpiresAt.After(time.Now()) {
+		return data
+	}
+	return nil
+}
+
 // SetToken stores a token in the cache
 func (tc *TokenCache) SetToken(scopes []string, tenantID, token string, expiresAt time.Time) {
 	key := tc.generateKey(scopes, tenantID)

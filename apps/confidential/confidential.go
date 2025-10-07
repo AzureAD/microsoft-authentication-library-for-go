@@ -378,7 +378,7 @@ func NewEnhancedClient(authority, clientID string, cred Credential, options ...O
 	}
 
 	// Create token cache with default 2-minute renewal buffer
-	tokenCache := cache.NewTokenCache(2 * time.Minute)
+	tokenCache := internalcache.NewTokenCache(2 * time.Minute)
 
 	return EnhancedClient{
 		Client:     client,
@@ -785,6 +785,99 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		return AuthResult{}, err
 	}
 	return cca.base.AuthResultFromToken(ctx, authParams, token)
+}
+
+// AcquireTokenByCredentialWithCaching acquires a token using client credentials with enhanced caching
+// This method automatically handles token reuse and renewal
+func (eca EnhancedClient) AcquireTokenByCredentialWithCaching(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
+	// Extract tenant ID from options
+	o := acquireTokenByCredentialOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
+	}
+
+	tenantID := o.tenantID
+	if tenantID == "" {
+		// Use default tenant from client
+		tenantID = eca.base.AuthParams.AuthorityInfo.Tenant
+	}
+
+	// Check if we have a valid cached token
+	if cachedToken := eca.tokenCache.GetToken(scopes, tenantID); cachedToken != "" {
+		// Return cached token result
+		return AuthResult{
+			AccessToken:   cachedToken,
+			ExpiresOn:     eca.getCachedTokenExpiry(scopes, tenantID),
+			GrantedScopes: scopes,
+			Metadata: base.AuthResultMetadata{
+				TokenSource: base.TokenSourceCache,
+			},
+		}, nil
+	}
+
+	// No valid cached token, acquire new one
+	result, err := eca.AcquireTokenByCredential(ctx, scopes, opts...)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	// Cache the new token
+	eca.tokenCache.SetToken(scopes, tenantID, result.AccessToken, result.ExpiresOn)
+
+	return result, nil
+}
+
+// ForceRefreshToken clears cache and acquires a new token
+func (eca EnhancedClient) ForceRefreshToken(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
+	// Extract tenant ID from options
+	o := acquireTokenByCredentialOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
+	}
+
+	tenantID := o.tenantID
+	if tenantID == "" {
+		tenantID = eca.base.AuthParams.AuthorityInfo.Tenant
+	}
+
+	// Clear cached token
+	eca.tokenCache.ClearToken(scopes, tenantID)
+
+	// Acquire new token
+	return eca.AcquireTokenByCredentialWithCaching(ctx, scopes, opts...)
+}
+
+// ClearTokenCache removes all cached tokens
+func (eca EnhancedClient) ClearTokenCache() {
+	eca.tokenCache.ClearAll()
+}
+
+// IsTokenCached checks if a valid token is cached
+func (eca EnhancedClient) IsTokenCached(scopes []string, tenantID string) bool {
+	if tenantID == "" {
+		tenantID = eca.base.AuthParams.AuthorityInfo.Tenant
+	}
+	return eca.tokenCache.IsTokenValid(scopes, tenantID)
+}
+
+// GetCacheStats returns statistics about the token cache
+func (eca EnhancedClient) GetCacheStats() map[string]interface{} {
+	return eca.tokenCache.GetCacheStats()
+}
+
+// getCachedTokenExpiry returns the expiry time of a cached token
+func (eca EnhancedClient) getCachedTokenExpiry(scopes []string, tenantID string) time.Time {
+	if tenantID == "" {
+		tenantID = eca.base.AuthParams.AuthorityInfo.Tenant
+	}
+
+	// Get the actual cached token data
+	cachedData := eca.tokenCache.GetCachedTokenData(scopes, tenantID)
+	if cachedData == nil {
+		return time.Time{} // Zero time if no cached data
+	}
+
+	return cachedData.ExpiresAt
 }
 
 // acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf
