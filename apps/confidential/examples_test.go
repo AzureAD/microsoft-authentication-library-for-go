@@ -59,3 +59,53 @@ func ExampleNewCredFromCert_pem() {
 	}
 	fmt.Println(cred) // Simply here so cred is used, otherwise won't compile.
 }
+
+// This example demonstrates the enhanced client with automatic token caching and renewal
+func ExampleEnhancedClient() {
+	// Create credential
+	cred, err := confidential.NewCredFromSecret("client_secret")
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Create enhanced client with automatic token caching
+	client, err := confidential.NewEnhancedClient(
+		"https://login.microsoftonline.com/your_tenant",
+		"client_id",
+		cred,
+	)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	scopes := []string{"https://graph.microsoft.com/.default"}
+	ctx := context.Background()
+
+	// First call acquires and caches token
+	token1, err := client.AcquireTokenByCredentialWithCaching(ctx, scopes)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("First token: %s\n", token1.AccessToken)
+
+	// Second call returns cached token (no network request)
+	token2, err := client.AcquireTokenByCredentialWithCaching(ctx, scopes)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Second token (cached): %s\n", token2.AccessToken)
+
+	// Check if tokens are the same (cached)
+	fmt.Printf("Tokens are same: %t\n", token1.AccessToken == token2.AccessToken)
+
+	// Force refresh to get new token
+	token3, err := client.ForceRefreshToken(ctx, scopes)
+	if err != nil {
+		log.Fatal(err)
+	}
+	fmt.Printf("Force refreshed token: %s\n", token3.AccessToken)
+
+	// Get cache statistics
+	stats := client.GetCacheStats()
+	fmt.Printf("Cache stats: %+v\n", stats)
+}
