@@ -370,6 +370,37 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	return Client{base: base, cred: internalCred}, nil
 }
 
+// NewEnhancedClient creates a new confidential client with enhanced token caching
+func NewEnhancedClient(authority, clientID string, cred Credential, options ...Option) (EnhancedClient, error) {
+	client, err := New(authority, clientID, cred, options...)
+	if err != nil {
+		return EnhancedClient{}, err
+	}
+
+	// Create token cache with default 2-minute renewal buffer
+	tokenCache := cache.NewTokenCache(2 * time.Minute)
+
+	return EnhancedClient{
+		Client:     client,
+		tokenCache: tokenCache,
+	}, nil
+}
+
+// NewEnhancedClientWithOptions creates a new enhanced client with custom options
+func NewEnhancedClientWithOptions(authority, clientID string, cred Credential, enhancedOpts EnhancedClientOptions, options ...Option) (EnhancedClient, error) {
+	client, err := New(authority, clientID, cred, options...)
+	if err != nil {
+		return EnhancedClient{}, err
+	}
+
+	tokenCache := internalcache.NewTokenCache(enhancedOpts.RenewalBuffer)
+
+	return EnhancedClient{
+		Client:     client,
+		tokenCache: tokenCache,
+	}, nil
+}
+
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
 	claims, loginHint, tenantID, domainHint string
