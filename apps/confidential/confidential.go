@@ -20,9 +20,11 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
+	internalcache "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
@@ -257,6 +259,17 @@ type clientOptions struct {
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
 	httpClient                        ops.HTTPClient
+}
+
+// EnhancedClient provides thread-safe token caching with auto-renewal
+type EnhancedClient struct {
+	Client
+	tokenCache *internalcache.TokenCache
+}
+
+// EnhancedClientOptions contains options for creating an enhanced client
+type EnhancedClientOptions struct {
+	RenewalBuffer time.Duration // How long before expiry to renew tokens
 }
 
 // Option is an optional argument to New().
