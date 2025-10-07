@@ -56,7 +56,8 @@ type AcquireTokenSilentParameters struct {
 	AuthorizationType   authority.AuthorizeType
 	Claims              string
 	AuthnScheme         authority.AuthenticationScheme
-	ExtraBodyParameters map[string]func(context.Context) (string, error)
+	ExtraBodyParameters map[string]string
+	CacheKeyComponents  map[string]string
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -64,22 +65,24 @@ type AcquireTokenSilentParameters struct {
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
-	Scopes      []string
-	Code        string
-	Challenge   string
-	Claims      string
-	RedirectURI string
-	AppType     accesstokens.AppType
-	Credential  *accesstokens.Credential
-	TenantID    string
+	Scopes              []string
+	Code                string
+	Challenge           string
+	Claims              string
+	RedirectURI         string
+	AppType             accesstokens.AppType
+	Credential          *accesstokens.Credential
+	TenantID            string
+	ExtraBodyParameters map[string]string
 }
 
 type AcquireTokenOnBehalfOfParameters struct {
-	Scopes        []string
-	Claims        string
-	Credential    *accesstokens.Credential
-	TenantID      string
-	UserAssertion string
+	Scopes              []string
+	Claims              string
+	Credential          *accesstokens.Credential
+	TenantID            string
+	UserAssertion       string
+	ExtraBodyParameters map[string]string
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -328,7 +331,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.AuthnScheme != nil {
 		authParams.AuthnScheme = silent.AuthnScheme
 	}
-
+	if silent.CacheKeyComponents != nil {
+		authParams.CacheKeyComponents = silent.CacheKeyComponents
+	}
 	if silent.ExtraBodyParameters != nil {
 		authParams.ExtraBodyParameters = silent.ExtraBodyParameters
 	}
@@ -407,6 +412,10 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams.Redirecturi = authCodeParams.RedirectURI
 	authParams.AuthorizationType = authority.ATAuthCode
 
+	if authCodeParams.ExtraBodyParameters != nil {
+		authParams.ExtraBodyParameters = authCodeParams.ExtraBodyParameters
+	}
+
 	var cc *accesstokens.Credential
 	if authCodeParams.AppType == accesstokens.ATConfidential {
 		cc = authCodeParams.Credential
@@ -430,13 +439,14 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams AcquireTokenOnBehalfOfParameters) (AuthResult, error) {
 	var ar AuthResult
 	silentParameters := AcquireTokenSilentParameters{
-		Scopes:            onBehalfOfParams.Scopes,
-		RequestType:       accesstokens.ATConfidential,
-		Credential:        onBehalfOfParams.Credential,
-		UserAssertion:     onBehalfOfParams.UserAssertion,
-		AuthorizationType: authority.ATOnBehalfOf,
-		TenantID:          onBehalfOfParams.TenantID,
-		Claims:            onBehalfOfParams.Claims,
+		Scopes:              onBehalfOfParams.Scopes,
+		RequestType:         accesstokens.ATConfidential,
+		Credential:          onBehalfOfParams.Credential,
+		UserAssertion:       onBehalfOfParams.UserAssertion,
+		AuthorizationType:   authority.ATOnBehalfOf,
+		TenantID:            onBehalfOfParams.TenantID,
+		Claims:              onBehalfOfParams.Claims,
+		ExtraBodyParameters: onBehalfOfParams.ExtraBodyParameters,
 	}
 	ar, err := b.AcquireTokenSilent(ctx, silentParameters)
 	if err == nil {
@@ -450,6 +460,9 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 	authParams.Claims = onBehalfOfParams.Claims
 	authParams.Scopes = onBehalfOfParams.Scopes
 	authParams.UserAssertion = onBehalfOfParams.UserAssertion
+	if authParams.ExtraBodyParameters != nil {
+		authParams.ExtraBodyParameters = silentParameters.ExtraBodyParameters
+	}
 	token, err := b.Token.OnBehalfOf(ctx, authParams, onBehalfOfParams.Credential)
 	if err == nil {
 		ar, err = b.AuthResultFromToken(ctx, authParams, token)

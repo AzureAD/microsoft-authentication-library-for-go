@@ -69,21 +69,21 @@ func NewContract() *Contract {
 
 // AccessToken is the JSON representation of a MSAL access token for encoding to storage.
 type AccessToken struct {
-	HomeAccountID        string            `json:"home_account_id,omitempty"`
-	Environment          string            `json:"environment,omitempty"`
-	Realm                string            `json:"realm,omitempty"`
-	CredentialType       string            `json:"credential_type,omitempty"`
-	ClientID             string            `json:"client_id,omitempty"`
-	Secret               string            `json:"secret,omitempty"`
-	Scopes               string            `json:"target,omitempty"`
-	RefreshOn            internalTime.Unix `json:"refresh_on,omitempty"`
-	ExpiresOn            internalTime.Unix `json:"expires_on,omitempty"`
-	ExtendedExpiresOn    internalTime.Unix `json:"extended_expires_on,omitempty"`
-	CachedAt             internalTime.Unix `json:"cached_at,omitempty"`
-	UserAssertionHash    string            `json:"user_assertion_hash,omitempty"`
-	TokenType            string            `json:"token_type,omitempty"`
-	AuthnSchemeKeyID     string            `json:"keyid,omitempty"`
-	ExtraBodyParamHashed string            `json:"extra_body_param_hashed,omitempty"`
+	HomeAccountID     string            `json:"home_account_id,omitempty"`
+	Environment       string            `json:"environment,omitempty"`
+	Realm             string            `json:"realm,omitempty"`
+	CredentialType    string            `json:"credential_type,omitempty"`
+	ClientID          string            `json:"client_id,omitempty"`
+	Secret            string            `json:"secret,omitempty"`
+	Scopes            string            `json:"target,omitempty"`
+	RefreshOn         internalTime.Unix `json:"refresh_on,omitempty"`
+	ExpiresOn         internalTime.Unix `json:"expires_on,omitempty"`
+	ExtendedExpiresOn internalTime.Unix `json:"extended_expires_on,omitempty"`
+	CachedAt          internalTime.Unix `json:"cached_at,omitempty"`
+	UserAssertionHash string            `json:"user_assertion_hash,omitempty"`
+	TokenType         string            `json:"token_type,omitempty"`
+	AuthnSchemeKeyID  string            `json:"keyid,omitempty"`
+	ExtCacheKey       string            `json:"ext_cache_key,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -120,8 +120,8 @@ func (a AccessToken) Key() string {
 		key = strings.Join([]string{key, a.TokenType}, shared.CacheKeySeparator)
 	}
 	// add extra body param hash to key if present
-	if a.ExtraBodyParamHashed != "" {
-		key = strings.Join([]string{key, a.ExtraBodyParamHashed}, shared.CacheKeySeparator)
+	if a.ExtCacheKey != "" {
+		key = strings.Join([]string{key, a.ExtCacheKey}, shared.CacheKeySeparator)
 	}
 	return strings.ToLower(key)
 }

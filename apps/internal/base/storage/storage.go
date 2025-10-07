@@ -135,7 +135,7 @@ func (m *Manager) Read(ctx context.Context, authParameters authority.AuthParams)
 		aliases = metadata.Aliases
 	}
 
-	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID, authParameters.ExtraBodyParametersHash())
+	accessToken := m.readAccessToken(homeAccountID, aliases, realm, clientID, scopes, tokenType, authnSchemeKeyID, authParameters.CacheExtKeyGenerator())
 
 	tr.AccessToken = accessToken
 
@@ -204,7 +204,7 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 			authnSchemeKeyID,
 		)
 
-		accessToken.ExtraBodyParamHashed = authParameters.ExtraBodyParametersHash()
+		accessToken.ExtCacheKey = authParameters.CacheExtKeyGenerator()
 
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
@@ -294,64 +294,12 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 	return m.aadCache[authorityInfo.Host], nil
 }
 
-func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID, extraBodyParamHashed string) AccessToken {
+func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID, extCacheKey string) AccessToken {
 	m.contractMu.RLock()
 
-	scopesStr := strings.Join(scopes, " ")
-
-	// First try: Direct key lookup for each environment alias
-	for _, env := range envAliases {
-		// Construct the key the same way as AccessToken.Key() does
-		ks := []string{homeID, env, "AccessToken", clientID, realm, scopesStr}
-		key := strings.Join(ks, shared.CacheKeySeparator)
-
-		// Add token type if not Bearer
-		if !strings.EqualFold(tokenType, authority.AccessTokenTypeBearer) {
-			key = strings.Join([]string{key, tokenType}, shared.CacheKeySeparator)
-		}
-
-		// Add extra body param hash if present
-		if extraBodyParamHashed != "" {
-			key = strings.Join([]string{key, extraBodyParamHashed}, shared.CacheKeySeparator)
-		}
-
-		key = strings.ToLower(key)
-
-		// If we have a hash, look in ExtAccessTokens, otherwise look in AccessTokens
-		var at AccessToken
-		var ok bool
-
-		if extraBodyParamHashed != "" {
-			at, ok = m.contract.ExtAccessTokens[key]
-		} else {
-			at, ok = m.contract.AccessTokens[key]
-		}
-
-		if ok && isMatchingScopes(scopes, at.Scopes) {
-			// Check if we need to upgrade the token
-			if needsUpgrade(key) {
-				m.contractMu.RUnlock()
-				m.contractMu.Lock()
-
-				if extraBodyParamHashed != "" {
-					at = upgrade(m.contract.ExtAccessTokens, key)
-				} else {
-					at = upgrade(m.contract.AccessTokens, key)
-				}
-
-				m.contractMu.Unlock()
-				return at
-			}
-			// No upgrade needed, just unlock and return
-			m.contractMu.RUnlock()
-			return at
-		}
-	}
-
-	// Fallback: Linear search for backward compatibility
-	// Check the appropriate map based on whether we have a hash
+	// Choose the appropriate map based on whether we have a hash
 	var tokensToSearch map[string]AccessToken
-	if extraBodyParamHashed != "" {
+	if extCacheKey != "" {
 		tokensToSearch = m.contract.ExtAccessTokens
 	} else {
 		tokensToSearch = m.contract.AccessTokens
@@ -362,24 +310,34 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 		// this shows up as the dominating node in a profile. for real-world scenarios this likely isn't
 		// an issue, however if it does become a problem then we know where to look.
 		if at.HomeAccountID == homeID && at.Realm == realm && at.ClientID == clientID {
-			if (strings.EqualFold(at.TokenType, tokenType) && at.AuthnSchemeKeyID == authnSchemeKeyID) || (at.TokenType == "" && (tokenType == "" || tokenType == "Bearer")) {
-				if checkAlias(at.Environment, envAliases) && isMatchingScopes(scopes, at.Scopes) {
-					if needsUpgrade(k) {
-						m.contractMu.RUnlock()
-						m.contractMu.Lock()
-						at = upgrade(tokensToSearch, k)
-						m.contractMu.Unlock()
-						return at
+			// Match token type and authentication scheme
+			tokenTypeMatch := (strings.EqualFold(at.TokenType, tokenType) && at.AuthnSchemeKeyID == authnSchemeKeyID) ||
+				(at.TokenType == "" && (tokenType == "" || tokenType == "Bearer"))
+			environmentAndScopesMatch := checkAlias(at.Environment, envAliases) && isMatchingScopes(scopes, at.Scopes)
+
+			if tokenTypeMatch && environmentAndScopesMatch {
+				// For hashed tokens, check that the key contains the hash
+				if extCacheKey != "" {
+					if !strings.Contains(k, extCacheKey) {
+						continue // Skip this token if the key doesn't contain the hash
 					}
-					// No upgrade needed, just unlock and return
+				}
+				// Handle token upgrade if needed
+				if needsUpgrade(k) {
 					m.contractMu.RUnlock()
+					m.contractMu.Lock()
+					at = upgrade(tokensToSearch, k)
+					m.contractMu.Unlock()
 					return at
 				}
+
+				m.contractMu.RUnlock()
+				return at
 			}
 		}
 	}
 
-	// Nothing found, unlock and return empty token
+	// No token found, unlock and return empty token
 	m.contractMu.RUnlock()
 	return AccessToken{}
 }
@@ -388,12 +346,11 @@ func (m *Manager) writeAccessToken(accessToken AccessToken) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	key := accessToken.Key()
-	if accessToken.ExtraBodyParamHashed != "" {
+	if accessToken.ExtCacheKey != "" {
 		m.contract.ExtAccessTokens[key] = accessToken
 	} else {
 		m.contract.AccessTokens[key] = accessToken
 	}
-	// m.contract.AccessTokens[key] = accessToken
 	return nil
 }
 

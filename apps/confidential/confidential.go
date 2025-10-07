@@ -553,7 +553,8 @@ type acquireTokenSilentOptions struct {
 	account             Account
 	claims, tenantID    string
 	authnScheme         AuthenticationScheme
-	extraBodyParameters map[string]func(context.Context) (string, error)
+	extraBodyParameters map[string]string
+	cacheKeyComponents  map[string]string
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -586,7 +587,7 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options: [WithClaims], [WithSilentAccount], [WithTenantID], [WithExtraBodyParameters]
+// Options: [WithClaims], [WithSilentAccount], [WithTenantID], [WithExtraBodyParameters], [WithAdditionalCacheKeyComponents]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -606,6 +607,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		TenantID:            o.tenantID,
 		AuthnScheme:         o.authnScheme,
 		ExtraBodyParameters: o.extraBodyParameters,
+		CacheKeyComponents:  o.cacheKeyComponents,
 	}
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
@@ -654,6 +656,7 @@ func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 // acquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
 type acquireTokenByAuthCodeOptions struct {
 	challenge, claims, tenantID string
+	extraBodyParameters         map[string]string
 }
 
 // AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
@@ -687,7 +690,7 @@ func WithChallenge(challenge string) interface {
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
-// Options: [WithChallenge], [WithClaims], [WithTenantID]
+// Options: [WithChallenge], [WithClaims], [WithTenantID], [WithExtraBodyParameters]
 func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
 	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -695,14 +698,15 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:      scopes,
-		Code:        code,
-		Challenge:   o.challenge,
-		Claims:      o.claims,
-		AppType:     accesstokens.ATConfidential,
-		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
-		RedirectURI: redirectURI,
-		TenantID:    o.tenantID,
+		Scopes:              scopes,
+		Code:                code,
+		Challenge:           o.challenge,
+		Claims:              o.claims,
+		AppType:             accesstokens.ATConfidential,
+		Credential:          cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		RedirectURI:         redirectURI,
+		TenantID:            o.tenantID,
+		ExtraBodyParameters: o.extraBodyParameters,
 	}
 
 	return cca.base.AcquireTokenByAuthCode(ctx, params)
@@ -712,7 +716,8 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 type acquireTokenByCredentialOptions struct {
 	claims, tenantID    string
 	authnScheme         AuthenticationScheme
-	extraBodyParameters map[string]func(context.Context) (string, error)
+	extraBodyParameters map[string]string
+	cacheKeyComponents  map[string]string
 }
 
 // AcquireByCredentialOption is implemented by options for AcquireTokenByCredential
@@ -722,7 +727,7 @@ type AcquireByCredentialOption interface {
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options: [WithClaims], [WithTenantID], [WithExtraBodyParameters]
+// Options: [WithClaims], [WithTenantID], [WithExtraBodyParameters], [WithAdditionalCacheKeyComponents]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -742,6 +747,9 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	if o.extraBodyParameters != nil {
 		authParams.ExtraBodyParameters = o.extraBodyParameters
 	}
+	if o.cacheKeyComponents != nil {
+		authParams.CacheKeyComponents = o.cacheKeyComponents
+	}
 	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
 		return AuthResult{}, err
@@ -751,7 +759,8 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 
 // acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf
 type acquireTokenOnBehalfOfOptions struct {
-	claims, tenantID string
+	claims, tenantID    string
+	extraBodyParameters map[string]string
 }
 
 // AcquireOnBehalfOfOption is implemented by options for AcquireTokenOnBehalfOf
@@ -762,18 +771,19 @@ type AcquireOnBehalfOfOption interface {
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 // Refer https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-on-behalf-of-flow.
 //
-// Options: [WithClaims], [WithTenantID]
+// Options: [WithClaims], [WithTenantID], [withExtraBodyParameters]
 func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, opts ...AcquireOnBehalfOfOption) (AuthResult, error) {
 	o := acquireTokenOnBehalfOfOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
 	params := base.AcquireTokenOnBehalfOfParameters{
-		Scopes:        scopes,
-		UserAssertion: userAssertion,
-		Claims:        o.claims,
-		Credential:    cca.cred,
-		TenantID:      o.tenantID,
+		Scopes:              scopes,
+		UserAssertion:       userAssertion,
+		Claims:              o.claims,
+		Credential:          cca.cred,
+		TenantID:            o.tenantID,
+		ExtraBodyParameters: o.extraBodyParameters,
 	}
 	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
@@ -788,22 +798,15 @@ func (cca Client) RemoveAccount(ctx context.Context, account Account) error {
 	return cca.base.RemoveAccount(ctx, account)
 }
 
-// WithExtraBodyParameters adds extra body parameters to the token request.
-// These parameters are added to the request body and are also included in the cache key,
-// ensuring that tokens acquired with different parameters are cached separately.
-//
-// The parameter values are provided as functions that are evaluated at request time,
-// allowing for dynamic values that may change between requests.
+// withAdditionalCacheKeyComponents adds aditional hash for cache key
 //
 // Example:
 //
-//	params := map[string]func(context.Context) (string, error){
-//	    "custom_param": func(ctx context.Context) (string, error) {
-//	        return "custom_value", nil
-//	    },
+//	params := map[string]string{
+//	    "custom_param": "custom_value",
 //	}
-//	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithExtraBodyParameters(params))
-func WithExtraBodyParameters(params map[string]func(context.Context) (string, error)) interface {
+//	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.withAdditionalCacheKeyComponents(params))
+func withAdditionalCacheKeyComponents(params map[string]string) interface {
 	AcquireByCredentialOption
 	AcquireSilentOption
 	options.CallOption
@@ -818,8 +821,52 @@ func WithExtraBodyParameters(params map[string]func(context.Context) (string, er
 			func(a any) error {
 				switch t := a.(type) {
 				case *acquireTokenByCredentialOptions:
+					t.cacheKeyComponents = params
+				case *acquireTokenSilentOptions:
+					t.cacheKeyComponents = params
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithExtraBodyParameters adds extra body parameters to the token request.
+// These parameters are added to the request body
+//
+// Example:
+//
+//	params := map[string]string{
+//	    "custom_param": "custom_value",
+//	}
+//	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithExtraBodyParameters(params))
+func withExtraBodyParameters(params map[string]string) interface {
+	AcquireByCredentialOption
+	AcquireSilentOption
+	AcquireOnBehalfOfOption
+	AcquireByAuthCodeOption
+	options.CallOption
+} {
+
+	return struct {
+		AcquireByCredentialOption
+		AcquireSilentOption
+		options.CallOption
+		AcquireOnBehalfOfOption
+		AcquireByAuthCodeOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByCredentialOptions:
 					t.extraBodyParameters = params
 				case *acquireTokenSilentOptions:
+					t.extraBodyParameters = params
+				case *acquireTokenOnBehalfOfOptions:
+					t.extraBodyParameters = params
+				case *acquireTokenByAuthCodeOptions:
 					t.extraBodyParameters = params
 				default:
 					return fmt.Errorf("unexpected options type %T", a)

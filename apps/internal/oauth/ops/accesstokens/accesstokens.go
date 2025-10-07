@@ -488,12 +488,8 @@ func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.Auth
 		return nil
 	}
 
-	for key, valueFunc := range ap.ExtraBodyParameters {
-		if valueFunc != nil {
-			value, err := valueFunc(ctx)
-			if err != nil {
-				return fmt.Errorf("failed to evaluate extra body parameter %q: %w", key, err)
-			}
+	for key, value := range ap.ExtraBodyParameters {
+		if value != "" {
 			v.Set(key, value)
 		}
 	}

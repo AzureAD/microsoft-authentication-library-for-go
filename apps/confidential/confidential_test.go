@@ -1863,8 +1863,8 @@ func TestAcquireTokenByCredentialFromDSTS(t *testing.T) {
 	}
 }
 
-// TestWithExtraBodyParameters tests the WithExtraBodyParameters option
-func TestWithExtraBodyParameters(t *testing.T) {
+// TestWithExtraBodyParams tests the WithExtraBodyParams option
+func TestWithExtraBodyParams(t *testing.T) {
 	lmo := "login.microsoftonline.com"
 	tenant := "firstTenant"
 	cred, err := NewCredFromSecret(fakeSecret)
@@ -1874,66 +1874,37 @@ func TestWithExtraBodyParameters(t *testing.T) {
 
 	tests := []struct {
 		name           string
-		params         map[string]func(context.Context) (string, error)
+		params         map[string]string
 		expectError    bool
 		validateParams func(*testing.T, url.Values)
 	}{
 		{
-			name: "single parameter",
-			params: map[string]func(context.Context) (string, error){
-				"custom_param": func(ctx context.Context) (string, error) {
-					return "custom_value", nil
-				},
+			name: "single parameter with string value",
+			params: map[string]string{
+				"custom_param": "value",
 			},
 			expectError: false,
 			validateParams: func(t *testing.T, v url.Values) {
-				if v.Get("custom_param") != "custom_value" {
-					t.Errorf("expected custom_param=custom_value, got %s", v.Get("custom_param"))
+				if v.Get("custom_param") != "value" {
+					t.Errorf("expected custom_param=value, got %s", v.Get("custom_param"))
 				}
 			},
 		},
 		{
 			name: "multiple parameters",
-			params: map[string]func(context.Context) (string, error){
-				"param1": func(ctx context.Context) (string, error) {
-					return "value1", nil
-				},
-				"param2": func(ctx context.Context) (string, error) {
-					return "value2", nil
-				},
+			params: map[string]string{
+				"key1": "value1",
+				"key2": "42",
 			},
 			expectError: false,
 			validateParams: func(t *testing.T, v url.Values) {
-				if v.Get("param1") != "value1" {
-					t.Errorf("expected param1=value1, got %s", v.Get("param1"))
+				if v.Get("key1") != "value1" {
+					t.Errorf("expected key1=value1, got %s", v.Get("key1"))
 				}
-				if v.Get("param2") != "value2" {
-					t.Errorf("expected param2=value2, got %s", v.Get("param2"))
-				}
-			},
-		},
-		{
-			name: "dynamic parameter value",
-			params: map[string]func(context.Context) (string, error){
-				"timestamp": func(ctx context.Context) (string, error) {
-					return fmt.Sprintf("%d", time.Now().Unix()), nil
-				},
-			},
-			expectError: false,
-			validateParams: func(t *testing.T, v url.Values) {
-				if v.Get("timestamp") == "" {
-					t.Errorf("expected timestamp to be set")
+				if v.Get("key2") != "42" {
+					t.Errorf("expected key2=42, got %s", v.Get("key2"))
 				}
 			},
-		},
-		{
-			name: "parameter with error",
-			params: map[string]func(context.Context) (string, error){
-				"failing_param": func(ctx context.Context) (string, error) {
-					return "", fmt.Errorf("intentional error")
-				},
-			},
-			expectError: true,
 		},
 	}
 
@@ -1955,7 +1926,6 @@ func TestWithExtraBodyParameters(t *testing.T) {
 				fmt.Sprintf(authorityFmt, lmo, tenant),
 				fakeClientID,
 				cred,
-				// WithHTTPClient(mockClient)
 				WithHTTPClient(mockClient),
 				WithInstanceDiscovery(false),
 			)
@@ -1966,7 +1936,7 @@ func TestWithExtraBodyParameters(t *testing.T) {
 			_, err = client.AcquireTokenByCredential(
 				context.Background(),
 				tokenScope,
-				WithExtraBodyParameters(test.params),
+				withExtraBodyParameters(test.params),
 			)
 
 			if test.expectError {
@@ -1985,7 +1955,7 @@ func TestWithExtraBodyParameters(t *testing.T) {
 	}
 }
 
-// TestExtraBodyParametersCacheKey tests that tokens acquired with different
+// TestExtraBodyParametersCacheKey tests that tokens acquired with different cache key components
 // extra body parameters are cached separately
 func TestExtraBodyParametersCacheKey(t *testing.T) {
 	lmo := "login.microsoftonline.com"
@@ -2027,15 +1997,13 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 	}
 
 	// Acquire token with first set of parameters
-	params1 := map[string]func(context.Context) (string, error){
-		"custom_param": func(ctx context.Context) (string, error) {
-			return "value1", nil
-		},
+	params1 := map[string]string{
+		"key1": "value1",
 	}
 	result1, err := client.AcquireTokenByCredential(
 		context.Background(),
 		tokenScope,
-		WithExtraBodyParameters(params1),
+		withAdditionalCacheKeyComponents(params1),
 	)
 	if err != nil {
 		t.Fatalf("first request failed: %v", err)
@@ -2045,15 +2013,14 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 	}
 
 	// Acquire token with different parameters - should get different token
-	params2 := map[string]func(context.Context) (string, error){
-		"different_param": func(ctx context.Context) (string, error) {
-			return "value2", nil
-		},
+	params2 := map[string]string{
+		"key1": "value2", // Different value from params1
+
 	}
 	result2, err := client.AcquireTokenByCredential(
 		context.Background(),
 		tokenScope,
-		WithExtraBodyParameters(params2),
+		withAdditionalCacheKeyComponents(params2),
 	)
 	if err != nil {
 		t.Fatalf("second request failed: %v", err)
@@ -2080,10 +2047,13 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 	result1Again, err := client.AcquireTokenSilent(
 		context.Background(),
 		tokenScope,
-		WithExtraBodyParameters(params1),
+		withAdditionalCacheKeyComponents(params1),
 	)
 	if err != nil {
 		t.Fatalf("retrieving cached token1 failed: %v", err)
+	}
+	if result1Again.Metadata.TokenSource != TokenSourceCache {
+		t.Errorf("expected token source to be Cache, got %d", result1Again.Metadata.TokenSource)
 	}
 	if result1Again.AccessToken != token1 {
 		t.Errorf("cached token should be %s, got %s", token1, result1Again.AccessToken)
@@ -2093,10 +2063,13 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 	result2Again, err := client.AcquireTokenSilent(
 		context.Background(),
 		tokenScope,
-		WithExtraBodyParameters(params2),
+		withAdditionalCacheKeyComponents(params2),
 	)
 	if err != nil {
 		t.Fatalf("retrieving cached token2 failed: %v", err)
+	}
+	if result2Again.Metadata.TokenSource != TokenSourceCache {
+		t.Errorf("expected token source to be Cache, got %d", result1Again.Metadata.TokenSource)
 	}
 	if result2Again.AccessToken != token2 {
 		t.Errorf("cached token should be %s, got %s", token2, result2Again.AccessToken)
@@ -2133,28 +2106,17 @@ func TestExtraBodyParametersWithContext(t *testing.T) {
 	key := contextKey("test_key")
 	ctx := context.WithValue(context.Background(), key, "test_value")
 
-	contextReceived := false
-	params := map[string]func(context.Context) (string, error){
-		"param_from_context": func(ctx context.Context) (string, error) {
-			contextReceived = true
-			val := ctx.Value(key)
-			if val == nil {
-				return "", fmt.Errorf("context value not found")
-			}
-			return val.(string), nil
-		},
+	params := map[string]string{
+		"custom_param": "value",
 	}
 
 	_, err = client.AcquireTokenByCredential(
 		ctx,
 		tokenScope,
-		WithExtraBodyParameters(params),
+		withAdditionalCacheKeyComponents(params),
 	)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !contextReceived {
-		t.Error("parameter function was not called with context")
-	}
 }
