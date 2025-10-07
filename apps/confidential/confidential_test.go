@@ -173,6 +173,116 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 }
 
+func TestEnhancedClientTokenCaching(t *testing.T) {
+	cred, err := NewCredFromSecret("test_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client, err := NewEnhancedClient("https://login.microsoftonline.com/common", "test_client_id", cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scopes := []string{"https://graph.microsoft.com/.default"}
+	ctx := context.Background()
+
+	// First call should acquire new token
+	result1, err := client.AcquireTokenByCredentialWithCaching(ctx, scopes)
+	if err != nil {
+		t.Fatalf("First token acquisition failed: %v", err)
+	}
+
+	// Second call should return cached token
+	result2, err := client.AcquireTokenByCredentialWithCaching(ctx, scopes)
+	if err != nil {
+		t.Fatalf("Second token acquisition failed: %v", err)
+	}
+
+	// Tokens should be the same (cached)
+	if result1.AccessToken != result2.AccessToken {
+		t.Error("Expected cached token, but got different token")
+	}
+
+	// Check cache stats
+	stats := client.GetCacheStats()
+	if stats["valid_tokens"].(int) != 1 {
+		t.Errorf("Expected 1 valid token in cache, got %v", stats["valid_tokens"])
+	}
+}
+
+func TestEnhancedClientForceRefresh(t *testing.T) {
+	cred, err := NewCredFromSecret("test_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	client, err := NewEnhancedClient("https://login.microsoftonline.com/common", "test_client_id", cred)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scopes := []string{"https://graph.microsoft.com/.default"}
+	ctx := context.Background()
+
+	// Acquire initial token
+	result1, err := client.AcquireTokenByCredentialWithCaching(ctx, scopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Force refresh should get a new token
+	result2, err := client.ForceRefreshToken(ctx, scopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Tokens should be different
+	if result1.AccessToken == result2.AccessToken {
+		t.Error("Expected different tokens after force refresh")
+	}
+}
+
+func TestEnhancedClientCacheExpiry(t *testing.T) {
+	// Create client with very short renewal buffer for testing
+	cred, err := NewCredFromSecret("test_secret")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	opts := EnhancedClientOptions{
+		RenewalBuffer: 1 * time.Millisecond, // Very short buffer for testing
+	}
+
+	client, err := NewEnhancedClientWithOptions("https://login.microsoftonline.com/common", "test_client_id", cred, opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	scopes := []string{"https://graph.microsoft.com/.default"}
+	ctx := context.Background()
+
+	// Acquire token
+	result1, err := client.AcquireTokenByCredentialWithCaching(ctx, scopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Wait for token to be considered expired
+	time.Sleep(10 * time.Millisecond)
+
+	// Next call should acquire new token due to expiry
+	result2, err := client.AcquireTokenByCredentialWithCaching(ctx, scopes)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Tokens should be different due to expiry
+	if result1.AccessToken == result2.AccessToken {
+		t.Error("Expected different tokens after expiry")
+	}
+}
+
 func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
