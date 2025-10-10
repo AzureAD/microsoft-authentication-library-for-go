@@ -690,7 +690,7 @@ func WithChallenge(challenge string) interface {
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
-// Options: [WithChallenge], [WithClaims], [WithTenantID], [WithExtraBodyParameters]
+// Options: [WithChallenge], [WithClaims], [WithTenantID], [withExtraBodyParameters]
 func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
 	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -868,6 +868,29 @@ func withExtraBodyParameters(params map[string]string) interface {
 					t.extraBodyParameters = params
 				case *acquireTokenByAuthCodeOptions:
 					t.extraBodyParameters = params
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+func WithFMIPath(path string) interface {
+	AcquireByCredentialOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByCredentialOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByCredentialOptions:
+					t.cacheKeyComponents = map[string]string{"fmi_path": path}
+					t.extraBodyParameters = map[string]string{"fmi_path": path}
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}

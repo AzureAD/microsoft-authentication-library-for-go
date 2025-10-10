@@ -20,12 +20,11 @@ import (
 // the internal cache. This design is shared between MSAL versions in many languages.
 // This cannot be changed without design that includes other SDKs.
 type Contract struct {
-	AccessTokens    map[string]AccessToken               `json:"AccessToken,omitempty"`
-	ExtAccessTokens map[string]AccessToken               `json:"ExtAccessToken,omitempty"`
-	RefreshTokens   map[string]accesstokens.RefreshToken `json:"RefreshToken,omitempty"`
-	IDTokens        map[string]IDToken                   `json:"IdToken,omitempty"`
-	Accounts        map[string]shared.Account            `json:"Account,omitempty"`
-	AppMetaData     map[string]AppMetaData               `json:"AppMetadata,omitempty"`
+	AccessTokens  map[string]AccessToken               `json:"AccessToken,omitempty"`
+	RefreshTokens map[string]accesstokens.RefreshToken `json:"RefreshToken,omitempty"`
+	IDTokens      map[string]IDToken                   `json:"IdToken,omitempty"`
+	Accounts      map[string]shared.Account            `json:"Account,omitempty"`
+	AppMetaData   map[string]AppMetaData               `json:"AppMetadata,omitempty"`
 
 	AdditionalFields map[string]interface{}
 }
@@ -35,7 +34,6 @@ type Contract struct {
 // This cannot be changed without design that includes other SDKs.
 type InMemoryContract struct {
 	AccessTokensPartition  map[string]map[string]AccessToken
-	ExtAccessTokens        map[string]map[string]AccessToken
 	RefreshTokensPartition map[string]map[string]accesstokens.RefreshToken
 	IDTokensPartition      map[string]map[string]IDToken
 	AccountsPartition      map[string]map[string]shared.Account
@@ -46,7 +44,6 @@ type InMemoryContract struct {
 func NewInMemoryContract() *InMemoryContract {
 	return &InMemoryContract{
 		AccessTokensPartition:  map[string]map[string]AccessToken{},
-		ExtAccessTokens:        map[string]map[string]AccessToken{},
 		RefreshTokensPartition: map[string]map[string]accesstokens.RefreshToken{},
 		IDTokensPartition:      map[string]map[string]IDToken{},
 		AccountsPartition:      map[string]map[string]shared.Account{},
@@ -58,7 +55,6 @@ func NewInMemoryContract() *InMemoryContract {
 func NewContract() *Contract {
 	return &Contract{
 		AccessTokens:     map[string]AccessToken{},
-		ExtAccessTokens:  map[string]AccessToken{},
 		RefreshTokens:    map[string]accesstokens.RefreshToken{},
 		IDTokens:         map[string]IDToken{},
 		Accounts:         map[string]shared.Account{},
@@ -110,19 +106,21 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, refreshOn, ex
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
 	ks := []string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes}
+
+	// add token type to key for new access tokens types. skip for bearer token type to
+	// preserve fwd and back compat between a common cache and msal clients
+	if !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) {
+		ks = append(ks, a.TokenType)
+	}
+	// add extra body param hash to key if present
+	if a.ExtCacheKey != "" {
+		ks[2] = "atext" // if the there is extra cache we add "atext" to the key replacing accesstoken
+		ks = append(ks, a.ExtCacheKey)
+	}
 	key := strings.Join(
 		ks,
 		shared.CacheKeySeparator,
 	)
-	// add token type to key for new access tokens types. skip for bearer token type to
-	// preserve fwd and back compat between a common cache and msal clients
-	if !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) {
-		key = strings.Join([]string{key, a.TokenType}, shared.CacheKeySeparator)
-	}
-	// add extra body param hash to key if present
-	if a.ExtCacheKey != "" {
-		key = strings.Join([]string{key, a.ExtCacheKey}, shared.CacheKeySeparator)
-	}
 	return strings.ToLower(key)
 }
 

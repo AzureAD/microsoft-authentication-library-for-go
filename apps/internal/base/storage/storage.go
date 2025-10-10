@@ -205,7 +205,6 @@ func (m *Manager) Write(authParameters authority.AuthParams, tokenResponse acces
 		)
 
 		accessToken.ExtCacheKey = authParameters.CacheExtKeyGenerator()
-
 		// Since we have a valid access token, cache it before moving on.
 		if err := accessToken.Validate(); err == nil {
 			if err := m.writeAccessToken(accessToken); err != nil {
@@ -298,12 +297,7 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 	m.contractMu.RLock()
 
 	// Choose the appropriate map based on whether we have a hash
-	var tokensToSearch map[string]AccessToken
-	if extCacheKey != "" {
-		tokensToSearch = m.contract.ExtAccessTokens
-	} else {
-		tokensToSearch = m.contract.AccessTokens
-	}
+	tokensToSearch := m.contract.AccessTokens
 
 	for k, at := range tokensToSearch {
 		// TODO: linear search (over a map no less) is slow for a large number (thousands) of tokens.
@@ -346,11 +340,7 @@ func (m *Manager) writeAccessToken(accessToken AccessToken) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	key := accessToken.Key()
-	if accessToken.ExtCacheKey != "" {
-		m.contract.ExtAccessTokens[key] = accessToken
-	} else {
-		m.contract.AccessTokens[key] = accessToken
-	}
+	m.contract.AccessTokens[key] = accessToken
 	return nil
 }
 
