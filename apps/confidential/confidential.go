@@ -553,32 +553,11 @@ type acquireTokenSilentOptions struct {
 	account          Account
 	claims, tenantID string
 	authnScheme      AuthenticationScheme
-	isFromCCA        bool
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
 type AcquireSilentOption interface {
 	acquireSilentOption()
-}
-
-// called from AcquireClientCredential only.
-func withInternalCCACallOnly() AcquireSilentOption {
-	return struct {
-		AcquireSilentOption
-		options.CallOption
-	}{
-		CallOption: options.NewCallOption(
-			func(a any) error {
-				switch t := a.(type) {
-				case *acquireTokenSilentOptions:
-					t.isFromCCA = true
-				default:
-					return fmt.Errorf("unexpected options type %T", a)
-				}
-				return nil
-			},
-		),
-	}
 }
 
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
@@ -617,18 +596,25 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		return AuthResult{}, errors.New("call another AcquireToken method to request a new token having these claims")
 	}
 
+	// For service principal scenarios, require WithSilentAccount for public API
+	if o.account.IsZero() {
+		return AuthResult{}, errors.New("WithSilentAccount option is required")
+	}
+
+	return cca.acquireTokenSilentInternal(ctx, scopes, o.account, o.claims, o.tenantID, o.authnScheme)
+}
+
+// acquireTokenSilentInternal is the internal implementation shared by AcquireTokenSilent and AcquireTokenByCredential
+func (cca Client) acquireTokenSilentInternal(ctx context.Context, scopes []string, account Account, claims, tenantID string, authnScheme AuthenticationScheme) (AuthResult, error) {
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:      scopes,
-		Account:     o.account,
+		Account:     account,
 		RequestType: accesstokens.ATConfidential,
 		Credential:  cca.cred,
-		IsAppCache:  o.account.IsZero(),
-		TenantID:    o.tenantID,
-		AuthnScheme: o.authnScheme,
-	}
-	// For service principal scenarios specifically, when account is zero and not from CCA, return error
-	if !o.isFromCCA && silentParameters.IsAppCache {
-		return AuthResult{}, errors.New("WithSilentAccount option is required for confidential client AcquireTokenSilent calls in app-only scenarios")
+		IsAppCache:  account.IsZero(),
+		TenantID:    tenantID,
+		AuthnScheme: authnScheme,
+		Claims:      claims,
 	}
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
 }
@@ -761,11 +747,8 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		authParams.AuthnScheme = o.authnScheme
 	}
 	if o.claims == "" {
-		cache, err := cca.AcquireTokenSilent(ctx, scopes,
-			WithAuthenticationScheme(authParams.AuthnScheme),
-			WithClaims(authParams.Claims),
-			withInternalCCACallOnly(),
-			WithTenantID(o.tenantID))
+		// Use internal method with empty account (service principal scenario)
+		cache, err := cca.acquireTokenSilentInternal(ctx, scopes, Account{}, o.claims, o.tenantID, authParams.AuthnScheme)
 		if err == nil {
 			return cache, nil
 		}

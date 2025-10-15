@@ -1428,7 +1428,7 @@ func TestWithClaims(t *testing.T) {
 				} else if method == "credential" {
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
 				} else {
-					ar, err = client.AcquireTokenSilent(ctx, tokenScope, withInternalCCACallOnly())
+					ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme)
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -1559,7 +1559,7 @@ func TestWithTenantID(t *testing.T) {
 					if ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
 						t.Fatal(err)
 					}
-				} else if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(test.tenant), withInternalCCACallOnly()); err != nil {
+				} else if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", test.tenant, client.base.AuthParams.AuthnScheme); err != nil {
 					t.Fatal(err)
 				}
 				if ar.AccessToken != accessToken {
@@ -1626,7 +1626,7 @@ func TestWithTenantID(t *testing.T) {
 				t.Fatalf("unexpected access token %q", ar.AccessToken)
 			}
 			// silent authentication should now succeed for the given tenant...
-			if ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithTenantID(tenant), withInternalCCACallOnly()); err != nil {
+			if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme); err != nil {
 				t.Fatal(err)
 			}
 			if ar.AccessToken != accessToken {
@@ -1702,7 +1702,7 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					if ar, err = client.AcquireTokenByCredential(ctx, tokenScope); err != nil {
 						t.Fatal(err)
 					}
-				} else if ar, err = client.AcquireTokenSilent(ctx, tokenScope, withInternalCCACallOnly()); err != nil {
+				} else if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme); err != nil {
 					t.Fatal(err)
 				}
 				if ar.AccessToken != accessToken {
