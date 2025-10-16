@@ -1936,7 +1936,7 @@ func TestWithExtraBodyParams(t *testing.T) {
 			_, err = client.AcquireTokenByCredential(
 				context.Background(),
 				tokenScope,
-				withAdditionalCacheKeyComponents(test.params),
+				withExtraBodyParameters(test.params),
 			)
 
 			if test.expectError {

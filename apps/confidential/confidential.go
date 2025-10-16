@@ -587,7 +587,7 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options: [WithClaims], [WithSilentAccount], [WithTenantID], [WithExtraBodyParameters], [WithAdditionalCacheKeyComponents]
+// Options: [WithClaims], [WithSilentAccount], [WithTenantID], [WithFMIPath]]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -690,7 +690,7 @@ func WithChallenge(challenge string) interface {
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
-// Options: [WithChallenge], [WithClaims], [WithTenantID], [withExtraBodyParameters]
+// Options: [WithChallenge], [WithClaims], [WithTenantID]]
 func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
 	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -727,7 +727,7 @@ type AcquireByCredentialOption interface {
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options: [WithClaims], [WithTenantID], [WithExtraBodyParameters], [WithAdditionalCacheKeyComponents]
+// Options: [WithClaims], [WithTenantID], [WithFMIPath]]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -744,12 +744,9 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
 	}
-	if o.extraBodyParameters != nil {
-		authParams.ExtraBodyParameters = o.extraBodyParameters
-	}
-	if o.cacheKeyComponents != nil {
-		authParams.CacheKeyComponents = o.cacheKeyComponents
-	}
+	authParams.ExtraBodyParameters = o.extraBodyParameters
+	authParams.CacheKeyComponents = o.cacheKeyComponents
+
 	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
 		return AuthResult{}, err
@@ -771,7 +768,7 @@ type AcquireOnBehalfOfOption interface {
 // AcquireTokenOnBehalfOf acquires a security token for an app using middle tier apps access token.
 // Refer https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-on-behalf-of-flow.
 //
-// Options: [WithClaims], [WithTenantID], [withExtraBodyParameters]
+// Options: [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, opts ...AcquireOnBehalfOfOption) (AuthResult, error) {
 	o := acquireTokenOnBehalfOfOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
