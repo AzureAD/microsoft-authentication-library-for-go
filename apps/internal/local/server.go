@@ -5,6 +5,7 @@
 package local
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"html"
@@ -28,7 +29,7 @@ var okPage = []byte(`
 </html>
 `)
 
-const failPage = `
+var failPage = []byte(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -37,10 +38,19 @@ const failPage = `
 </head>
 <body>
 	<p>Authentication failed. You can return to the application. Feel free to close this browser tab.</p>
-	<p>Error details: error %s error_description: %s</p>
+	<p>Error details: error {{.Code}}, error description: {{.Err}}</p>
 </body>
 </html>
-`
+`)
+
+var (
+	// code is the html template variable name,
+	// which matches the Result Code variable
+	code = []byte("{{.Code}}")
+	// err is the html template variable name
+	// which matches the Result Err variable
+	err = []byte("{{.Err}}")
+)
 
 // Result is the result from the redirect.
 type Result struct {
@@ -53,14 +63,16 @@ type Result struct {
 // Server is an HTTP server.
 type Server struct {
 	// Addr is the address the server is listening on.
-	Addr     string
-	resultCh chan Result
-	s        *http.Server
-	reqState string
+	Addr        string
+	resultCh    chan Result
+	s           *http.Server
+	reqState    string
+	successPage []byte
+	errorPage   []byte
 }
 
 // New creates a local HTTP server and starts it.
-func New(reqState string, port int) (*Server, error) {
+func New(reqState string, port int, successPage []byte, errorPage []byte) (*Server, error) {
 	var l net.Listener
 	var err error
 	var portStr string
@@ -84,11 +96,21 @@ func New(reqState string, port int) (*Server, error) {
 		return nil, err
 	}
 
+	if len(successPage) == 0 {
+		successPage = okPage
+	}
+
+	if len(errorPage) == 0 {
+		errorPage = failPage
+	}
+
 	serv := &Server{
-		Addr:     fmt.Sprintf("http://localhost:%s", portStr),
-		s:        &http.Server{Addr: "localhost:0", ReadHeaderTimeout: time.Second},
-		reqState: reqState,
-		resultCh: make(chan Result, 1),
+		Addr:        fmt.Sprintf("http://localhost:%s", portStr),
+		s:           &http.Server{Addr: "localhost:0", ReadHeaderTimeout: time.Second},
+		reqState:    reqState,
+		resultCh:    make(chan Result, 1),
+		successPage: successPage,
+		errorPage:   errorPage,
 	}
 	serv.s.Handler = http.HandlerFunc(serv.handler)
 
@@ -142,12 +164,18 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 
 	headerErr := q.Get("error")
 	if headerErr != "" {
-		desc := html.EscapeString(q.Get("error_description"))
-		escapedHeaderErr := html.EscapeString(headerErr)
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
-		_, _ = w.Write([]byte(fmt.Sprintf(failPage, escapedHeaderErr, desc)))
-		s.putResult(Result{Err: fmt.Errorf("%s", desc)})
+
+		escapedErrDesc := html.EscapeString(q.Get("error_description")) // provides XSS protection
+		escapedHeaderErr := html.EscapeString(headerErr)                // provides XSS protection
+
+		errorPage := bytes.ReplaceAll(s.errorPage, code, []byte(escapedHeaderErr))
+		errorPage = bytes.ReplaceAll(errorPage, err, []byte(escapedErrDesc))
+
+		_, _ = w.Write(errorPage)
+
+		s.putResult(Result{Err: fmt.Errorf("%s", escapedErrDesc)})
 
 		return
 	}
@@ -169,7 +197,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, _ = w.Write(okPage)
+	_, _ = w.Write(s.successPage)
 	s.putResult(Result{Code: code})
 }
 
