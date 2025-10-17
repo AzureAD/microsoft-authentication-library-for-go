@@ -598,6 +598,11 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		return AuthResult{}, errors.New("call another AcquireToken method to request a new token having these claims")
 	}
 
+	// For service principal scenarios, require WithSilentAccount for public API
+	if o.account.IsZero() {
+		return AuthResult{}, errors.New("WithSilentAccount option is required")
+	}
+
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:              scopes,
 		Account:             o.account,
@@ -606,9 +611,16 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		IsAppCache:          o.account.IsZero(),
 		TenantID:            o.tenantID,
 		AuthnScheme:         o.authnScheme,
+		Claims:              o.claims,
 		ExtraBodyParameters: o.extraBodyParameters,
 		CacheKeyComponents:  o.cacheKeyComponents,
 	}
+
+	return cca.acquireTokenSilentInternal(ctx, silentParameters)
+}
+
+// acquireTokenSilentInternal is the internal implementation shared by AcquireTokenSilent and AcquireTokenByCredential
+func (cca Client) acquireTokenSilentInternal(ctx context.Context, silentParameters base.AcquireTokenSilentParameters) (AuthResult, error) {
 
 	return cca.base.AcquireTokenSilent(ctx, silentParameters)
 }
@@ -746,6 +758,26 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	}
 	authParams.ExtraBodyParameters = o.extraBodyParameters
 	authParams.CacheKeyComponents = o.cacheKeyComponents
+	if o.claims == "" {
+		silentParameters := base.AcquireTokenSilentParameters{
+			Scopes:              scopes,
+			Account:             Account{}, // empty account for app token
+			RequestType:         accesstokens.ATConfidential,
+			Credential:          cca.cred,
+			IsAppCache:          true,
+			TenantID:            o.tenantID,
+			AuthnScheme:         o.authnScheme,
+			Claims:              o.claims,
+			ExtraBodyParameters: o.extraBodyParameters,
+			CacheKeyComponents:  o.cacheKeyComponents,
+		}
+
+		// Use internal method with empty account (service principal scenario)
+		cache, err := cca.acquireTokenSilentInternal(ctx, silentParameters)
+		if err == nil {
+			return cache, nil
+		}
+	}
 
 	token, err := cca.base.Token.Credential(ctx, authParams, cca.cred)
 	if err != nil {
