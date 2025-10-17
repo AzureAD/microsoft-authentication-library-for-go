@@ -315,6 +315,11 @@ func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, cli
 					if !strings.Contains(k, extCacheKey) {
 						continue // Skip this token if the key doesn't contain the hash
 					}
+				} else {
+					// If no extCacheKey is provided, only match tokens that also have no extCacheKey
+					if at.ExtCacheKey != "" {
+						continue // Skip tokens that require a hash when no hash is provided
+					}
 				}
 				// Handle token upgrade if needed
 				if needsUpgrade(k) {

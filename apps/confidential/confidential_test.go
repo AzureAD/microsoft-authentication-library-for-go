@@ -1428,7 +1428,12 @@ func TestWithClaims(t *testing.T) {
 				} else if method == "credential" {
 					ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
 				} else {
-					ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme)
+					ar, err = client.acquireTokenSilentInternal(ctx,
+						base.AcquireTokenSilentParameters{Scopes: tokenScope,
+							Account:     shared.Account{},
+							IsAppCache:  true,
+							TenantID:    tenant,
+							AuthnScheme: client.base.AuthParams.AuthnScheme})
 				}
 				if err != nil {
 					t.Fatal(err)
@@ -1559,7 +1564,8 @@ func TestWithTenantID(t *testing.T) {
 					if ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
 						t.Fatal(err)
 					}
-				} else if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", test.tenant, client.base.AuthParams.AuthnScheme); err != nil {
+				} else if ar, err = client.acquireTokenSilentInternal(ctx,
+					base.AcquireTokenSilentParameters{Scopes: tokenScope, Account: shared.Account{}, IsAppCache: true, TenantID: test.tenant, AuthnScheme: client.base.AuthParams.AuthnScheme}); err != nil {
 					t.Fatal(err)
 				}
 				if ar.AccessToken != accessToken {
@@ -1626,7 +1632,12 @@ func TestWithTenantID(t *testing.T) {
 				t.Fatalf("unexpected access token %q", ar.AccessToken)
 			}
 			// silent authentication should now succeed for the given tenant...
-			if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme); err != nil {
+			if ar, err = client.acquireTokenSilentInternal(ctx,
+				base.AcquireTokenSilentParameters{Scopes: tokenScope,
+					Account:     shared.Account{},
+					IsAppCache:  true,
+					TenantID:    tenant,
+					AuthnScheme: client.base.AuthParams.AuthnScheme}); err != nil {
 				t.Fatal(err)
 			}
 			if ar.AccessToken != accessToken {
@@ -1702,7 +1713,8 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					if ar, err = client.AcquireTokenByCredential(ctx, tokenScope); err != nil {
 						t.Fatal(err)
 					}
-				} else if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme); err != nil {
+				} else if ar, err = client.acquireTokenSilentInternal(ctx,
+					base.AcquireTokenSilentParameters{Scopes: tokenScope, Account: shared.Account{}, IsAppCache: true, TenantID: tenant, AuthnScheme: client.base.AuthParams.AuthnScheme}); err != nil {
 					t.Fatal(err)
 				}
 				if ar.AccessToken != accessToken {
@@ -2086,7 +2098,7 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 
 	// Acquire token with different parameters - should get different token
 	params2 := map[string]string{
-		"key1": "value2", // Different value from params1
+		"key2": "value2", // Different value from params1
 
 	}
 	result2, err := client.AcquireTokenByCredential(
@@ -2116,7 +2128,7 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 	// Verify that tokens are cached separately by attempting to retrieve them again
 	// without making new HTTP requests (mock client should not have more responses)
 	// This should get token1 from cache
-	result1Again, err := client.AcquireTokenSilent(
+	result1Again, err := client.AcquireTokenByCredential(
 		context.Background(),
 		tokenScope,
 		withAdditionalCacheKeyComponents(params1),
@@ -2132,7 +2144,7 @@ func TestExtraBodyParametersCacheKey(t *testing.T) {
 	}
 
 	// This should get token2 from cache
-	result2Again, err := client.AcquireTokenSilent(
+	result2Again, err := client.AcquireTokenByCredential(
 		context.Background(),
 		tokenScope,
 		withAdditionalCacheKeyComponents(params2),
@@ -2191,4 +2203,123 @@ func TestExtraBodyParametersWithContext(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
+}
+
+// TestFMICacheIsolation tests that tokens with and without FMI are cached separately
+// 1. Client 1 acquires token without FMI - token saved in external cache
+// 2. Client 2 acquires token with FMI - token saved separately in same external cache
+// 3. Both clients should retrieve their respective tokens from cache
+func TestFMICacheIsolation(t *testing.T) {
+	// Shared external cache
+	cache := make(testCache)
+
+	// Test data
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+	// Different access tokens for regular and FMI flows
+	regularAccessToken := "regular-access-token"
+	fmiAccessToken := "fmi-access-token"
+	fmiPath := "SomeFmiPath/FmiCredentialPath"
+
+	// Create mock HTTP client
+	mockClient := mock.NewClient()
+
+	// Setup credential
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ===== CLIENT 1: Regular client WITHOUT FMI =====
+	client1, err := New(authority, fakeClientID, cred, WithCache(&cache), WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock responses for client 1 (must append AFTER creating client)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(regularAccessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)))
+
+	// Client 1: Acquire token without FMI
+	ctx := context.Background()
+	ar1, err := client1.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatalf("Client 1 AcquireTokenByCredential failed: %v", err)
+	}
+	if ar1.AccessToken != regularAccessToken {
+		t.Fatalf("Client 1: expected access token %q, got %q", regularAccessToken, ar1.AccessToken)
+	}
+	if ar1.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("Client 1: expected token source to be identity provider on first call, got %d", ar1.Metadata.TokenSource)
+	}
+
+	// ===== CLIENT 2: Client WITH FMI =====
+	client2, err := New(authority, fakeClientID, cred, WithCache(&cache), WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock responses for client 2 (must append AFTER creating client)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(fmiAccessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)))
+
+	// Client 2: Acquire token WITH FMI
+	ar2, err := client2.AcquireTokenByCredential(ctx, tokenScope, WithFMIPath(fmiPath))
+	if err != nil {
+		t.Fatalf("Client 2 AcquireTokenByCredential with FMI failed: %v", err)
+	}
+	if ar2.AccessToken != fmiAccessToken {
+		t.Fatalf("Client 2: expected access token %q, got %q", fmiAccessToken, ar2.AccessToken)
+	}
+	if ar2.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("Client 2: expected token source to be identity provider on first call, got %d", ar2.Metadata.TokenSource)
+	}
+
+	// ===== VERIFY CACHE ISOLATION =====
+
+	// Client 1: Should get regular token from cache (without network call)
+	ar1Cached, err := client1.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatalf("Client 1 second AcquireTokenByCredential failed: %v", err)
+	}
+	if ar1Cached.AccessToken != regularAccessToken {
+		t.Fatalf("Client 1 from cache: expected access token %q, got %q (possibly retrieved FMI token due to cache key bug)", regularAccessToken, ar1Cached.AccessToken)
+	}
+	if ar1Cached.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("Client 1 from cache: expected token source to be cache, got %d", ar1Cached.Metadata.TokenSource)
+	}
+
+	// Client 2: Should get FMI token from cache (without network call)
+	ar2Cached, err := client2.AcquireTokenByCredential(ctx, tokenScope, WithFMIPath(fmiPath))
+	if err != nil {
+		t.Fatalf("Client 2 second AcquireTokenByCredential with FMI failed: %v", err)
+	}
+	if ar2Cached.AccessToken != fmiAccessToken {
+		t.Fatalf("Client 2 from cache: expected access token %q, got %q", fmiAccessToken, ar2Cached.AccessToken)
+	}
+	if ar2Cached.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("Client 2 from cache: expected token source to be cache, got %d", ar2Cached.Metadata.TokenSource)
+	}
+
+	// ===== VERIFY CROSS-CLIENT ISOLATION =====
+
+	// Client 1 should NOT get the FMI token when requesting without FMI parameters
+	// This verifies the bug fix - tokens with empty extCacheKey should not match tokens with non-empty extCacheKey
+	if ar1Cached.AccessToken == fmiAccessToken {
+		t.Fatal("Cache isolation violated: Client 1 retrieved FMI token without FMI parameters")
+	}
+
+	// Client 2 should NOT get the regular token when requesting with FMI parameters
+	if ar2Cached.AccessToken == regularAccessToken {
+		t.Fatal("Cache isolation violated: Client 2 retrieved regular token with FMI parameters")
+	}
+
+	// Verify both tokens are cached with different keys
+	// Regular token: fake_client_id_test-tenant_AppTokenCache
+	// FMI token: fake_client_id_test-tenant_{hash}_AppTokenCache
+	if len(cache) != 2 {
+		t.Fatalf("Expected 2 cache entries (1 regular + 1 FMI), got %d", len(cache))
+	}
 }
