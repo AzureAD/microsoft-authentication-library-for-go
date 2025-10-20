@@ -113,8 +113,9 @@ Tokens acquired with FMI are **automatically isolated** in the cache. This means
 result, err := app.AcquireTokenByCredential(ctx, scopes,
     confidential.WithFMIPath("YourFmiPath/CredentialPath"))
 
-// Second call - retrieves from cache automatically
-cachedResult, err := app.AcquireTokenSilent(ctx, scopes)
+// Second call - retrieves from cache
+cachedResult, err := app.AcquireTokenByCredential(ctx, scopes, 
+    confidential.WithFMIPath("YourFmiPath/CredentialPath"))
 ```
 
 ## How It Works

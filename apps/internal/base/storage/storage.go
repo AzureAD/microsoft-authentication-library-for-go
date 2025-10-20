@@ -296,7 +296,6 @@ func (m *Manager) aadMetadata(ctx context.Context, authorityInfo authority.Info)
 func (m *Manager) readAccessToken(homeID string, envAliases []string, realm, clientID string, scopes []string, tokenType, authnSchemeKeyID, extCacheKey string) AccessToken {
 	m.contractMu.RLock()
 
-	// Choose the appropriate map based on whether we have a hash
 	tokensToSearch := m.contract.AccessTokens
 
 	for k, at := range tokensToSearch {

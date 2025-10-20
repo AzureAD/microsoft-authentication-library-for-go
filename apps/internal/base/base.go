@@ -490,7 +490,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	}
 	ar, err := NewAuthResult(token, account)
 	if err == nil && b.cacheAccessor != nil {
-		err = b.cacheAccessor.Export(ctx, m, cache.ExportHints{PartitionKey: key})
+		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
 	}
 	if err != nil {
 		return AuthResult{}, err

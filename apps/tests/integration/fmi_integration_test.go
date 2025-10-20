@@ -1,5 +1,5 @@
-// FMITestSuite contains a set of tests for Family of Multiple Identities functionality
-// FMI allows sharing refresh tokens between applications that belong to the same family
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
 
 package integration
 
@@ -74,92 +74,23 @@ func TestFMIBasicFunctionality(t *testing.T) {
 	}
 
 	// 2. Verify silent token acquisition works (should retrieve from cache)
-	silentResult, err := app.AcquireTokenSilent(ctx, scopes)
+	cacheToken, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithFMIPath(fmiPath))
 	if err != nil {
 		t.Fatalf("TestFMIBasicFunctionality: AcquireTokenSilent() failed: %s", errors.Verbose(err))
 	}
-	if silentResult.AccessToken == "" {
+	if cacheToken.AccessToken == "" {
 		t.Fatal("TestFMIBasicFunctionality: AcquireTokenSilent() returned empty AccessToken")
 	}
-
+	if cacheToken.Metadata.TokenSource != confidential.TokenSourceCache {
+		t.Fatalf("TestFMIBasicFunctionality: AcquireTokenSilent() did not return token from cache")
+	}
 	// Validate that we got the same token (proving cache was used)
-	if result.AccessToken != silentResult.AccessToken {
+	if result.AccessToken != cacheToken.AccessToken {
 		t.Fatalf("TestFMIBasicFunctionality: token comparison failed - tokens don't match, cache might not be working correctly")
 	}
 }
 
-// TestFMIWithMultipleApps tests sharing tokens between multiple applications
-// that belong to the same family using the FMI feature
-func TestFMIWithMultipleApps(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	// Create temporary cache and defer cleanup
-	tmpCacheFile := "fmi_multiple_apps.json"
-	defer os.Remove(tmpCacheFile)
-
-	// Create the cache file if it doesn't exist
-	if _, err := os.Stat(tmpCacheFile); os.IsNotExist(err) {
-		file, err := os.Create(tmpCacheFile)
-		if err != nil {
-			t.Fatalf("TestFMIWithMultipleApps: failed to create cache file: %s", err)
-		}
-		file.Close()
-	}
-
-	cacheAccessor := &TokenCache{file: tmpCacheFile}
-	ctx := context.Background()
-	scopes := []string{testScope}
-
-	// Get certificate credentials
-	cert, privateKey, err := getCertDataFromFile(ccaPemFile)
-	if err != nil {
-		t.Fatalf("TestFMIWithMultipleApps: getCertDataFromFile() failed: %s", errors.Verbose(err))
-	}
-
-	// Create credentials from certificate
-	cred, err := confidential.NewCredFromCert(cert, privateKey)
-	if err != nil {
-		t.Fatalf("TestFMIWithMultipleApps: NewCredFromCert() failed: %s", errors.Verbose(err))
-	}
-
-	// Create first confidential client app
-	app1, err := confidential.New(authorityURL, testClientID, cred, confidential.WithCache(cacheAccessor))
-	if err != nil {
-		t.Fatalf("TestFMIWithMultipleApps: confidential.New() for app1 failed: %s", errors.Verbose(err))
-	}
-
-	// Acquire token for the first app
-	result1, err := app1.AcquireTokenByCredential(ctx, scopes)
-	if err != nil {
-		t.Fatalf("TestFMIWithMultipleApps: AcquireTokenByCredential() for app1 failed: %s", errors.Verbose(err))
-	}
-	if result1.AccessToken == "" {
-		t.Fatal("TestFMIWithMultipleApps: AcquireTokenByCredential() for app1 returned empty AccessToken")
-	}
-
-	// Create second confidential client app with same configuration
-	// In a real scenario, this would be a different app in the same family
-	app2, err := confidential.New(authorityURL, testClientID, cred, confidential.WithCache(cacheAccessor))
-	if err != nil {
-		t.Fatalf("TestFMIWithMultipleApps: confidential.New() for app2 failed: %s", errors.Verbose(err))
-	}
-
-	// Attempt to acquire token silently for the second app
-	// FMI should allow this to work even though we never explicitly acquired a token for this client ID
-	result2, err := app2.AcquireTokenSilent(ctx, scopes)
-	if err != nil {
-		t.Fatalf("TestFMIWithMultipleApps: AcquireTokenSilent() for app2 failed: %s", errors.Verbose(err))
-	}
-	if result2.AccessToken == "" {
-		t.Fatal("TestFMIWithMultipleApps: AcquireTokenSilent() for app2 returned empty AccessToken")
-	}
-
-	t.Log("TestFMIWithMultipleApps: Successfully acquired token for second app using FMI")
-}
-
-// TestFMIIntegration tests the Family Multiple Identity functionality
+// TestFMIIntegration tests the Federated Managed Identity functionality
 // It verifies:
 // 1. Tokens can be acquired using certificate authentication
 // 2. Tokens can be used as assertion and get a new token with FMI
@@ -208,17 +139,20 @@ func TestFMIIntegration(t *testing.T) {
 	// Store the token from first call
 	firstToken := result.AccessToken
 
-	// 2. Verify silent token acquisition works (should retrieve from cache)
-	silentResult, err := app.AcquireTokenSilent(ctx, scopes)
+	// 2. Verify AcquireTokenByCredential acquisition works (should retrieve from cache)
+	cacheToken, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithFMIPath("SomeFmiPath/Path"))
 	if err != nil {
-		t.Fatalf("TestFMIIntegration: AcquireTokenSilent() failed: %s", errors.Verbose(err))
+		t.Fatalf("TestFMIIntegration: AcquireTokenByCredential() failed: %s", errors.Verbose(err))
 	}
-	if silentResult.AccessToken == "" {
-		t.Fatal("TestFMIIntegration: AcquireTokenSilent() returned empty AccessToken")
+	if cacheToken.AccessToken == "" {
+		t.Fatal("TestFMIIntegration: AcquireTokenByCredential() returned empty AccessToken")
+	}
+	if cacheToken.Metadata.TokenSource != confidential.TokenSourceCache {
+		t.Fatalf("TestFMIIntegration: AcquireTokenByCredential() did not return token from cache")
 	}
 
 	// 3. Compare the tokens to verify cache was used
-	if firstToken != silentResult.AccessToken {
+	if firstToken != cacheToken.AccessToken {
 		t.Fatalf("TestFMIIntegration: token comparison failed - tokens don't match, cache might not be working correctly")
 	}
 }
