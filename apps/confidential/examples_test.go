@@ -59,3 +59,28 @@ func ExampleNewCredFromCert_pem() {
 	}
 	fmt.Println(cred) // Simply here so cred is used, otherwise won't compile.
 }
+
+// This example demonstrates the general pattern for authenticating FMI-based confidential clients.
+// It shows how to create a confidential client and acquire a token using an FMI path.
+// This uses a RMA token as assertion for fetching the token
+func ExampleClient_AcquireTokenByCredential_withFMIPath() {
+	cred := confidential.NewCredFromAssertionCallback(
+		func(ctx context.Context, aro confidential.AssertionRequestOptions) (string, error) {
+			//TODO: implement logic to acquire RMA token
+			return "fakeToken", nil
+		})
+
+	client, err := confidential.New("https://login.microsoftonline.com/your_tenant", "urn:microsoft:identity:fmi", cred)
+	if err != nil {
+		// TODO: handle error
+	}
+
+	scopes := []string{"scope"}
+	result, err := client.AcquireTokenByCredential(context.TODO(), scopes, confidential.WithFMIPath("some/path"))
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// TODO: use access token
+	_ = result.AccessToken
+}
