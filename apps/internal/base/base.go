@@ -65,24 +65,22 @@ type AcquireTokenSilentParameters struct {
 // Code challenges are used to secure authorization code grants; for more information, visit
 // https://tools.ietf.org/html/rfc7636.
 type AcquireTokenAuthCodeParameters struct {
-	Scopes              []string
-	Code                string
-	Challenge           string
-	Claims              string
-	RedirectURI         string
-	AppType             accesstokens.AppType
-	Credential          *accesstokens.Credential
-	TenantID            string
-	ExtraBodyParameters map[string]string
+	Scopes      []string
+	Code        string
+	Challenge   string
+	Claims      string
+	RedirectURI string
+	AppType     accesstokens.AppType
+	Credential  *accesstokens.Credential
+	TenantID    string
 }
 
 type AcquireTokenOnBehalfOfParameters struct {
-	Scopes              []string
-	Claims              string
-	Credential          *accesstokens.Credential
-	TenantID            string
-	UserAssertion       string
-	ExtraBodyParameters map[string]string
+	Scopes        []string
+	Claims        string
+	Credential    *accesstokens.Credential
+	TenantID      string
+	UserAssertion string
 }
 
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
@@ -412,10 +410,6 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams.Redirecturi = authCodeParams.RedirectURI
 	authParams.AuthorizationType = authority.ATAuthCode
 
-	if authCodeParams.ExtraBodyParameters != nil {
-		authParams.ExtraBodyParameters = authCodeParams.ExtraBodyParameters
-	}
-
 	var cc *accesstokens.Credential
 	if authCodeParams.AppType == accesstokens.ATConfidential {
 		cc = authCodeParams.Credential
@@ -439,14 +433,13 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams AcquireTokenOnBehalfOfParameters) (AuthResult, error) {
 	var ar AuthResult
 	silentParameters := AcquireTokenSilentParameters{
-		Scopes:              onBehalfOfParams.Scopes,
-		RequestType:         accesstokens.ATConfidential,
-		Credential:          onBehalfOfParams.Credential,
-		UserAssertion:       onBehalfOfParams.UserAssertion,
-		AuthorizationType:   authority.ATOnBehalfOf,
-		TenantID:            onBehalfOfParams.TenantID,
-		Claims:              onBehalfOfParams.Claims,
-		ExtraBodyParameters: onBehalfOfParams.ExtraBodyParameters,
+		Scopes:            onBehalfOfParams.Scopes,
+		RequestType:       accesstokens.ATConfidential,
+		Credential:        onBehalfOfParams.Credential,
+		UserAssertion:     onBehalfOfParams.UserAssertion,
+		AuthorizationType: authority.ATOnBehalfOf,
+		TenantID:          onBehalfOfParams.TenantID,
+		Claims:            onBehalfOfParams.Claims,
 	}
 	ar, err := b.AcquireTokenSilent(ctx, silentParameters)
 	if err == nil {

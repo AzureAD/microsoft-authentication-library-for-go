@@ -668,7 +668,6 @@ func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []s
 // acquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
 type acquireTokenByAuthCodeOptions struct {
 	challenge, claims, tenantID string
-	extraBodyParameters         map[string]string
 }
 
 // AcquireByAuthCodeOption is implemented by options for AcquireTokenByAuthCode
@@ -702,7 +701,7 @@ func WithChallenge(challenge string) interface {
 // AcquireTokenByAuthCode is a request to acquire a security token from the authority, using an authorization code.
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
-// Options: [WithChallenge], [WithClaims], [WithTenantID]]
+// Options: [WithChallenge], [WithClaims], [WithTenantID]
 func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
 	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -710,15 +709,14 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 	}
 
 	params := base.AcquireTokenAuthCodeParameters{
-		Scopes:              scopes,
-		Code:                code,
-		Challenge:           o.challenge,
-		Claims:              o.claims,
-		AppType:             accesstokens.ATConfidential,
-		Credential:          cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
-		RedirectURI:         redirectURI,
-		TenantID:            o.tenantID,
-		ExtraBodyParameters: o.extraBodyParameters,
+		Scopes:      scopes,
+		Code:        code,
+		Challenge:   o.challenge,
+		Claims:      o.claims,
+		AppType:     accesstokens.ATConfidential,
+		Credential:  cca.cred, // This setting differs from public.Client.AcquireTokenByAuthCode
+		RedirectURI: redirectURI,
+		TenantID:    o.tenantID,
 	}
 
 	return cca.base.AcquireTokenByAuthCode(ctx, params)
@@ -788,8 +786,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 
 // acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf
 type acquireTokenOnBehalfOfOptions struct {
-	claims, tenantID    string
-	extraBodyParameters map[string]string
+	claims, tenantID string
 }
 
 // AcquireOnBehalfOfOption is implemented by options for AcquireTokenOnBehalfOf
@@ -807,12 +804,11 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 		return AuthResult{}, err
 	}
 	params := base.AcquireTokenOnBehalfOfParameters{
-		Scopes:              scopes,
-		UserAssertion:       userAssertion,
-		Claims:              o.claims,
-		Credential:          cca.cred,
-		TenantID:            o.tenantID,
-		ExtraBodyParameters: o.extraBodyParameters,
+		Scopes:        scopes,
+		UserAssertion: userAssertion,
+		Claims:        o.claims,
+		Credential:    cca.cred,
+		TenantID:      o.tenantID,
 	}
 	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
