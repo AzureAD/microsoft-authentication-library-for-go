@@ -282,9 +282,7 @@ func (c Client) FromClientSecret(ctx context.Context, authParameters authority.A
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
-		return TokenResponse{}, err
-	}
+	addExtraBodyParameters(ctx, qv, authParameters)
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -302,9 +300,7 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
-		return TokenResponse{}, err
-	}
+	addExtraBodyParameters(ctx, qv, authParameters)
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -340,10 +336,7 @@ func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authPara
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
-		return TokenResponse{}, err
-	}
-
+	addExtraBodyParameters(ctx, qv, authParameters)
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
@@ -483,15 +476,10 @@ func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthPar
 }
 
 // addExtraBodyParameters evaluates and adds extra body parameters to the request
-func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.AuthParams) error {
-	if len(ap.ExtraBodyParameters) == 0 {
-		return nil
-	}
-
+func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.AuthParams) {
 	for key, value := range ap.ExtraBodyParameters {
 		if value != "" {
 			v.Set(key, value)
 		}
 	}
-	return nil
 }

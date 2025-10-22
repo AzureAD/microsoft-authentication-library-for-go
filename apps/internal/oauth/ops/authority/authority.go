@@ -649,20 +649,17 @@ func (a *AuthParams) AssertionHash() string {
 }
 
 func (a *AuthParams) AppKey() string {
-	baseKey := ""
+	baseKey := a.ClientID + "_"
 	if a.AuthorityInfo.Tenant != "" {
-		baseKey = fmt.Sprintf("%s_%s", a.ClientID, a.AuthorityInfo.Tenant)
-	} else {
-		baseKey = fmt.Sprintf("%s_", a.ClientID)
+		baseKey += a.AuthorityInfo.Tenant
 	}
 
 	// Include extra body parameters in the cache key
-	if len(a.CacheKeyComponents) > 0 {
-		paramHash := a.CacheExtKeyGenerator()
-		if paramHash != "" {
-			baseKey = fmt.Sprintf("%s_%s", baseKey, paramHash)
-		}
+	paramHash := a.CacheExtKeyGenerator()
+	if paramHash != "" {
+		baseKey = fmt.Sprintf("%s_%s", baseKey, paramHash)
 	}
+
 	return baseKey + "_AppTokenCache"
 }
 
