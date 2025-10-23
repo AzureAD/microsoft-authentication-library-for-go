@@ -550,11 +550,9 @@ func WithTenantID(tenantID string) interface {
 // acquireTokenSilentOptions are all the optional settings to an AcquireTokenSilent() call.
 // These are set by using various AcquireTokenSilentOption functions.
 type acquireTokenSilentOptions struct {
-	account             Account
-	claims, tenantID    string
-	authnScheme         AuthenticationScheme
-	extraBodyParameters map[string]string
-	cacheKeyComponents  map[string]string
+	account          Account
+	claims, tenantID string
+	authnScheme      AuthenticationScheme
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -587,7 +585,7 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options: [WithClaims], [WithSilentAccount], [WithTenantID], [WithFMIPath]
+// Options: [WithClaims], [WithSilentAccount], [WithTenantID]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -604,16 +602,14 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
-		Scopes:              scopes,
-		Account:             o.account,
-		RequestType:         accesstokens.ATConfidential,
-		Credential:          cca.cred,
-		IsAppCache:          o.account.IsZero(),
-		TenantID:            o.tenantID,
-		AuthnScheme:         o.authnScheme,
-		Claims:              o.claims,
-		ExtraBodyParameters: o.extraBodyParameters,
-		CacheKeyComponents:  o.cacheKeyComponents,
+		Scopes:      scopes,
+		Account:     o.account,
+		RequestType: accesstokens.ATConfidential,
+		Credential:  cca.cred,
+		IsAppCache:  o.account.IsZero(),
+		TenantID:    o.tenantID,
+		AuthnScheme: o.authnScheme,
+		Claims:      o.claims,
 	}
 
 	return cca.acquireTokenSilentInternal(ctx, silentParameters)
@@ -737,7 +733,7 @@ type AcquireByCredentialOption interface {
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options: [WithClaims], [WithTenantID], [WithFMIPath]]
+// Options: [WithClaims], [WithTenantID], [WithFMIPath], [WithAttribute]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -829,7 +825,7 @@ func (cca Client) RemoveAccount(ctx context.Context, account Account) error {
 //
 // Example:
 //
-//	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithFMIPath("fmit/path"))
+//	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithFMIPath("fmi/path"))
 func WithFMIPath(path string) interface {
 	AcquireByCredentialOption
 	options.CallOption
@@ -842,8 +838,47 @@ func WithFMIPath(path string) interface {
 			func(a any) error {
 				switch t := a.(type) {
 				case *acquireTokenByCredentialOptions:
-					t.cacheKeyComponents = map[string]string{"fmi_path": path}
-					t.extraBodyParameters = map[string]string{"fmi_path": path}
+					if t.extraBodyParameters == nil {
+						t.extraBodyParameters = make(map[string]string)
+					}
+					if t.cacheKeyComponents == nil {
+						t.cacheKeyComponents = make(map[string]string)
+					}
+					t.cacheKeyComponents["fmi_path"] = path
+					t.extraBodyParameters["fmi_path"] = path
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithAttribute provies the attribute which is passed on as "xmc_attr" in the token request body.
+// This is used in conjunction with federated managed identities to specify the identity attribute
+//
+// Example:
+//
+// Using raw string literal (backticks) for easier formatting
+// attrs := `{"FavoriteColor": "Blue", "file:/c/users/foobar/documents/info.txt": "{\"permissions\":[\"read\",\"write\"]}"}`
+// result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithAttribute(attrs))
+func WithAttribute(attrValue string) interface {
+	AcquireByCredentialOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByCredentialOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByCredentialOptions:
+					if t.extraBodyParameters == nil {
+						t.extraBodyParameters = make(map[string]string)
+					}
+					t.extraBodyParameters["attributes"] = attrValue
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}

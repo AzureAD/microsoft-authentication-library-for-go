@@ -2065,3 +2065,160 @@ func TestFMICacheIsolation(t *testing.T) {
 		t.Fatalf("Expected 2 cache entries (1 regular + 1 FMI), got %d", len(cache))
 	}
 }
+
+// TestWithAttribute validates that the WithAttribute option correctly passes
+// the attribute value to extraBodyParameters in the token request
+func TestWithAttribute(t *testing.T) {
+	tests := []struct {
+		name          string
+		attrValue     string
+		expectInBody  bool
+		expectedValue string
+	}{
+		{
+			name:          "simple attribute",
+			attrValue:     `{"FavoriteColor":"Blue"}`,
+			expectInBody:  true,
+			expectedValue: `{"FavoriteColor":"Blue"}`,
+		},
+		{
+			name:          "nested JSON attribute",
+			attrValue:     `{"FavoriteColor": "Blue", "file:/c/users/foobar/documents/info.txt": "{\"permissions\":[\"read\",\"write\"]}"}`,
+			expectInBody:  true,
+			expectedValue: `{"FavoriteColor": "Blue", "file:/c/users/foobar/documents/info.txt": "{\"permissions\":[\"read\",\"write\"]}"}`,
+		},
+		{
+			name:          "empty attribute",
+			attrValue:     "",
+			expectInBody:  false,
+			expectedValue: "",
+		},
+		{
+			name:          "complex nested structure",
+			attrValue:     `{"user":"admin","config":"{\"level\":5,\"permissions\":[\"read\",\"write\",\"execute\"]}"}`,
+			expectInBody:  true,
+			expectedValue: `{"user":"admin","config":"{\"level\":5,\"permissions\":[\"read\",\"write\",\"execute\"]}"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cred, err := NewCredFromSecret(fakeSecret)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			lmo := "login.microsoftonline.com"
+			tenant := "test-tenant"
+			accessToken := "test-access-token"
+			authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+			mockClient := mock.NewClient()
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			mockClient.AppendResponse(
+				mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)),
+				mock.WithCallback(func(r *http.Request) {
+					// Parse the request body
+					if err := r.ParseForm(); err != nil {
+						t.Fatal(err)
+					}
+
+					// Check if "attributes" parameter is present in the request body
+					if tt.expectInBody {
+						if !r.Form.Has("attributes") {
+							t.Fatal("Expected 'attributes' parameter in request body, but it was not found")
+						}
+
+						actualValue := r.Form.Get("attributes")
+						if actualValue != tt.expectedValue {
+							t.Fatalf("Expected attributes value %q, got %q", tt.expectedValue, actualValue)
+						}
+					} else {
+						if r.Form.Has("attributes") {
+							t.Fatalf("Did not expect 'attributes' parameter in request body, but found: %q", r.Form.Get("attributes"))
+						}
+					}
+				}),
+			)
+
+			client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			ctx := context.Background()
+			var ar AuthResult
+			if tt.attrValue != "" {
+				ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithAttribute(tt.attrValue))
+			} else {
+				ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithAttribute(tt.attrValue))
+			}
+
+			if err != nil {
+				t.Fatalf("AcquireTokenByCredential failed: %v", err)
+			}
+
+			if ar.AccessToken != accessToken {
+				t.Fatalf("Expected access token %q, got %q", accessToken, ar.AccessToken)
+			}
+		})
+	}
+}
+
+// TestWithAttributeAndFMIPath validates that WithAttribute and WithFMIPath can be used together
+// and both values are correctly passed to extraBodyParameters
+func TestWithAttributeAndFMIPath(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	accessToken := "test-access-token"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+	fmiPath := "test/fmi/path"
+	attrValue := `{"color":"blue","size":"large"}`
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+
+			// Verify both parameters are present
+			if !r.Form.Has("fmi_path") {
+				t.Fatal("Expected 'fmi_path' parameter in request body")
+			}
+			if !r.Form.Has("attributes") {
+				t.Fatal("Expected 'attributes' parameter in request body")
+			}
+
+			// Verify values
+			if actualFMI := r.Form.Get("fmi_path"); actualFMI != fmiPath {
+				t.Fatalf("Expected fmi_path %q, got %q", fmiPath, actualFMI)
+			}
+			if actualAttr := r.Form.Get("attributes"); actualAttr != attrValue {
+				t.Fatalf("Expected attributes %q, got %q", attrValue, actualAttr)
+			}
+		}),
+	)
+
+	client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	ar, err := client.AcquireTokenByCredential(ctx, tokenScope, WithFMIPath(fmiPath), WithAttribute(attrValue))
+	if err != nil {
+		t.Fatalf("AcquireTokenByCredential failed: %v", err)
+	}
+
+	if ar.AccessToken != accessToken {
+		t.Fatalf("Expected access token %q, got %q", accessToken, ar.AccessToken)
+	}
+}

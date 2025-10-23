@@ -136,6 +136,32 @@ func TestAppKeyWithCacheKeyComponent(t *testing.T) {
 			},
 			wantedExtraCacheKey: "3-rg6_wyjx5bcy0c3cqq7gajtzgsqy3oxqpwj4y8k4u",
 		},
+		{
+			name:     "with extra 5 params",
+			clientID: "client1",
+			tenant:   "tenant1",
+			params: map[string]string{
+				"key3": "value3",
+				"key4": "value4",
+				"key5": "value5",
+				"key6": "value6",
+				"key7": "value7",
+			},
+			wantedExtraCacheKey: "gkpxxkkqjxcqnvnmr2duvxg66xanvkz6qfqpwp2e",
+		},
+		{
+			name:     "with extra 5 params different order ",
+			clientID: "client1",
+			tenant:   "tenant1",
+			params: map[string]string{
+				"key7": "value7",
+				"key4": "value4",
+				"key6": "value6",
+				"key5": "value5",
+				"key3": "value3",
+			},
+			wantedExtraCacheKey: "gkpxxkkqjxcqnvnmr2duvxg66xanvkz6qfqpwp2e",
+		},
 	}
 
 	for _, tt := range tests {
