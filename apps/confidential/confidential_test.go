@@ -2148,11 +2148,8 @@ func TestWithAttribute(t *testing.T) {
 
 			ctx := context.Background()
 			var ar AuthResult
-			if tt.attrValue != "" {
-				ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithAttribute(tt.attrValue))
-			} else {
-				ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithAttribute(tt.attrValue))
-			}
+
+			ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithAttribute(tt.attrValue))
 
 			if err != nil {
 				t.Fatalf("AcquireTokenByCredential failed: %v", err)
