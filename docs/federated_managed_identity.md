@@ -9,6 +9,7 @@ Federated Managed Identity (FMI) enables Azure services to use federated credent
 - **Assertion-Based Authentication**: Uses callback functions to dynamically retrieve FMI credentials
 - **Cache Isolation**: Tokens acquired with different FMI paths are cached separately
 - **FMI Path Support**: The `WithFMIPath` option identifies the specific federated credential path
+- **Attribute Support**: The `WithAttribute` option allows passing additional attributes in token requests
 
 ## Basic Usage
 
@@ -97,6 +98,24 @@ func main() {
 }
 ```
 
+### Step 3: Using in-line attributes
+```go
+    ctx := context.Background()
+
+    app, err := confidential.New(
+        "https://login.microsoftonline.com/tenant-id",
+        "urn:microsoft:identity:fmi",  // Special FMI client ID
+        fmiCred,
+    )
+    if err != nil {
+        panic(err)
+    }
+    result, err := app.AcquireTokenByCredential(
+        ctx,
+        []string{"your-resource/.default"},
+        confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+        confidential.WithAttribute("your-attribute-value"), // Optional attribute
+    )
 }
 ```
 
@@ -124,6 +143,7 @@ cachedResult, err := app.AcquireTokenByCredential(ctx, scopes,
 2. **FMI Path**: The `WithFMIPath` option identifies the specific federated credential
 3. **Automatic Isolation**: MSAL handles cache isolation transparently based on the FMI path
 4. **Token Retrieval**: Silent authentication automatically finds the correct cached token
+5. **withAttribute**: You can pass additional attributes using the `WithAttribute` option, which will be included in the token request to the identity provider.
 
 ## Important Notes
 
