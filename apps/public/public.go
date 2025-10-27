@@ -702,7 +702,11 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.LoginHint = o.loginHint
 	authParams.DomainHint = o.domainHint
 	authParams.State = uuid.New().String()
-	authParams.Prompt = o.prompt
+	if o.prompt != "" {
+		authParams.Prompt = o.prompt
+	} else {
+		authParams.Prompt = shared.PromptSelectAccount.String()
+	}
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
 	}

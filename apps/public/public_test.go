@@ -44,9 +44,9 @@ func fakeBrowserOpenURL(authURL string) error {
 	if m := q.Get("code_challenge_method"); m != "S256" {
 		return fmt.Errorf("unexpected code_challenge_method '%s'", m)
 	}
-	// if q.Get("prompt") == "" {
-	// 	return errors.New("missing query param 'prompt")
-	// }
+	if q.Get("prompt") == "" {
+		return errors.New("missing query param 'prompt")
+	}
 	state := q.Get("state")
 	if state == "" {
 		return errors.New("missing query param 'state'")
