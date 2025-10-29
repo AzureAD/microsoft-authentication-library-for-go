@@ -822,10 +822,6 @@ func (cca Client) RemoveAccount(ctx context.Context, account Account) error {
 // WithFMIPath specifies the path to a federated managed identity.
 // The path should point to a valid FMI configuration file that contains the necessary
 // identity information for authentication.
-//
-// Example:
-//
-//	result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithFMIPath("fmi/path"))
 func WithFMIPath(path string) interface {
 	AcquireByCredentialOption
 	options.CallOption
@@ -857,12 +853,6 @@ func WithFMIPath(path string) interface {
 
 // WithAttribute provies the attribute which is passed on as "xmc_attr" in the token request body.
 // This is used in conjunction with federated managed identities to specify the identity attribute
-//
-// Example:
-//
-// Using raw string literal (backticks) for easier formatting
-// attrs := `{"FavoriteColor": "Blue", "file:/c/users/foobar/documents/info.txt": "{\"permissions\":[\"read\",\"write\"]}"}`
-// result, err := client.AcquireTokenByCredential(ctx, scopes, confidential.WithAttribute(attrs))
 func WithAttribute(attrValue string) interface {
 	AcquireByCredentialOption
 	options.CallOption
