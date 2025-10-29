@@ -823,6 +823,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	expiresIn := 18000
 	refreshOn := expiresIn / 2
 	key := struct{}{}
+	//nolint:staticcheck // SA1029: intentional use of bool value in context for testing
 	ctx := context.WithValue(context.Background(), key, true)
 	cred := NewCredFromTokenProvider(func(c context.Context, tp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
 		if called {

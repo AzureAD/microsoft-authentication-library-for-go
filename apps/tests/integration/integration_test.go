@@ -232,6 +232,7 @@ func TestUsernamePassword(t *testing.T) {
 		if err != nil {
 			panic(errors.Verbose(err))
 		}
+		//nolint:staticcheck // SA1019: using deprecated function intentionally
 		result, err := app.AcquireTokenByUsernamePassword(
 			context.Background(),
 			[]string{graphDefaultScope},
@@ -315,6 +316,7 @@ func TestOnBehalfOf(t *testing.T) {
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
+	//nolint:staticcheck // SA1019: using deprecated function intentionally
 	result, err := pca.AcquireTokenByUsernamePassword(
 		ctx, pcaScopes, user.Upn, user.Password,
 	)
@@ -381,6 +383,7 @@ func TestOnBehalfOf(t *testing.T) {
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
+	//nolint:staticcheck // SA1019: using deprecated function intentionally
 	result5, err := pca1.AcquireTokenByUsernamePassword(
 		ctx, pcaScopes, user.Upn, user.Password,
 	)
@@ -421,6 +424,7 @@ func TestRemoveAccount(t *testing.T) {
 		panic(errors.Verbose(err))
 	}
 	// Populate the cache
+	//nolint:staticcheck // SA1019: using deprecated function intentionally
 	_, err = app.AcquireTokenByUsernamePassword(
 		context.Background(),
 		[]string{graphDefaultScope},
