@@ -676,8 +676,6 @@ func (a *AuthParams) CacheExtKeyGenerator() string {
 	for k := range a.CacheKeyComponents {
 		keys = append(keys, k)
 	}
-
-	// Sort the keys
 	sort.Strings(keys)
 
 	// Create a string by concatenating key+value pairs

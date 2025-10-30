@@ -851,8 +851,9 @@ func WithFMIPath(path string) interface {
 	}
 }
 
-// WithAttribute provies the attribute which is passed on as "xmc_attr" in the token request body.
-// This is used in conjunction with federated managed identities to specify the identity attribute
+// WithAttribute specifies an identity attribute to include in the token request.
+// The attribute is sent as "attributes" in the request body and returned as "xmc_attr"
+// in the access token claims. This is sometimes used withFMIPath
 func WithAttribute(attrValue string) interface {
 	AcquireByCredentialOption
 	options.CallOption
