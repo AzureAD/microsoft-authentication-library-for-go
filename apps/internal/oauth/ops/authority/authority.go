@@ -119,6 +119,12 @@ func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI st
 		return nil
 	}
 
+	// Also check against the hardcoded trusted host list for scenarios where instance discovery
+	// wasn't performed (e.g., regional authorities)
+	if TrustedHost(issuerURL.Host) {
+		return nil
+	}
+
 	// Parse the authority URL for comparison
 	authorityURL, err := url.Parse(authorityURI)
 	if err != nil {

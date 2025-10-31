@@ -553,10 +553,10 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			expectError: false,
 		},
 		{
-			desc:        "custom authority with a non-matching Entra issuer",
+			desc:        "custom authority with a trusted Entra issuer",
 			issuer:      "https://login.microsoftonline.com/",
 			authority:   "https://contoso.com/tenant-id",
-			expectError: true,
+			expectError: false, // Trusted hosts are always valid issuers
 		},
 		{
 			desc:        "Entra authority with a non-matching custom issuer",
@@ -604,6 +604,35 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			issuer:      "https://unknown.example.com/tenant-id",
 			authority:   "https://contoso.com/tenant-id",
 			aliases:     map[string]bool{},
+			expectError: true,
+		},
+		// Test cases for regional authority scenarios where instance discovery isn't performed
+		{
+			desc:        "regional authority with trusted issuer host (no aliases)",
+			issuer:      "https://login.microsoftonline.com/tenant-id",
+			authority:   "https://westus2.login.microsoft.com/tenant-id",
+			aliases:     nil,
+			expectError: false,
+		},
+		{
+			desc:        "regional authority with different trusted issuer host (no aliases)",
+			issuer:      "https://login.windows.net/tenant-id",
+			authority:   "https://eastus.login.microsoft.com/tenant-id",
+			aliases:     map[string]bool{},
+			expectError: false,
+		},
+		{
+			desc:        "regional authority with Azure Government trusted issuer",
+			issuer:      "https://login.microsoftonline.us/tenant-id",
+			authority:   "https://usgovvirginia.login.microsoftonline.us/tenant-id",
+			aliases:     nil,
+			expectError: false,
+		},
+		{
+			desc:        "regional authority with untrusted issuer host (no aliases)",
+			issuer:      "https://malicious.example.com/tenant-id",
+			authority:   "https://westus2.login.microsoft.com/tenant-id",
+			aliases:     nil,
 			expectError: true,
 		},
 	}
