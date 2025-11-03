@@ -454,10 +454,9 @@ func TestAcquireTokenByAuthCodeTokenExpiry(t *testing.T) {
 	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
 	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, homeTenant)))
 	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(newAccessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
 
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, "common"), fakeClientID, cred, WithHTTPClient(mockClient))
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, "common"), fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
 	if err != nil {
 		t.Fatal(err)
 	}
