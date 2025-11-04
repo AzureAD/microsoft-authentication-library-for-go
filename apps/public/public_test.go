@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
@@ -1045,4 +1046,59 @@ func getNewClientWithMockedResponses(
 	}
 
 	return client, nil
+}
+
+func TestAcquireTokenSilentWithRefreshOnIsExpired(t *testing.T) {
+	accessToken := "*"
+	homeTenant := "home-tenant"
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
+		fmt.Sprintf(`{"uid":"uid","utid":"%s"}`, homeTenant),
+	))
+	lmo := "login.microsoftonline.com"
+	originalTime := base.Now
+	defer func() {
+		base.Now = originalTime
+	}()
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("new-"+accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+
+	client, err := New("common",
+		WithAuthority(fmt.Sprintf(authorityFmt, lmo, "common")),
+		WithHTTPClient(mockClient),
+		WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the auth flow isn't important, we just need to populate the cache
+	ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	account := ar.Account
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	// moving time forward to expire the current token
+	fixedTime := time.Now().Add(time.Duration(36001) * time.Second)
+	base.Now = func() time.Time {
+		return fixedTime
+	}
+	// calling the acquire token again
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != "new-"+accessToken {
+		t.Fatalf("expected %q, got %q", "new-"+accessToken, ar.AccessToken)
+	}
+
 }

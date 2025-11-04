@@ -481,6 +481,77 @@ func TestAcquireTokenByAuthCode(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenByAuthCodeTokenExpiry(t *testing.T) {
+	accessToken := "initial-access-token"
+	newAccessToken := "new-access-token"
+	homeTenant := "home-tenant"
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
+		fmt.Sprintf(`{"uid":"uid","utid":"%s"}`, homeTenant),
+	))
+	lmo := "login.microsoftonline.com"
+
+	originalTime := base.Now
+	defer func() {
+		base.Now = originalTime
+	}()
+
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(newAccessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, "common"), fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Acquire token using auth code
+	ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+
+	account := ar.Account
+
+	// First silent call should return cached token
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	if ar.Metadata.TokenSource != base.TokenSourceCache {
+		t.Fatalf("expected token source %v, got %v", base.TokenSourceCache, ar.Metadata.TokenSource)
+	}
+
+	// Move time forward past RefreshOn (1001 seconds)
+	fixedTime := time.Now().Add(time.Duration(1001) * time.Second)
+	base.Now = func() time.Time {
+		return fixedTime
+	}
+
+	// Second silent call should automatically refresh and return new token
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != newAccessToken {
+		t.Fatalf("expected %q, got %q", newAccessToken, ar.AccessToken)
+	}
+	// Verify the token came from the identity provider (refresh), not cache
+	if ar.Metadata.TokenSource != base.TokenSourceIdentityProvider {
+		t.Fatalf("expected token source %v, got %v", base.TokenSourceIdentityProvider, ar.Metadata.TokenSource)
+	}
+}
 func TestInvalidJsonErrFromResponse(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
