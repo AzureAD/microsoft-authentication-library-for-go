@@ -635,6 +635,13 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			aliases:     nil,
 			expectError: true,
 		},
+		{
+			desc:        "regional authority subdomain with matching trusted issuer",
+			issuer:      "https://login.microsoftonline.com/tenant-id",
+			authority:   "https://region.login.microsoftonline.com/tenant-id",
+			aliases:     nil,
+			expectError: false,
+		},
 	}
 
 	for _, test := range tests {
@@ -650,6 +657,42 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 				t.Errorf("expected error but got none")
 			} else if !test.expectError && err != nil {
 				t.Errorf("unexpected error: %v", err)
+			}
+		})
+	}
+}
+
+func TestTrustedHost(t *testing.T) {
+	tests := []struct {
+		host          string
+		expectedTrust bool
+	}{
+		// Microsoft Azure Worldwide hosts
+		{"login.microsoftonline.com", true},
+		{"login.windows.net", true},
+		{"login.microsoft.com", true},
+		{"sts.windows.net", true},
+		// Microsoft Azure China hosts
+		{"login.partner.microsoftonline.cn", true},
+		{"login.chinacloudapi.cn", true},
+		// Microsoft Azure Germany hosts
+		{"login.microsoftonline.de", true},
+		// Microsoft Azure US Government hosts
+		{"login.microsoftonline.us", true},
+		{"login.usgovcloudapi.net", true},
+		{"login-us.microsoftonline.com", true},
+		// Untrusted hosts
+		{"malicious.example.com", false},
+		{"fake-login.microsoftonline.com", false},
+		{"login.example.com", false},
+		{"", false},
+	}
+
+	for _, test := range tests {
+		t.Run(test.host, func(t *testing.T) {
+			result := TrustedHost(test.host)
+			if result != test.expectedTrust {
+				t.Errorf("TrustedHost(%q) = %v, want %v", test.host, result, test.expectedTrust)
 			}
 		})
 	}
