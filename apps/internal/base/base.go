@@ -46,16 +46,18 @@ type accountManager interface {
 
 // AcquireTokenSilentParameters contains the parameters to acquire a token silently (from cache).
 type AcquireTokenSilentParameters struct {
-	Scopes            []string
-	Account           shared.Account
-	RequestType       accesstokens.AppType
-	Credential        *accesstokens.Credential
-	IsAppCache        bool
-	TenantID          string
-	UserAssertion     string
-	AuthorizationType authority.AuthorizeType
-	Claims            string
-	AuthnScheme       authority.AuthenticationScheme
+	Scopes              []string
+	Account             shared.Account
+	RequestType         accesstokens.AppType
+	Credential          *accesstokens.Credential
+	IsAppCache          bool
+	TenantID            string
+	UserAssertion       string
+	AuthorizationType   authority.AuthorizeType
+	Claims              string
+	AuthnScheme         authority.AuthenticationScheme
+	ExtraBodyParameters map[string]string
+	CacheKeyComponents  map[string]string
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -327,7 +329,12 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.AuthnScheme != nil {
 		authParams.AuthnScheme = silent.AuthnScheme
 	}
-
+	if silent.CacheKeyComponents != nil {
+		authParams.CacheKeyComponents = silent.CacheKeyComponents
+	}
+	if silent.ExtraBodyParameters != nil {
+		authParams.ExtraBodyParameters = silent.ExtraBodyParameters
+	}
 	m := b.pmanager
 	if authParams.AuthorizationType != authority.ATOnBehalfOf {
 		authParams.AuthorizationType = authority.ATRefreshToken
@@ -457,6 +464,9 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 	authParams.Claims = onBehalfOfParams.Claims
 	authParams.Scopes = onBehalfOfParams.Scopes
 	authParams.UserAssertion = onBehalfOfParams.UserAssertion
+	if authParams.ExtraBodyParameters != nil {
+		authParams.ExtraBodyParameters = silentParameters.ExtraBodyParameters
+	}
 	token, err := b.Token.OnBehalfOf(ctx, authParams, onBehalfOfParams.Credential)
 	if err == nil {
 		ar, err = b.AuthResultFromToken(ctx, authParams, token)

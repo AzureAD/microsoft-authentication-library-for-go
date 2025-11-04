@@ -894,6 +894,7 @@ func TestNewCredFromTokenProvider(t *testing.T) {
 	expiresIn := 18000
 	refreshOn := expiresIn / 2
 	key := struct{}{}
+	//nolint:staticcheck // SA1029: intentional use of bool value in context for testing
 	ctx := context.WithValue(context.Background(), key, true)
 	cred := NewCredFromTokenProvider(func(c context.Context, tp exported.TokenProviderParameters) (exported.TokenProviderResult, error) {
 		if called {
@@ -1375,169 +1376,492 @@ func TestWithCache(t *testing.T) {
 	}
 }
 
-func TestWithClaims(t *testing.T) {
-	cred, err := NewCredFromSecret(fakeSecret)
-	if err != nil {
-		t.Fatal(err)
-	}
-	accessToken := "at"
-	lmo, tenant := "login.microsoftonline.com", "tenant"
-	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
-	for _, test := range []struct {
-		capabilities     []string
-		claims, expected string
-	}{
-		{},
+// TestWithClaims1 verifies that claims and client capabilities are correctly
+// merged and sent in token requests across different authentication methods.
+func TestWithClaims1(t *testing.T) {
+	testScenarios := []claimsTestScenario{
 		{
+			name:     "no_claims_or_capabilities",
+			desc:     "Neither claims nor capabilities - no claims parameter should be sent",
+			expected: "",
+		},
+		{
+			name:         "capabilities_only",
+			desc:         "Only client capabilities - should be added to access_token claims",
 			capabilities: []string{"cp1"},
 			expected:     `{"access_token":{"xms_cc":{"values":["cp1"]}}}`,
 		},
 		{
+			name:     "claims_only",
+			desc:     "Only custom claims - should be sent as-is",
 			claims:   `{"id_token":{"auth_time":{"essential":true}}}`,
 			expected: `{"id_token":{"auth_time":{"essential":true}}}`,
 		},
 		{
+			name:         "claims_and_capabilities_merged",
+			desc:         "Both claims and capabilities - should merge capabilities into access_token",
 			capabilities: []string{"cp1", "cp2"},
 			claims:       `{"access_token":{"nbf":{"essential":true, "value":"42"}}}`,
 			expected:     `{"access_token":{"nbf":{"essential":true, "value":"42"}, "xms_cc":{"values":["cp1","cp2"]}}}`,
 		},
-	} {
-		var expected map[string]any
-		if err := json.Unmarshal([]byte(test.expected), &expected); err != nil && test.expected != "" {
-			t.Fatal("test bug: the expected result must be JSON or an empty string")
+	}
+
+	for _, scenario := range testScenarios {
+		t.Run(scenario.name, func(t *testing.T) {
+			// Test each authentication method with this scenario
+			testAuthCodeFlow(t, scenario)
+			testAuthCodeURLFlow(t, scenario)
+			testCredentialFlow(t, scenario)
+			testCredentialFlowWithAccount(t, scenario)
+			testOnBehalfOfFlow(t, scenario)
+		})
+	}
+}
+
+// claimsTestScenario defines a test case for claims and capabilities handling
+type claimsTestScenario struct {
+	name         string
+	desc         string
+	capabilities []string
+	claims       string
+	expected     string // expected JSON claims parameter in request
+}
+
+// claimsValidator validates that claims in HTTP requests match expectations
+type claimsValidator struct {
+	t        *testing.T
+	expected map[string]any
+}
+
+func newClaimsValidator(t *testing.T, expectedJSON string) claimsValidator {
+	t.Helper()
+	var expected map[string]any
+	if expectedJSON != "" {
+		if err := json.Unmarshal([]byte(expectedJSON), &expected); err != nil {
+			t.Fatalf("test bug: expected result must be valid JSON: %v", err)
 		}
-		validate := func(t *testing.T, v url.Values) {
-			if test.expected == "" {
-				if v.Has("claims") {
-					t.Fatal("claims shouldn't be set")
-				}
-				return
-			}
-			claims, ok := v["claims"]
-			if !ok {
-				t.Fatal("claims should be set")
-			}
-			if len(claims) != 1 {
-				t.Fatalf("expected 1 value for claims, got %d", len(claims))
-			}
-			var actual map[string]any
-			if err := json.Unmarshal([]byte(claims[0]), &actual); err != nil {
-				t.Fatal(err)
-			}
-			if diff := pretty.Compare(expected, actual); diff != "" {
-				t.Fatal(diff)
-			}
+	}
+	return claimsValidator{t: t, expected: expected}
+}
+
+func (v claimsValidator) validate(values url.Values) {
+	v.t.Helper()
+
+	if len(v.expected) == 0 {
+		if values.Has("claims") {
+			v.t.Fatal("claims parameter should not be present when no claims are expected")
 		}
-		for _, method := range []string{"authcode", "authcodeURL", "credential", "obo"} {
-			t.Run(method, func(t *testing.T) {
-				mockClient := mock.NewClient()
-				clientInfo, idToken, refreshToken := "", "", ""
-				if method == "obo" {
-					clientInfo = base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
-					idToken = mock.GetIDToken(tenant, authority)
-					refreshToken = "rt"
-					// TODO: OBO does instance discovery twice before first token request https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
-					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
-				}
-				if method == "credential" {
-					if test.claims == "" {
-						mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
-					}
-				}
-				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-				mockClient.AppendResponse(
-					mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0)),
-					mock.WithCallback(func(r *http.Request) {
-						if err := r.ParseForm(); err != nil {
-							t.Fatal(err)
-						}
-						validate(t, r.Form)
-					}),
-				)
-				if method != "obo" {
-					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
-				}
-				client, err := New(authority, fakeClientID, cred, WithClientCapabilities(test.capabilities), WithHTTPClient(mockClient))
-				if err != nil {
+		return
+	}
+
+	claims := values["claims"]
+	if len(claims) == 0 {
+		v.t.Fatal("claims parameter should be present")
+	}
+	if len(claims) != 1 {
+		v.t.Fatalf("expected exactly 1 claims value, got %d", len(claims))
+	}
+
+	var actual map[string]any
+	if err := json.Unmarshal([]byte(claims[0]), &actual); err != nil {
+		v.t.Fatalf("failed to parse claims JSON: %v", err)
+	}
+
+	if diff := pretty.Compare(v.expected, actual); diff != "" {
+		v.t.Fatalf("claims mismatch (-expected +actual):\n%s", diff)
+	}
+}
+
+// testAuthCodeFlow tests AcquireTokenByAuthCode with claims
+func testAuthCodeFlow(t *testing.T, scenario claimsTestScenario) {
+	t.Run("auth_code", func(t *testing.T) {
+		const (
+			accessToken = "at"
+			lmo         = "login.microsoftonline.com"
+			tenant      = "tenant"
+		)
+		authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+		cred, err := NewCredFromSecret(fakeSecret)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		mockClient := mock.NewClient()
+		validator := newClaimsValidator(t, scenario.expected)
+
+		// Setup mock responses
+		idToken := mock.GetIDToken(tenant, authority)
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(
+			mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, "", "", 3600, 0)),
+			mock.WithCallback(func(r *http.Request) {
+				if err := r.ParseForm(); err != nil {
 					t.Fatal(err)
 				}
-				if _, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(shared.Account{})); err == nil {
-					t.Fatal("silent authentication should fail because the cache is empty")
-				}
-				ctx := context.Background()
-				var ar AuthResult
-				switch method {
-				case "authcode":
-					ar, err = client.AcquireTokenByAuthCode(ctx, "code", localhost, tokenScope, WithClaims(test.claims))
-				case "authcodeURL":
-					u := ""
-					if u, err = client.AuthCodeURL(ctx, fakeClientID, localhost, tokenScope, WithClaims(test.claims)); err == nil {
-						var parsed *url.URL
-						if parsed, err = url.Parse(u); err == nil {
-							validate(t, parsed.Query())
-							return // didn't acquire a token, no need for further validation
-						}
-					}
-				case "credential":
-					ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithClaims(test.claims))
-				case "obo":
-					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithClaims(test.claims))
-				case "password":
-					ar, err = client.AcquireTokenByUsernamePassword(ctx, tokenScope, "username", "password", WithClaims(test.claims))
-				default:
-					t.Fatalf("test bug: no test for %s", method)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if ar.AccessToken != accessToken {
-					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
-				}
-				// silent auth should now succeed, provided no claims are requested, because the client has cached an access token
-				if method == "obo" {
-					ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope)
-				} else if method == "credential" {
-					ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
-				} else {
-					ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme)
-				}
-				if err != nil {
-					t.Fatal(err)
-				}
-				if ar.AccessToken != accessToken {
-					t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
-				}
-				if test.claims != "" {
-					if _, err = client.AcquireTokenSilent(ctx, tokenScope, WithClaims(test.claims)); err == nil {
-						t.Fatal("AcquireTokenSilent should fail when given claims")
-					}
-					if method == "obo" {
-						// client has cached access and refresh tokens. When given claims, it should redeem a refresh token for a new access token.
-						newToken := "new-access-token"
-						mockClient.AppendResponse(
-							mock.WithBody(mock.GetAccessTokenBody(newToken, idToken, "", clientInfo, 3600, 0)),
-							mock.WithCallback(func(r *http.Request) {
-								if err := r.ParseForm(); err != nil {
-									t.Fatal(err)
-								}
-								// all token requests should include any specified claims
-								validate(t, r.Form)
-								if actual := r.Form.Get("refresh_token"); actual != refreshToken {
-									t.Fatalf(`unexpected refresh token "%s ,, %s"`, actual, refreshToken)
-								}
-							}),
-						)
-						ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope, WithClaims(test.claims))
-						if err != nil {
-							t.Fatal(err)
-						}
-						if ar.AccessToken != newToken {
-							t.Fatalf(`unexpected access token "%s"`, ar.AccessToken)
-						}
-					}
-				}
-			})
+				validator.validate(r.Form)
+			}),
+		)
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+
+		client, err := New(authority, fakeClientID, cred,
+			WithClientCapabilities(scenario.capabilities),
+			WithHTTPClient(mockClient))
+		if err != nil {
+			t.Fatal(err)
 		}
+
+		// Verify cache is empty
+		if _, err = client.AcquireTokenSilent(context.Background(), tokenScope,
+			WithSilentAccount(shared.Account{})); err == nil {
+			t.Fatal("silent authentication should fail with empty cache")
+		}
+
+		// Acquire token by auth code
+		ctx := context.Background()
+		ar, err := client.AcquireTokenByAuthCode(ctx, "code", localhost, tokenScope,
+			WithClaims(scenario.claims))
+		if err != nil {
+			t.Fatalf("AcquireTokenByAuthCode failed: %v", err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("unexpected access token: got %q, want %q", ar.AccessToken, accessToken)
+		}
+
+		// Verify silent authentication now succeeds (token is cached)
+		// Auth code flow returns an account, so use public API
+		verifySilentAuthSuccess(t, client, accessToken, &ar.Account)
+
+		// Verify that silent auth with claims fails even when providing the account
+		if scenario.claims != "" {
+			if _, err = client.AcquireTokenSilent(ctx, tokenScope,
+				WithSilentAccount(ar.Account),
+				WithClaims(scenario.claims)); err == nil {
+				t.Fatal("AcquireTokenSilent should fail when claims are provided")
+			}
+		}
+	})
+}
+
+// testAuthCodeURLFlow tests AuthCodeURL with claims
+func testAuthCodeURLFlow(t *testing.T, scenario claimsTestScenario) {
+	t.Run("auth_code_url", func(t *testing.T) {
+		const (
+			lmo    = "login.microsoftonline.com"
+			tenant = "tenant"
+		)
+		authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+		cred, err := NewCredFromSecret(fakeSecret)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		mockClient := mock.NewClient()
+		validator := newClaimsValidator(t, scenario.expected)
+
+		// Setup mock responses for instance and tenant discovery
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+
+		client, err := New(authority, fakeClientID, cred,
+			WithClientCapabilities(scenario.capabilities),
+			WithHTTPClient(mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Generate auth code URL with claims
+		ctx := context.Background()
+		authURL, err := client.AuthCodeURL(ctx, fakeClientID, localhost, tokenScope,
+			WithClaims(scenario.claims))
+		if err != nil {
+			t.Fatalf("AuthCodeURL failed: %v", err)
+		}
+
+		// Parse and validate the URL contains expected claims
+		parsed, err := url.Parse(authURL)
+		if err != nil {
+			t.Fatalf("failed to parse auth URL: %v", err)
+		}
+		validator.validate(parsed.Query())
+	})
+}
+
+// testCredentialFlow tests AcquireTokenByCredential with claims
+func testCredentialFlow(t *testing.T, scenario claimsTestScenario) {
+	t.Run("credential", func(t *testing.T) {
+		const (
+			accessToken = "at"
+			lmo         = "login.microsoftonline.com"
+			tenant      = "tenant"
+		)
+		authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+		cred, err := NewCredFromSecret(fakeSecret)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		mockClient := mock.NewClient()
+		validator := newClaimsValidator(t, scenario.expected)
+
+		// Setup mock responses
+		// Note: credential flow only does instance discovery when no claims are provided
+		if scenario.claims == "" {
+			mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+		}
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(
+			mock.WithBody(mock.GetAccessTokenBody(accessToken, "", "", "", 3600, 0)),
+			mock.WithCallback(func(r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					t.Fatal(err)
+				}
+				validator.validate(r.Form)
+			}),
+		)
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(
+			mock.WithBody(mock.GetAccessTokenBody(accessToken, "", "", "", 3600, 0)),
+			mock.WithCallback(func(r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					t.Fatal(err)
+				}
+				validator.validate(r.Form)
+			}),
+		)
+		client, err := New(authority, fakeClientID, cred,
+			WithClientCapabilities(scenario.capabilities),
+			WithHTTPClient(mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Acquire token by credential
+		ctx := context.Background()
+		ar, err := client.AcquireTokenByCredential(ctx, tokenScope,
+			WithClaims(scenario.claims))
+		if err != nil {
+			t.Fatalf("AcquireTokenByCredential failed: %v", err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("unexpected access token: got %q, want %q", ar.AccessToken, accessToken)
+		}
+
+		// Verify silent authentication succeeds with app cache
+		// For credential flow, verify by acquiring token again
+		ar, err = client.AcquireTokenByCredential(ctx, tokenScope)
+		if err != nil {
+			t.Fatalf("second AcquireTokenByCredential failed: %v", err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("unexpected cached access token: got %q, want %q", ar.AccessToken, accessToken)
+		}
+
+		// Verify that silent auth with claims fails
+		if scenario.claims != "" {
+			if tk, err := client.AcquireTokenByCredential(ctx, tokenScope,
+				WithClaims(scenario.claims)); err == nil {
+				if tk.Metadata.TokenSource == TokenSourceCache {
+					t.Fatal("AcquireTokenByCredential should not return cached token when claims are provided")
+				}
+			}
+		}
+	})
+}
+
+// testCredentialFlowWithAccount tests AcquireTokenByCredential when it returns an account
+// This can happen in some credential flow scenarios where user context is available
+func testCredentialFlowWithAccount(t *testing.T, scenario claimsTestScenario) {
+	t.Run("credential_with_account", func(t *testing.T) {
+		const (
+			accessToken = "at"
+			lmo         = "login.microsoftonline.com"
+			tenant      = "tenant"
+		)
+		authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+		cred, err := NewCredFromSecret(fakeSecret)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		mockClient := mock.NewClient()
+		validator := newClaimsValidator(t, scenario.expected)
+
+		// Setup mock responses with client info to simulate account creation
+		clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+		idToken := mock.GetIDToken(tenant, authority)
+
+		// Note: credential flow only does instance discovery when no claims are provided
+		if scenario.claims == "" {
+			mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+		}
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(
+			mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, "", clientInfo, 3600, 0)),
+			mock.WithCallback(func(r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					t.Fatal(err)
+				}
+				validator.validate(r.Form)
+			}),
+		)
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+
+		client, err := New(authority, fakeClientID, cred,
+			WithClientCapabilities(scenario.capabilities),
+			WithHTTPClient(mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Acquire token by credential
+		ctx := context.Background()
+		ar, err := client.AcquireTokenByCredential(ctx, tokenScope,
+			WithClaims(scenario.claims))
+		if err != nil {
+			t.Fatalf("AcquireTokenByCredential failed: %v", err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("unexpected access token: got %q, want %q", ar.AccessToken, accessToken)
+		}
+
+		// When an account is returned, we can use AcquireTokenSilent
+		if ar.Account.HomeAccountID != "" {
+			// Verify silent authentication succeeds using the account
+			verifySilentAuthSuccess(t, client, accessToken, &ar.Account)
+
+			// Verify that silent auth with claims fails even with account
+			if scenario.claims != "" {
+				if _, err = client.AcquireTokenSilent(ctx, tokenScope,
+					WithSilentAccount(ar.Account),
+					WithClaims(scenario.claims)); err == nil {
+					t.Fatal("AcquireTokenSilent should fail when claims are provided")
+				}
+			}
+		} else {
+			t.Fatal("expected credential flow to return an account in this scenario")
+		}
+	})
+}
+
+// testOnBehalfOfFlow tests AcquireTokenOnBehalfOf with claims
+func testOnBehalfOfFlow(t *testing.T, scenario claimsTestScenario) {
+	t.Run("on_behalf_of", func(t *testing.T) {
+		const (
+			accessToken  = "at"
+			lmo          = "login.microsoftonline.com"
+			tenant       = "tenant"
+			refreshToken = "rt"
+		)
+		authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+		cred, err := NewCredFromSecret(fakeSecret)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		mockClient := mock.NewClient()
+		validator := newClaimsValidator(t, scenario.expected)
+
+		// Setup OBO-specific data
+		clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+		idToken := mock.GetIDToken(tenant, authority)
+
+		// Setup mock responses
+		// TODO: OBO does instance discovery twice before first token request
+		// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/351
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(
+			mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0)),
+			mock.WithCallback(func(r *http.Request) {
+				if err := r.ParseForm(); err != nil {
+					t.Fatal(err)
+				}
+				validator.validate(r.Form)
+			}),
+		)
+
+		client, err := New(authority, fakeClientID, cred,
+			WithClientCapabilities(scenario.capabilities),
+			WithHTTPClient(mockClient))
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		// Acquire token on behalf of
+		ctx := context.Background()
+		ar, err := client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope,
+			WithClaims(scenario.claims))
+		if err != nil {
+			t.Fatalf("AcquireTokenOnBehalfOf failed: %v", err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("unexpected access token: got %q, want %q", ar.AccessToken, accessToken)
+		}
+
+		// Verify subsequent OBO call succeeds from cache
+		ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope)
+		if err != nil {
+			t.Fatalf("cached OBO call failed: %v", err)
+		}
+		if ar.AccessToken != accessToken {
+			t.Fatalf("unexpected cached access token: got %q, want %q", ar.AccessToken, accessToken)
+		}
+
+		// Test OBO refresh flow when claims are provided
+		if scenario.claims != "" {
+			// Silent auth should fail with claims even when providing the account
+			if _, err = client.AcquireTokenSilent(ctx, tokenScope,
+				WithSilentAccount(ar.Account),
+				WithClaims(scenario.claims)); err == nil {
+				t.Fatal("AcquireTokenSilent should fail when claims are provided")
+			}
+
+			// OBO should use refresh token to get new access token with claims
+			newToken := "new-access-token"
+			mockClient.AppendResponse(
+				mock.WithBody(mock.GetAccessTokenBody(newToken, idToken, "", clientInfo, 3600, 0)),
+				mock.WithCallback(func(r *http.Request) {
+					if err := r.ParseForm(); err != nil {
+						t.Fatal(err)
+					}
+					// Validate claims are included
+					validator.validate(r.Form)
+					// Validate refresh token is used
+					if actual := r.Form.Get("refresh_token"); actual != refreshToken {
+						t.Fatalf("unexpected refresh token: got %q, want %q", actual, refreshToken)
+					}
+				}),
+			)
+
+			ar, err = client.AcquireTokenOnBehalfOf(ctx, "assertion", tokenScope,
+				WithClaims(scenario.claims))
+			if err != nil {
+				t.Fatalf("OBO with claims failed: %v", err)
+			}
+			if ar.AccessToken != newToken {
+				t.Fatalf("unexpected new access token: got %q, want %q", ar.AccessToken, newToken)
+			}
+		}
+	})
+}
+
+// verifySilentAuthSuccess is a helper that verifies silent authentication works from cache
+// using the public AcquireTokenSilent API with the provided account.
+func verifySilentAuthSuccess(t *testing.T, client Client, expectedToken string, account *shared.Account) {
+	t.Helper()
+
+	ctx := context.Background()
+	ar, err := client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(*account))
+	if err != nil {
+		t.Fatalf("silent authentication failed: %v", err)
+	}
+	if ar.AccessToken != expectedToken {
+		t.Fatalf("unexpected cached access token: got %q, want %q", ar.AccessToken, expectedToken)
 	}
 }
 
@@ -1630,7 +1954,8 @@ func TestWithTenantID(t *testing.T) {
 					if ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(test.tenant)); err != nil {
 						t.Fatal(err)
 					}
-				} else if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", test.tenant, client.base.AuthParams.AuthnScheme); err != nil {
+				} else if ar, err = client.acquireTokenSilentInternal(ctx,
+					base.AcquireTokenSilentParameters{Scopes: tokenScope, Account: shared.Account{}, IsAppCache: true, TenantID: test.tenant, AuthnScheme: client.base.AuthParams.AuthnScheme}); err != nil {
 					t.Fatal(err)
 				}
 				if ar.AccessToken != accessToken {
@@ -1697,7 +2022,12 @@ func TestWithTenantID(t *testing.T) {
 				t.Fatalf("unexpected access token %q", ar.AccessToken)
 			}
 			// silent authentication should now succeed for the given tenant...
-			if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme); err != nil {
+			if ar, err = client.acquireTokenSilentInternal(ctx,
+				base.AcquireTokenSilentParameters{Scopes: tokenScope,
+					Account:     shared.Account{},
+					IsAppCache:  true,
+					TenantID:    tenant,
+					AuthnScheme: client.base.AuthParams.AuthnScheme}); err != nil {
 				t.Fatal(err)
 			}
 			if ar.AccessToken != accessToken {
@@ -1773,7 +2103,8 @@ func TestWithInstanceDiscovery(t *testing.T) {
 					if ar, err = client.AcquireTokenByCredential(ctx, tokenScope); err != nil {
 						t.Fatal(err)
 					}
-				} else if ar, err = client.acquireTokenSilentInternal(ctx, tokenScope, shared.Account{}, "", tenant, client.base.AuthParams.AuthnScheme); err != nil {
+				} else if ar, err = client.acquireTokenSilentInternal(ctx,
+					base.AcquireTokenSilentParameters{Scopes: tokenScope, Account: shared.Account{}, IsAppCache: true, TenantID: tenant, AuthnScheme: client.base.AuthParams.AuthnScheme}); err != nil {
 					t.Fatal(err)
 				}
 				if ar.AccessToken != accessToken {
@@ -2003,5 +2334,278 @@ func TestAcquireTokenByCredentialFromDSTS(t *testing.T) {
 				t.Errorf("unexpected nil error from AcquireTokenSilent: %s", err)
 			}
 		})
+	}
+}
+
+// TestFMICacheIsolation tests that tokens with and without FMI are cached separately
+// 1. Client 1 acquires token without FMI - token saved in external cache
+// 2. Client 2 acquires token with FMI - token saved separately in same external cache
+// 3. Both clients should retrieve their respective tokens from cache
+func TestFMICacheIsolation(t *testing.T) {
+	// Shared external cache
+	cache := make(testCache)
+
+	// Test data
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+	// Different access tokens for regular and FMI flows
+	regularAccessToken := "regular-access-token"
+	fmiAccessToken := "fmi-access-token"
+	fmiPath := "SomeFmiPath/FmiCredentialPath"
+
+	// Create mock HTTP client
+	mockClient := mock.NewClient()
+
+	// Setup credential
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// ===== CLIENT 1: Regular client WITHOUT FMI =====
+	client1, err := New(authority, fakeClientID, cred, WithCache(&cache), WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock responses for client 1 (must append AFTER creating client)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(regularAccessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)))
+
+	// Client 1: Acquire token without FMI
+	ctx := context.Background()
+	ar1, err := client1.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatalf("Client 1 AcquireTokenByCredential failed: %v", err)
+	}
+	if ar1.AccessToken != regularAccessToken {
+		t.Fatalf("Client 1: expected access token %q, got %q", regularAccessToken, ar1.AccessToken)
+	}
+	if ar1.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("Client 1: expected token source to be identity provider on first call, got %d", ar1.Metadata.TokenSource)
+	}
+
+	// ===== CLIENT 2: Client WITH FMI =====
+	client2, err := New(authority, fakeClientID, cred, WithCache(&cache), WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Mock responses for client 2 (must append AFTER creating client)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(fmiAccessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)))
+
+	// Client 2: Acquire token WITH FMI
+	ar2, err := client2.AcquireTokenByCredential(ctx, tokenScope, WithFMIPath(fmiPath))
+	if err != nil {
+		t.Fatalf("Client 2 AcquireTokenByCredential with FMI failed: %v", err)
+	}
+	if ar2.AccessToken != fmiAccessToken {
+		t.Fatalf("Client 2: expected access token %q, got %q", fmiAccessToken, ar2.AccessToken)
+	}
+	if ar2.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("Client 2: expected token source to be identity provider on first call, got %d", ar2.Metadata.TokenSource)
+	}
+
+	// ===== VERIFY CACHE ISOLATION =====
+
+	// Client 1: Should get regular token from cache (without network call)
+	ar1Cached, err := client1.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatalf("Client 1 second AcquireTokenByCredential failed: %v", err)
+	}
+	if ar1Cached.AccessToken != regularAccessToken {
+		t.Fatalf("Client 1 from cache: expected access token %q, got %q (possibly retrieved FMI token due to cache key bug)", regularAccessToken, ar1Cached.AccessToken)
+	}
+	if ar1Cached.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("Client 1 from cache: expected token source to be cache, got %d", ar1Cached.Metadata.TokenSource)
+	}
+
+	// Client 2: Should get FMI token from cache (without network call)
+	ar2Cached, err := client2.AcquireTokenByCredential(ctx, tokenScope, WithFMIPath(fmiPath))
+	if err != nil {
+		t.Fatalf("Client 2 second AcquireTokenByCredential with FMI failed: %v", err)
+	}
+	if ar2Cached.AccessToken != fmiAccessToken {
+		t.Fatalf("Client 2 from cache: expected access token %q, got %q", fmiAccessToken, ar2Cached.AccessToken)
+	}
+	if ar2Cached.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("Client 2 from cache: expected token source to be cache, got %d", ar2Cached.Metadata.TokenSource)
+	}
+
+	// ===== VERIFY CROSS-CLIENT ISOLATION =====
+
+	// Client 1 should NOT get the FMI token when requesting without FMI parameters
+	// This verifies the bug fix - tokens with empty extCacheKey should not match tokens with non-empty extCacheKey
+	if ar1Cached.AccessToken == fmiAccessToken {
+		t.Fatal("Cache isolation violated: Client 1 retrieved FMI token without FMI parameters")
+	}
+
+	// Client 2 should NOT get the regular token when requesting with FMI parameters
+	if ar2Cached.AccessToken == regularAccessToken {
+		t.Fatal("Cache isolation violated: Client 2 retrieved regular token with FMI parameters")
+	}
+
+	// Verify both tokens are cached with different keys
+	// Regular token: fake_client_id_test-tenant_AppTokenCache
+	// FMI token: fake_client_id_test-tenant_{hash}_AppTokenCache
+	if len(cache) != 2 {
+		t.Fatalf("Expected 2 cache entries (1 regular + 1 FMI), got %d", len(cache))
+	}
+}
+
+// TestWithAttribute validates that the WithAttribute option correctly passes
+// the attribute value to extraBodyParameters in the token request
+func TestWithAttribute(t *testing.T) {
+	tests := []struct {
+		name          string
+		attrValue     string
+		expectInBody  bool
+		expectedValue string
+	}{
+		{
+			name:          "simple attribute",
+			attrValue:     `{"FavoriteColor":"Blue"}`,
+			expectInBody:  true,
+			expectedValue: `{"FavoriteColor":"Blue"}`,
+		},
+		{
+			name:          "nested JSON attribute",
+			attrValue:     `{"FavoriteColor": "Blue", "file:/c/users/foobar/documents/info.txt": "{\"permissions\":[\"read\",\"write\"]}"}`,
+			expectInBody:  true,
+			expectedValue: `{"FavoriteColor": "Blue", "file:/c/users/foobar/documents/info.txt": "{\"permissions\":[\"read\",\"write\"]}"}`,
+		},
+		{
+			name:          "empty attribute",
+			attrValue:     "",
+			expectInBody:  false,
+			expectedValue: "",
+		},
+		{
+			name:          "complex nested structure",
+			attrValue:     `{"user":"admin","config":"{\"level\":5,\"permissions\":[\"read\",\"write\",\"execute\"]}"}`,
+			expectInBody:  true,
+			expectedValue: `{"user":"admin","config":"{\"level\":5,\"permissions\":[\"read\",\"write\",\"execute\"]}"}`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cred, err := NewCredFromSecret(fakeSecret)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			lmo := "login.microsoftonline.com"
+			tenant := "test-tenant"
+			accessToken := "test-access-token"
+			authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+			mockClient := mock.NewClient()
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			mockClient.AppendResponse(
+				mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)),
+				mock.WithCallback(func(r *http.Request) {
+					// Parse the request body
+					if err := r.ParseForm(); err != nil {
+						t.Fatal(err)
+					}
+
+					// Check if "attributes" parameter is present in the request body
+					if tt.expectInBody {
+						if !r.Form.Has("attributes") {
+							t.Fatal("Expected 'attributes' parameter in request body, but it was not found")
+						}
+
+						actualValue := r.Form.Get("attributes")
+						if actualValue != tt.expectedValue {
+							t.Fatalf("Expected attributes value %q, got %q", tt.expectedValue, actualValue)
+						}
+					} else {
+						if r.Form.Has("attributes") {
+							t.Fatalf("Did not expect 'attributes' parameter in request body, but found: %q", r.Form.Get("attributes"))
+						}
+					}
+				}),
+			)
+
+			client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			ctx := context.Background()
+			var ar AuthResult
+
+			ar, err = client.AcquireTokenByCredential(ctx, tokenScope, WithAttribute(tt.attrValue))
+
+			if err != nil {
+				t.Fatalf("AcquireTokenByCredential failed: %v", err)
+			}
+
+			if ar.AccessToken != accessToken {
+				t.Fatalf("Expected access token %q, got %q", accessToken, ar.AccessToken)
+			}
+		})
+	}
+}
+
+// TestWithAttributeAndFMIPath validates that WithAttribute and WithFMIPath can be used together
+// and both values are correctly passed to extraBodyParameters
+func TestWithAttributeAndFMIPath(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	accessToken := "test-access-token"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+	fmiPath := "test/fmi/path"
+	attrValue := `{"color":"blue","size":"large"}`
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+
+			// Verify both parameters are present
+			if !r.Form.Has("fmi_path") {
+				t.Fatal("Expected 'fmi_path' parameter in request body")
+			}
+			if !r.Form.Has("attributes") {
+				t.Fatal("Expected 'attributes' parameter in request body")
+			}
+
+			// Verify values
+			if actualFMI := r.Form.Get("fmi_path"); actualFMI != fmiPath {
+				t.Fatalf("Expected fmi_path %q, got %q", fmiPath, actualFMI)
+			}
+			if actualAttr := r.Form.Get("attributes"); actualAttr != attrValue {
+				t.Fatalf("Expected attributes %q, got %q", attrValue, actualAttr)
+			}
+		}),
+	)
+
+	client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	ar, err := client.AcquireTokenByCredential(ctx, tokenScope, WithFMIPath(fmiPath), WithAttribute(attrValue))
+	if err != nil {
+		t.Fatalf("AcquireTokenByCredential failed: %v", err)
+	}
+
+	if ar.AccessToken != accessToken {
+		t.Fatalf("Expected access token %q, got %q", accessToken, ar.AccessToken)
 	}
 }

@@ -42,6 +42,7 @@ func acquireByUsernamePasswordPublic(ctx context.Context) {
 		log.Println(err)
 		// either there was no cached account/token or the call to AcquireTokenSilent() failed
 		// make a new request to AAD
+		//nolint:staticcheck // SA1019: using deprecated function intentionally
 		result, err = app.AcquireTokenByUsernamePassword(
 			context.Background(),
 			config.Scopes,

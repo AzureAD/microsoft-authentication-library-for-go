@@ -15,6 +15,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"sort"
 	"strings"
 	"time"
 
@@ -256,6 +257,12 @@ type AuthParams struct {
 	DomainHint string
 	// AuthnScheme is an optional scheme for formatting access tokens
 	AuthnScheme AuthenticationScheme
+	// ExtraBodyParameters are additional parameters to include in token requests.
+	// The functions are evaluated at request time to get the parameter values.
+	// These parameters are also included in the cache key.
+	ExtraBodyParameters map[string]string
+	// CacheKeyComponents are additional components to include in the cache key.
+	CacheKeyComponents map[string]string
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -642,8 +649,42 @@ func (a *AuthParams) AssertionHash() string {
 }
 
 func (a *AuthParams) AppKey() string {
+	baseKey := a.ClientID + "_"
 	if a.AuthorityInfo.Tenant != "" {
-		return fmt.Sprintf("%s_%s_AppTokenCache", a.ClientID, a.AuthorityInfo.Tenant)
+		baseKey += a.AuthorityInfo.Tenant
 	}
-	return fmt.Sprintf("%s__AppTokenCache", a.ClientID)
+
+	// Include extra body parameters in the cache key
+	paramHash := a.CacheExtKeyGenerator()
+	if paramHash != "" {
+		baseKey = fmt.Sprintf("%s_%s", baseKey, paramHash)
+	}
+
+	return baseKey + "_AppTokenCache"
+}
+
+// CacheExtKeyGenerator computes a hash of the Cache key components key and values
+// to include in the cache key. This ensures tokens acquired with different
+// parameters are cached separately.
+func (a *AuthParams) CacheExtKeyGenerator() string {
+	if len(a.CacheKeyComponents) == 0 {
+		return ""
+	}
+
+	// Sort keys to ensure consistent hashing
+	keys := make([]string, 0, len(a.CacheKeyComponents))
+	for k := range a.CacheKeyComponents {
+		keys = append(keys, k)
+	}
+	sort.Strings(keys)
+
+	// Create a string by concatenating key+value pairs
+	keyStr := ""
+	for _, key := range keys {
+		// Append key followed by its value with no separator
+		keyStr += key + a.CacheKeyComponents[key]
+	}
+
+	hash := sha256.Sum256([]byte(keyStr))
+	return strings.ToLower(base64.RawURLEncoding.EncodeToString(hash[:]))
 }
