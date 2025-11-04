@@ -379,7 +379,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 							}
 							return b.AuthResultFromToken(ctx, authParams, token)
 						case accesstokens.ATUnknown:
-							return ar, errors.New("Silent request type cannot be ATUnknown")
+							return ar, errors.New("silent request type cannot be ATUnknown")
 						}
 					}
 				}
