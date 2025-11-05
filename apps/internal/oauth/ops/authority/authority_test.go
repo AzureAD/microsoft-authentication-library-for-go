@@ -641,6 +641,12 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			authority:   "https://region.login.microsoftonline.com/tenant-id",
 			aliases:     nil,
 			expectError: false,
+		}, {
+			desc:        "regional authority subdomain with matching trusted issuer",
+			issuer:      "https://login.dummy-uri.com/tenant-id",
+			authority:   "https://region.login.dummy-uri.com/tenant-id",
+			aliases:     nil,
+			expectError: false,
 		},
 	}
 

@@ -129,36 +129,22 @@ func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI st
 		return nil
 	}
 
-	// Normalize for suffix checks (avoid reallocating repeatedly)
-	normalizedAuthority := strings.TrimSuffix(authorityURI, "/")
-	normalizedIssuer := strings.TrimSuffix(r.Issuer, "/")
-
-	// Allow authority to have extra path segments (issuer prefix)
-	if strings.HasSuffix(normalizedAuthority, normalizedIssuer) {
-		return nil
-	}
-
 	// Alias-based acceptance
 	if aliases != nil && aliases[issuerURL.Host] {
 		return nil
 	}
 
-	// Direct trusted host
-	if TrustedHost(issuerURL.Host) {
+	issuerHost := issuerURL.Host
+	authorityHost := authorityURL.Host
+
+	// Accept if issuer host is trusted
+	if TrustedHost(issuerHost) {
 		return nil
 	}
 
-	// Regional authority pattern: <region>.<trustedHost>
-	// Accept if authority host is exactly trusted or ends with ".trustedHost" AND issuer host is trusted.
-	ah := authorityURL.Host
-	if TrustedHost(ah) && TrustedHost(issuerURL.Host) {
+	// Accept if authority is a regional variant ending with ".<issuerHost>"
+	if strings.HasSuffix(authorityHost, "."+issuerHost) {
 		return nil
-	}
-	for trustedHost := range aadTrustedHostList {
-		// Cheap boundary-safe check: ensure suffix match preceded by a dot and not equal to trustedHost already handled above
-		if strings.HasSuffix(ah, "."+trustedHost) && TrustedHost(issuerURL.Host) {
-			return nil
-		}
 	}
 
 	return fmt.Errorf("TenantDiscoveryResponse: issuer '%s' does not match authority '%s' or any trusted/alias rule", r.Issuer, authorityURI)
