@@ -5,6 +5,8 @@ package managedidentity
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -964,7 +966,7 @@ func TestAzureArcErrors(t *testing.T) {
 		},
 		{
 			name:          "Invalid file path",
-			headerValue:   "Basic realm=" + filepath.Join("path", "to", secretKey),
+			headerValue:   basicRealm + filepath.Join("path", "to", secretKey),
 			expectedError: "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
 		},
 		{
@@ -1208,4 +1210,125 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		t.Error("Error should be called at least once")
 	}
 	close(ch)
+}
+
+func TestWithClientCapabilities_TrimsSpaces(t *testing.T) {
+	setEnvVars(t, AppService)
+	mockClient := mock.NewClient()
+	// Reset cache for clean test
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	capabilitiesWithSpaces := []string{" cp1", " cp2   ", " cp3 "}
+	expectedCapabilities := "cp1,cp2,cp3"
+
+	client, err := New(SystemAssigned(),
+		WithHTTPClient(mockClient),
+		WithClientCapabilities(capabilitiesWithSpaces))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if client.clientCapabilities != expectedCapabilities {
+		t.Errorf("WithClientCapabilities() did not trim spaces correctly, got: %s, want: %s", client.clientCapabilities, expectedCapabilities)
+	}
+}
+
+// TestAppServiceWithClaimsAndBadAccessToken tests the scenario where claims are passed
+// and a bad access token is retrieved from the cache
+func TestAppServiceWithClaimsAndBadAccessToken(t *testing.T) {
+	setEnvVars(t, AppService)
+	localUrl := &url.URL{}
+	mockClient := mock.NewClient()
+	// Second response is a successful token response after retrying with claims
+	responseBody, err := getSuccessfulResponse(resource, false)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+	)
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+		mock.WithCallback(func(r *http.Request) {
+			localUrl = r.URL
+		}))
+	// Reset cache for clean test
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	client, err := New(SystemAssigned(),
+		WithHTTPClient(mockClient),
+		WithClientCapabilities([]string{"cp1", "cp2"}))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// Call AcquireToken which should trigger token revocation flow
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("AcquireToken failed: %v", err)
+	}
+
+	// Verify token was obtained successfully
+	if result.AccessToken != token {
+		t.Fatalf("Expected access token %q, got %q", token, result.AccessToken)
+	}
+
+	// Call AcquireToken which should trigger token revocation flow
+	result, err = client.AcquireToken(context.Background(), resource, WithClaims("dummyClaims"))
+	if err != nil {
+		t.Fatalf("AcquireToken failed: %v", err)
+	}
+
+	localUrlQuery := localUrl.Query()
+
+	if localUrlQuery.Get(apiVersionQueryParameterName) != appServiceAPIVersion {
+		t.Fatalf("api-version not on %s got %s", appServiceAPIVersion, localUrlQuery.Get(apiVersionQueryParameterName))
+	}
+	if r := localUrlQuery.Get(resourceQueryParameterName); strings.HasSuffix(r, "/.default") {
+		t.Fatal("suffix /.default was not removed.")
+	}
+	if localUrlQuery.Get("xms_cc") != "cp1,cp2" {
+		t.Fatalf("Expected client capabilities %q, got %q", "cp1,cp2", localUrlQuery.Get("xms_cc"))
+	}
+	hash := sha256.Sum256([]byte(token))
+	if localUrlQuery.Get("token_sha256_to_refresh") != hex.EncodeToString(hash[:]) {
+		t.Fatalf("Expected token_sha256_to_refresh %q, got %q", hex.EncodeToString(hash[:]), localUrlQuery.Get("token_sha256_to_refresh"))
+	}
+	// Verify token was obtained successfully
+	if result.AccessToken != token {
+		t.Fatalf("Expected access token %q, got %q", token, result.AccessToken)
+	}
+}
+
+func TestConvertTokenToSHA256HashString(t *testing.T) {
+	tests := []struct {
+		token        string
+		expectedHash string
+	}{
+		{
+			token:        "test_token",
+			expectedHash: "cc0af97287543b65da2c7e1476426021826cab166f1e063ed012b855ff819656",
+		},
+		{
+			token:        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~",
+			expectedHash: "01588d5a948b6c4facd47866877491b42866b5c10a4d342cf168e994101d352a",
+		},
+		{
+			token:        "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789-_.~",
+			expectedHash: "29c538690068a8ad1797a391bfe23e7fb817b601fc7b78288cb499ab8fd37947",
+		},
+	}
+
+	for _, test := range tests {
+		hash := convertTokenToSHA256HashString(test.token)
+		if hash != test.expectedHash {
+			t.Fatalf("for token %q, expected %q, got %q", test.token, test.expectedHash, hash)
+		}
+	}
 }
