@@ -20,6 +20,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -170,6 +171,7 @@ func SystemAssigned() ID {
 
 // cache never uses the client because instance discovery is always disabled.
 var cacheManager *storage.Manager = storage.New(nil)
+var cacheAccessorMu *sync.RWMutex = &sync.RWMutex{}
 
 type Client struct {
 	httpClient         ops.HTTPClient
@@ -177,7 +179,6 @@ type Client struct {
 	source             Source
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
-	canRefresh         *atomic.Value
 }
 
 type AcquireTokenOptions struct {
@@ -267,7 +268,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		httpClient:         shared.DefaultClient,
 		retryPolicyEnabled: true,
 		source:             source,
-		canRefresh:         &zero,
 	}
 	for _, option := range options {
 		option(&client)
@@ -323,6 +323,8 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	}
 	c.authParams.Scopes = []string{resource}
 
+	cacheAccessorMu.Lock()
+	defer cacheAccessorMu.Unlock()
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
 		stResp, err := cacheManager.Read(ctx, c.authParams)
@@ -331,8 +333,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		}
 		ar, err := base.AuthResultFromStorage(stResp)
 		if err == nil {
-			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
-				defer c.canRefresh.Store(false)
+			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) {
 				if tr, er := c.getToken(ctx, resource); er == nil {
 					return tr, nil
 				}
