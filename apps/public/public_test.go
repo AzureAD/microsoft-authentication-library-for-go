@@ -23,6 +23,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -53,7 +54,7 @@ func fakeBrowserOpenURL(authURL string) error {
 	}
 	redirect := q.Get("redirect_uri")
 	if redirect == "" {
-		return errors.New("missing query param 'redirect_uri'")
+		return errors.New("missing redirect param 'redirect_uri'")
 	}
 	// now send the info to our local redirect server
 	resp, err := http.DefaultClient.Get(redirect + fmt.Sprintf("/?state=%s&code=fake_auth_code", state))
@@ -913,6 +914,78 @@ func TestWithDomainHint(t *testing.T) {
 			if expectHint {
 				acquireOpts = append(acquireOpts, WithDomainHint(domain))
 				urlOpts = append(urlOpts, WithDomainHint(domain))
+			}
+			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, acquireOpts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("browserOpenURL wasn't called")
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			if err == nil {
+				var parsed *url.URL
+				parsed, err = url.Parse(u)
+				if err == nil {
+					err = validate(parsed.Query())
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
+func TestWithPrompt(t *testing.T) {
+	prompt := shared.PromptCreate
+	client, err := New("client-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectPrompt := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectPrompt), func(t *testing.T) {
+			called := false
+			validate := func(v url.Values) error {
+				if !v.Has("prompt") {
+					if !expectPrompt {
+						return nil
+					}
+					return errors.New("expected a prompt")
+				} else if !expectPrompt {
+					return fmt.Errorf("expected no prompt, got %v", v["prompt"][0])
+				}
+
+				if actual := v["prompt"]; len(actual) != 1 || actual[0] != prompt.String() {
+					err = fmt.Errorf(`unexpected prompt "%v"`, actual[0])
+				}
+				return err
+			}
+			browserOpenURL := func(authURL string) error {
+				called = true
+				parsed, err := url.Parse(authURL)
+				if err != nil {
+					return err
+				}
+				query, err := url.ParseQuery(parsed.RawQuery)
+				if err != nil {
+					return err
+				}
+				if err = validate(query); err != nil {
+					t.Fatal(err)
+					return err
+				}
+				// this helper validates the other params and completes the redirect
+				return fakeBrowserOpenURL(authURL)
+			}
+			acquireOpts := []AcquireInteractiveOption{WithOpenURL(browserOpenURL)}
+			var urlOpts []AuthCodeURLOption
+			if expectPrompt {
+				acquireOpts = append(acquireOpts, WithPrompt(prompt))
+				urlOpts = append(urlOpts, WithPrompt(prompt))
 			}
 			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, acquireOpts...)
 			if err != nil {
