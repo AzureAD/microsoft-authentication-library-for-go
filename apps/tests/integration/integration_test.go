@@ -19,6 +19,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
@@ -40,6 +43,9 @@ const (
 	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
 	pemFile         = "../../../cert.pem"
 	ccaPemFile      = "../../../ccaCert.pem"
+
+	msalTeamKeyVault = "https://id4skeyvault.vault.azure.net/"
+	msidTeamKeyVault = "https://msidlabs.vault.azure.net/"
 )
 
 var httpClient = http.Client{}
@@ -90,6 +96,16 @@ type user struct {
 	LastUpdatedBy    string `json:"lastUpdatedBy"`
 	LastUpdatedDate  string `json:"lastUpdatedDate"`
 	Password         string
+}
+
+type app struct {
+	AppType      string `json:"appType"`
+	AppName      string `json:"appName"`
+	AppId        string `json:"appId"`
+	RedirectUri  string `json:"redirectUri"`
+	Authority    string `json:"authority"`
+	LabName      string `json:"labName"`
+	ClientSecret string `json:"clientSecret"`
 }
 
 type secret struct {
@@ -198,7 +214,103 @@ func (l *labClient) secret(ctx context.Context, query url.Values) (string, error
 	return secret.Value, nil
 }
 
-// TODO: Add getApp() when needed
+// msalTokenCredential implements azcore.TokenCredential using MSAL Go's confidential client.
+// It adapts MSAL token acquisition for use with Azure SDK clients.
+type msalTokenCredential struct {
+	client *labClient
+}
+
+// GetToken acquires a token for Azure Key Vault using MSAL.
+func (c *msalTokenCredential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	scopes := []string{"https://vault.azure.net/.default"}
+
+	result, err := c.client.app.AcquireTokenSilent(ctx, scopes)
+	if err != nil {
+		result, err = c.client.app.AcquireTokenByCredential(ctx, scopes)
+		if err != nil {
+			return azcore.AccessToken{}, fmt.Errorf("failed to acquire Key Vault token: %w", err)
+		}
+	}
+
+	return azcore.AccessToken{
+		Token:     result.AccessToken,
+		ExpiresOn: result.ExpiresOn.UTC(),
+	}, nil
+}
+
+// kvSecretClient creates an Azure Key Vault secrets client using MSAL authentication.
+func (l *labClient) kvSecretClient(vaultURL string) (*azsecrets.Client, error) {
+	cred := &msalTokenCredential{client: l}
+	client, err := azsecrets.NewClient(vaultURL, cred, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed to create Key Vault client: %w", err)
+	}
+	return client, nil
+}
+
+// kvSecret retrieves a secret from Azure Key Vault by name.
+func (l *labClient) kvSecret(ctx context.Context, vaultURL, secretName string) (string, error) {
+	client, err := l.kvSecretClient(vaultURL)
+	if err != nil {
+		return "", err
+	}
+
+	resp, err := client.GetSecret(ctx, secretName, "", nil)
+	if err != nil {
+		return "", fmt.Errorf("failed to get secret %s from Key Vault: %w", secretName, err)
+	}
+
+	if resp.Value == nil {
+		return "", fmt.Errorf("secret %s has no value", secretName)
+	}
+
+	return *resp.Value, nil
+}
+
+// kvUser retrieves user information from Azure Key Vault by secret name.
+// The secret contains JSON with a "user" field containing user details.
+func (l *labClient) kvUser(ctx context.Context, secretName string) (user, error) {
+	secretValue, err := l.kvSecret(ctx, msalTeamKeyVault, secretName)
+	if err != nil {
+		return user{}, err
+	}
+
+	var response struct {
+		User user `json:"user"`
+	}
+	err = json.Unmarshal([]byte(secretValue), &response)
+	if err != nil {
+		return user{}, fmt.Errorf("failed to parse user JSON from Key Vault secret: %w", err)
+	}
+
+	if response.User.LabName != "" {
+		response.User.Password, err = l.kvSecret(ctx, msidTeamKeyVault, response.User.LabName)
+		if err != nil {
+			return response.User, fmt.Errorf("failed to retrieve password for user: %w", err)
+		}
+	}
+
+	return response.User, nil
+}
+
+// kvApp retrieves application information from Azure Key Vault by secret name.
+// The secret contains JSON with an "app" field containing Azure app registration details.
+func (l *labClient) kvApp(ctx context.Context, secretName string) (app, error) {
+	secretValue, err := l.kvSecret(ctx, msalTeamKeyVault, secretName)
+	if err != nil {
+		return app{}, err
+	}
+
+	var response struct {
+		App app `json:"app"`
+	}
+	err = json.Unmarshal([]byte(secretValue), &response)
+	if err != nil {
+		return app{}, fmt.Errorf("failed to parse app JSON from Key Vault secret: %w", err)
+	}
+
+	return response.App, nil
+}
 
 func testUser(ctx context.Context, desc string, lc *labClient, query url.Values) user {
 	testUser, err := lc.user(ctx, query)
@@ -206,6 +318,24 @@ func testUser(ctx context.Context, desc string, lc *labClient, query url.Values)
 		panic(fmt.Sprintf("TestUsernamePassword(%s) setup: testUser(): Failed to get input user: %s", desc, err))
 	}
 	return testUser
+}
+
+// kvTestUser is a test helper that retrieves user information from Key Vault and panics on error.
+func kvTestUser(ctx context.Context, desc string, lc *labClient, secretName string) user {
+	u, err := lc.kvUser(ctx, secretName)
+	if err != nil {
+		panic(fmt.Sprintf("%s setup: kvTestUser(): %s", desc, err))
+	}
+	return u
+}
+
+// kvTestApp is a test helper that retrieves app information from Key Vault and panics on error.
+func kvTestApp(ctx context.Context, desc string, lc *labClient, secretName string) app {
+	a, err := lc.kvApp(ctx, secretName)
+	if err != nil {
+		panic(fmt.Sprintf("%s setup: kvTestApp(): %s", desc, err))
+	}
+	return a
 }
 
 func TestUsernamePassword(t *testing.T) {
@@ -219,16 +349,20 @@ func TestUsernamePassword(t *testing.T) {
 	}
 
 	tests := []struct {
-		desc string
-		vals url.Values
+		desc           string
+		userSecretName string
+		appSecretName  string
 	}{
-		{"ADFSv4", url.Values{"usertype": []string{"federated"}, "federationProvider": []string{"ADFSv4"}}},
+		{"Managed", "MSAL-User-Default-JSON", "MSAL-App-Default-JSON"},
+		{"ADFSv2022", "MSAL-USER-FedDefault-JSON", "MSAL-App-Default-JSON"},
 	}
 	for _, test := range tests {
 		ctx := context.Background()
 
-		user := testUser(ctx, test.desc, labClientInstance, test.vals)
-		app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority))
+		user := kvTestUser(ctx, test.desc, labClientInstance, test.userSecretName)
+		appConfig := kvTestApp(ctx, test.desc, labClientInstance, test.appSecretName)
+
+		app, err := public.New(appConfig.AppId, public.WithAuthority(organizationsAuthority))
 		if err != nil {
 			panic(errors.Verbose(err))
 		}
@@ -254,7 +388,6 @@ func TestUsernamePassword(t *testing.T) {
 	}
 }
 
-// TODO: update this at a later date, see issue https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/513
 func TestConfidentialClientWithSecret(t *testing.T) {
 	t.Skip("Skipping test until fix")
 	if testing.Short() {
@@ -418,8 +551,10 @@ func TestRemoveAccount(t *testing.T) {
 	}
 	ctx := context.Background()
 
-	user := testUser(ctx, "TestRemoveAccount", labClientInstance, url.Values{"usertype": []string{"cloud"}})
-	app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority))
+	user := kvTestUser(ctx, "TestRemoveAccount", labClientInstance, "MSAL-User-Default-JSON")
+	appConfig := kvTestApp(ctx, "TestRemoveAccount", labClientInstance, "MSAL-App-Default-JSON")
+
+	app, err := public.New(appConfig.AppId, public.WithAuthority(organizationsAuthority))
 	if err != nil {
 		panic(errors.Verbose(err))
 	}
@@ -454,23 +589,34 @@ func TestRemoveAccount(t *testing.T) {
 
 }
 
-const testCacheFile = "serialized_cache_1.1.1.json"
-
 func TestAccountFromCache(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
 	}
-	cacheAccessor := &TokenCache{file: testCacheFile}
+	//cacheAccessor := &TokenCache{file: testCacheFile}
 	labClientInstance, err := newLabClient()
 	if err != nil {
 		t.Fatalf("TestAccountFromCache: on newLabClient(): got err == %s, want err == nil", errors.Verbose(err))
 	}
 	ctx := context.Background()
-	user := testUser(ctx, "Managed", labClientInstance, url.Values{"usertype": []string{"cloud"}})
+	user := kvTestUser(ctx, "TestAccountFromCache", labClientInstance, "MSAL-User-Default-JSON")
+	appConfig := kvTestApp(ctx, "TestAccountFromCache", labClientInstance, "MSAL-APP-AzureADMultipleOrgsPC-JSON")
 
-	app, err := public.New(user.AppID, public.WithAuthority(organizationsAuthority), public.WithCache(cacheAccessor))
+	app, err := public.New(appConfig.AppId, public.WithAuthority(organizationsAuthority))
 	if err != nil {
 		t.Fatalf("TestAccountFromCache: on New(): got err == %s, want err == nil", errors.Verbose(err))
+	}
+
+	// Populate the cache
+	//nolint:staticcheck // SA1019: using deprecated function intentionally
+	_, err = app.AcquireTokenByUsernamePassword(
+		context.Background(),
+		[]string{graphDefaultScope},
+		user.Upn,
+		user.Password,
+	)
+	if err != nil {
+		t.Fatalf("TestRemoveAccount: on AcquireTokenByUsernamePassword(): got err == %s, want err == nil", errors.Verbose(err))
 	}
 
 	// look in the cache to see if the account to use has been cached
