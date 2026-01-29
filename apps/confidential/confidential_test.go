@@ -2208,6 +2208,46 @@ func TestWithLoginHint(t *testing.T) {
 	}
 }
 
+func TestWithState(t *testing.T) {
+	state := "abc-123-secure-string"
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(fakeAuthority, fakeClientID, cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectState := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectState), func(t *testing.T) {
+			opts := []AuthCodeURLOption{}
+			if expectState {
+				opts = append(opts, WithState(state))
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", localhost, tokenScope, opts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			parsed, err := url.Parse(u)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !parsed.Query().Has("state") {
+				if !expectState {
+					return
+				}
+				t.Fatal("expected a state")
+			} else if !expectState {
+				t.Fatal("expected no state")
+			}
+			if actual := parsed.Query()["state"]; len(actual) != 1 || actual[0] != state {
+				t.Fatalf(`unexpected state "%v"`, actual)
+			}
+		})
+	}
+}
+
 func TestWithDomainHint(t *testing.T) {
 	domain := "contoso.com"
 	cred, err := NewCredFromSecret(fakeSecret)
