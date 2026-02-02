@@ -58,6 +58,35 @@ const (
 	TokenSourceCache            = base.TokenSourceCache
 )
 
+// Prompt specifies the type of user interaction that is required during interactive authentication.
+// For more details, see https://learn.microsoft.com/en-us/entra/identity-platform/v2-oauth2-auth-code-flow#request-an-authorization-code
+type Prompt string
+
+const (
+	// PromptSelectAccount interrupts single sign-on by showing an account picker listing all accounts,
+	// allowing the user to select one. This is the default behavior for AcquireTokenInteractive.
+	PromptSelectAccount Prompt = "select_account"
+
+	// PromptLogin forces the user to enter their credentials, even if they have an active session.
+	// Use this when you need to ensure the user is re-authenticating, for example after a security event
+	// or when the application requires fresh credentials for compliance reasons.
+	PromptLogin Prompt = "login"
+
+	// PromptConsent triggers the OAuth consent dialog after the user signs in, asking the user to grant
+	// permissions to the application. Use this when you need to request additional permissions or when
+	// consent was previously revoked.
+	PromptConsent Prompt = "consent"
+
+	// PromptNoPrompt attempts to complete the sign-in silently without any user interaction.
+	// If silent sign-in fails because there is no suitable session, Microsoft Entra ID returns
+	// an "interaction_required" error. Use this for background authentication attempts.
+	PromptNoPrompt Prompt = "none"
+
+	// PromptCreate indicates to the identity provider that a new account should be created.
+	// This is used in external identity scenarios where the user wants to sign up for a new account.
+	PromptCreate Prompt = "create"
+)
+
 var errNoAccount = errors.New("no account was specified with public.WithSilentAccount(), or the specified account is invalid")
 
 // clientOptions configures the Client's behavior.
@@ -150,6 +179,7 @@ func New(clientID string, options ...Option) (Client, error) {
 // authCodeURLOptions contains options for AuthCodeURL
 type authCodeURLOptions struct {
 	claims, loginHint, tenantID, domainHint string
+	prompt                                  Prompt
 }
 
 // AuthCodeURLOption is implemented by options for AuthCodeURL
@@ -159,7 +189,7 @@ type AuthCodeURLOption interface {
 
 // AuthCodeURL creates a URL used to acquire an authorization code.
 //
-// Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithTenantID]
+// Options: [WithClaims], [WithDomainHint], [WithLoginHint], [WithPrompt], [WithTenantID]
 func (pca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, scopes []string, opts ...AuthCodeURLOption) (string, error) {
 	o := authCodeURLOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -172,6 +202,7 @@ func (pca Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string,
 	ap.Claims = o.claims
 	ap.LoginHint = o.loginHint
 	ap.DomainHint = o.domainHint
+	ap.Prompt = string(o.prompt)
 	return pca.base.AuthCodeURL(ctx, clientID, redirectURI, scopes, ap)
 }
 
@@ -242,6 +273,37 @@ func WithAuthenticationScheme(authnScheme AuthenticationScheme) interface {
 					t.authnScheme = authnScheme
 				case *acquireTokenByUsernamePasswordOptions:
 					t.authnScheme = authnScheme
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithPrompt specifies the type of user interaction that should occur during authentication.
+// This overrides the default behavior of showing an account selector (PromptSelectAccount).
+// Use PromptLogin to force re-authentication, PromptConsent to force consent, or PromptNoPrompt
+// for silent authentication attempts.
+// This option is valid for [AcquireTokenInteractive] and [AuthCodeURL].
+func WithPrompt(prompt Prompt) interface {
+	AcquireInteractiveOption
+	AuthCodeURLOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		AuthCodeURLOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *authCodeURLOptions:
+					t.prompt = prompt
+				case *interactiveAuthOptions:
+					t.prompt = prompt
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
@@ -529,6 +591,7 @@ type interactiveAuthOptions struct {
 	claims, domainHint, loginHint, redirectURI, tenantID string
 	openURL                                              func(url string) error
 	authnScheme                                          AuthenticationScheme
+	prompt                                               Prompt
 }
 
 // AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
@@ -640,7 +703,7 @@ func WithOpenURL(openURL func(url string) error) interface {
 // AcquireTokenInteractive acquires a security token from the authority using the default web browser to select the account.
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
-// Options: [WithDomainHint], [WithLoginHint], [WithOpenURL], [WithRedirectURI], [WithTenantID]
+// Options: [WithDomainHint], [WithLoginHint], [WithOpenURL], [WithPrompt], [WithRedirectURI], [WithTenantID]
 func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
 	o := interactiveAuthOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -674,7 +737,11 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	authParams.LoginHint = o.loginHint
 	authParams.DomainHint = o.domainHint
 	authParams.State = uuid.New().String()
-	authParams.Prompt = "select_account"
+	if o.prompt != "" {
+		authParams.Prompt = string(o.prompt)
+	} else {
+		authParams.Prompt = "select_account"
+	}
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
 	}

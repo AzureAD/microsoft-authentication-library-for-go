@@ -936,6 +936,92 @@ func TestWithDomainHint(t *testing.T) {
 	}
 }
 
+func TestWithPrompt(t *testing.T) {
+	client, err := New("client-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+
+	testCases := []struct {
+		name           string
+		prompt         Prompt
+		expectedPrompt string
+	}{
+		{"default_select_account", "", "select_account"},
+		{"explicit_select_account", PromptSelectAccount, "select_account"},
+		{"login", PromptLogin, "login"},
+		{"consent", PromptConsent, "consent"},
+		{"none", PromptNoPrompt, "none"},
+		{"create", PromptCreate, "create"},
+	}
+
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			validate := func(v url.Values, expectedPrompt string) error {
+				actual := v.Get("prompt")
+				if actual != expectedPrompt {
+					return fmt.Errorf("expected prompt=%q, got %q", expectedPrompt, actual)
+				}
+				return nil
+			}
+			browserOpenURL := func(authURL string) error {
+				called = true
+				parsed, err := url.Parse(authURL)
+				if err != nil {
+					return err
+				}
+				query, err := url.ParseQuery(parsed.RawQuery)
+				if err != nil {
+					return err
+				}
+				// AcquireTokenInteractive always has a prompt (defaults to select_account)
+				if err = validate(query, tc.expectedPrompt); err != nil {
+					t.Fatal(err)
+					return err
+				}
+				return fakeBrowserOpenURL(authURL)
+			}
+
+			acquireOpts := []AcquireInteractiveOption{WithOpenURL(browserOpenURL)}
+			var urlOpts []AuthCodeURLOption
+			if tc.prompt != "" {
+				acquireOpts = append(acquireOpts, WithPrompt(tc.prompt))
+				urlOpts = append(urlOpts, WithPrompt(tc.prompt))
+			}
+
+			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, acquireOpts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("browserOpenURL wasn't called")
+			}
+
+			// Also test AuthCodeURL - note: AuthCodeURL only has a prompt if explicitly set
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			if err == nil {
+				var parsed *url.URL
+				parsed, err = url.Parse(u)
+				if err == nil {
+					// AuthCodeURL doesn't have a default prompt, so expect empty string if not set
+					expectedForAuthCodeURL := ""
+					if tc.prompt != "" {
+						expectedForAuthCodeURL = tc.expectedPrompt
+					}
+					err = validate(parsed.Query(), expectedForAuthCodeURL)
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestWithAuthenticationScheme(t *testing.T) {
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo, tenant := "login.microsoftonline.com", "tenant"
