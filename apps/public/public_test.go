@@ -55,8 +55,15 @@ func fakeBrowserOpenURL(authURL string) error {
 	if redirect == "" {
 		return errors.New("missing query param 'redirect_uri'")
 	}
-	// now send the info to our local redirect server
-	resp, err := http.DefaultClient.Get(redirect + fmt.Sprintf("/?state=%s&code=fake_auth_code", state))
+	// Verify response_mode=form_post is requested
+	if q.Get("response_mode") != "form_post" {
+		return errors.New("missing or incorrect response_mode, expected 'form_post'")
+	}
+	// Send POST request with form data (simulating form_post response mode)
+	resp, err := http.DefaultClient.PostForm(redirect, url.Values{
+		"state": []string{state},
+		"code":  []string{"fake_auth_code"},
+	})
 	if err != nil {
 		return err
 	}
