@@ -528,13 +528,44 @@ func (pca Client) RemoveAccount(ctx context.Context, account Account) error {
 // interactiveAuthOptions contains the optional parameters used to acquire an access token for interactive auth code flow.
 type interactiveAuthOptions struct {
 	claims, domainHint, loginHint, redirectURI, tenantID, prompt string
-	openURL                                                      func(url string) error
-	authnScheme                                                  AuthenticationScheme
+	openURL                                              func(url string) error
+	authnScheme                                          AuthenticationScheme
+	successPage                                          []byte
+	errorPage                                            []byte
 }
 
 // AcquireInteractiveOption is implemented by options for AcquireTokenInteractive
 type AcquireInteractiveOption interface {
 	acquireInteractiveOption()
+}
+
+// WithSystemBrowserOptions sets the optional success and error pages.
+// The error page supports two optional html template variables {{.Code}} and {{.Err}},
+// which will be replaced with the corresponding error code, and descriptions.
+func WithSystemBrowserOptions(successPage, errorPage []byte) interface {
+	AcquireInteractiveOption
+	options.CallOption
+} {
+	return struct {
+		AcquireInteractiveOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *interactiveAuthOptions:
+					t.successPage = make([]byte, len(successPage))
+					copy(t.successPage, successPage)
+
+					t.errorPage = make([]byte, len(errorPage))
+					copy(t.errorPage, errorPage)
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }
 
 // WithLoginHint pre-populates the login prompt with a username.
@@ -710,7 +741,7 @@ func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, 
 	if o.authnScheme != nil {
 		authParams.AuthnScheme = o.authnScheme
 	}
-	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL)
+	res, err := pca.browserLogin(ctx, redirectURL, authParams, o.openURL, o.successPage, o.errorPage)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -748,13 +779,13 @@ func parsePort(u *url.URL) (int, error) {
 }
 
 // browserLogin calls openURL and waits for a user to log in
-func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams, openURL func(string) error) (interactiveAuthResult, error) {
+func (pca Client) browserLogin(ctx context.Context, redirectURI *url.URL, params authority.AuthParams, openURL func(string) error, successPage []byte, errorPage []byte) (interactiveAuthResult, error) {
 	// start local redirect server so login can call us back
 	port, err := parsePort(redirectURI)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}
-	srv, err := local.New(params.State, port)
+	srv, err := local.New(params.State, port, successPage, errorPage)
 	if err != nil {
 		return interactiveAuthResult{}, err
 	}
