@@ -16,12 +16,14 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/fake"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -52,7 +54,7 @@ func fakeBrowserOpenURL(authURL string) error {
 	}
 	redirect := q.Get("redirect_uri")
 	if redirect == "" {
-		return errors.New("missing query param 'redirect_uri'")
+		return errors.New("missing redirect param 'redirect_uri'")
 	}
 	// now send the info to our local redirect server
 	resp, err := http.DefaultClient.Get(redirect + fmt.Sprintf("/?state=%s&code=fake_auth_code", state))
@@ -210,7 +212,7 @@ func TestAcquireTokenByDeviceCode(t *testing.T) {
 		VerificationURL: "https://device.code.local",
 	}
 	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody("http://localhost", "tenant")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody("login.microsoftonline.com", "tenant")))
 	mockClient.AppendResponse(mock.WithBody([]byte(
 		fmt.Sprintf(
 			`{"device_code":%q,"expires_in":60,"interval":%d,"message":%q,"user_code":%q,"verification_uri":%q}`,
@@ -935,6 +937,78 @@ func TestWithDomainHint(t *testing.T) {
 	}
 }
 
+func TestWithPrompt(t *testing.T) {
+	prompt := shared.PromptCreate
+	client, err := New("client-id")
+	if err != nil {
+		t.Fatal(err)
+	}
+	client.base.Token.AccessTokens = &fake.AccessTokens{}
+	client.base.Token.Authority = &fake.Authority{}
+	client.base.Token.Resolver = &fake.ResolveEndpoints{}
+	for _, expectPrompt := range []bool{true, false} {
+		t.Run(fmt.Sprint(expectPrompt), func(t *testing.T) {
+			called := false
+			validate := func(v url.Values) error {
+				if !v.Has("prompt") {
+					if !expectPrompt {
+						return nil
+					}
+					return errors.New("expected a prompt")
+				} else if !expectPrompt {
+					return fmt.Errorf("expected no prompt, got %v", v["prompt"][0])
+				}
+
+				if actual := v["prompt"]; len(actual) != 1 || actual[0] != prompt.String() {
+					err = fmt.Errorf(`unexpected prompt "%v"`, actual[0])
+				}
+				return err
+			}
+			browserOpenURL := func(authURL string) error {
+				called = true
+				parsed, err := url.Parse(authURL)
+				if err != nil {
+					return err
+				}
+				query, err := url.ParseQuery(parsed.RawQuery)
+				if err != nil {
+					return err
+				}
+				if err = validate(query); err != nil {
+					t.Fatal(err)
+					return err
+				}
+				// this helper validates the other params and completes the redirect
+				return fakeBrowserOpenURL(authURL)
+			}
+			acquireOpts := []AcquireInteractiveOption{WithOpenURL(browserOpenURL)}
+			var urlOpts []AuthCodeURLOption
+			if expectPrompt {
+				acquireOpts = append(acquireOpts, WithPrompt(prompt))
+				urlOpts = append(urlOpts, WithPrompt(prompt))
+			}
+			_, err = client.AcquireTokenInteractive(context.Background(), tokenScope, acquireOpts...)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !called {
+				t.Fatal("browserOpenURL wasn't called")
+			}
+			u, err := client.AuthCodeURL(context.Background(), "id", "https://localhost", tokenScope, urlOpts...)
+			if err == nil {
+				var parsed *url.URL
+				parsed, err = url.Parse(u)
+				if err == nil {
+					err = validate(parsed.Query())
+				}
+			}
+			if err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestWithAuthenticationScheme(t *testing.T) {
 	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
 	lmo, tenant := "login.microsoftonline.com", "tenant"
@@ -1045,4 +1119,59 @@ func getNewClientWithMockedResponses(
 	}
 
 	return client, nil
+}
+
+func TestAcquireTokenSilentWithRefreshOnIsExpired(t *testing.T) {
+	accessToken := "*"
+	homeTenant := "home-tenant"
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
+		fmt.Sprintf(`{"uid":"uid","utid":"%s"}`, homeTenant),
+	))
+	lmo := "login.microsoftonline.com"
+	originalTime := base.Now
+	defer func() {
+		base.Now = originalTime
+	}()
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("new-"+accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+
+	client, err := New("common",
+		WithAuthority(fmt.Sprintf(authorityFmt, lmo, "common")),
+		WithHTTPClient(mockClient),
+		WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// the auth flow isn't important, we just need to populate the cache
+	ar, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	account := ar.Account
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	// moving time forward to expire the current token
+	fixedTime := time.Now().Add(time.Duration(36001) * time.Second)
+	base.Now = func() time.Time {
+		return fixedTime
+	}
+	// calling the acquire token again
+	ar, err = client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if ar.AccessToken != "new-"+accessToken {
+		t.Fatalf("expected %q, got %q", "new-"+accessToken, ar.AccessToken)
+	}
+
 }

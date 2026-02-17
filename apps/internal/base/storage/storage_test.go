@@ -266,6 +266,7 @@ func TestReadAccessToken(t *testing.T) {
 		[]string{"user.read", "openid"},
 		"tokenType",
 		"",
+		"",
 	)
 	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
@@ -277,6 +278,7 @@ func TestReadAccessToken(t *testing.T) {
 		"realm2",
 		"cid2",
 		[]string{"user.read", "openid"},
+		"",
 		"",
 		"",
 	)
@@ -292,6 +294,7 @@ func TestReadAccessToken(t *testing.T) {
 		[]string{"user.read", "openid"},
 		"Bearer",
 		"",
+		"",
 	)
 	if diff := pretty.Compare(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
@@ -303,6 +306,7 @@ func TestReadAccessToken(t *testing.T) {
 		"cid",
 		[]string{"user.read", "openid"},
 		"tokenType",
+		"",
 		"",
 	)
 	if !reflect.ValueOf(retAccessToken).IsZero() {
@@ -316,6 +320,7 @@ func TestReadAccessToken(t *testing.T) {
 		[]string{"user.read", "openid"},
 		"",
 		"",
+		"",
 	)
 	if !reflect.ValueOf(retAccessToken2).IsZero() {
 		t.Fatal("expected to find no access token")
@@ -327,6 +332,7 @@ func TestReadAccessToken(t *testing.T) {
 		"cid2",
 		[]string{"user.read", "openid"},
 		"tokenType",
+		"",
 		"",
 	)
 	if !reflect.ValueOf(retAccessToken2).IsZero() {

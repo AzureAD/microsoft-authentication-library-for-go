@@ -118,7 +118,7 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     accessToken := result.AccessToken
     ```
 
-    * ManagedIdentity clietn can simply call `AcquireToken()`:
+    * ManagedIdentity client can simply call `AcquireToken()`:
     ```go
     resource := "<Your resource>"
 	result, err := miSystemAssigned.AcquireToken(context.TODO(), resource)
