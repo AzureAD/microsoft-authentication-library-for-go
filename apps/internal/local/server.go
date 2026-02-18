@@ -167,11 +167,10 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		s.error(w, http.StatusBadRequest, "failed to parse form data: %v", err)
 		return
 	}
-	getParam := r.PostFormValue
 
-	headerErr := getParam("error")
+	headerErr := r.PostFormValue("error")
 	if headerErr != "" {
-		desc := html.EscapeString(getParam("error_description"))
+		desc := html.EscapeString(r.PostFormValue("error_description"))
 		escapedHeaderErr := html.EscapeString(headerErr)
 		// Note: It is a little weird we handle some errors by not going to the failPage. If they all should,
 		// change this to s.error() and make s.error() write the failPage instead of an error code.
@@ -181,7 +180,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	respState := getParam("state")
+	respState := r.PostFormValue("state")
 	switch respState {
 	case s.reqState:
 	case "":
@@ -192,7 +191,7 @@ func (s *Server) handler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	code := getParam("code")
+	code := r.PostFormValue("code")
 	if code == "" {
 		s.error(w, http.StatusInternalServerError, "authorization code missing in response")
 		return
