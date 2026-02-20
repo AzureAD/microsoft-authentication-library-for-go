@@ -23,44 +23,44 @@ func TestServer(t *testing.T) {
 		desc       string
 		reqState   string
 		port       int
-		q          url.Values
+		formData   url.Values
 		failPage   bool
 		statusCode int
 	}{
 		{
-			desc:       "Error: Query Values has 'error' key",
+			desc:       "Error: Form data has 'error' key",
 			reqState:   "state",
 			port:       0,
-			q:          url.Values{"state": []string{"state"}, "error": []string{"error"}},
+			formData:   url.Values{"state": []string{"state"}, "error": []string{"error"}},
 			statusCode: 200,
 			failPage:   true,
 		},
 		{
-			desc:       "Error: Query Values missing 'state' key",
+			desc:       "Error: Form data missing 'state' key",
 			reqState:   "state",
 			port:       0,
-			q:          url.Values{"code": []string{"code"}},
+			formData:   url.Values{"code": []string{"code"}},
 			statusCode: http.StatusInternalServerError,
 		},
 		{
-			desc:       "Error: Query Values missing had 'state' key value that was different that requested",
+			desc:       "Error: Form data had 'state' key value that was different than requested",
 			reqState:   "state",
 			port:       0,
-			q:          url.Values{"state": []string{"etats"}, "code": []string{"code"}},
+			formData:   url.Values{"state": []string{"etats"}, "code": []string{"code"}},
 			statusCode: http.StatusInternalServerError,
 		},
 		{
-			desc:       "Error: Query Values missing 'code' key",
+			desc:       "Error: Form data missing 'code' key",
 			reqState:   "state",
 			port:       0,
-			q:          url.Values{"state": []string{"state"}},
+			formData:   url.Values{"state": []string{"state"}},
 			statusCode: http.StatusInternalServerError,
 		},
 		{
 			desc:       "Success",
 			reqState:   "state",
 			port:       0,
-			q:          url.Values{"state": []string{"state"}, "code": []string{"code"}},
+			formData:   url.Values{"state": []string{"state"}, "code": []string{"code"}},
 			statusCode: 200,
 		},
 	}
@@ -79,14 +79,9 @@ func TestServer(t *testing.T) {
 		if err != nil {
 			panic(err)
 		}
-		u.RawQuery = test.q.Encode()
 
-		resp, err := http.DefaultClient.Do(
-			&http.Request{
-				Method: "GET",
-				URL:    u,
-			},
-		)
+		// Send POST request with form data (form_post response mode)
+		resp, err := http.DefaultClient.PostForm(u.String(), test.formData)
 
 		if err != nil {
 			panic(err)
@@ -137,5 +132,38 @@ func TestServer(t *testing.T) {
 		if diff := pretty.Compare(Result{Code: "code"}, res); diff != "" {
 			t.Errorf("TestServer(%s): -want/+got:\n%s", test.desc, diff)
 		}
+	}
+}
+
+func TestServerRejectsGET(t *testing.T) {
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+
+	serv, err := New("state", 0)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer serv.Shutdown()
+
+	u, err := url.Parse(serv.Addr)
+	if err != nil {
+		t.Fatal(err)
+	}
+	u.RawQuery = url.Values{"state": []string{"state"}, "code": []string{"code"}}.Encode()
+
+	// Send GET request (should be rejected)
+	resp, err := http.DefaultClient.Get(u.String())
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusMethodNotAllowed {
+		t.Errorf("GET request: got StatusCode %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)
+	}
+
+	res := serv.Result(ctx)
+	if res.Err == nil {
+		t.Error("GET request: Result.Err == nil, want error about unexpected response mode")
 	}
 }
