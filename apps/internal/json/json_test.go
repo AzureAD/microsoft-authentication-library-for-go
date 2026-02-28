@@ -9,7 +9,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 type StructA struct {
@@ -145,7 +146,7 @@ func TestUnmarshalRoundTrip(t *testing.T) {
 		case err != nil:
 			continue
 		}
-		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, test.got); diff != "" {
+		if diff := cmp.Diff(test.want, test.got, cmpopts.IgnoreUnexported(time.Time{})); diff != "" {
 			t.Errorf("TestUnmarshal(%s): -want/+got:\n%s", test.desc, diff)
 			continue
 		}
@@ -159,7 +160,7 @@ func TestUnmarshalRoundTrip(t *testing.T) {
 			t.Errorf("TestUnmarshal(%s): Unmarshal round trip failed: %s", test.desc, err)
 			continue
 		}
-		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, test.got); diff != "" {
+		if diff := cmp.Diff(test.want, test.got, cmpopts.IgnoreUnexported(time.Time{})); diff != "" {
 			t.Errorf("TestUnmarshal(%s): Round trip failed. -want/+got:\n%s", test.desc, diff)
 			continue
 		}

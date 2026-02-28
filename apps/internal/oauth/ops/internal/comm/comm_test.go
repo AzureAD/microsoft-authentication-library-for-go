@@ -14,8 +14,7 @@ import (
 	"testing"
 
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
-	"github.com/kylelemons/godebug/diff"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 type recorder struct {
@@ -173,13 +172,13 @@ func TestJSONCall(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.qv, rec.gotQV); diff != "" {
+		if diff := cmp.Diff(test.qv, rec.gotQV); diff != "" {
 			t.Errorf("TestJSONCall(%s): query values: -want/+got:\n%s", test.desc, diff)
 			continue
 		}
 
 		if test.expectHeaders != nil {
-			if diff := pretty.Compare(test.expectHeaders, rec.gotHeaders); diff != "" {
+			if diff := cmp.Diff(test.expectHeaders, rec.gotHeaders); diff != "" {
 				t.Errorf("TestJSONCall(%s): headers: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
@@ -190,13 +189,13 @@ func TestJSONCall(t *testing.T) {
 			if err := json.Unmarshal(rec.gotBody, &gotBody); err != nil {
 				panic(err)
 			}
-			if diff := pretty.Compare(test.expectBody, gotBody); diff != "" {
+			if diff := cmp.Diff(test.expectBody, gotBody); diff != "" {
 				t.Errorf("TestJSONCall(%s): body: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
 		}
 
-		if diff := pretty.Compare(test.want, test.resp); diff != "" {
+		if diff := cmp.Diff(test.want, test.resp); diff != "" {
 			t.Errorf("TestJSONCall(%s): result: -want/+got:\n%s", test.desc, diff)
 		}
 	}
@@ -279,13 +278,13 @@ func TestXMLCall(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.qv, rec.gotQV); diff != "" {
+		if diff := cmp.Diff(test.qv, rec.gotQV); diff != "" {
 			t.Errorf("TestXMLCall(%s): query values: -want/+got:\n%s", test.desc, diff)
 			continue
 		}
 
 		if test.expectHeaders != nil {
-			if diff := pretty.Compare(test.expectHeaders, rec.gotHeaders); diff != "" {
+			if diff := cmp.Diff(test.expectHeaders, rec.gotHeaders); diff != "" {
 				t.Errorf("TestXMLCall(%s): headers: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
@@ -296,13 +295,13 @@ func TestXMLCall(t *testing.T) {
 			if err := xml.Unmarshal(rec.gotBody, &gotBody); err != nil {
 				panic(err)
 			}
-			if diff := pretty.Compare(test.expectBody, gotBody); diff != "" {
+			if diff := cmp.Diff(test.expectBody, gotBody); diff != "" {
 				t.Errorf("TestXMLCall(%s): body: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
 		}
 
-		if diff := pretty.Compare(test.want, test.resp); diff != "" {
+		if diff := cmp.Diff(test.want, test.resp); diff != "" {
 			t.Errorf("TestXMLCall(%s): result: -want/+got:\n%s", test.desc, diff)
 		}
 	}
@@ -406,13 +405,13 @@ func TestSoapCall(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.qv, rec.gotQV); diff != "" {
+		if diff := cmp.Diff(test.qv, rec.gotQV); diff != "" {
 			t.Errorf("TestXMLCall(%s): query values: -want/+got:\n%s", test.desc, diff)
 			continue
 		}
 
 		if test.expectHeaders != nil {
-			if diff := pretty.Compare(test.expectHeaders, rec.gotHeaders); diff != "" {
+			if diff := cmp.Diff(test.expectHeaders, rec.gotHeaders); diff != "" {
 				t.Errorf("TestXMLCall(%s): headers: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
@@ -423,13 +422,13 @@ func TestSoapCall(t *testing.T) {
 			if err := xml.Unmarshal(rec.gotBody, &gotBody); err != nil {
 				panic(err)
 			}
-			if diff := pretty.Compare(test.expectBody, gotBody); diff != "" {
+			if diff := cmp.Diff(test.expectBody, gotBody); diff != "" {
 				t.Errorf("TestXMLCall(%s): body: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
 		}
 
-		if diff := pretty.Compare(test.want, test.resp); diff != "" {
+		if diff := cmp.Diff(test.want, test.resp); diff != "" {
 			t.Errorf("TestXMLCall(%s): result: -want/+got:\n%s", test.desc, diff)
 		}
 	}
@@ -526,7 +525,7 @@ func TestURLFormCall(t *testing.T) {
 		}
 
 		if test.expectHeaders != nil {
-			if diff := pretty.Compare(test.expectHeaders, rec.gotHeaders); diff != "" {
+			if diff := cmp.Diff(test.expectHeaders, rec.gotHeaders); diff != "" {
 				t.Errorf("TestURLFormCall(%s): headers: -want/+got:\n%s", test.desc, diff)
 				continue
 			}
@@ -534,12 +533,12 @@ func TestURLFormCall(t *testing.T) {
 
 		want := test.qv.Encode()
 		got := string(rec.gotBody)
-		if diff := diff.Diff(want, got); diff != "" {
+		if diff := cmp.Diff(want, got); diff != "" {
 			t.Errorf("TestXMLCall(%s): body: -want/+got:\n%s", test.desc, diff)
 			continue
 		}
 
-		if diff := pretty.Compare(test.want, test.resp); diff != "" {
+		if diff := cmp.Diff(test.want, test.resp); diff != "" {
 			t.Errorf("TestXMLCall(%s): result: -want/+got:\n%s", test.desc, diff)
 		}
 	}

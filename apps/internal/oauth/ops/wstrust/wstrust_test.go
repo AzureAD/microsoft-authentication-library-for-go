@@ -17,8 +17,8 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust/defs"
-	"github.com/kylelemons/godebug/diff"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 var testAuthorityEndpoints = authority.NewEndpoints(
@@ -80,10 +80,10 @@ func (f *fakeXMLCaller) compareBase(endpoint string, headers http.Header, qv url
 	if f.gotEndpoint != endpoint {
 		return fmt.Errorf("got endpoint == %s, want endpoint == %s", f.gotEndpoint, endpoint)
 	}
-	if diff := pretty.Compare(headers, f.gotHeaders); diff != "" {
+	if diff := cmp.Diff(headers, f.gotHeaders); diff != "" {
 		return fmt.Errorf("headers -want/+got:\n%s", diff)
 	}
-	if diff := pretty.Compare(qv, f.gotQV); diff != "" {
+	if diff := cmp.Diff(qv, f.gotQV, cmpopts.EquateEmpty()); diff != "" {
 		return fmt.Errorf("qv -want/+got:\n%s", diff)
 	}
 
@@ -126,7 +126,7 @@ func (f *fakeXMLCaller) compareSOAP(action, endpoint string, body, resp interfac
 	bodyStr := replaceURNRE.ReplaceAllString(body.(string), `</was:messageID>`)
 	gotBodyStr := replaceURNRE.ReplaceAllString(body.(string), `</was:messageID>`)
 
-	if diff := diff.Diff(
+	if diff := cmp.Diff(
 		strings.ReplaceAll(bodyStr, ">", ">\n"),    // So we can do a line by line comparison
 		strings.ReplaceAll(gotBodyStr, ">", ">\n"), // So we can do a line by line comparison
 	); diff != "" {

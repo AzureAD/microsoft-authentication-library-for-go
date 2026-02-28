@@ -8,26 +8,9 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"reflect"
+	"net/http/httputil"
 	"strings"
-
-	"github.com/kylelemons/godebug/pretty"
 )
-
-var prettyConf = &pretty.Config{
-	IncludeUnexported: false,
-	SkipZeroFields:    true,
-	TrackCycles:       true,
-	Formatter: map[reflect.Type]interface{}{
-		reflect.TypeOf((*io.Reader)(nil)).Elem(): func(r io.Reader) string {
-			b, err := io.ReadAll(r)
-			if err != nil {
-				return "could not read io.Reader content"
-			}
-			return string(b)
-		},
-	},
-}
 
 type verboser interface {
 	Verbose() string
@@ -82,7 +65,37 @@ func (e InvalidJsonErr) Error() string {
 func (e CallErr) Verbose() string {
 	e.Resp.Request = nil // This brings in a bunch of TLS crap we don't need
 	e.Resp.TLS = nil     // Same
-	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
+	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, dumpRequest(e.Req), dumpResponse(e.Resp))
+}
+
+func dumpRequest(req *http.Request) string {
+	if req == nil {
+		return "nil"
+	}
+
+	b, err := httputil.DumpRequestOut(req, true)
+	if err != nil {
+		return "could not dump request"
+	}
+	if req.Body != nil {
+		req.Body = io.NopCloser(strings.NewReader(""))
+	}
+	return string(b)
+}
+
+func dumpResponse(resp *http.Response) string {
+	if resp == nil {
+		return "nil"
+	}
+
+	b, err := httputil.DumpResponse(resp, true)
+	if err != nil {
+		return "could not dump response"
+	}
+	if resp.Body != nil {
+		resp.Body = io.NopCloser(strings.NewReader(""))
+	}
+	return string(b)
 }
 
 // Is reports whether any error in errors chain matches target.

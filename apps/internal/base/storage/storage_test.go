@@ -17,7 +17,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 const (
@@ -111,7 +111,7 @@ func TestAllAccounts(t *testing.T) {
 	)
 
 	expectedAccounts := []shared.Account{testAccOne, testAccTwo}
-	if diff := pretty.Compare(expectedAccounts, actualAccounts); diff != "" {
+	if diff := cmp.Diff(expectedAccounts, actualAccounts); diff != "" {
 		t.Errorf("Actual accounts differ from expected accounts: -want/+got:\n%s", diff)
 	}
 }
@@ -268,7 +268,7 @@ func TestReadAccessToken(t *testing.T) {
 		"",
 		"",
 	)
-	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
+	if diff := cmp.Diff(testAccessToken, retAccessToken); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
 	// Test that we can find the access token without the token type
@@ -282,7 +282,7 @@ func TestReadAccessToken(t *testing.T) {
 		"",
 		"",
 	)
-	if diff := pretty.Compare(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
+	if diff := cmp.Diff(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
 	// Test that we can find fallback to an empty token type in the cache when the token type is Bearer (defaulted)
@@ -296,7 +296,7 @@ func TestReadAccessToken(t *testing.T) {
 		"",
 		"",
 	)
-	if diff := pretty.Compare(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
+	if diff := cmp.Diff(testAccessTokenWithoutTokenType, retAccessToken2); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
 	retAccessToken = storageManager.readAccessToken(
@@ -364,7 +364,7 @@ func TestWriteAccessToken(t *testing.T) {
 		t.Fatalf("TestwriteAccessToken: got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(testAccessToken, storageManager.contract.AccessTokens[key]); diff != "" {
+	if diff := cmp.Diff(testAccessToken, storageManager.contract.AccessTokens[key]); diff != "" {
 		t.Errorf("TestwriteAccessToken: -want/+got:\n%s", diff)
 	}
 }
@@ -384,7 +384,7 @@ func TestReadAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestreadAccount: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAcc, returnedAccount); diff != "" {
+	if diff := cmp.Diff(testAcc, returnedAccount); diff != "" {
 		t.Errorf("TestreadAccount: -want/+got:\n%s", diff)
 	}
 
@@ -403,7 +403,7 @@ func TestWriteAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestwriteAccount: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAcc, storageManager.contract.Accounts[key]); diff != "" {
+	if diff := cmp.Diff(testAcc, storageManager.contract.Accounts[key]); diff != "" {
 		t.Errorf("TestwriteAccount: -want/+got:\n%s", diff)
 	}
 }
@@ -423,7 +423,7 @@ func TestReadAppMetaData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestreadAppMetaData(readAppMetaData): got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAppMeta, returnedAppMeta); diff != "" {
+	if diff := cmp.Diff(testAppMeta, returnedAppMeta); diff != "" {
 		t.Fatalf("TestreadAppMetaData(readAppMetaData): -want/+got:\n%s", diff)
 	}
 
@@ -442,7 +442,7 @@ func TestWriteAppMetaData(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestwriteAppMetaData: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAppMeta, storageManager.contract.AppMetaData[key]); diff != "" {
+	if diff := cmp.Diff(testAppMeta, storageManager.contract.AppMetaData[key]); diff != "" {
 		t.Errorf("TestwriteAppMetaData: -want/+got:\n%s", diff)
 	}
 }
@@ -473,7 +473,7 @@ func TestReadIDToken(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(testIDToken, returnedIDToken); diff != "" {
+	if diff := cmp.Diff(testIDToken, returnedIDToken); diff != "" {
 		t.Fatalf("TestreadIDToken(good token): -want/+got:\n%s", diff)
 	}
 
@@ -505,7 +505,7 @@ func TestWriteIDToken(t *testing.T) {
 		t.Fatalf("TestwriteIDToken: got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(testIDToken, storageManager.contract.IDTokens[key]); diff != "" {
+	if diff := cmp.Diff(testIDToken, storageManager.contract.IDTokens[key]); diff != "" {
 		t.Errorf("TestwriteIDToken: -want/+got:\n%s", diff)
 	}
 }
@@ -720,7 +720,7 @@ func TestDefaultStorageManagerreadRefreshToken(t *testing.T) {
 		case err != nil:
 			continue
 		}
-		if diff := pretty.Compare(test.want, got); diff != "" {
+		if diff := cmp.Diff(test.want, got); diff != "" {
 			t.Errorf("TestDefaultStorageManagerreadRefreshToken(%s): -want/+got:\n%s", test.name, diff)
 		}
 	}
@@ -836,16 +836,16 @@ func TestUnmarshal(t *testing.T) {
 	}
 
 	actualRTSecret := manager.contract.RefreshTokens["uid.utid-login.windows.net-refreshtoken-my_client_id--s2 s1 s3"].Secret
-	if diff := pretty.Compare(rtSecret, actualRTSecret); diff != "" {
+	if diff := cmp.Diff(rtSecret, actualRTSecret); diff != "" {
 		t.Errorf("TestUnmarshal(refresh token secret): -want/+got:\n%s", diff)
 	}
 
 	actualIDSecret := manager.contract.IDTokens["uid.utid-login.windows.net-idtoken-my_client_id-contoso-"].Secret
-	if diff := pretty.Compare(idSecret, actualIDSecret); diff != "" {
+	if diff := cmp.Diff(idSecret, actualIDSecret); diff != "" {
 		t.Errorf("TestUnmarshal(id secret): -want/+got:\n%s", diff)
 	}
 	actualUser := manager.contract.Accounts["uid.utid-login.windows.net-contoso"].PreferredUsername
-	if diff := pretty.Compare(actualUser, accUser); diff != "" {
+	if diff := cmp.Diff(actualUser, accUser); diff != "" {
 		t.Errorf("TestUnmarshal(actula user): -want/+got:\n%s", diff)
 	}
 	if manager.contract.AppMetaData["AppMetadata-login.windows.net-my_client_id"].FamilyID != "" {
@@ -995,7 +995,7 @@ func TestRead(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.want, got); diff != "" {
+		if diff := cmp.Diff(test.want, got); diff != "" {
 			t.Errorf("TestRead(%s): -want/+got:\n%s", test.desc, diff)
 		}
 	}
@@ -1085,7 +1085,7 @@ func TestWrite(t *testing.T) {
 	if !ok {
 		t.Fatalf("TestWrite(refresh token): refresh token was not written as expected")
 	}
-	if diff := pretty.Compare(testRefreshToken, gotRefresh); diff != "" {
+	if diff := cmp.Diff(testRefreshToken, gotRefresh); diff != "" {
 		t.Fatalf("TestWrite(refresh token): -want/+got\n%s", diff)
 	}
 
@@ -1103,7 +1103,7 @@ func TestWrite(t *testing.T) {
 	}
 	gotAccess.CachedAt = internalTime.Unix{}
 	AccessToken.CachedAt = internalTime.Unix{}
-	if diff := pretty.Compare(AccessToken, gotAccess); diff != "" {
+	if diff := cmp.Diff(AccessToken, gotAccess); diff != "" {
 		t.Fatalf("TestWrite(access token): -want/+got\n%s", diff)
 	}
 
@@ -1111,7 +1111,7 @@ func TestWrite(t *testing.T) {
 	if !ok {
 		t.Fatalf("TestWrite(id token): id token was not written as expected")
 	}
-	if diff := pretty.Compare(testIDToken, gotToken); diff != "" {
+	if diff := cmp.Diff(testIDToken, gotToken); diff != "" {
 		t.Fatalf("TestWrite(id token): -want/+got\n%s", diff)
 	}
 
@@ -1119,7 +1119,7 @@ func TestWrite(t *testing.T) {
 	if !ok {
 		t.Fatalf("TestWrite(account): account was not written as expected")
 	}
-	if diff := pretty.Compare(testAccount, gotAccount); diff != "" {
+	if diff := cmp.Diff(testAccount, gotAccount); diff != "" {
 		t.Fatalf("TestWrite(account): -want/+got\n%s", diff)
 	}
 
@@ -1127,7 +1127,7 @@ func TestWrite(t *testing.T) {
 	if !ok {
 		t.Fatalf("TestWrite(app metadata): metadata was not written as expected")
 	}
-	if diff := pretty.Compare(testAppMeta, gotMeta); diff != "" {
+	if diff := cmp.Diff(testAppMeta, gotMeta); diff != "" {
 		t.Fatalf("TestWrite(app metadata): -want/+got\n%s", diff)
 	}
 }
