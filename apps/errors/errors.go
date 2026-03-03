@@ -6,9 +6,7 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"sort"
 	"strings"
 )
 
@@ -76,12 +74,8 @@ func dumpRequest(req *http.Request) string {
 	fmt.Fprintf(&b, "{Method:     %q,\n", req.Method)
 	fmt.Fprintf(&b, " URL:        {Scheme:   %q,\n", req.URL.Scheme)
 	fmt.Fprintf(&b, "              Host:     %q,\n", req.URL.Host)
-	fmt.Fprintf(&b, "              Path:     %q,\n", req.URL.Path)
-	fmt.Fprintf(&b, "              RawQuery: %q},\n", req.URL.RawQuery)
+	fmt.Fprintf(&b, "              Path:     %q},\n", req.URL.Path)
 	fmt.Fprintf(&b, " Proto:      %q,\n", req.Proto)
-	fmt.Fprintf(&b, " ProtoMajor: %d,\n", req.ProtoMajor)
-	fmt.Fprintf(&b, " ProtoMinor: %d,\n", req.ProtoMinor)
-	fmt.Fprintf(&b, " Header:     %s,\n", formatHeaders(req.Header, "              "))
 	fmt.Fprintf(&b, " Host:       %q}", req.Host)
 	return b.String()
 }
@@ -90,55 +84,13 @@ func dumpResponse(resp *http.Response) string {
 	if resp == nil {
 		return "nil"
 	}
-	var bodyStr string
-	if resp.Body != nil {
-		bodyBytes, err := io.ReadAll(resp.Body)
-		if err == nil {
-			bodyStr = string(bodyBytes)
-		}
-		resp.Body = io.NopCloser(strings.NewReader(""))
-	}
+
 	var b strings.Builder
 	fmt.Fprintf(&b, "{Status:        %q,\n", resp.Status)
 	fmt.Fprintf(&b, " StatusCode:    %d,\n", resp.StatusCode)
 	fmt.Fprintf(&b, " Proto:         %q,\n", resp.Proto)
-	fmt.Fprintf(&b, " ProtoMajor:    %d,\n", resp.ProtoMajor)
-	fmt.Fprintf(&b, " ProtoMinor:    %d,\n", resp.ProtoMinor)
-	fmt.Fprintf(&b, " Header:        %s,\n", formatHeaders(resp.Header, "                 "))
-	if bodyStr == "" {
-		fmt.Fprintf(&b, " Body:          {},\n")
-	} else {
-		fmt.Fprintf(&b, " Body:          %q,\n", bodyStr)
-	}
 	fmt.Fprintf(&b, " ContentLength: %d}", resp.ContentLength)
 	return b.String()
-}
-
-func formatHeaders(header http.Header, indent string) string {
-	if len(header) == 0 {
-		return "{}"
-	}
-	keys := make([]string, 0, len(header))
-	maxLen := 0
-	for k := range header {
-		keys = append(keys, k)
-		if len(k) > maxLen {
-			maxLen = len(k)
-		}
-	}
-	sort.Strings(keys)
-	var parts []string
-	for _, k := range keys {
-		vals := make([]string, len(header[k]))
-		for i, v := range header[k] {
-			vals[i] = fmt.Sprintf("%q", v)
-		}
-		parts = append(parts, fmt.Sprintf("%-*s [%s]", maxLen+1, k+":", strings.Join(vals, ", ")))
-	}
-	if len(parts) == 1 {
-		return "{" + parts[0] + "}"
-	}
-	return "{" + strings.Join(parts, ",\n"+indent) + "}"
 }
 
 // Is reports whether any error in errors chain matches target.
