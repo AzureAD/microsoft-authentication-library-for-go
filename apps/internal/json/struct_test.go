@@ -10,7 +10,7 @@ import (
 	"runtime"
 	"testing"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestDecoderStart(t *testing.T) {
@@ -185,7 +185,7 @@ func TestDecoderStoreValue(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.want, got); diff != "" {
+		if diff := cmp.Diff(test.want, got); diff != "" {
 			t.Errorf("TestDecoderStoreValue(%s): -want/+got:\n%s", test.desc, diff)
 			continue
 		}
@@ -252,7 +252,7 @@ func TestDecoderStoreAdditional(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.want, test.got); diff != "" {
+		if diff := cmp.Diff(test.want, test.got); diff != "" {
 			t.Errorf("TestDecoderStoreAdditional(%s): -want/+got:\n%s", test.desc, diff)
 			continue
 		}

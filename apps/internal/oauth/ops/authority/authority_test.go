@@ -16,7 +16,7 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 type fakeJSONCaller struct {
@@ -54,13 +54,13 @@ func (f *fakeJSONCaller) compare(endpoint string, headers http.Header, qv url.Va
 	if f.gotEndpoint != endpoint {
 		return fmt.Errorf("got endpoint == %s, want endpoint == %s", f.gotEndpoint, endpoint)
 	}
-	if diff := pretty.Compare(headers, f.gotHeaders); diff != "" {
+	if diff := cmp.Diff(headers, f.gotHeaders); diff != "" {
 		return fmt.Errorf("headers -want/+got:\n%s", diff)
 	}
-	if diff := pretty.Compare(qv, f.gotQV); diff != "" {
+	if diff := cmp.Diff(qv, f.gotQV); diff != "" {
 		return fmt.Errorf("qv -want/+got:\n%s", diff)
 	}
-	if diff := pretty.Compare(body, f.gotBody); diff != "" {
+	if diff := cmp.Diff(body, f.gotBody); diff != "" {
 		return fmt.Errorf("body -want/+got:\n%s", diff)
 	}
 	gotValue := reflect.ValueOf(f.gotResp)
@@ -315,7 +315,7 @@ func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 		t.Fatalf("TestCreateAuthorityInfoFromAuthorityUri: got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestCreateAuthorityInfoFromAuthorityUri: -want/+got:\n%s", diff)
 	}
 }
@@ -426,7 +426,7 @@ func TestAuthParamsWithTenant(t *testing.T) {
 		// their fields i.e., we can implicitly compare all the other fields at once. With this
 		// approach, when Info gets a new field, this test needs an update only if that field
 		// contains the tenant, in which case this test will break so maintainers don't overlook it.
-		if diff := pretty.Compare(before, after); diff != "" {
+		if diff := cmp.Diff(before, after); diff != "" {
 			t.Fatal(diff)
 		}
 	})
@@ -501,7 +501,7 @@ func TestMergeCapabilitiesAndClaims(t *testing.T) {
 			if err = json.Unmarshal([]byte(merged), &actual); err != nil {
 				t.Fatal(err)
 			}
-			if diff := pretty.Compare(expected, actual); diff != "" {
+			if diff := cmp.Diff(expected, actual); diff != "" {
 				t.Fatal(diff)
 			}
 		})
