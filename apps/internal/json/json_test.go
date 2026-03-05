@@ -166,6 +166,31 @@ func TestUnmarshalRoundTrip(t *testing.T) {
 	}
 }
 
+// panicUnmarshaler is a type whose UnmarshalJSON panics, used to verify
+// that Unmarshal recovers from panics and returns an error instead.
+type panicUnmarshaler struct{}
+
+func (p *panicUnmarshaler) UnmarshalJSON(_ []byte) error {
+	panic("intentional panic in UnmarshalJSON")
+}
+
+// TestUnmarshalPanicRecovery verifies that Unmarshal converts panics to errors
+// rather than letting them propagate to the caller. This is a regression test
+// for the bug where reflect.New panicked for certain types, causing an unhandled
+// panic instead of a returned error.
+func TestUnmarshalPanicRecovery(t *testing.T) {
+	type testStruct struct {
+		Field            *panicUnmarshaler
+		AdditionalFields map[string]interface{}
+	}
+
+	b := []byte(`{"Field": {}}`)
+	err := Unmarshal(b, &testStruct{})
+	if err == nil {
+		t.Fatal("TestUnmarshalPanicRecovery: expected error from panic recovery, got nil")
+	}
+}
+
 func TestIsDelim(t *testing.T) {
 	tests := []struct {
 		desc  string
