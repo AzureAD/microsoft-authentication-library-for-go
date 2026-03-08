@@ -490,15 +490,20 @@ type IMDSError struct {
 	// StatusCode is the HTTP status code (e.g. 400, 404, 500).
 	StatusCode int
 
-	// Error is the error code string returned in the JSON body.
-	Error string `json:"error"`
+	// Code is the error code string returned in the JSON body (JSON field: "error").
+	Code string `json:"error"`
 
 	// ErrorDescription is the human-readable error description.
 	ErrorDescription string `json:"error_description"`
 }
 
+// Error implements the error interface.
+func (e *IMDSError) Error() string { return e.ErrorMessage() }
+
+// ErrorMessage returns a formatted error string with the status code, error
+// code and description.
 func (e *IMDSError) ErrorMessage() string {
-	return fmt.Sprintf("IMDS error %d: %s – %s", e.StatusCode, e.Error, e.ErrorDescription)
+	return fmt.Sprintf("IMDS error %d: %s – %s", e.StatusCode, e.Code, e.ErrorDescription)
 }
 
 // MAAError represents an error response from the MAA attestation endpoint.
@@ -506,15 +511,20 @@ type MAAError struct {
 	// StatusCode is the HTTP status code.
 	StatusCode int
 
-	// Error is the error code string.
-	Error string `json:"error"`
+	// Code is the error code string (JSON field: "error").
+	Code string `json:"error"`
 
 	// ErrorDescription is the human-readable error description.
 	ErrorDescription string `json:"error_description"`
 }
 
+// Error implements the error interface.
+func (e *MAAError) Error() string { return e.ErrorMessage() }
+
+// ErrorMessage returns a formatted error string with the status code, error
+// code and description.
 func (e *MAAError) ErrorMessage() string {
-	return fmt.Sprintf("MAA error %d: %s – %s", e.StatusCode, e.Error, e.ErrorDescription)
+	return fmt.Sprintf("MAA error %d: %s – %s", e.StatusCode, e.Code, e.ErrorDescription)
 }
 
 // EstsError represents an error response from the ESTS token endpoint.
@@ -522,8 +532,8 @@ type EstsError struct {
 	// StatusCode is the HTTP status code.
 	StatusCode int
 
-	// Error is the OAuth2 error code (e.g. "invalid_client").
-	Error string `json:"error"`
+	// Code is the OAuth2 error code (e.g. "invalid_client") (JSON field: "error").
+	Code string `json:"error"`
 
 	// ErrorDescription is the human-readable error description.
 	ErrorDescription string `json:"error_description"`
@@ -532,7 +542,12 @@ type EstsError struct {
 	CorrelationID string `json:"correlation_id,omitempty"`
 }
 
+// Error implements the error interface.
+func (e *EstsError) Error() string { return e.ErrorMessage() }
+
+// ErrorMessage returns a formatted error string with the status code, error
+// code, description and correlation ID.
 func (e *EstsError) ErrorMessage() string {
 	return fmt.Sprintf("ESTS error %d: %s – %s (correlationId: %s)",
-		e.StatusCode, e.Error, e.ErrorDescription, e.CorrelationID)
+		e.StatusCode, e.Code, e.ErrorDescription, e.CorrelationID)
 }
