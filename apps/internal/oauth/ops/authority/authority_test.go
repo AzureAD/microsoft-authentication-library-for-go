@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"reflect"
@@ -16,6 +17,7 @@ import (
 
 	"github.com/google/uuid"
 
+	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/kylelemons/godebug/pretty"
 )
 
@@ -687,6 +689,10 @@ func TestTrustedHost(t *testing.T) {
 		{"login.microsoftonline.us", true},
 		{"login.usgovcloudapi.net", true},
 		{"login-us.microsoftonline.com", true},
+		// Sovereign clouds (Bleu, Delos, GovSG)
+		{"login.sovcloud-identity.fr", true},
+		{"login.sovcloud-identity.de", true},
+		{"login.sovcloud-identity.sg", true},
 		// Untrusted hosts
 		{"malicious.example.com", false},
 		{"fake-login.microsoftonline.com", false},
@@ -701,5 +707,137 @@ func TestTrustedHost(t *testing.T) {
 				t.Errorf("TrustedHost(%q) = %v, want %v", test.host, result, test.expectedTrust)
 			}
 		})
+	}
+}
+
+// TestAADInstanceDiscoverySovereignRouting verifies that sovereign cloud hosts
+// (Bleu, Delos, GovSG) use themselves as the discovery endpoint rather than
+// falling back to login.microsoftonline.com. Without this, discovery would
+// fail because the default host doesn't have metadata for sovereign clouds.
+func TestAADInstanceDiscoverySovereignRouting(t *testing.T) {
+	sovereignHosts := []string{
+		"login.sovcloud-identity.fr",
+		"login.sovcloud-identity.de",
+		"login.sovcloud-identity.sg",
+	}
+
+	for _, host := range sovereignHosts {
+		t.Run(host, func(t *testing.T) {
+			fake := &fakeJSONCaller{}
+			client := Client{fake}
+
+			authInfo := Info{Host: host, Tenant: "tenant"}
+			_, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+			if err != nil {
+				t.Fatalf("AADInstanceDiscovery(%s): unexpected error: %v", host, err)
+			}
+
+			expectedEndpoint := fmt.Sprintf(aadInstanceDiscoveryEndpoint, host)
+			if fake.gotEndpoint != expectedEndpoint {
+				t.Errorf("expected discovery endpoint %s, got %s", expectedEndpoint, fake.gotEndpoint)
+			}
+		})
+	}
+}
+
+// TestAADInstanceDiscoverySovereignWithRegion verifies that regional endpoints for
+// sovereign clouds use the {region}.{host} pattern, matching the behavior for
+// other trusted hosts. The PreferredCache should remain the non-regional host.
+func TestAADInstanceDiscoverySovereignWithRegion(t *testing.T) {
+	client := Client{&fakeJSONCaller{}}
+	region := "westeurope"
+	sovereignHosts := []string{
+		"login.sovcloud-identity.fr",
+		"login.sovcloud-identity.de",
+		"login.sovcloud-identity.sg",
+	}
+
+	for _, host := range sovereignHosts {
+		t.Run(host, func(t *testing.T) {
+			authInfo := Info{Host: host, Tenant: "tenant", Region: region}
+			resp, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			expectedPreferredNetwork := fmt.Sprintf("%s.%s", region, host)
+			if resp.Metadata[0].PreferredNetwork != expectedPreferredNetwork {
+				t.Errorf("PreferredNetwork = %s, want %s", resp.Metadata[0].PreferredNetwork, expectedPreferredNetwork)
+			}
+			if resp.Metadata[0].PreferredCache != host {
+				t.Errorf("PreferredCache = %s, want %s", resp.Metadata[0].PreferredCache, host)
+			}
+		})
+	}
+}
+
+// TestAADInstanceDiscoveryInvalidInstance verifies that when the discovery endpoint
+// returns HTTP 400 with "invalid_instance" in the error body, the error is wrapped
+// as InvalidInstanceDiscoveryError. This distinction is critical because the storage
+// layer uses it to decide whether to fall back (transient errors) or propagate
+// (genuinely invalid authority).
+func TestAADInstanceDiscoveryInvalidInstance(t *testing.T) {
+	// fakeCallErrCaller returns a CallErr with a configurable status code and body,
+	// simulating a real HTTP error response from the discovery endpoint.
+	fakeCaller := &fakeCallErrCaller{
+		statusCode: http.StatusBadRequest,
+		body:       `{"error": "invalid_instance", "error_description": "AADSTS50049: Unknown instance"}`,
+	}
+	client := Client{fakeCaller}
+
+	authInfo := Info{Host: "bogus.example.com", Tenant: "tenant"}
+	_, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// The error should be wrapped as InvalidInstanceDiscoveryError
+	var invalidErr msalerrors.InvalidInstanceDiscoveryError
+	if !errors.As(err, &invalidErr) {
+		t.Fatalf("expected InvalidInstanceDiscoveryError, got %T: %v", err, err)
+	}
+}
+
+// TestAADInstanceDiscoveryNonInvalidServiceError verifies that HTTP errors other
+// than invalid_instance (e.g., 500 server errors) are returned as regular errors,
+// NOT wrapped as InvalidInstanceDiscoveryError. The storage layer relies on this
+// to apply fallback caching for transient failures.
+func TestAADInstanceDiscoveryNonInvalidServiceError(t *testing.T) {
+	fakeCaller := &fakeCallErrCaller{
+		statusCode: http.StatusInternalServerError,
+		body:       `{"error": "server_error"}`,
+	}
+	client := Client{fakeCaller}
+
+	authInfo := Info{Host: "login.microsoftonline.com", Tenant: "tenant"}
+	_, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+	if err == nil {
+		t.Fatal("expected error, got nil")
+	}
+
+	// Should NOT be wrapped as InvalidInstanceDiscoveryError
+	var invalidErr msalerrors.InvalidInstanceDiscoveryError
+	if errors.As(err, &invalidErr) {
+		t.Fatal("HTTP 500 should not produce InvalidInstanceDiscoveryError")
+	}
+}
+
+// fakeCallErrCaller simulates the HTTP layer returning a CallErr with a specific
+// status code and response body, as comm.do() would for non-200 responses.
+type fakeCallErrCaller struct {
+	statusCode int
+	body       string
+
+	gotEndpoint string
+}
+
+func (f *fakeCallErrCaller) JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error {
+	f.gotEndpoint = endpoint
+	return msalerrors.CallErr{
+		Req: &http.Request{URL: &url.URL{Path: endpoint}},
+		Resp: &http.Response{
+			StatusCode: f.statusCode,
+			Body:       io.NopCloser(strings.NewReader(f.body)),
+		},
+		Err: fmt.Errorf("http call(%s)(GET) error: reply status code was %d:\n%s", endpoint, f.statusCode, f.body),
 	}
 }
