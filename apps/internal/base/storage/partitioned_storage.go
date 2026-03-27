@@ -306,7 +306,7 @@ func (m *PartitionedManager) writeRefreshToken(refreshToken accesstokens.Refresh
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	key := refreshToken.Key()
-	if m.contract.AccessTokensPartition[partitionKey] == nil {
+	if m.contract.RefreshTokensPartition[partitionKey] == nil {
 		m.contract.RefreshTokensPartition[partitionKey] = make(map[string]accesstokens.RefreshToken)
 	}
 	m.contract.RefreshTokensPartition[partitionKey][key] = refreshToken

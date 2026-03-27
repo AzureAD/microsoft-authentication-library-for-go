@@ -623,3 +623,36 @@ func TestWritePartitionedRefreshToken(t *testing.T) {
 			testRefreshToken)
 	}
 }
+
+// TestWriteRefreshTokenWhenAccessTokenPartitionExists verifies that writeRefreshToken
+// correctly initializes the RefreshTokensPartition inner map even when an AccessTokensPartition
+// entry already exists for the same partition key. This is a regression test for a bug where
+// writeRefreshToken checked AccessTokensPartition instead of RefreshTokensPartition, which
+// would skip initialization and panic on nil map write.
+func TestWriteRefreshTokenWhenAccessTokenPartitionExists(t *testing.T) {
+	now := time.Now()
+	storageManager := newPartitionedManagerForTest(nil)
+
+	// Pre-populate AccessTokensPartition with the same partition key
+	testAccessToken := NewAccessToken("hid", "env", "realm", "cid", now, now, now, now, "openid", "secret", "Bearer", "")
+	err := storageManager.writeAccessToken(testAccessToken, "shared_partition")
+	if err != nil {
+		t.Fatalf("writeAccessToken returned unexpected error: %v", err)
+	}
+
+	// Now write a refresh token using the same partition key. Before the fix,
+	// this would skip initializing RefreshTokensPartition and panic.
+	testRefreshToken := accesstokens.NewRefreshToken("hid", "env", "cid", "secret", "fid")
+	testRefreshToken.UserAssertionHash = "user_assertion_hash"
+
+	key := testRefreshToken.Key()
+	err = storageManager.writeRefreshToken(testRefreshToken, "shared_partition")
+	if err != nil {
+		t.Fatalf("writeRefreshToken returned unexpected error: %v", err)
+	}
+	if !reflect.DeepEqual(storageManager.contract.RefreshTokensPartition["shared_partition"][key], testRefreshToken) {
+		t.Errorf("Added refresh token %v differs from expected refresh token %v",
+			storageManager.contract.RefreshTokensPartition["shared_partition"][key],
+			testRefreshToken)
+	}
+}
