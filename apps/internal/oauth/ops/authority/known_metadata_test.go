@@ -95,3 +95,25 @@ func TestPublicCloudAliasesShareEntry(t *testing.T) {
 		}
 	}
 }
+
+// TestTrustedHostsHaveKnownMetadata verifies that every host in the
+// aadTrustedHostList has a corresponding entry in GetKnownMetadata. This
+// catches maintenance mistakes where a new cloud is added to one list but
+// not the other, which would cause fallback to produce a degraded self-entry
+// instead of the correct alias set.
+func TestTrustedHostsHaveKnownMetadata(t *testing.T) {
+	for host := range aadTrustedHostList {
+		t.Run(host, func(t *testing.T) {
+			md, ok := GetKnownMetadata(host)
+			if !ok {
+				t.Fatalf("trusted host %q has no entry in GetKnownMetadata", host)
+			}
+			if md.PreferredNetwork == "" {
+				t.Errorf("trusted host %q has empty PreferredNetwork", host)
+			}
+			if len(md.Aliases) == 0 {
+				t.Errorf("trusted host %q has no aliases", host)
+			}
+		})
+	}
+}

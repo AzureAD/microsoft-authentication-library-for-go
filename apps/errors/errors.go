@@ -96,18 +96,3 @@ func Is(err, target error) bool {
 func As(err error, target interface{}) bool {
 	return errors.As(err, target)
 }
-
-// InvalidInstanceDiscoveryError indicates the authority host returned an
-// "invalid_instance" error, meaning the authority is genuinely invalid.
-// This error should always be propagated to the caller.
-type InvalidInstanceDiscoveryError struct {
-	Err error
-}
-
-func (e InvalidInstanceDiscoveryError) Error() string {
-	return e.Err.Error()
-}
-
-func (e InvalidInstanceDiscoveryError) Unwrap() error {
-	return e.Err
-}

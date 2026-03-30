@@ -616,7 +616,7 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 			var callErr msalerrors.CallErr
 			if errors.As(err, &callErr) && callErr.Resp != nil && callErr.Resp.StatusCode == http.StatusBadRequest {
 				if strings.Contains(callErr.Err.Error(), "invalid_instance") {
-					return resp, msalerrors.InvalidInstanceDiscoveryError{Err: err}
+					return resp, fmt.Errorf("invalid_instance: the authority host is not valid: %w", err)
 				}
 			}
 		}

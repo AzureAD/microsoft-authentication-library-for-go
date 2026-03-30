@@ -11,7 +11,6 @@ import (
 	"sync"
 	"time"
 
-	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -202,8 +201,7 @@ func (m *PartitionedManager) aadMetadata(ctx context.Context, authorityInfo auth
 	discoveryResponse, err := m.requests.AADInstanceDiscovery(ctx, authorityInfo)
 	if err != nil {
 		// If it's an invalid_instance error, always propagate
-		var invalidErr msalerrors.InvalidInstanceDiscoveryError
-		if errors.As(err, &invalidErr) {
+		if strings.Contains(err.Error(), "invalid_instance") {
 			return authority.InstanceDiscoveryMetadata{}, err
 		}
 		// If the caller canceled the context, propagate

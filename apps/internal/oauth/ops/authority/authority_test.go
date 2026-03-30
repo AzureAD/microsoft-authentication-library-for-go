@@ -771,8 +771,8 @@ func TestAADInstanceDiscoverySovereignWithRegion(t *testing.T) {
 }
 
 // TestAADInstanceDiscoveryInvalidInstance verifies that when the discovery endpoint
-// returns HTTP 400 with "invalid_instance" in the error body, the error is wrapped
-// as InvalidInstanceDiscoveryError. This distinction is critical because the storage
+// returns HTTP 400 with "invalid_instance" in the error body, the error message
+// contains "invalid_instance". This distinction is critical because the storage
 // layer uses it to decide whether to fall back (transient errors) or propagate
 // (genuinely invalid authority).
 func TestAADInstanceDiscoveryInvalidInstance(t *testing.T) {
@@ -790,17 +790,16 @@ func TestAADInstanceDiscoveryInvalidInstance(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	// The error should be wrapped as InvalidInstanceDiscoveryError
-	var invalidErr msalerrors.InvalidInstanceDiscoveryError
-	if !errors.As(err, &invalidErr) {
-		t.Fatalf("expected InvalidInstanceDiscoveryError, got %T: %v", err, err)
+	// The error message should contain "invalid_instance"
+	if !strings.Contains(err.Error(), "invalid_instance") {
+		t.Fatalf("expected error containing 'invalid_instance', got: %v", err)
 	}
 }
 
 // TestAADInstanceDiscoveryNonInvalidServiceError verifies that HTTP errors other
-// than invalid_instance (e.g., 500 server errors) are returned as regular errors,
-// NOT wrapped as InvalidInstanceDiscoveryError. The storage layer relies on this
-// to apply fallback caching for transient failures.
+// than invalid_instance (e.g., 500 server errors) are returned as regular errors
+// without "invalid_instance" in the message. The storage layer relies on this to
+// apply fallback caching for transient failures.
 func TestAADInstanceDiscoveryNonInvalidServiceError(t *testing.T) {
 	fakeCaller := &fakeCallErrCaller{
 		statusCode: http.StatusInternalServerError,
@@ -814,10 +813,9 @@ func TestAADInstanceDiscoveryNonInvalidServiceError(t *testing.T) {
 		t.Fatal("expected error, got nil")
 	}
 
-	// Should NOT be wrapped as InvalidInstanceDiscoveryError
-	var invalidErr msalerrors.InvalidInstanceDiscoveryError
-	if errors.As(err, &invalidErr) {
-		t.Fatal("HTTP 500 should not produce InvalidInstanceDiscoveryError")
+	// Should NOT contain "invalid_instance" prefix added by the wrapping logic
+	if strings.Contains(err.Error(), "invalid_instance: the authority host") {
+		t.Fatal("HTTP 500 should not be wrapped as an invalid_instance error")
 	}
 }
 

@@ -6,9 +6,9 @@ package storage
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 
-	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
@@ -94,7 +94,7 @@ func TestAadMetadataFallbackUnknownHost(t *testing.T) {
 func TestAadMetadataInvalidInstancePropagates(t *testing.T) {
 	// Arrange
 	fake := &fakeDiscoveryClient{
-		err: msalerrors.InvalidInstanceDiscoveryError{Err: errors.New("invalid instance")},
+		err: errors.New("invalid_instance: the authority host is not valid"),
 	}
 	m := newForTest(fake)
 	info := authority.Info{Host: "bad.example.com", Tenant: "tenant"}
@@ -102,13 +102,12 @@ func TestAadMetadataInvalidInstancePropagates(t *testing.T) {
 	// Act
 	_, err := m.aadMetadata(context.Background(), info)
 
-	// Assert: error propagated, and it's specifically an InvalidInstanceDiscoveryError
+	// Assert: error propagated because it contains "invalid_instance"
 	if err == nil {
 		t.Fatal("expected error for invalid_instance, got nil")
 	}
-	var invalidErr msalerrors.InvalidInstanceDiscoveryError
-	if !errors.As(err, &invalidErr) {
-		t.Errorf("expected InvalidInstanceDiscoveryError, got %T: %v", err, err)
+	if !strings.Contains(err.Error(), "invalid_instance") {
+		t.Errorf("expected error containing 'invalid_instance', got: %v", err)
 	}
 }
 
@@ -234,7 +233,7 @@ func TestPartitionedAadMetadataFallbackOnNetworkError(t *testing.T) {
 func TestPartitionedAadMetadataInvalidInstancePropagates(t *testing.T) {
 	// Arrange
 	fake := &fakeDiscoveryClient{
-		err: msalerrors.InvalidInstanceDiscoveryError{Err: errors.New("invalid instance")},
+		err: errors.New("invalid_instance: the authority host is not valid"),
 	}
 	pm := &PartitionedManager{requests: fake, aadCache: make(map[string]authority.InstanceDiscoveryMetadata)}
 	pm.contract = NewInMemoryContract()
@@ -247,9 +246,8 @@ func TestPartitionedAadMetadataInvalidInstancePropagates(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected error for invalid_instance, got nil")
 	}
-	var invalidErr msalerrors.InvalidInstanceDiscoveryError
-	if !errors.As(err, &invalidErr) {
-		t.Errorf("expected InvalidInstanceDiscoveryError, got %T: %v", err, err)
+	if !strings.Contains(err.Error(), "invalid_instance") {
+		t.Errorf("expected error containing 'invalid_instance', got: %v", err)
 	}
 }
 
