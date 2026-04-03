@@ -14,10 +14,10 @@ import (
 )
 
 const (
-	// Common test configuration
-	testTenantID = "f645ad92-e38d-4d1a-b510-d1b09a74a8ca"
-	testClientID = "4df2cbbb-8612-49c1-87c8-f334d6d065ad"
-	testScope    = "3091264c-7afb-45d4-b527-39737ee86187/.default"
+	// Common test configuration - matches MSAL .NET FmiIntegrationTests
+	testTenantID = "10c419d4-4a50-45b2-aa4e-919fb84df24f"
+	testClientID = "3bf56293-fbb5-42bd-a407-248ba7431a8c"
+	testScope    = "api://aa464f73-2868-4f67-b0e7-fc2f749e757f/.default"
 	fmiClientID  = "urn:microsoft:identity:fmi"
 	fmiScope     = "api://AzureFMITokenExchange/.default"
 	fmiPath      = "SomeFmiPath/FmiCredentialPath"
@@ -46,8 +46,8 @@ func TestFMIBasicFunctionality(t *testing.T) {
 	ctx := context.Background()
 	scopes := []string{testScope}
 
-	// Get certificate credentials
-	cert, privateKey, err := getCertDataFromFile(ccaPemFile)
+	// Get certificate credentials (LabAuth cert, matching MSAL .NET)
+	cert, privateKey, err := getCertDataFromFile(pemFile)
 	if err != nil {
 		t.Fatalf("TestFMIBasicFunctionality: getCertDataFromFile() failed: %s", errors.Verbose(err))
 	}
@@ -159,8 +159,8 @@ func TestFMIIntegration(t *testing.T) {
 
 // GetFmiCredentialFromRma acquires an FMI token from RMA service
 func GetFmiCredentialFromRma(ctx context.Context) (string, error) {
-	// Get certificate data using the existing helper method
-	cert, privateKey, err := getCertDataFromFile(ccaPemFile)
+	// Get certificate data using the existing helper method (LabAuth cert, matching MSAL .NET)
+	cert, privateKey, err := getCertDataFromFile(pemFile)
 	if err != nil {
 		return "", fmt.Errorf("failed to get certificate data: %w", err)
 	}
