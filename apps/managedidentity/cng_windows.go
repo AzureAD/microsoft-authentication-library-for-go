@@ -17,10 +17,12 @@ import (
 )
 
 const (
-	NCRYPT_MACHINE_KEY_FLAG   = 0x00000020
-	NCRYPT_OVERWRITE_KEY_FLAG = 0x00000080
-	NCRYPT_ALLOW_EXPORT_NONE  = 0x00000001
-	NCRYPT_SILENT_FLAG        = 0x00000040
+	NCRYPT_MACHINE_KEY_FLAG          = 0x00000020
+	NCRYPT_OVERWRITE_KEY_FLAG        = 0x00000080
+	NCRYPT_ALLOW_EXPORT_NONE         = 0x00000001
+	NCRYPT_SILENT_FLAG               = 0x00000040
+	NCRYPT_USE_VIRTUAL_ISOLATION_FLAG = 0x00020000 // Request VBS KeyGuard (Hypervisor-Isolated) key
+	NCRYPT_USE_PER_BOOT_KEY_FLAG     = 0x00040000 // Key material valid only for the current boot
 )
 
 var (
@@ -29,6 +31,7 @@ var (
 	procNCryptOpenKey             = ncrypt.NewProc("NCryptOpenKey")
 	procNCryptCreatePersistedKey  = ncrypt.NewProc("NCryptCreatePersistedKey")
 	procNCryptSetProperty         = ncrypt.NewProc("NCryptSetProperty")
+	procNCryptGetProperty         = ncrypt.NewProc("NCryptGetProperty")
 	procNCryptFinalizeKey         = ncrypt.NewProc("NCryptFinalizeKey")
 	procNCryptExportKey           = ncrypt.NewProc("NCryptExportKey")
 	procNCryptSignHash            = ncrypt.NewProc("NCryptSignHash")
@@ -237,26 +240,30 @@ func hashAlgIDFromOpts(opts crypto.SignerOpts) (string, error) {
 	}
 }
 
-// GetOrCreateKeyGuardKey gets or creates a persistent KeyGuard RSA key in the CNG provider.
-// Returns a crypto.Signer whose Sign method delegates to CNG.
+// GetOrCreateKeyGuardKey gets or creates a persistent VBS KeyGuard RSA key using
+// "Microsoft Software Key Storage Provider" with NCRYPT_USE_VIRTUAL_ISOLATION_FLAG.
+//
+// This mirrors the MSAL.NET approach (KeyGuardAttestationTests.cs):
+//
+//	CngProvider = "Microsoft Software Key Storage Provider"
+//	KeyCreationOptions = NCRYPT_USE_VIRTUAL_ISOLATION_FLAG | NCRYPT_USE_PER_BOOT_KEY_FLAG
+//
+// The key is hardware-backed by Windows VBS (Virtualization-Based Security), not the TPM.
+// AttestKeyGuardImportKey in AttestationClientLib.dll requires a VBS KeyGuard key — NOT a
+// Platform Crypto Provider (TPM) key. This function ensures the correct key type.
 func GetOrCreateKeyGuardKey(keyName string) (crypto.Signer, error) {
 	keyNameUTF16, err := syscall.UTF16PtrFromString(keyName)
 	if err != nil {
 		return nil, fmt.Errorf("invalid key name: %w", err)
 	}
 
-	// Try Microsoft Platform Crypto Provider (uses VBS KeyGuard).
-	// Falls back to Software Key Storage Provider if unavailable.
-	providerName := "Microsoft Platform Crypto Provider"
+	// Always use Microsoft Software Key Storage Provider with VBS Virtual Isolation.
+	// DO NOT use Microsoft Platform Crypto Provider (TPM-backed): AttestKeyGuardImportKey
+	// requires a VBS KeyGuard key and will fail on TPM keys.
+	providerName := "Microsoft Software Key Storage Provider"
 	hProvider, err := openStorageProvider(providerName)
-	usingPlatformProvider := err == nil
 	if err != nil {
-		// Fall back to Software Key Storage Provider
-		providerName = "Microsoft Software Key Storage Provider"
-		hProvider, err = openStorageProvider(providerName)
-		if err != nil {
-			return nil, fmt.Errorf("NCryptOpenStorageProvider failed: %w", err)
-		}
+		return nil, fmt.Errorf("NCryptOpenStorageProvider(%q): %w", providerName, err)
 	}
 	defer procNCryptFreeObject.Call(hProvider)
 
@@ -271,18 +278,17 @@ func GetOrCreateKeyGuardKey(keyName string) (crypto.Signer, error) {
 	)
 
 	if ret == 0 {
-		// Key exists — verify it's usable by exporting the public key.
-		// If that fails, the key may be un-finalized (from a prior failed creation); delete and recreate.
+		// Key exists — verify it's usable (not un-finalized from a prior failed creation).
+		// If export fails, delete and recreate.
 		if _, pubErr := exportPublicKey(hKey); pubErr != nil {
-			// Key is broken — delete it and fall through to recreate.
 			procNCryptDeleteKey.Call(hKey, 0) // NCryptDeleteKey also frees hKey
 			hKey = 0
-			ret = 1 // force the creation branch below
+			ret = 1 // force creation below
 		}
 	}
 
 	if ret != 0 {
-		// Key not found (or deleted above) — create it
+		// Key not found (or deleted above) — create with VBS Virtual Isolation
 		algID, _ := syscall.UTF16PtrFromString("RSA")
 		ret, _, _ = procNCryptCreatePersistedKey.Call(
 			hProvider,
@@ -302,20 +308,27 @@ func GetOrCreateKeyGuardKey(keyName string) (crypto.Signer, error) {
 			return nil, fmt.Errorf("set Length property: %w", err)
 		}
 
-		// Set export policy to disallow export (best-effort; Platform Crypto Provider
-		// keys are non-exportable by VBS hardware design and don't support this property).
-		if !usingPlatformProvider {
-			if err := setDWORDProperty(hKey, "Export Policy", NCRYPT_ALLOW_EXPORT_NONE); err != nil {
-				procNCryptFreeObject.Call(hKey)
-				return nil, fmt.Errorf("set Export Policy property: %w", err)
-			}
+		// Disallow key export
+		if err := setDWORDProperty(hKey, "Export Policy", NCRYPT_ALLOW_EXPORT_NONE); err != nil {
+			procNCryptFreeObject.Call(hKey)
+			return nil, fmt.Errorf("set Export Policy: %w", err)
 		}
 
-		// Finalize the key
-		ret, _, _ = procNCryptFinalizeKey.Call(hKey, uintptr(NCRYPT_SILENT_FLAG))
+		// Finalize with VBS Virtual Isolation + Per-Boot flags (best-effort).
+		// NCRYPT_USE_VIRTUAL_ISOLATION_FLAG requests that the key be protected by VBS/KeyGuard.
+		// NCRYPT_USE_PER_BOOT_KEY_FLAG limits key validity to the current boot session.
+		// Some VM configurations may not support these flags — fall back to plain finalization
+		// if they are rejected (NTE_BAD_FLAGS). AttestKeyGuardImportKey will still verify
+		// whether the key is actually KeyGuard-protected.
+		vbsFlags := uintptr(NCRYPT_USE_VIRTUAL_ISOLATION_FLAG | NCRYPT_USE_PER_BOOT_KEY_FLAG | NCRYPT_SILENT_FLAG)
+		ret, _, _ = procNCryptFinalizeKey.Call(hKey, vbsFlags)
 		if ret != 0 {
-			procNCryptFreeObject.Call(hKey)
-			return nil, fmt.Errorf("NCryptFinalizeKey failed: 0x%x", ret)
+			// Fall back: finalize without VBS flags; attestation DLL will verify key protection.
+			ret, _, _ = procNCryptFinalizeKey.Call(hKey, uintptr(NCRYPT_SILENT_FLAG))
+			if ret != 0 {
+				procNCryptFreeObject.Call(hKey)
+				return nil, fmt.Errorf("NCryptFinalizeKey failed: 0x%x", ret)
+			}
 		}
 	}
 
@@ -326,6 +339,24 @@ func GetOrCreateKeyGuardKey(keyName string) (crypto.Signer, error) {
 	}
 
 	return &cngSigner{hKey: hKey, pubKey: pubKey}, nil
+}
+
+// isKeyGuardProtected checks whether hKey is a VBS-backed KeyGuard key by reading the
+// "Virtual Iso" property. Returns true only if the property value is non-zero.
+// This mirrors the MSAL.NET check in KeyGuardAttestationTests.IsKeyGuardProtected.
+func isKeyGuardProtected(hKey uintptr) bool {
+	propName, _ := syscall.UTF16PtrFromString("Virtual Iso")
+	var value uint32
+	var bytesUsed uint32
+	ret, _, _ := procNCryptGetProperty.Call(
+		hKey,
+		uintptr(unsafe.Pointer(propName)),
+		uintptr(unsafe.Pointer(&value)),
+		unsafe.Sizeof(value),
+		uintptr(unsafe.Pointer(&bytesUsed)),
+		0,
+	)
+	return ret == 0 && bytesUsed >= 4 && value != 0
 }
 
 func openStorageProvider(name string) (uintptr, error) {
