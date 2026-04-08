@@ -21,7 +21,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -261,8 +260,6 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	default:
 		return Client{}, fmt.Errorf("unsupported type %T", id)
 	}
-	zero := atomic.Value{}
-	zero.Store(false)
 	client := Client{
 		miType:             id,
 		httpClient:         shared.DefaultClient,

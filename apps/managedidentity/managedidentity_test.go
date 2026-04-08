@@ -1218,15 +1218,6 @@ func TestAcquireTokenConcurrency(t *testing.T) {
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	// Track the number of HTTP requests made to IMDS
-	var requestCount int32
-	var requestCountMutex sync.Mutex
-	var acquiredTokens []string
-	var acquiredTokensMutex sync.Mutex
-
-	tries := 100
-
-	// Create a single token that should be cached and reused
 	expectedToken := "cached-token"
 	responseBody, err := json.Marshal(SuccessfulResponse{
 		AccessToken: expectedToken,
@@ -1239,83 +1230,40 @@ func TestAcquireTokenConcurrency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// Mock client should only need to respond once if caching works correctly
+	// append only 1 response: the mock will panic if a second request is made,
+	// verifying that caching prevents redundant requests
 	mockClient := mock.NewClient()
-	// Add multiple responses in case caching fails (but we'll verify it doesn't)
-	for i := 0; i < tries; i++ {
-		mockClient.AppendResponse(
-			mock.WithHTTPStatusCode(http.StatusOK),
-			mock.WithBody(responseBody),
-			mock.WithCallback(func(r *http.Request) {
-				requestCountMutex.Lock()
-				requestCount++
-				requestCountMutex.Unlock()
-			}),
-		)
-	}
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+	)
 
 	client, err := New(miType, WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	// Launch multiple goroutines for AcquireToken() simultaneously
-	numGoroutines := tries
 	var wg sync.WaitGroup
-	errors := make(chan error, numGoroutines)
+	ch := make(chan error, 1)
 
-	for i := 0; i < numGoroutines; i++ {
+	for i := 0; i < 100; i++ {
 		wg.Add(1)
-		go func(routineID int) {
+		go func() {
 			defer wg.Done()
-
-			// Call AcquireToken in each goroutine
-			result, err := client.AcquireToken(context.Background(), resource)
+			_, err := client.AcquireToken(context.Background(), resource)
 			if err != nil {
-				errors <- fmt.Errorf("goroutine %d failed: %v", routineID, err)
-				return
+				select {
+				case ch <- err:
+				default:
+				}
 			}
-
-			// Verify the token is correct
-			if result.AccessToken != expectedToken {
-				errors <- fmt.Errorf("goroutine %d: expected token %q, got %q",
-					routineID, expectedToken, result.AccessToken)
-				return
-			}
-
-			// Capture the token received
-			acquiredTokensMutex.Lock()
-			acquiredTokens = append(acquiredTokens, result.AccessToken)
-			acquiredTokensMutex.Unlock()
-		}(i)
+		}()
 	}
 
 	wg.Wait()
-	close(errors)
-
-	// Check for any errors from goroutines
-	for err := range errors {
-		t.Error(err)
-	}
-
-	// Verify all goroutines received tokens
-	if len(acquiredTokens) != numGoroutines {
-		t.Fatalf("expected %d tokens, got %d", numGoroutines, len(acquiredTokens))
-	}
-
-	// Verify all tokens are the same (cached token should be reused)
-	uniqueTokens := make(map[string]bool)
-	for _, token := range acquiredTokens {
-		uniqueTokens[token] = true
-	}
-
-	if len(uniqueTokens) != 1 {
-		t.Errorf("expected exactly 1 unique token (cached), got %d unique tokens", len(uniqueTokens))
-	}
-
-	// Verify minimal HTTP requests were made (ideally 1, but allow a small number due to race conditions)
-	if requestCount > 1 {
-		t.Errorf("too many HTTP requests made: expected 1, got %d (indicates caching failure)",
-			requestCount)
+	select {
+	case err := <-ch:
+		t.Fatal(err)
+	default:
 	}
 }
