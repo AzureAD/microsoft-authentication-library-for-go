@@ -8,9 +8,11 @@ import (
 	"context"
 	"crypto"
 	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/asn1"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -44,9 +46,10 @@ type csrMetadata struct {
 }
 
 // csrMetadataCuID represents the cuId object in the IMDS platform metadata response.
-// Example: {"vmId": "02c3f64c-0935-4092-b964-6f339427e4dd"}
+// Mirrors MSAL.NET's CuidInfo: {"vmId":"...", "vmssId":"..."}.
 type csrMetadataCuID struct {
-	VmID string `json:"vmId"`
+	VmID   string `json:"vmId,omitempty"`
+	VmssID string `json:"vmssId,omitempty"`
 }
 
 // cuIDString returns the VM ID from the cuId object, or an empty string if not set.
@@ -136,18 +139,180 @@ func issueCredential(ctx context.Context, httpClient ops.HTTPClient, req issueCr
 
 // generateCSR generates a PKCS#10 CSR signed with the given key.
 // The subject is CN=<clientID> and the CSR is returned as standard base64-encoded DER (no PEM headers).
-func generateCSR(key crypto.Signer, clientID string) (string, error) {
-	template := &x509.CertificateRequest{
-		Subject: pkix.Name{
-			CommonName: clientID,
+// generateCSR creates a PKCS#10 CSR that exactly matches MSAL.NET's Csr.Generate():
+//
+//   - Subject:   CN={clientId}, DC={tenantId}
+//   - Public key: RSA (from the provided signer)
+//   - Attribute:  OID 1.3.6.1.4.1.311.90.2.10 = ASN.1 UTF8String of JSON-serialized cuID
+//   - Signature:  RSASSA-PSS with SHA-256 (salt length = hash length = 32)
+//
+// Returns base64-encoded DER (no PEM headers), matching csrPem after header stripping.
+func generateCSR(key crypto.Signer, clientID, tenantID string, cuID csrMetadataCuID) (string, error) {
+	// --- Subject: CN={clientId}, DC={tenantId} ---
+	// OID for domainComponent: 0.9.2342.19200300.100.1.25
+	dcOID := asn1.ObjectIdentifier{0, 9, 2342, 19200300, 100, 1, 25}
+	subject := pkix.Name{
+		CommonName: clientID,
+		ExtraNames: []pkix.AttributeTypeAndValue{
+			{Type: dcOID, Value: tenantID},
 		},
-		SignatureAlgorithm: x509.SHA256WithRSA,
 	}
-	csrDER, err := x509.CreateCertificateRequest(rand.Reader, template, key)
+	subjectDER, err := asn1.Marshal(subject.ToRDNSequence())
 	if err != nil {
-		return "", fmt.Errorf("creating certificate request: %w", err)
+		return "", fmt.Errorf("marshal subject: %w", err)
 	}
-	return base64.StdEncoding.EncodeToString(csrDER), nil
+
+	// --- SubjectPublicKeyInfo ---
+	pubKeyDER, err := x509.MarshalPKIXPublicKey(key.Public())
+	if err != nil {
+		return "", fmt.Errorf("marshal public key: %w", err)
+	}
+	var spki asn1.RawValue
+	if _, err := asn1.Unmarshal(pubKeyDER, &spki); err != nil {
+		return "", fmt.Errorf("unmarshal spki: %w", err)
+	}
+
+	// --- CuID attribute: OID 1.3.6.1.4.1.311.90.2.10, value = SET { UTF8String(json) } ---
+	cuIDJSON, err := json.Marshal(cuID)
+	if err != nil {
+		return "", fmt.Errorf("marshal cuID: %w", err)
+	}
+	// Encode as ASN.1 UTF8String (tag 0x0C)
+	utf8Bytes, err := asn1.MarshalWithParams(string(cuIDJSON), "utf8")
+	if err != nil {
+		return "", fmt.Errorf("marshal utf8 cuID: %w", err)
+	}
+	// Wrap in SET OF
+	cuIDValueSet, err := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSet,
+		IsCompound: true,
+		Bytes:      utf8Bytes,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal cuID value set: %w", err)
+	}
+	// Build attribute SEQUENCE { OID, SET }
+	cuIDOID := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 90, 2, 10}
+	oidBytes, err := asn1.Marshal(cuIDOID)
+	if err != nil {
+		return "", fmt.Errorf("marshal cuID OID: %w", err)
+	}
+	cuIDAttr, err := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSequence,
+		IsCompound: true,
+		Bytes:      append(oidBytes, cuIDValueSet...),
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal cuID attr: %w", err)
+	}
+	// attributes [0] IMPLICIT SET OF { cuIDAttr }
+	attributes, err := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassContextSpecific,
+		Tag:        0,
+		IsCompound: true,
+		Bytes:      cuIDAttr,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal attributes: %w", err)
+	}
+
+	// --- CertificationRequestInfo SEQUENCE { version, subject, spki, attributes } ---
+	version, err := asn1.Marshal(0)
+	if err != nil {
+		return "", fmt.Errorf("marshal version: %w", err)
+	}
+	certReqInfoBytes := make([]byte, 0, len(version)+len(subjectDER)+len(pubKeyDER)+len(attributes))
+	certReqInfoBytes = append(certReqInfoBytes, version...)
+	certReqInfoBytes = append(certReqInfoBytes, subjectDER...)
+	certReqInfoBytes = append(certReqInfoBytes, spki.FullBytes...)
+	certReqInfoBytes = append(certReqInfoBytes, attributes...)
+	certReqInfo, err := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSequence,
+		IsCompound: true,
+		Bytes:      certReqInfoBytes,
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal certReqInfo: %w", err)
+	}
+
+	// --- Sign with RSASSA-PSS SHA-256 (salt = hash length = 32) ---
+	h := crypto.SHA256.New()
+	h.Write(certReqInfo)
+	digest := h.Sum(nil)
+	sig, err := key.Sign(rand.Reader, digest, &rsa.PSSOptions{
+		SaltLength: rsa.PSSSaltLengthEqualsHash,
+		Hash:       crypto.SHA256,
+	})
+	if err != nil {
+		return "", fmt.Errorf("signing CSR: %w", err)
+	}
+
+	// --- RSASSA-PSS AlgorithmIdentifier (OID 1.2.840.113549.1.1.10 with SHA-256 params) ---
+	// SEQUENCE { OID sha-256 } for hash algo and MGF
+	sha256AlgID, _ := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSequence,
+		IsCompound: true,
+		Bytes: func() []byte {
+			b, _ := asn1.Marshal(asn1.ObjectIdentifier{2, 16, 840, 1, 101, 3, 4, 2, 1}) // id-sha256
+			n, _ := asn1.Marshal(asn1.NullRawValue)
+			return append(b, n...)
+		}(),
+	})
+	mgfAlgID, _ := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSequence,
+		IsCompound: true,
+		Bytes: func() []byte {
+			b, _ := asn1.Marshal(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 8}) // id-mgf1
+			return append(b, sha256AlgID...)
+		}(),
+	})
+	saltLen, _ := asn1.Marshal(32) // SHA-256 output = 32 bytes
+	pssParamsBytes := append(
+		tagExplicit(0, sha256AlgID),
+		append(tagExplicit(1, mgfAlgID), tagExplicit(2, saltLen)...)...,
+	)
+	pssParams, _ := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSequence,
+		IsCompound: true,
+		Bytes:      pssParamsBytes,
+	})
+	pssOID, _ := asn1.Marshal(asn1.ObjectIdentifier{1, 2, 840, 113549, 1, 1, 10}) // id-RSASSA-PSS
+	sigAlgID, _ := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSequence,
+		IsCompound: true,
+		Bytes:      append(pssOID, pssParams...),
+	})
+
+	// --- Final CertificationRequest SEQUENCE { certReqInfo, sigAlgID, signature BIT STRING } ---
+	sigBitString, _ := asn1.Marshal(asn1.BitString{Bytes: sig, BitLength: len(sig) * 8})
+	csrBytes, err := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassUniversal,
+		Tag:        asn1.TagSequence,
+		IsCompound: true,
+		Bytes:      append(certReqInfo, append(sigAlgID, sigBitString...)...),
+	})
+	if err != nil {
+		return "", fmt.Errorf("marshal CSR: %w", err)
+	}
+	return base64.StdEncoding.EncodeToString(csrBytes), nil
+}
+
+// tagExplicit wraps bytes in a context-specific explicit tag [N].
+func tagExplicit(n int, content []byte) []byte {
+	b, _ := asn1.Marshal(asn1.RawValue{
+		Class:      asn1.ClassContextSpecific,
+		Tag:        n,
+		IsCompound: true,
+		Bytes:      content,
+	})
+	return b
 }
 
 // newMtlsHTTPClient creates an *http.Client configured for mutual TLS using the provided certificate.
@@ -203,7 +368,7 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 		}
 
 		// b. Generate CSR
-		csrB64, err := generateCSR(key, meta.ClientID)
+		csrB64, err := generateCSR(key, meta.ClientID, meta.TenantID, meta.CuID)
 		if err != nil {
 			return nil, fmt.Errorf("generateCSR: %w", err)
 		}
