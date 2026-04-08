@@ -13,10 +13,22 @@
 
 ### Step 1: Obtain a Test Certificate
 
-For local testing, generate a self-signed certificate:
+A pre-generated public certificate (`test-cert.pem`) is checked into the repo at
+`apps/tests/devapps/mtls-pop/test-cert.pem`. **The private key (`test-key.pem`) is
+gitignored** — you must generate it locally.
 
+Run this once to regenerate both files:
+
+```bash
+# From the repo root (requires OpenSSL or Git Bash on Windows)
+openssl req -x509 -newkey rsa:2048 \
+  -keyout apps/tests/devapps/mtls-pop/test-key.pem \
+  -out apps/tests/devapps/mtls-pop/test-cert.pem \
+  -days 365 -nodes -subj "/CN=msal-go-mtls-test"
+```
+
+Or on Windows with PowerShell (no OpenSSL required):
 ```powershell
-# Generate a self-signed cert for testing (PowerShell)
 $cert = New-SelfSignedCertificate `
     -Subject "CN=msal-go-mtls-test" `
     -KeyAlgorithm RSA `
@@ -24,15 +36,18 @@ $cert = New-SelfSignedCertificate `
     -NotAfter (Get-Date).AddYears(1) `
     -CertStoreLocation "Cert:\CurrentUser\My"
 
-# Export to PFX
-Export-PfxCertificate -Cert $cert -FilePath test-mtls.pfx -Password (ConvertTo-SecureString "test" -AsPlainText -Force)
+# Export public cert (PEM) — safe to commit
+$certB64 = [Convert]::ToBase64String($cert.RawData, 'InsertLineBreaks')
+"-----BEGIN CERTIFICATE-----`n$certB64`n-----END CERTIFICATE-----" |
+    Out-File -Encoding ascii apps\tests\devapps\mtls-pop\test-cert.pem
+
+# Export private key as PFX then convert (or use the PFX directly)
+Export-PfxCertificate -Cert $cert `
+    -FilePath apps\tests\devapps\mtls-pop\test-mtls.pfx `
+    -Password (ConvertTo-SecureString "test" -AsPlainText -Force)
 ```
 
-Or use OpenSSL:
-```bash
-openssl req -x509 -newkey rsa:2048 -keyout test-key.pem -out test-cert.pem \
-  -days 365 -nodes -subj "/CN=msal-go-mtls-test"
-```
+> If you regenerate the cert you must re-upload `test-cert.pem` to your Azure AD app registration.
 
 ### Step 2: Register Your App in Azure AD
 

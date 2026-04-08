@@ -10,7 +10,11 @@
 //   # Full test (requires Azure app registration):
 //   go run . -tenant <tenantID> -client <clientID> -region <region>
 //
-// Cert files (test-cert.pem, test-key.pem) should be in the parent directory.
+// Cert files (test-cert.pem, test-key.pem) must be in the parent directory (mtls-pop/).
+// test-cert.pem is committed to the repo; test-key.pem is gitignored — generate it with:
+//
+//	openssl req -x509 -newkey rsa:2048 -keyout ../test-key.pem -out ../test-cert.pem \
+//	  -days 365 -nodes -subj "/CN=msal-go-mtls-test"
 package main
 
 import (
