@@ -25,21 +25,33 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/google/uuid"
 )
 
 const (
 	imdsV2PlatformMetadataEndpoint = "http://169.254.169.254/metadata/identity/getplatformmetadata"
-	imdsV2IssueCredentialEndpoint  = "http://169.254.169.254/metadata/identity/issuecredential"
+	imdsV2IssueCredentialEndpoint  = "http://169.254.169.254/metadata/identity/issuecredential?cred-api-version=2.0"
 	imdsV2CredAPIVersion           = "2.0"
 )
 
 type csrMetadata struct {
-	ClientID            string `json:"client_id"`
-	TenantID            string `json:"tenant_id"`
-	NotBefore           string `json:"not_before,omitempty"`
-	RequestID           string `json:"request_id,omitempty"`
-	CuID                string `json:"cu_id,omitempty"`
-	AttestationEndpoint string `json:"attestation_endpoint,omitempty"`
+	ClientID            string         `json:"clientId"`
+	TenantID            string         `json:"tenantId"`
+	NotBefore           string         `json:"notBefore,omitempty"`
+	RequestID           string         `json:"requestId,omitempty"`
+	CuID                csrMetadataCuID `json:"cuId,omitempty"`
+	AttestationEndpoint string         `json:"attestationEndpoint,omitempty"`
+}
+
+// csrMetadataCuID represents the cuId object in the IMDS platform metadata response.
+// Example: {"vmId": "02c3f64c-0935-4092-b964-6f339427e4dd"}
+type csrMetadataCuID struct {
+	VmID string `json:"vmId"`
+}
+
+// cuIDString returns the VM ID from the cuId object, or an empty string if not set.
+func (c csrMetadataCuID) cuIDString() string {
+	return c.VmID
 }
 
 type credentialResponse struct {
@@ -63,6 +75,7 @@ func getPlatformMetadata(ctx context.Context, httpClient ops.HTTPClient) (csrMet
 		return csrMetadata{}, fmt.Errorf("creating platform metadata request: %w", err)
 	}
 	req.Header.Set("Metadata", "true")
+	req.Header.Set("x-ms-client-request-id", uuid.New().String())
 
 	resp, err := httpClient.Do(req)
 	if err != nil {
@@ -98,6 +111,7 @@ func issueCredential(ctx context.Context, httpClient ops.HTTPClient, req issueCr
 	}
 	httpReq.Header.Set("Metadata", "true")
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("x-ms-client-request-id", uuid.New().String())
 
 	resp, err := httpClient.Do(httpReq)
 	if err != nil {
@@ -166,7 +180,7 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	cacheKey := meta.ClientID + "_" + meta.TenantID
 	info, err := globalMtlsCertCache.GetOrCreate(ctx, cacheKey, func(ctx context.Context) (*mtlsBindingInfo, error) {
 		// a. Get/create CNG key
-		cuID := meta.CuID
+		cuID := meta.CuID.cuIDString()
 		if cuID == "" {
 			cuID = meta.ClientID
 		}
@@ -181,8 +195,18 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 			return nil, fmt.Errorf("generateCSR: %w", err)
 		}
 
-		// c. Issue credential
-		credResp, err := issueCredential(ctx, c.httpClient, issueCredentialRequest{CSR: csrB64})
+		// c. Get MAA JWT attestation: proves to IMDS that the key is hardware-protected
+		// (KeyGuard/VBS). Uses AttestationClientLib.dll on the VM.
+		attestationToken, err := GetKeyGuardAttestationJWT(key, meta.AttestationEndpoint, meta.ClientID)
+		if err != nil {
+			return nil, fmt.Errorf("GetKeyGuardAttestationJWT: %w", err)
+		}
+
+		// d. Issue credential
+		credResp, err := issueCredential(ctx, c.httpClient, issueCredentialRequest{
+			CSR:              csrB64,
+			AttestationToken: attestationToken,
+		})
 		if err != nil {
 			return nil, fmt.Errorf("issueCredential: %w", err)
 		}

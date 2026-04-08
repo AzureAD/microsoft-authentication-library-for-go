@@ -4,6 +4,7 @@
 package authority
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
@@ -194,7 +195,7 @@ func TestAppKey_IncludesSchemeKeyID(t *testing.T) {
 
 // TestResolveRegion_PassThrough checks that non-autodetect values are returned as-is.
 func TestResolveRegion_PassThrough(t *testing.T) {
-	ctx := t.Context()
+	ctx := context.Background()
 	for _, region := range []string{"eastus", "westeurope", ""} {
 		got := ResolveRegion(ctx, region)
 		if got != region {
