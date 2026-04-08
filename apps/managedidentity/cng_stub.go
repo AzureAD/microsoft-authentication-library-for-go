@@ -7,9 +7,9 @@ package managedidentity
 
 import "crypto"
 
-// GetOrCreateKeyGuardKey is not supported on non-Windows platforms.
-func GetOrCreateKeyGuardKey(keyName string) (crypto.Signer, error) {
-	return nil, errMtlsPopWindowsOnly
+// GetOrCreateManagedIdentityKey is not supported on non-Windows platforms.
+func GetOrCreateManagedIdentityKey(keyName string) (crypto.Signer, managedIdentityKeyType, error) {
+	return nil, keyTypeInMemory, errMtlsPopWindowsOnly
 }
 
 // GetKeyGuardAttestationJWT is not supported on non-Windows platforms.

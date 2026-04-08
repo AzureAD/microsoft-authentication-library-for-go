@@ -188,11 +188,39 @@ resp, err := httpClient.Do(req)
    - Verify attestation capability after provisioning: `tpmtool.exe getdeviceinformation` → `Is Capable For Attestation: True`
 2. Enable **system-assigned managed identity** in the VM's Identity blade
 3. Grant the managed identity an Azure RBAC role on the target resource (e.g., Storage Blob Data Reader)
-4. Ensure VBS (Virtualization-Based Security) is enabled:
-   - Trusted Launch VMs support VBS automatically
-   - Verify in `msinfo32.exe` → Virtualization-based security: Running
+4. Enable **Credential Guard / VBS KeyGuard Key Isolation** inside the VM (see sub-steps below)
 
-> **Important:** A standard VM (without Trusted Launch / Secure Boot + vTPM) will fail at the attestation step with `AttestKeyGuardImportKey failed ... Is Capable For Attestation must be true`. The VM's vTPM must have an EK certificate provisioned by the Azure platform.
+> **Important:** A standard VM (without Trusted Launch / Secure Boot + vTPM) cannot use VBS KeyGuard keys and will fail with `"mTLS PoP requires a VBS KeyGuard-protected RSA key"`. The VM's vTPM must have an EK certificate provisioned by the Azure platform.
+
+#### Enable Credential Guard (VBS Key Isolation) inside the VM
+
+After deploying a Trusted Launch VM, run the following in an elevated PowerShell session **inside the VM**, then reboot:
+
+```powershell
+# Enable Virtualization-Based Security + Credential Guard
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard" `
+    -Name "EnableVirtualizationBasedSecurity" -Value 1 -Type DWord -Force
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\DeviceGuard" `
+    -Name "RequirePlatformSecurityFeatures" -Value 1 -Type DWord -Force
+Set-ItemProperty -Path "HKLM:\SYSTEM\CurrentControlSet\Control\Lsa" `
+    -Name "LsaCfgFlags" -Value 1 -Type DWord -Force  # 1 = enabled with UEFI lock
+
+Restart-Computer -Force
+```
+
+After reboot, verify:
+```powershell
+# Credential Guard is active if lsaiso.exe is running:
+Get-Process lsaiso -ErrorAction SilentlyContinue
+
+# msinfo32 (GUI): "Virtualization-based security" must show "Running"
+# and "Virtualization-based security services running" must include "Credential Guard"
+msinfo32.exe
+```
+
+If `NCryptFinalizeKey` still returns `NTE_BAD_FLAGS (0x80090009)` after Credential Guard is enabled:
+- The VM SKU may not support nested virtualization. Try a **Ddsv5-series** or **Esv5-series** VM.
+- Ensure the VM generation is **Gen 2** (required for Trusted Launch).
 
 ### Step 2: Install Go and the Application
 
@@ -247,6 +275,11 @@ func main() {
 
 ### Step 5: Common Failure Scenarios
 
+**"mTLS PoP requires a VBS KeyGuard-protected RSA key (got: Hardware)"** or **"...got: InMemory"**
+- `NCryptFinalizeKey` rejected the VBS Virtual Isolation flags — VBS/Credential Guard is not enabled
+- Verify: `msinfo32.exe` → "Virtualization-based security" must show "Running" and include "Credential Guard"
+- Fix: Follow the Credential Guard setup steps above, then reboot
+
 **"AttestKeyGuardImportKey failed ... Is Capable For Attestation must be true"**
 - The VM is not a Trusted Launch VM, or vTPM was not provisioned with an EK certificate
 - Verify: `tpmtool.exe getdeviceinformation` → `Is Capable For Attestation: True`
@@ -256,7 +289,7 @@ func main() {
 - The VM's managed identity may not be configured correctly
 - Verify with: `curl -H "Metadata: true" "http://169.254.169.254/metadata/identity/getplatformmetadata?cred-api-version=2.0"`
 
-**"GetOrCreateKeyGuardKey: NCryptOpenStorageProvider failed"**
+**"GetOrCreateManagedIdentityKey: NCryptOpenStorageProvider failed"** (or similar KSP error)
 - VBS/KeyGuard not available on this VM SKU
 - Check with `msinfo32.exe`: Virtualization-based security must show "Running"
 - Try a VM SKU that supports nested virtualization (e.g., Ddsv5-series)

@@ -7,6 +7,7 @@ package managedidentity
 
 import (
 	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
 	"encoding/binary"
 	"fmt"
@@ -240,55 +241,109 @@ func hashAlgIDFromOpts(opts crypto.SignerOpts) (string, error) {
 	}
 }
 
-// GetOrCreateKeyGuardKey gets or creates a persistent VBS KeyGuard RSA key using
-// "Microsoft Software Key Storage Provider" with NCRYPT_USE_VIRTUAL_ISOLATION_FLAG.
+// GetOrCreateManagedIdentityKey gets or creates the best available key for mTLS PoP,
+// using the same 3-level priority as MSAL.NET's WindowsManagedIdentityKeyProvider:
 //
-// This mirrors the MSAL.NET approach (KeyGuardAttestationTests.cs):
+//  1. KeyGuard  — Software KSP + USER scope + VBS Virtual Isolation flags.
+//     Requires Credential Guard / Core Isolation to be enabled on the VM.
+//  2. Hardware  — Software KSP + USER scope, no VBS flags (plain persisted key).
+//  3. InMemory  — RSA generated in process memory (ephemeral fallback).
 //
-//	CngProvider = "Microsoft Software Key Storage Provider"
-//	KeyCreationOptions = NCRYPT_USE_VIRTUAL_ISOLATION_FLAG | NCRYPT_USE_PER_BOOT_KEY_FLAG
+// mTLS PoP (acquireTokenForImdsV2) requires KeyGuard and will fail for Hardware/InMemory.
+// The Hardware and InMemory tiers exist so callers can report a precise error rather than
+// a generic key-creation failure.
+func GetOrCreateManagedIdentityKey(keyName string) (crypto.Signer, managedIdentityKeyType, error) {
+	// 1. Try KeyGuard (USER scope + VBS Virtual Isolation flags).
+	kgSigner, err := tryGetOrCreateCNGKey(keyName,
+		uintptr(NCRYPT_SILENT_FLAG),                                                             // open: USER scope (no MACHINE flag)
+		uintptr(NCRYPT_OVERWRITE_KEY_FLAG),                                                      // create: USER scope
+		uintptr(NCRYPT_USE_VIRTUAL_ISOLATION_FLAG|NCRYPT_USE_PER_BOOT_KEY_FLAG|NCRYPT_SILENT_FLAG), // finalize: request VBS
+	)
+	if err == nil {
+		if isKeyGuardProtected(kgSigner.hKey) {
+			return kgSigner, keyTypeKeyGuard, nil
+		}
+		// Key created but VBS protection not active — delete and retry once.
+		// (Mirrors MSAL.NET: recreate and re-validate before giving up on KeyGuard.)
+		procNCryptDeleteKey.Call(kgSigner.hKey, 0)
+		kgSigner, err = tryGetOrCreateCNGKey(keyName,
+			uintptr(NCRYPT_SILENT_FLAG),
+			uintptr(NCRYPT_OVERWRITE_KEY_FLAG),
+			uintptr(NCRYPT_USE_VIRTUAL_ISOLATION_FLAG|NCRYPT_USE_PER_BOOT_KEY_FLAG|NCRYPT_SILENT_FLAG),
+		)
+		if err == nil {
+			if isKeyGuardProtected(kgSigner.hKey) {
+				return kgSigner, keyTypeKeyGuard, nil
+			}
+			// Still not protected — give up on KeyGuard.
+			procNCryptFreeObject.Call(kgSigner.hKey)
+		}
+	}
+	keyGuardErr := err // preserve for composite error message
+
+	// 2. Try Hardware (Software KSP, USER scope, no VBS flags).
+	// Uses a distinct key name to avoid colliding with the (failed) KeyGuard key.
+	hwSigner, hwErr := tryGetOrCreateCNGKey(keyName+"_hw",
+		uintptr(NCRYPT_SILENT_FLAG),        // open: USER scope
+		uintptr(NCRYPT_OVERWRITE_KEY_FLAG), // create: USER scope
+		uintptr(NCRYPT_SILENT_FLAG),        // finalize: no VBS
+	)
+	if hwErr == nil {
+		return hwSigner, keyTypeHardware, nil
+	}
+
+	// 3. InMemory fallback — ephemeral RSA key generated in process memory.
+	privKey, genErr := rsa.GenerateKey(rand.Reader, 2048)
+	if genErr != nil {
+		return nil, keyTypeInMemory, fmt.Errorf(
+			"all key creation methods failed: keyguard=%v hardware=%v inmemory=%v",
+			keyGuardErr, hwErr, genErr)
+	}
+	return privKey, keyTypeInMemory, nil
+}
+
+// tryGetOrCreateCNGKey opens or creates a persistent RSA key in the
+// "Microsoft Software Key Storage Provider" using USER scope (no NCRYPT_MACHINE_KEY_FLAG).
 //
-// The key is hardware-backed by Windows VBS (Virtualization-Based Security), not the TPM.
-// AttestKeyGuardImportKey in AttestationClientLib.dll requires a VBS KeyGuard key — NOT a
-// Platform Crypto Provider (TPM) key. This function ensures the correct key type.
-func GetOrCreateKeyGuardKey(keyName string) (crypto.Signer, error) {
+// Parameters:
+//   - keyName:       persisted key name in the KSP
+//   - openFlags:     flags for NCryptOpenKey   (e.g. NCRYPT_SILENT_FLAG)
+//   - createFlags:   flags for NCryptCreatePersistedKey (e.g. NCRYPT_OVERWRITE_KEY_FLAG)
+//   - finalizeFlags: flags for NCryptFinalizeKey (e.g. VBS flags or NCRYPT_SILENT_FLAG)
+func tryGetOrCreateCNGKey(keyName string, openFlags, createFlags, finalizeFlags uintptr) (*cngSigner, error) {
 	keyNameUTF16, err := syscall.UTF16PtrFromString(keyName)
 	if err != nil {
 		return nil, fmt.Errorf("invalid key name: %w", err)
 	}
 
-	// Always use Microsoft Software Key Storage Provider with VBS Virtual Isolation.
-	// DO NOT use Microsoft Platform Crypto Provider (TPM-backed): AttestKeyGuardImportKey
-	// requires a VBS KeyGuard key and will fail on TPM keys.
-	providerName := "Microsoft Software Key Storage Provider"
+	const providerName = "Microsoft Software Key Storage Provider"
 	hProvider, err := openStorageProvider(providerName)
 	if err != nil {
-		return nil, fmt.Errorf("NCryptOpenStorageProvider(%q): %w", providerName, err)
+		return nil, fmt.Errorf("NCryptOpenStorageProvider: %w", err)
 	}
 	defer procNCryptFreeObject.Call(hProvider)
 
-	// Try to open an existing key
+	// Try to open an existing key (USER scope — no NCRYPT_MACHINE_KEY_FLAG).
 	var hKey uintptr
 	ret, _, _ := procNCryptOpenKey.Call(
 		hProvider,
 		uintptr(unsafe.Pointer(&hKey)),
 		uintptr(unsafe.Pointer(keyNameUTF16)),
 		0,
-		uintptr(NCRYPT_MACHINE_KEY_FLAG|NCRYPT_SILENT_FLAG),
+		openFlags,
 	)
 
 	if ret == 0 {
-		// Key exists — verify it's usable (not un-finalized from a prior failed creation).
-		// If export fails, delete and recreate.
+		// Key found — verify it is usable. If not (e.g. leftover un-finalized key), delete.
 		if _, pubErr := exportPublicKey(hKey); pubErr != nil {
-			procNCryptDeleteKey.Call(hKey, 0) // NCryptDeleteKey also frees hKey
+			procNCryptDeleteKey.Call(hKey, 0)
 			hKey = 0
 			ret = 1 // force creation below
 		}
 	}
 
 	if ret != 0 {
-		// Key not found (or deleted above) — create with VBS Virtual Isolation
+		// Create a new persisted key (USER scope = no NCRYPT_MACHINE_KEY_FLAG in createFlags).
 		algID, _ := syscall.UTF16PtrFromString("RSA")
 		ret, _, _ = procNCryptCreatePersistedKey.Call(
 			hProvider,
@@ -296,48 +351,34 @@ func GetOrCreateKeyGuardKey(keyName string) (crypto.Signer, error) {
 			uintptr(unsafe.Pointer(algID)),
 			uintptr(unsafe.Pointer(keyNameUTF16)),
 			0,
-			uintptr(NCRYPT_OVERWRITE_KEY_FLAG|NCRYPT_MACHINE_KEY_FLAG),
+			createFlags,
 		)
 		if ret != 0 {
 			return nil, fmt.Errorf("NCryptCreatePersistedKey failed: 0x%x", ret)
 		}
 
-		// Set key length to 2048 bits
 		if err := setDWORDProperty(hKey, "Length", 2048); err != nil {
 			procNCryptFreeObject.Call(hKey)
-			return nil, fmt.Errorf("set Length property: %w", err)
+			return nil, fmt.Errorf("set Length: %w", err)
 		}
-
-		// Disallow key export
 		if err := setDWORDProperty(hKey, "Export Policy", NCRYPT_ALLOW_EXPORT_NONE); err != nil {
 			procNCryptFreeObject.Call(hKey)
 			return nil, fmt.Errorf("set Export Policy: %w", err)
 		}
 
-		// Finalize with VBS Virtual Isolation + Per-Boot flags (best-effort).
-		// NCRYPT_USE_VIRTUAL_ISOLATION_FLAG requests that the key be protected by VBS/KeyGuard.
-		// NCRYPT_USE_PER_BOOT_KEY_FLAG limits key validity to the current boot session.
-		// Some VM configurations may not support these flags — fall back to plain finalization
-		// if they are rejected (NTE_BAD_FLAGS). AttestKeyGuardImportKey will still verify
-		// whether the key is actually KeyGuard-protected.
-		vbsFlags := uintptr(NCRYPT_USE_VIRTUAL_ISOLATION_FLAG | NCRYPT_USE_PER_BOOT_KEY_FLAG | NCRYPT_SILENT_FLAG)
-		ret, _, _ = procNCryptFinalizeKey.Call(hKey, vbsFlags)
+		ret, _, _ = procNCryptFinalizeKey.Call(hKey, finalizeFlags)
 		if ret != 0 {
-			// Fall back: finalize without VBS flags; attestation DLL will verify key protection.
-			ret, _, _ = procNCryptFinalizeKey.Call(hKey, uintptr(NCRYPT_SILENT_FLAG))
-			if ret != 0 {
-				procNCryptFreeObject.Call(hKey)
-				return nil, fmt.Errorf("NCryptFinalizeKey failed: 0x%x", ret)
-			}
+			// Finalization with these flags is not supported on this machine.
+			procNCryptDeleteKey.Call(hKey, 0)
+			return nil, fmt.Errorf("NCryptFinalizeKey failed: 0x%x", ret)
 		}
 	}
 
 	pubKey, err := exportPublicKey(hKey)
 	if err != nil {
 		procNCryptFreeObject.Call(hKey)
-		return nil, fmt.Errorf("export public key: %w", err)
+		return nil, fmt.Errorf("exportPublicKey: %w", err)
 	}
-
 	return &cngSigner{hKey: hKey, pubKey: pubKey}, nil
 }
 

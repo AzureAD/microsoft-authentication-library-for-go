@@ -179,14 +179,27 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	// 2. Get or create binding cert (with caching)
 	cacheKey := meta.ClientID + "_" + meta.TenantID
 	info, err := globalMtlsCertCache.GetOrCreate(ctx, cacheKey, func(ctx context.Context) (*mtlsBindingInfo, error) {
-		// a. Get/create CNG key
+		// a. Get/create CNG key — mirrors MSAL.NET WindowsManagedIdentityKeyProvider:
+		//    Priority: KeyGuard (VBS) > Hardware (Software KSP) > InMemory (ephemeral RSA)
 		cuID := meta.CuID.cuIDString()
 		if cuID == "" {
 			cuID = meta.ClientID
 		}
-		key, err := GetOrCreateKeyGuardKey("MSALMtlsKey_" + cuID)
+		key, keyType, err := GetOrCreateManagedIdentityKey("MSALMtlsKey_" + cuID)
 		if err != nil {
-			return nil, fmt.Errorf("GetOrCreateKeyGuardKey: %w", err)
+			return nil, fmt.Errorf("GetOrCreateManagedIdentityKey: %w", err)
+		}
+
+		// mTLS PoP requires a VBS KeyGuard-protected key. Hardware and InMemory keys
+		// are not accepted. This matches MSAL.NET's "mtls_pop_requires_keyguard" check.
+		if keyType != keyTypeKeyGuard {
+			return nil, fmt.Errorf(
+				"mTLS PoP requires a VBS KeyGuard-protected RSA key (got: %s). "+
+					"Ensure Credential Guard / Core Isolation is enabled on this VM: "+
+					"Trusted Launch (Secure Boot + vTPM) must be enabled, and VBS/Credential Guard "+
+					"must be active (check msinfo32.exe: 'Virtualization-based security' = Running). "+
+					"See docs/mtls-pop-manual-testing.md for VM setup instructions.",
+				keyType)
 		}
 
 		// b. Generate CSR
@@ -196,10 +209,14 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 		}
 
 		// c. Get MAA JWT attestation: proves to IMDS that the key is hardware-protected
-		// (KeyGuard/VBS). Uses AttestationClientLib.dll on the VM.
-		attestationToken, err := GetKeyGuardAttestationJWT(key, meta.AttestationEndpoint, meta.ClientID)
-		if err != nil {
-			return nil, fmt.Errorf("GetKeyGuardAttestationJWT: %w", err)
+		// (KeyGuard/VBS). Only called for KeyGuard keys — mirrors MSAL.NET which only
+		// attests when keyInfo.Type == ManagedIdentityKeyType.KeyGuard.
+		var attestationToken string
+		if keyType == keyTypeKeyGuard && meta.AttestationEndpoint != "" {
+			attestationToken, err = GetKeyGuardAttestationJWT(key, meta.AttestationEndpoint, meta.ClientID)
+			if err != nil {
+				return nil, fmt.Errorf("GetKeyGuardAttestationJWT: %w", err)
+			}
 		}
 
 		// d. Issue credential
