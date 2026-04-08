@@ -5,6 +5,7 @@ package accesstokens
 
 import (
 	"bytes"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -182,6 +183,11 @@ type TokenResponse struct {
 
 	AdditionalFields map[string]interface{}
 	scopesComputed   bool
+
+	// BindingCertificate is the X.509 certificate bound to an mTLS PoP token.
+	// Not unmarshalled from JSON; set programmatically after mTLS token acquisition.
+	// Used to populate AuthResult.BindingCertificate.
+	BindingCertificate *x509.Certificate
 }
 
 func (tr *TokenResponse) UnmarshalJSON(data []byte) error {

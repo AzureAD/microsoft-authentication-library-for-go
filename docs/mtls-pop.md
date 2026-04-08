@@ -1,0 +1,245 @@
+# mTLS Proof of Possession (mTLS PoP) in msal-go
+
+## Overview
+
+mTLS Proof of Possession (RFC 8705) binds an access token to an X.509 certificate. The token is issued only after the client authenticates the TLS handshake with that certificate against a regional mTLS token endpoint (`{region}.mtlsauth.microsoft.com`). Downstream resource calls must present the same certificate over mTLS.
+
+**Benefits over bearer tokens:**
+- Token is cryptographically bound to the certificate — stolen tokens cannot be replayed on a different TLS connection.
+- Satisfies enhanced proof-of-possession requirements for zero-trust architectures.
+- Required by some Microsoft services for high-security scenarios.
+
+**Spec:** [RFC 8705 — OAuth 2.0 Mutual-TLS Client Authentication and Certificate-Bound Access Tokens](https://www.rfc-editor.org/rfc/rfc8705)
+
+---
+
+## Why Go Uses the .NET Approach
+
+Go's `crypto/tls` is a pure-Go TLS implementation that accepts any `crypto.PrivateKey` implementing `crypto.Signer` — including keys backed by Windows CNG (Cryptography Next Generation). This means:
+
+| Library | TLS Stack | CNG Support | Approach |
+|---------|-----------|-------------|----------|
+| **msal-go** | `crypto/tls` (pure Go) | ✅ Via `crypto.Signer` | Direct cert use |
+| **msal-dotnet** | Schannel (.NET) | ✅ Native | Direct cert use |
+| **msal-node** | OpenSSL (Node.js) | ❌ None | .NET subprocess (`MsalMtlsMsiHelper.exe`) |
+
+No subprocess is needed in msal-go.
+
+---
+
+## Two Implementation Paths
+
+### Path 1 — Confidential Client (SNI Certificate)
+
+The application has an SNI certificate (e.g., from OneCert/DSMS) and uses it as the client credential.
+
+**Requirements:**
+- Certificate-based credential (`NewCredFromCert`)
+- Tenanted authority (not `/common` or `/organizations`)
+- Azure region configured
+
+**API:**
+
+```go
+// 1. Create credential from certificate
+cred, err := confidential.NewCredFromCert(certChain, privateKey)
+
+// 2. Create client — specify tenant ID in authority and Azure region
+client, err := confidential.New(
+    "https://login.microsoftonline.com/{tenantID}",
+    "client-id",
+    cred,
+    confidential.WithAzureRegion("westus2"),  // or AutoDetectRegion()
+)
+
+// 3. Acquire mTLS PoP token
+result, err := client.AcquireTokenByCredential(ctx, []string{"https://graph.microsoft.com/.default"},
+    confidential.WithMtlsProofOfPossession(),
+)
+
+// 4. result.TokenType == "mtls_pop"
+// 5. result.BindingCertificate contains the cert bound to this token
+```
+
+**Token caching:** mTLS PoP tokens are cached separately from bearer tokens using the certificate's x5t#S256 thumbprint as part of the cache key.
+
+---
+
+### Path 2 — Managed Identity (IMDSv2)
+
+On Azure VMs, the IMDS (Instance Metadata Service) v2 can issue a short-lived binding certificate. The key is generated in Windows CNG with VBS KeyGuard protection — the private key never leaves the hardware security boundary.
+
+**Requirements:**
+- Azure VM or VMSS with system-assigned managed identity
+- IMDSv2 enabled (`cred-api-version=2.0`)
+- Windows OS with VBS (Virtualization-Based Security) KeyGuard available
+- `DefaultToIMDS` source (not Arc, AppService, CloudShell, etc.)
+
+**API:**
+
+```go
+import "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
+
+client, err := managedidentity.New(managedidentity.SystemAssigned())
+
+result, err := client.AcquireToken(ctx, "https://graph.microsoft.com",
+    managedidentity.WithMtlsProofOfPossession(),
+)
+
+// result.TokenType == "mtls_pop"
+// result.BindingCertificate is the IMDS-issued cert bound to the token
+```
+
+**Non-Windows:** Returns an error (`mTLS PoP Managed Identity requires Windows with VBS KeyGuard support`).
+
+---
+
+## Regional mTLS Token Endpoints
+
+mTLS PoP uses a separate regional token endpoint, not the standard `login.microsoftonline.com` endpoint:
+
+| Cloud | Endpoint Pattern |
+|-------|-----------------|
+| Public | `https://{region}.mtlsauth.microsoft.com/{tenantID}/oauth2/v2.0/token` |
+| US Government | `https://{region}.mtlsauth.microsoftonline.us/{tenantID}/oauth2/v2.0/token` |
+| China | `https://{region}.mtlsauth.partner.microsoftonline.cn/{tenantID}/oauth2/v2.0/token` |
+| DSTS | Standard DSTS token endpoint (no region required) |
+
+The region must be an Azure region name (e.g., `westus2`, `eastus`, `northeurope`).
+
+### Auto-Detecting the Region
+
+```go
+confidential.WithAzureRegion(authority.AutoDetectRegion)
+```
+
+When `AutoDetectRegion` is used, msal-go queries the IMDS instance metadata endpoint (`http://169.254.169.254/metadata/instance`) to determine the Azure region. The result is cached. This only works inside an Azure VM.
+
+Alternatively, set the `REGION_NAME` environment variable.
+
+---
+
+## Bearer-over-mTLS (`WithSendCertificateOverMtls`)
+
+If you want certificate authentication via the TLS handshake (instead of a JWT `client_assertion` in the request body) but do **not** need a PoP-bound token, use `WithSendCertificateOverMtls`:
+
+```go
+client, err := confidential.New(
+    "https://login.microsoftonline.com/{tenantID}",
+    "client-id",
+    cred,
+    confidential.WithSendCertificateOverMtls(),
+)
+
+// Acquires a bearer token, authenticated via mTLS handshake
+result, err := client.AcquireTokenByCredential(ctx, scopes)
+// result.TokenType == "Bearer"
+```
+
+**Behavior matrix:**
+
+| `WithSendCertificateOverMtls` | `WithMtlsProofOfPossession()` | Transport | Token Type |
+|---|---|---|---|
+| false | No | JWT `client_assertion` in body | Bearer |
+| true | No | mTLS handshake | Bearer |
+| false | Yes | mTLS handshake | `mtls_pop` |
+| true | Yes | mTLS handshake | `mtls_pop` |
+
+---
+
+## Making Downstream Calls with a PoP Token
+
+After acquiring an mTLS PoP token, downstream resource calls must use the same certificate in their TLS connection:
+
+```go
+// Build TLS client using the binding certificate
+tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+// or for CNG keys: construct tls.Certificate{Certificate: certDER, PrivateKey: cnfSigner}
+
+tlsConfig := &tls.Config{Certificates: []tls.Certificate{tlsCert}}
+transport := &http.Transport{TLSClientConfig: tlsConfig}
+httpClient := &http.Client{Transport: transport}
+
+req, _ := http.NewRequest("GET", "https://resource.example.com/api", nil)
+req.Header.Set("Authorization", "mtls_pop " + result.AccessToken)
+resp, err := httpClient.Do(req)
+```
+
+For Managed Identity (Path 2), use `result.BindingCertificate` (the `*x509.Certificate`) together with the CNG `crypto.Signer` returned by `GetOrCreateKeyGuardKey` — the private key stays in the VBS KeyGuard and is never exported.
+
+---
+
+## Token Caching
+
+mTLS PoP tokens are cached separately from bearer tokens. The cache key includes the certificate's x5t#S256 thumbprint (SHA-256 of the DER-encoded certificate, Base64URL-encoded without padding). This ensures:
+
+- Different certificates produce different cache entries.
+- Bearer and mTLS PoP tokens for the same client/tenant don't collide.
+- Token expiry is honored normally.
+
+For IMDSv2 (Path 2), the binding certificate itself is cached in-memory with a 5-minute pre-expiry buffer to ensure smooth certificate rotation.
+
+---
+
+## Error Reference
+
+| Error Code / Message | Condition | Resolution |
+|---------------------|-----------|-----------|
+| `mtls_pop_no_region` | `WithMtlsProofOfPossession()` called without `WithAzureRegion()` | Add `WithAzureRegion("regionName")` or `WithAzureRegion(authority.AutoDetectRegion)` to the client |
+| `mtls_pop_no_cert` | mTLS PoP requested but credential is not certificate-based | Create the client with `NewCredFromCert()` |
+| `mtls_pop_requires_tenanted_authority` | Authority is `/common` or `/organizations` | Use a specific tenant ID: `https://login.microsoftonline.com/{tenantID}` |
+| `mTLS PoP Managed Identity requires Windows...` | IMDSv2 path on non-Windows | Only supported on Windows with VBS |
+| `mTLS PoP Managed Identity is only supported with IMDS` | MI source is not `DefaultToIMDS` | mTLS PoP MI requires IMDS source (standard Azure VM) |
+| `IMDSv2 platform metadata missing...` | IMDS not available or VM identity not configured | Ensure the VM has system-assigned managed identity and IMDSv2 access |
+
+---
+
+## Comparison with Other MSAL Libraries
+
+| Feature | msal-go | msal-dotnet | msal-node |
+|---------|---------|-------------|-----------|
+| SNI / CCA path | ✅ | ✅ | ✅ |
+| Managed Identity (IMDSv2) | ✅ Windows | ✅ Windows | ✅ via subprocess |
+| CNG KeyGuard support | ✅ Via `crypto.Signer` | ✅ Native | ❌ (subprocess handles it) |
+| Non-Windows MI PoP | ❌ (returns error) | ❌ | ✅ (via subprocess) |
+| Bearer-over-mTLS | ✅ | ✅ | ✅ |
+| Auto-region detection | ✅ (`AutoDetectRegion`) | ✅ (`TryAutoDetect`) | ✅ |
+| MAA attestation | Planned | ✅ | ✅ |
+
+---
+
+## Architecture Diagram
+
+```
+Confidential Client (SNI path):
+  App ──[has cert+key]──► AcquireTokenByCredential(WithMtlsProofOfPossession())
+                                        │
+                              Build MtlsPopAuthenticationScheme
+                              Resolve region
+                              Build mTLS endpoint URL
+                                        │
+                              POST {region}.mtlsauth.microsoft.com/{tenant}/token
+                              (TLS handshake presents cert, no client_assertion JWT)
+                                        │
+                              token_type=mtls_pop token  ◄────────────────────────
+                              BindingCertificate = cert used
+
+Managed Identity (IMDSv2 path):
+  App ──► AcquireToken(WithMtlsProofOfPossession())
+                │
+                ├── GET IMDS /getplatformmetadata → clientID, tenantID, cuID
+                │
+                ├── CNG: GetOrCreateKeyGuardKey("MSALMtlsKey_{cuID}")
+                │         [RSA-2048 in VBS KeyGuard, non-exportable]
+                │
+                ├── x509.CreateCertificateRequest(key, clientID)
+                │
+                ├── POST IMDS /issuecredential(CSR) → signed cert + mtlsEndpoint
+                │
+                ├── Cache cert (in-memory, expires 5 min before cert NotAfter)
+                │
+                └── POST {mtlsEndpoint}/{tenantID}/token
+                    (TLS handshake with IMDS-issued cert)
+                    token_type=mtls_pop token  ◄─────────────────────────────────
+                    BindingCertificate = IMDS-issued cert
+```

@@ -32,6 +32,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
 )
 
+var errMtlsPopWindowsOnly = errors.New("mTLS PoP Managed Identity requires Windows with VBS KeyGuard support")
+
 // AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult = base.AuthResult
@@ -181,7 +183,8 @@ type Client struct {
 }
 
 type AcquireTokenOptions struct {
-	claims string
+	claims             string
+	isMtlsPopRequested bool
 }
 
 type ClientOption func(*Client)
@@ -193,6 +196,15 @@ type AcquireTokenOption func(o *AcquireTokenOptions)
 func WithClaims(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
 		o.claims = claims
+	}
+}
+
+// WithMtlsProofOfPossession requests an mTLS Proof of Possession token (RFC 8705) from IMDSv2.
+// Only supported on DefaultToIMDS source on Windows with VBS KeyGuard available.
+// On success, AuthResult.BindingCertificate is set to the certificate bound to the token.
+func WithMtlsProofOfPossession() AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.isMtlsPopRequested = true
 	}
 }
 
@@ -314,7 +326,7 @@ var now = time.Now
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
-// Options: [WithClaims]
+// Options: [WithClaims], [WithMtlsProofOfPossession]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (AuthResult, error) {
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
@@ -322,6 +334,13 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		option(&o)
 	}
 	c.authParams.Scopes = []string{resource}
+
+	if o.isMtlsPopRequested {
+		if c.source != DefaultToIMDS {
+			return AuthResult{}, errors.New("mTLS PoP Managed Identity is only supported with IMDS (DefaultToIMDS source)")
+		}
+		return c.acquireTokenForImdsV2(ctx, resource)
+	}
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {

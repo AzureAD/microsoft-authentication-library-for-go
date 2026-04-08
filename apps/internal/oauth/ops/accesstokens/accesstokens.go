@@ -14,6 +14,7 @@ package accesstokens
 import (
 	"context"
 	"crypto"
+	"crypto/tls"
 
 	/* #nosec */
 	"crypto/sha1"
@@ -29,6 +30,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/comm"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
 	"github.com/golang-jwt/jwt/v5"
@@ -303,6 +305,52 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	addExtraBodyParameters(ctx, qv, authParameters)
 
 	return c.doTokenResp(ctx, authParameters, qv)
+}
+
+// FromMtlsCertificate acquires a token using mutual TLS (mTLS) authentication.
+// The tlsCert is presented in the TLS handshake; no client_assertion JWT is sent in the request body.
+// For mTLS PoP (RFC 8705), mtlsEndpoint is the regional mtlsauth endpoint and authParameters.AuthnScheme
+// adds token_type=mtls_pop. For bearer-over-mTLS, mtlsEndpoint is the standard token endpoint.
+// On success, TokenResponse.BindingCertificate is set to the leaf certificate from tlsCert.
+func (c Client) FromMtlsCertificate(ctx context.Context, authParameters authority.AuthParams, tlsCert tls.Certificate, mtlsEndpoint string) (TokenResponse, error) {
+	qv := url.Values{}
+	if err := addClaims(qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
+	qv.Set(grantType, grant.ClientCredential)
+	qv.Set(clientID, authParameters.ClientID)
+	addScopeQueryParam(qv, authParameters)
+	addExtraBodyParameters(ctx, qv, authParameters)
+
+	// Apply authentication scheme parameters (e.g., token_type=mtls_pop).
+	if authParameters.AuthnScheme != nil {
+		for k, v := range authParameters.AuthnScheme.TokenRequestParams() {
+			qv.Set(k, v)
+		}
+	}
+
+	// Create a short-lived mTLS HTTP client for this request. The standard comm.Client
+	// cannot be reused here because it may use a different (non-mTLS) transport.
+	mtlsHTTPClient := comm.NewMtlsHTTPClient(tlsCert)
+	mtlsComm := comm.New(mtlsHTTPClient)
+
+	resp := TokenResponse{}
+	if err := mtlsComm.URLFormCall(ctx, mtlsEndpoint, qv, &resp); err != nil {
+		return resp, err
+	}
+	resp.ComputeScope(authParameters)
+	if c.testing {
+		return resp, nil
+	}
+	if err := resp.Validate(); err != nil {
+		return resp, err
+	}
+
+	// Attach the binding certificate so callers can use it for downstream mTLS calls.
+	if tlsCert.Leaf != nil {
+		resp.BindingCertificate = tlsCert.Leaf
+	}
+	return resp, nil
 }
 
 func (c Client) FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion string, clientSecret string) (TokenResponse, error) {

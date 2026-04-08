@@ -5,6 +5,7 @@ package oauth
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ type AccessTokens interface {
 	FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error)
 	FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
 	FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
+	FromMtlsCertificate(ctx context.Context, authParameters authority.AuthParams, tlsCert tls.Certificate, mtlsEndpoint string) (accesstokens.TokenResponse, error)
 	FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion string, clientSecret string) (accesstokens.TokenResponse, error)
 	FromUserAssertionClientCertificate(ctx context.Context, authParameters authority.AuthParams, userAssertion string, assertion string) (accesstokens.TokenResponse, error)
 	FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error)
@@ -131,6 +133,34 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 			}
 		}
 		return tr, nil
+	}
+
+	// mTLS transport path: used for both mTLS PoP (RFC 8705) and bearer-over-mTLS.
+	// The caller sets authParams.UseMtlsTransport=true and authParams.MtlsBindingCert to the cert.
+	if authParams.UseMtlsTransport && authParams.MtlsBindingCert != nil {
+		tlsCert := tls.Certificate{
+			Certificate: [][]byte{authParams.MtlsBindingCert.Raw},
+			PrivateKey:  cred.Key,
+			Leaf:        authParams.MtlsBindingCert,
+		}
+
+		var endpoint string
+		if authParams.AuthnScheme != nil && authParams.AuthnScheme.AccessTokenType() == authority.AccessTokenTypeMtlsPop {
+			// mTLS PoP: resolve region and use the regional mtlsauth endpoint.
+			region := authority.ResolveRegion(ctx, authParams.AuthorityInfo.Region)
+			var err error
+			endpoint, err = authority.BuildMtlsEndpoint(region, authParams.AuthorityInfo.Tenant, authParams.AuthorityInfo)
+			if err != nil {
+				return accesstokens.TokenResponse{}, err
+			}
+		} else {
+			// Bearer-over-mTLS: mTLS transport but standard token endpoint.
+			if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
+				return accesstokens.TokenResponse{}, err
+			}
+			endpoint = authParams.Endpoints.TokenEndpoint
+		}
+		return t.AccessTokens.FromMtlsCertificate(ctx, authParams, tlsCert, endpoint)
 	}
 
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {

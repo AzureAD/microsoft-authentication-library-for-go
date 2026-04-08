@@ -5,6 +5,7 @@ package fake
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 
@@ -86,6 +87,12 @@ func (f *AccessTokens) FromAssertion(ctx context.Context, authParameters authori
 	}
 	if f.ValidateAssertion != nil {
 		f.ValidateAssertion(assertion)
+	}
+	return f.AccessToken, nil
+}
+func (f *AccessTokens) FromMtlsCertificate(ctx context.Context, authParameters authority.AuthParams, tlsCert tls.Certificate, mtlsEndpoint string) (accesstokens.TokenResponse, error) {
+	if f.Err {
+		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
 	return f.AccessToken, nil
 }
