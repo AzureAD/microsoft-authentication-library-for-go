@@ -15,11 +15,14 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strings"
@@ -31,6 +34,7 @@ func main() {
 	tenantID := flag.String("tenant", "", "Azure AD tenant ID")
 	clientID := flag.String("client", "", "Azure AD application (client) ID")
 	region := flag.String("region", "centraluseuap", "Azure region for mTLS endpoint (e.g. westus2)")
+	resource := flag.String("resource", "https://graph.microsoft.com", "Downstream resource URL to call after acquiring token (optional)")
 	errorsOnly := flag.Bool("errors-only", false, "Only run error-case validation (no Azure credentials required)")
 	flag.Parse()
 
@@ -80,7 +84,7 @@ func main() {
 	}
 
 	fmt.Println("\n=== Path 1: Happy Path ===")
-	testHappyPath(cred, *tenantID, *clientID, *region)
+	testHappyPath(cred, certPEM, keyPEM, *tenantID, *clientID, *region, *resource)
 }
 
 func testErrorCases(cred confidential.Credential, tenantID, clientID, region string) {
@@ -169,10 +173,10 @@ func testErrorCases(cred confidential.Credential, tenantID, clientID, region str
 	fmt.Printf("\n  Error cases: %d passed, %d failed\n", pass, fail)
 }
 
-func testHappyPath(cred confidential.Credential, tenantID, clientID, region string) {
+func testHappyPath(cred confidential.Credential, certPEM, keyPEM []byte, tenantID, clientID, region, resource string) {
 	ctx := context.Background()
 	authority := "https://login.microsoftonline.com/" + tenantID
-	scopes := []string{"https://graph.microsoft.com/.default"}
+	scopes := []string{strings.TrimRight(resource, "/") + "/.default"}
 
 	client, err := confidential.New(authority, clientID, cred,
 		confidential.WithAzureRegion(region))
@@ -180,7 +184,7 @@ func testHappyPath(cred confidential.Credential, tenantID, clientID, region stri
 		log.Fatalf("create client: %v", err)
 	}
 
-	fmt.Printf("  Acquiring mTLS PoP token (region=%s)...\n", region)
+	fmt.Printf("  Acquiring mTLS PoP token (region=%s, scope=%s)...\n", region, scopes[0])
 	result, err := client.AcquireTokenByCredential(ctx, scopes,
 		confidential.WithMtlsProofOfPossession())
 	if err != nil {
@@ -229,7 +233,70 @@ func testHappyPath(cred confidential.Credential, tenantID, clientID, region stri
 		fmt.Println("  ✅ Same access token returned from cache")
 	}
 
+	// Downstream call — present the binding cert over mTLS
+	fmt.Printf("\n  Making downstream call to %s...\n", resource)
+	makeDownstreamCall(result.AccessToken, certPEM, keyPEM, resource)
+
 	fmt.Println("\n  Happy path complete ✅")
+}
+
+// makeDownstreamCall makes an HTTPS request to resource, presenting the mTLS binding
+// certificate in the TLS handshake and the mTLS PoP token in the Authorization header.
+//
+// The call target is GET {resource}/v1.0/organization for Graph, or GET {resource} for
+// other resources. A 4xx response from the server (e.g. 403 Forbidden due to missing
+// permissions) is still a success from the mTLS/token perspective — it means the TLS
+// handshake and token authentication both succeeded.
+func makeDownstreamCall(token string, certPEM, keyPEM []byte, resource string) {
+	tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+	if err != nil {
+		fmt.Printf("  ❌ Build TLS cert: %v\n", err)
+		return
+	}
+
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			Certificates: []tls.Certificate{tlsCert},
+		},
+	}
+	httpClient := &http.Client{Transport: transport}
+
+	// For Graph, append /v1.0/organization (requires Directory.Read.All or similar)
+	url := strings.TrimRight(resource, "/")
+	if strings.Contains(url, "graph.microsoft.com") {
+		url += "/v1.0/organization"
+	}
+
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		fmt.Printf("  ❌ Build request: %v\n", err)
+		return
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		fmt.Printf("  ❌ Downstream call failed (TLS/network error): %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+
+	switch {
+	case resp.StatusCode == 200:
+		fmt.Printf("  ✅ Downstream call succeeded: HTTP %d\n", resp.StatusCode)
+		fmt.Printf("     Response (first 200 chars): %.200s\n", string(body))
+	case resp.StatusCode == 401:
+		fmt.Printf("  ❌ Downstream call returned HTTP 401 — token or mTLS cert rejected\n")
+		fmt.Printf("     Body: %.300s\n", string(body))
+	case resp.StatusCode == 403:
+		fmt.Printf("  ⚠️  Downstream call returned HTTP 403 — TLS handshake OK, token accepted, but missing permissions\n")
+		fmt.Printf("     Body: %.300s\n", string(body))
+	default:
+		fmt.Printf("  ⚠️  Downstream call returned HTTP %d\n", resp.StatusCode)
+		fmt.Printf("     Body: %.300s\n", string(body))
+	}
 }
 
 // decodeJWTClaims decodes the JWT payload and returns (token_type, cnf) claims.

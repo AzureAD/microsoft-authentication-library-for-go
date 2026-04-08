@@ -69,7 +69,7 @@ func main() {
     }
 
     // Create MSAL credential
-    certs, key, err := confidential.CertFromPEM(certPEM, keyPEM)
+    certs, key, err := confidential.CertFromPEM(append(certPEM, keyPEM...), "")
     if err != nil {
         log.Fatal("parse cert:", err)
     }
@@ -126,19 +126,19 @@ func main() {
 // Should fail: missing region
 client2, _ := confidential.New(authority, clientID, cred) // no WithAzureRegion
 _, err = client2.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
-// Expected: error containing "mtls_pop_no_region"
+// Expected: error containing "mTLS PoP requires an Azure region"
 
 // Should fail: non-tenanted authority
 client3, _ := confidential.New("https://login.microsoftonline.com/common", clientID, cred,
     confidential.WithAzureRegion("westus2"))
 _, err = client3.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
-// Expected: error containing "mtls_pop_requires_tenanted_authority"
+// Expected: error containing "mTLS PoP requires a tenanted authority"
 
 // Should fail: secret credential
 secretCred, _ := confidential.NewCredFromSecret("my-secret")
 client4, _ := confidential.New(authority, clientID, secretCred, confidential.WithAzureRegion("westus2"))
 _, err = client4.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
-// Expected: error containing "mtls_pop_no_cert"
+// Expected: error containing "mTLS requires a certificate credential"
 ```
 
 ### Step 6: Make a Downstream mTLS Call
@@ -168,12 +168,16 @@ resp, err := httpClient.Do(req)
 
 ### Step 1: Provision the Azure VM
 
-1. Create an Azure VM (Windows Server 2019 or later for VBS support)
+1. Create a **Trusted Launch** Azure VM (Windows Server 2019 or later):
+   - Enable **Secure Boot** and **vTPM** in the Security Type settings
+   - Verify attestation capability after provisioning: `tpmtool.exe getdeviceinformation` → `Is Capable For Attestation: True`
 2. Enable **system-assigned managed identity** in the VM's Identity blade
 3. Grant the managed identity an Azure RBAC role on the target resource (e.g., Storage Blob Data Reader)
 4. Ensure VBS (Virtualization-Based Security) is enabled:
-   - Azure VM SKUs with nested virtualization support VBS (e.g., `Standard_D2s_v5`)
-   - Verify in Device Manager or `msinfo32.exe` → Virtualization-based security: Running
+   - Trusted Launch VMs support VBS automatically
+   - Verify in `msinfo32.exe` → Virtualization-based security: Running
+
+> **Important:** A standard VM (without Trusted Launch / Secure Boot + vTPM) will fail at the attestation step with `AttestKeyGuardImportKey failed ... Is Capable For Attestation must be true`. The VM's vTPM must have an EK certificate provisioned by the Azure platform.
 
 ### Step 2: Install Go and the Application
 
@@ -227,6 +231,11 @@ func main() {
 ✅ CNG key `MSALMtlsKey_{cuID}` visible in key storage (check with `certutil -csp "Microsoft Platform Crypto Provider" -key`)  
 
 ### Step 5: Common Failure Scenarios
+
+**"AttestKeyGuardImportKey failed ... Is Capable For Attestation must be true"**
+- The VM is not a Trusted Launch VM, or vTPM was not provisioned with an EK certificate
+- Verify: `tpmtool.exe getdeviceinformation` → `Is Capable For Attestation: True`
+- Fix: Re-deploy the VM as a Trusted Launch VM with Secure Boot + vTPM enabled at creation time
 
 **"IMDSv2 platform metadata missing client_id or tenant_id"**
 - The VM's managed identity may not be configured correctly

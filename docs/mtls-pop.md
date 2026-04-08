@@ -73,6 +73,8 @@ On Azure VMs, the IMDS (Instance Metadata Service) v2 can issue a short-lived bi
 - Azure VM or VMSS with system-assigned managed identity
 - IMDSv2 enabled (`cred-api-version=2.0`)
 - Windows OS with VBS (Virtualization-Based Security) KeyGuard available
+- **[Trusted Launch Azure VM](https://learn.microsoft.com/azure/virtual-machines/trusted-launch)** with Secure Boot + vTPM — `Is Capable For Attestation: True` (verify with `tpmtool.exe getdeviceinformation`)
+- `AttestationClientLib.dll` present at `C:\Windows\System32\` (standard on Azure Windows VMs)
 - `DefaultToIMDS` source (not Arc, AppService, CloudShell, etc.)
 
 **API:**
@@ -183,14 +185,17 @@ For IMDSv2 (Path 2), the binding certificate itself is cached in-memory with a 5
 
 ## Error Reference
 
-| Error Code / Message | Condition | Resolution |
-|---------------------|-----------|-----------|
-| `mtls_pop_no_region` | `WithMtlsProofOfPossession()` called without `WithAzureRegion()` | Add `WithAzureRegion("regionName")` or `WithAzureRegion(authority.AutoDetectRegion)` to the client |
-| `mtls_pop_no_cert` | mTLS PoP requested but credential is not certificate-based | Create the client with `NewCredFromCert()` |
-| `mtls_pop_requires_tenanted_authority` | Authority is `/common` or `/organizations` | Use a specific tenant ID: `https://login.microsoftonline.com/{tenantID}` |
-| `mTLS PoP Managed Identity requires Windows...` | IMDSv2 path on non-Windows | Only supported on Windows with VBS |
+| Error Message | Condition | Resolution |
+|--------------|-----------|-----------|
+| `mTLS PoP requires an Azure region; use WithAzureRegion() or AutoDetectRegion()` | `WithMtlsProofOfPossession()` called without `WithAzureRegion()` | Add `WithAzureRegion("regionName")` or `WithAzureRegion(authority.AutoDetectRegion)` to the client |
+| `mTLS requires a certificate credential; use NewCredFromCert` | mTLS PoP requested but credential is not certificate-based | Create the client with `NewCredFromCert()` |
+| `mTLS PoP requires a tenanted authority; use a specific tenant ID in the authority URL` | Authority is `/common` or `/organizations` | Use a specific tenant ID: `https://login.microsoftonline.com/{tenantID}` |
+| `mTLS PoP Managed Identity requires Windows with VBS KeyGuard support` | IMDSv2 path on non-Windows | Only supported on Windows with VBS |
 | `mTLS PoP Managed Identity is only supported with IMDS` | MI source is not `DefaultToIMDS` | mTLS PoP MI requires IMDS source (standard Azure VM) |
 | `IMDSv2 platform metadata missing...` | IMDS not available or VM identity not configured | Ensure the VM has system-assigned managed identity and IMDSv2 access |
+| `AttestKeyGuardImportKey failed ... Is Capable For Attestation must be true` | VM vTPM not attestation-capable | Use a Trusted Launch Azure VM (Secure Boot + vTPM with EK certificate) |
+
+> **Note:** The `apps/errors` package defines short code constants (e.g. `errors.MtlsPopNoRegion = "mtls_pop_no_region"`) for use in programmatic checks, but the error messages returned to callers use the plain-English strings in the table above. Always check `err.Error()` contains the plain-English substring, not the code constant.
 
 ---
 
@@ -204,7 +209,7 @@ For IMDSv2 (Path 2), the binding certificate itself is cached in-memory with a 5
 | Non-Windows MI PoP | ❌ (returns error) | ❌ | ✅ (via subprocess) |
 | Bearer-over-mTLS | ✅ | ✅ | ✅ |
 | Auto-region detection | ✅ (`AutoDetectRegion`) | ✅ (`TryAutoDetect`) | ✅ |
-| MAA attestation | Planned | ✅ | ✅ |
+| MAA attestation | ✅ Via `AttestationClientLib.dll` | ✅ | ✅ |
 
 ---
 
@@ -227,14 +232,19 @@ Confidential Client (SNI path):
 Managed Identity (IMDSv2 path):
   App ──► AcquireToken(WithMtlsProofOfPossession())
                 │
-                ├── GET IMDS /getplatformmetadata → clientID, tenantID, cuID
+                ├── GET IMDS /getplatformmetadata → clientID, tenantID, cuID, attestationEndpoint
                 │
                 ├── CNG: GetOrCreateKeyGuardKey("MSALMtlsKey_{cuID}")
                 │         [RSA-2048 in VBS KeyGuard, non-exportable]
                 │
                 ├── x509.CreateCertificateRequest(key, clientID)
                 │
-                ├── POST IMDS /issuecredential(CSR) → signed cert + mtlsEndpoint
+                ├── AttestationClientLib.dll: AttestKeyGuardImportKey(attestationEndpoint, key)
+                │         → MAA JWT proving key is hardware-protected
+                │         [Requires Trusted Launch VM with attestation-capable vTPM]
+                │
+                ├── POST IMDS /issuecredential(CSR, attestation_token=MAA JWT)
+                │         → signed cert + mtlsEndpoint
                 │
                 ├── Cache cert (in-memory, expires 5 min before cert NotAfter)
                 │
