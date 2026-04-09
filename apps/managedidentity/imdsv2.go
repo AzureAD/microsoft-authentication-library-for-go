@@ -17,6 +17,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"math"
 	"net/http"
 	"net/url"
 	"runtime"
@@ -223,7 +224,21 @@ func generateCSR(key crypto.Signer, clientID, tenantID string, cuID csrMetadataC
 	if err != nil {
 		return "", fmt.Errorf("marshal version: %w", err)
 	}
-	certReqInfoBytes := make([]byte, 0, len(version)+len(subjectDER)+len(pubKeyDER)+len(attributes))
+	// Guard against integer overflow in the capacity calculation (CodeQL).
+	totalLen := len(version)
+	if totalLen > math.MaxInt-len(subjectDER) {
+		return "", fmt.Errorf("certification request info too large")
+	}
+	totalLen += len(subjectDER)
+	if totalLen > math.MaxInt-len(pubKeyDER) {
+		return "", fmt.Errorf("certification request info too large")
+	}
+	totalLen += len(pubKeyDER)
+	if totalLen > math.MaxInt-len(attributes) {
+		return "", fmt.Errorf("certification request info too large")
+	}
+	totalLen += len(attributes)
+	certReqInfoBytes := make([]byte, 0, totalLen)
 	certReqInfoBytes = append(certReqInfoBytes, version...)
 	certReqInfoBytes = append(certReqInfoBytes, subjectDER...)
 	certReqInfoBytes = append(certReqInfoBytes, spki.FullBytes...)
