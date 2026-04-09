@@ -20,7 +20,10 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
-const loginMicrosoftonline = "login.microsoftonline.com"
+const (
+	loginMicrosoftonline = "login.microsoftonline.com"
+	fakeTenantAuthority  = "https://login.microsoftonline.com/fakeTenant"
+)
 
 // mtlsTestCert generates an RSA cert and key for use in mTLS PoP unit tests.
 func mtlsTestCert(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
@@ -56,8 +59,7 @@ func mtlsFakeClient(t *testing.T, tr accesstokens.TokenResponse, cert *x509.Cert
 		t.Fatal(err)
 	}
 	// Use a tenanted authority (required for mTLS PoP)
-	tenantedAuthority := "https://login.microsoftonline.com/fakeTenant"
-	client, err := New(tenantedAuthority, fakeClientID, cred, options...)
+	client, err := New(fakeTenantAuthority, fakeClientID, cred, options...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -65,7 +67,7 @@ func mtlsFakeClient(t *testing.T, tr accesstokens.TokenResponse, cert *x509.Cert
 	client.base.Token.AccessTokens = fakeAT
 	client.base.Token.Authority = &fake.Authority{
 		InstanceResp: authority.InstanceDiscoveryResponse{
-			TenantDiscoveryEndpoint: tenantedAuthority + "/discovery/endpoint",
+			TenantDiscoveryEndpoint: fakeTenantAuthority + "/discovery/endpoint",
 			Metadata: []authority.InstanceDiscoveryMetadata{
 				{
 					PreferredNetwork: loginMicrosoftonline,
@@ -77,10 +79,10 @@ func mtlsFakeClient(t *testing.T, tr accesstokens.TokenResponse, cert *x509.Cert
 	}
 	client.base.Token.Resolver = &fake.ResolveEndpoints{
 		Endpoints: authority.NewEndpoints(
-			tenantedAuthority+"/auth",
-			tenantedAuthority+"/token",
-			tenantedAuthority+"/jwt",
-			tenantedAuthority,
+			fakeTenantAuthority+"/auth",
+			fakeTenantAuthority+"/token",
+			fakeTenantAuthority+"/jwt",
+			fakeTenantAuthority,
 		),
 	}
 	client.base.Token.WSTrust = &fake.WSTrust{}
@@ -106,7 +108,7 @@ func TestWithMtlsProofOfPossession_RequiresCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := fakeClient(accesstokens.TokenResponse{}, cred, "https://login.microsoftonline.com/fakeTenant")
+	client, err := fakeClient(accesstokens.TokenResponse{}, cred, fakeTenantAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +221,7 @@ func TestWithMtlsProofOfPossession_CacheKey_DiffersFromBearer(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bearerClient, err := fakeClient(bearerTR, cred, "https://login.microsoftonline.com/fakeTenant")
+	bearerClient, err := fakeClient(bearerTR, cred, fakeTenantAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}

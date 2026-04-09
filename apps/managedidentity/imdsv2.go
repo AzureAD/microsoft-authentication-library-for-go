@@ -139,6 +139,45 @@ func issueCredential(ctx context.Context, httpClient ops.HTTPClient, req issueCr
 	return credResp, nil
 }
 
+// buildCuIDAttribute encodes the cuID as an ASN.1 attribute:
+// SEQUENCE { OID 1.3.6.1.4.1.311.90.2.10, SET { UTF8String(json) } }
+// wrapped in attributes [0] IMPLICIT SET OF.
+func buildCuIDAttribute(cuID csrMetadataCuID) ([]byte, error) {
+	cuIDJSON, err := json.Marshal(cuID)
+	if err != nil {
+		return nil, fmt.Errorf("marshal cuID: %w", err)
+	}
+	utf8Bytes, err := asn1.MarshalWithParams(string(cuIDJSON), "utf8")
+	if err != nil {
+		return nil, fmt.Errorf("marshal utf8 cuID: %w", err)
+	}
+	cuIDValueSet, err := asn1.Marshal(asn1.RawValue{
+		Class: asn1.ClassUniversal, Tag: asn1.TagSet, IsCompound: true, Bytes: utf8Bytes,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal cuID value set: %w", err)
+	}
+	cuIDOID := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 90, 2, 10}
+	oidBytes, err := asn1.Marshal(cuIDOID)
+	if err != nil {
+		return nil, fmt.Errorf("marshal cuID OID: %w", err)
+	}
+	cuIDAttr, err := asn1.Marshal(asn1.RawValue{
+		Class: asn1.ClassUniversal, Tag: asn1.TagSequence, IsCompound: true,
+		Bytes: append(oidBytes, cuIDValueSet...),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal cuID attr: %w", err)
+	}
+	attributes, err := asn1.Marshal(asn1.RawValue{
+		Class: asn1.ClassContextSpecific, Tag: 0, IsCompound: true, Bytes: cuIDAttr,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("marshal attributes: %w", err)
+	}
+	return attributes, nil
+}
+
 // generateCSR generates a PKCS#10 CSR signed with the given key.
 // The subject is CN=<clientID> and the CSR is returned as standard base64-encoded DER (no PEM headers).
 // generateCSR creates a PKCS#10 CSR that exactly matches MSAL.NET's Csr.Generate():
@@ -175,49 +214,10 @@ func generateCSR(key crypto.Signer, clientID, tenantID string, cuID csrMetadataC
 	}
 
 	// --- CuID attribute: OID 1.3.6.1.4.1.311.90.2.10, value = SET { UTF8String(json) } ---
-	cuIDJSON, err := json.Marshal(cuID)
+	// wrapped in attributes [0] IMPLICIT SET OF
+	attributes, err := buildCuIDAttribute(cuID)
 	if err != nil {
-		return "", fmt.Errorf("marshal cuID: %w", err)
-	}
-	// Encode as ASN.1 UTF8String (tag 0x0C)
-	utf8Bytes, err := asn1.MarshalWithParams(string(cuIDJSON), "utf8")
-	if err != nil {
-		return "", fmt.Errorf("marshal utf8 cuID: %w", err)
-	}
-	// Wrap in SET OF
-	cuIDValueSet, err := asn1.Marshal(asn1.RawValue{
-		Class:      asn1.ClassUniversal,
-		Tag:        asn1.TagSet,
-		IsCompound: true,
-		Bytes:      utf8Bytes,
-	})
-	if err != nil {
-		return "", fmt.Errorf("marshal cuID value set: %w", err)
-	}
-	// Build attribute SEQUENCE { OID, SET }
-	cuIDOID := asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 311, 90, 2, 10}
-	oidBytes, err := asn1.Marshal(cuIDOID)
-	if err != nil {
-		return "", fmt.Errorf("marshal cuID OID: %w", err)
-	}
-	cuIDAttr, err := asn1.Marshal(asn1.RawValue{
-		Class:      asn1.ClassUniversal,
-		Tag:        asn1.TagSequence,
-		IsCompound: true,
-		Bytes:      append(oidBytes, cuIDValueSet...),
-	})
-	if err != nil {
-		return "", fmt.Errorf("marshal cuID attr: %w", err)
-	}
-	// attributes [0] IMPLICIT SET OF { cuIDAttr }
-	attributes, err := asn1.Marshal(asn1.RawValue{
-		Class:      asn1.ClassContextSpecific,
-		Tag:        0,
-		IsCompound: true,
-		Bytes:      cuIDAttr,
-	})
-	if err != nil {
-		return "", fmt.Errorf("marshal attributes: %w", err)
+		return "", err
 	}
 
 	// --- CertificationRequestInfo SEQUENCE { version, subject, spki, attributes } ---
