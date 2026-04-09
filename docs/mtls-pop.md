@@ -57,8 +57,9 @@ result, err := client.AcquireTokenByCredential(ctx, []string{"https://graph.micr
     confidential.WithMtlsProofOfPossession(),
 )
 
-// 4. result.TokenType == "mtls_pop"
-// 5. result.BindingCertificate contains the cert bound to this token
+// result.BindingCertificate is the X.509 cert bound to this token —
+// use it (with its private key) in the TLS handshake for downstream calls.
+// result.Metadata.TokenSource == base.TokenSourceCache on subsequent calls.
 ```
 
 **Token caching:** mTLS PoP tokens are cached separately from bearer tokens using the certificate's x5t#S256 thumbprint as part of the cache key.
@@ -88,9 +89,12 @@ result, err := client.AcquireToken(ctx, "https://graph.microsoft.com",
     managedidentity.WithMtlsProofOfPossession(),
 )
 
-// result.TokenType == "mtls_pop"
-// result.BindingCertificate is the IMDS-issued cert bound to the token
+// result.BindingCertificate is the IMDS-issued cert bound to the token.
+// Use it (with the CNG-backed private key) in downstream mTLS connections.
+// result.Metadata.TokenSource == base.TokenSourceCache on subsequent calls.
 ```
+
+> **Resource note:** Not all Azure resources accept mTLS PoP tokens yet. Use `https://graph.microsoft.com` or `https://storage.azure.com` for testing. `https://management.azure.com` may return `AADSTS392196` if the resource is not enrolled.
 
 **Non-Windows:** Returns an error (`mTLS PoP Managed Identity requires Windows with VBS KeyGuard support`).
 
@@ -179,7 +183,7 @@ mTLS PoP tokens are cached separately from bearer tokens. The cache key includes
 - Bearer and mTLS PoP tokens for the same client/tenant don't collide.
 - Token expiry is honored normally.
 
-For IMDSv2 (Path 2), the binding certificate itself is cached in-memory with a 5-minute pre-expiry buffer to ensure smooth certificate rotation.
+For IMDSv2 (Path 2), the binding certificate itself is cached in-memory with a 5-minute pre-expiry buffer to ensure smooth certificate rotation. The CNG key is persisted in the "Microsoft Software Key Storage Provider" under the name `MSALMtlsKey_{cuID}` (USER scope), where `cuID` is the VM's compute unit identifier from IMDS platform metadata.
 
 ---
 
@@ -219,37 +223,49 @@ For IMDSv2 (Path 2), the binding certificate itself is cached in-memory with a 5
 Confidential Client (SNI path):
   App ──[has cert+key]──► AcquireTokenByCredential(WithMtlsProofOfPossession())
                                         │
-                              Build MtlsPopAuthenticationScheme
-                              Resolve region
+                              Build MtlsPopAuthenticationScheme(cert)
+                              Resolve region (env var / IMDS / explicit)
                               Build mTLS endpoint URL
                                         │
                               POST {region}.mtlsauth.microsoft.com/{tenant}/token
-                              (TLS handshake presents cert, no client_assertion JWT)
+                              (TLS handshake presents cert; no client_assertion JWT)
                                         │
                               token_type=mtls_pop token  ◄────────────────────────
-                              BindingCertificate = cert used
+                              result.BindingCertificate = cert used
+                              result.Metadata.TokenSource = Cache on repeat calls
 
 Managed Identity (IMDSv2 path):
-  App ──► AcquireToken(WithMtlsProofOfPossession())
+  App ──► AcquireToken(resource, WithMtlsProofOfPossession())
                 │
-                ├── GET IMDS /getplatformmetadata → clientID, tenantID, cuID, attestationEndpoint
+                ├── GET IMDS /metadata/identity/getplatformmetadata?cred-api-version=2.0
+                │         → clientID, tenantID, cuID, attestationEndpoint
                 │
-                ├── CNG: GetOrCreateKeyGuardKey("MSALMtlsKey_{cuID}")
-                │         [RSA-2048 in VBS KeyGuard, non-exportable]
+                ├── CNG: GetOrCreateManagedIdentityKey("MSALMtlsKey_{cuID}")
+                │         Priority: KeyGuard (VBS) > Hardware (Software KSP) > InMemory
+                │         [RSA-2048, USER scope, non-exportable; KeyGuard requires Credential Guard]
                 │
-                ├── x509.CreateCertificateRequest(key, clientID)
+                ├── Build PKCS#10 CSR (manual ASN.1 — matches MSAL.NET Csr.Generate()):
+                │         Subject:    CN={clientId}, DC={tenantId}
+                │         Signature:  RSASSA-PSS SHA-256
+                │         Attributes: OID 1.3.6.1.4.1.311.90.2.10 → UTF8String(JSON CuID)
                 │
                 ├── AttestationClientLib.dll: AttestKeyGuardImportKey(attestationEndpoint, key)
-                │         → MAA JWT proving key is hardware-protected
-                │         [Requires Trusted Launch VM with attestation-capable vTPM]
+                │         → MAA JWT proving key is VBS KeyGuard-protected
+                │         [Only for KeyGuard keys; requires Trusted Launch VM + attestation-capable vTPM]
                 │
-                ├── POST IMDS /issuecredential(CSR, attestation_token=MAA JWT)
-                │         → signed cert + mtlsEndpoint
+                ├── POST IMDS /metadata/identity/issuecredential
+                │         body: { csr: <base64>, attestation_token: <MAA JWT> }
+                │         → binding_certificate (base64 DER) + mtls_authentication_endpoint
+                │         [Issued by managedidentitysnissuer.login.microsoft.com]
                 │
-                ├── Cache cert (in-memory, expires 5 min before cert NotAfter)
+                ├── Cache binding cert in-memory (expires 5 min before cert NotAfter)
                 │
-                └── POST {mtlsEndpoint}/{tenantID}/token
-                    (TLS handshake with IMDS-issued cert)
+                └── POST {mtlsAuthEndpoint}/{tenantID}/oauth2/v2.0/token
+                    grant_type=client_credentials, scope={resource}/.default, token_type=mtls_pop
+                    (TLS handshake presents IMDS-issued binding cert)
+                          │
                     token_type=mtls_pop token  ◄─────────────────────────────────
-                    BindingCertificate = IMDS-issued cert
+                    result.BindingCertificate = IMDS-issued cert
+                    cnf.x5t#S256 in JWT = SHA-256 thumbprint of binding cert
+                    result.Metadata.TokenSource = Cache on repeat calls
 ```

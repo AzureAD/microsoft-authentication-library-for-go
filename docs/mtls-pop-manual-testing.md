@@ -114,14 +114,16 @@ func main() {
         log.Fatal("acquire token:", err)
     }
 
-    fmt.Println("Token type:", result.TokenType)
     fmt.Println("Token (first 50 chars):", result.AccessToken[:50])
     fmt.Println("BindingCertificate subject:", result.BindingCertificate.Subject.CommonName)
     fmt.Println("Expires:", result.ExpiresOn)
+    fmt.Println("TokenSource:", result.Metadata.TokenSource) // 0=network, 1=cache
     
-    // Verify token type
-    if result.TokenType != "mtls_pop" {
-        log.Fatal("expected mtls_pop token type, got:", result.TokenType)
+    // The token is of type mtls_pop — confirm via the cnf claim in the JWT payload.
+    // AuthResult does not expose a TokenType field; check result.BindingCertificate != nil
+    // to confirm an mTLS PoP token was returned.
+    if result.BindingCertificate == nil {
+        log.Fatal("expected BindingCertificate to be set for mTLS PoP tokens")
     }
     
     _ = tlsCert // Use tlsCert to make downstream calls (see Making Downstream Calls section)
@@ -130,10 +132,11 @@ func main() {
 
 ### Step 4: Verify Expected Behavior
 
-✅ `result.TokenType == "mtls_pop"`  
-✅ `result.BindingCertificate` is not nil and matches the certificate you provided  
-✅ Token is cached: a second call returns the same token without a network request  
+✅ `result.BindingCertificate != nil` — the cert bound to the token  
+✅ `result.BindingCertificate.Subject.CommonName` matches the client ID in the app registration  
+✅ Token is cached: a second call returns `result.Metadata.TokenSource == 1` (Cache) without a network request  
 ✅ Different certificates produce different cache entries  
+✅ JWT payload contains `"cnf": { "x5t#S256": "<thumbprint>" }` matching the binding cert  
 
 ### Step 5: Validate Error Cases
 
@@ -251,27 +254,42 @@ func main() {
 
     result, err := client.AcquireToken(
         context.Background(),
-        "https://storage.azure.com",
+        "https://graph.microsoft.com", // or https://storage.azure.com
+        // Note: https://management.azure.com may return AADSTS392196 if not enrolled for mTLS PoP
         managedidentity.WithMtlsProofOfPossession(),
     )
     if err != nil {
         log.Fatal("acquire token:", err)
     }
 
-    fmt.Println("Token type:", result.TokenType)
     fmt.Println("BindingCertificate subject:", result.BindingCertificate.Subject.CommonName)
     fmt.Println("BindingCertificate expires:", result.BindingCertificate.NotAfter)
     fmt.Println("Token expires:", result.ExpiresOn)
+    fmt.Println("TokenSource:", result.Metadata.TokenSource) // 0=network, 1=cache
+
+    // Acquire again — should hit in-memory cert cache + token cache
+    result2, err := client.AcquireToken(
+        context.Background(),
+        "https://graph.microsoft.com",
+        managedidentity.WithMtlsProofOfPossession(),
+    )
+    if err != nil {
+        log.Fatal("second acquire:", err)
+    }
+    if result2.Metadata.TokenSource == 1 {
+        fmt.Println("✅ Token cache working")
+    }
 }
 ```
 
 ### Step 4: Verify Expected Behavior
 
-✅ `result.TokenType == "mtls_pop"`  
-✅ `result.BindingCertificate` is not nil (IMDS-issued cert)  
-✅ `result.BindingCertificate.Subject.CommonName` matches the VM's client ID  
-✅ Second call returns cached cert + token (no IMDS roundtrip)  
-✅ CNG key `MSALMtlsKey_{cuID}` visible in key storage (check with `certutil -csp "Microsoft Platform Crypto Provider" -key`)  
+✅ `result.BindingCertificate != nil` (IMDS-issued cert from `managedidentitysnissuer.login.microsoft.com`)  
+✅ `result.BindingCertificate.Subject.CommonName` matches the VM's managed identity client ID  
+✅ Second call: `result.Metadata.TokenSource == 1` (Cache) — no IMDS roundtrip  
+✅ CNG key `MSALMtlsKey_{cuID}` visible in key storage: `certutil -csp "Microsoft Software Key Storage Provider" -key`  
+✅ JWT payload contains `"cnf": { "x5t#S256": "<thumbprint>" }` matching the binding cert  
+✅ JWT payload contains `"xms_tbflags": 2` (mTLS binding enforced) and `"appidacr": "2"` (cert auth)  
 
 ### Step 5: Common Failure Scenarios
 
@@ -297,6 +315,11 @@ func main() {
 **"issue credential returned status 403"**
 - The VM's managed identity does not have permission for IMDSv2 credential issuance
 - Contact your Azure subscription administrator
+
+**AADSTS392196 from the token endpoint**
+- The target resource (`scope=.../.default`) is not enrolled for mTLS PoP on this tenant
+- Switch to `https://graph.microsoft.com` or `https://storage.azure.com` for testing
+- `https://management.azure.com` is not enrolled in all tenants
 
 **Error on non-Windows:**
 ```
@@ -341,8 +364,11 @@ $parts = "<token>" -split "\."
 ```
 
 For mTLS PoP tokens, look for:
-- `"cnf": { "x5t#S256": "<thumbprint>" }` — certificate thumbprint claim
-- `"token_type": "mtls_pop"` or check the response header
+- `"cnf": { "x5t#S256": "<thumbprint>" }` — certificate thumbprint bound to the token
+- `"appidacr": "2"` — indicates certificate-based authentication
+- `"xms_tbflags": 2` — indicates mTLS binding is enforced
+
+> **Note:** The `token_type` claim is NOT present in the JWT payload. The `mtls_pop` type comes from the HTTP response `token_type` field. Use `result.BindingCertificate != nil` to confirm an mTLS PoP token was returned.
 
 ---
 
