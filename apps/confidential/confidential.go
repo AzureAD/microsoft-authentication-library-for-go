@@ -792,25 +792,8 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authParams.CacheKeyComponents = o.cacheKeyComponents
 
 	// Configure mTLS transport if requested via WithMtlsProofOfPossession or WithSendCertificateOverMtls.
-	wantsMtls := o.isMtlsPopRequested || cca.sendCertOverMtls
-	if wantsMtls {
-		if cca.cred.Cert == nil {
-			return AuthResult{}, errors.New("mTLS requires a certificate credential; use NewCredFromCert")
-		}
-		if o.isMtlsPopRequested {
-			tenant := authParams.AuthorityInfo.Tenant
-			if tenant == "common" || tenant == "organizations" || tenant == "consumers" {
-				return AuthResult{}, errors.New("mTLS PoP requires a tenanted authority; use a specific tenant ID in the authority URL")
-			}
-			region := authParams.AuthorityInfo.Region
-			if region == "" && authParams.AuthorityInfo.AuthorityType != authority.DSTS {
-				return AuthResult{}, errors.New("mTLS PoP requires an Azure region; use WithAzureRegion() or AutoDetectRegion()")
-			}
-			// Set the mTLS PoP auth scheme for token_type=mtls_pop and cache key discrimination.
-			authParams.AuthnScheme = authority.NewMtlsPopAuthenticationScheme(cca.cred.Cert)
-		}
-		authParams.UseMtlsTransport = true
-		authParams.MtlsBindingCert = cca.cred.Cert
+	if err := cca.applyMtlsParams(&authParams, o.isMtlsPopRequested); err != nil {
+		return AuthResult{}, err
 	}
 
 	if o.claims == "" {
@@ -839,6 +822,40 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		return AuthResult{}, err
 	}
 	return cca.base.AuthResultFromToken(ctx, authParams, token)
+}
+
+// applyMtlsParams configures authParams for mTLS when WithMtlsProofOfPossession or
+// WithSendCertificateOverMtls is requested. Extracted to reduce cognitive complexity
+// of AcquireTokenByCredential.
+func (cca Client) applyMtlsParams(authParams *authority.AuthParams, isMtlsPopRequested bool) error {
+	if !isMtlsPopRequested && !cca.sendCertOverMtls {
+		return nil
+	}
+	if cca.cred.Cert == nil {
+		return errors.New("mTLS requires a certificate credential; use NewCredFromCert")
+	}
+	if isMtlsPopRequested {
+		if err := validateMtlsPopAuthority(authParams); err != nil {
+			return err
+		}
+		authParams.AuthnScheme = authority.NewMtlsPopAuthenticationScheme(cca.cred.Cert)
+	}
+	authParams.UseMtlsTransport = true
+	authParams.MtlsBindingCert = cca.cred.Cert
+	return nil
+}
+
+// validateMtlsPopAuthority checks that the authority is suitable for mTLS PoP
+// (must be tenanted and must have a region configured).
+func validateMtlsPopAuthority(authParams *authority.AuthParams) error {
+	tenant := authParams.AuthorityInfo.Tenant
+	if tenant == "common" || tenant == "organizations" || tenant == "consumers" {
+		return errors.New("mTLS PoP requires a tenanted authority; use a specific tenant ID in the authority URL")
+	}
+	if authParams.AuthorityInfo.Region == "" && authParams.AuthorityInfo.AuthorityType != authority.DSTS {
+		return errors.New("mTLS PoP requires an Azure region; use WithAzureRegion() or AutoDetectRegion()")
+	}
+	return nil
 }
 
 // acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf
