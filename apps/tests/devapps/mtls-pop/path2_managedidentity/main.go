@@ -34,7 +34,7 @@ func main() {
 	fmt.Println("Acquiring mTLS PoP token via IMDSv2...")
 	result, err := client.AcquireToken(
 		ctx,
-		"https://management.azure.com",
+		"https://graph.microsoft.com",
 		managedidentity.WithMtlsProofOfPossession(),
 	)
 	if err != nil {
@@ -52,7 +52,7 @@ func main() {
 	fmt.Println("\nAcquiring again (expect cache hit)...")
 	result2, err := client.AcquireToken(
 		ctx,
-		"https://management.azure.com",
+		"https://graph.microsoft.com",
 		managedidentity.WithMtlsProofOfPossession(),
 	)
 	if err != nil {
