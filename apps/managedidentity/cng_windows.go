@@ -18,12 +18,12 @@ import (
 )
 
 const (
-	NCRYPT_MACHINE_KEY_FLAG          = 0x00000020
-	NCRYPT_OVERWRITE_KEY_FLAG        = 0x00000080
-	NCRYPT_ALLOW_EXPORT_NONE         = 0x00000001
-	NCRYPT_SILENT_FLAG               = 0x00000040
+	NCRYPT_MACHINE_KEY_FLAG           = 0x00000020
+	NCRYPT_OVERWRITE_KEY_FLAG         = 0x00000080
+	NCRYPT_ALLOW_EXPORT_NONE          = 0x00000000 // CngExportPolicies.None — non-exportable (matches MSAL.NET)
+	NCRYPT_SILENT_FLAG                = 0x00000040
 	NCRYPT_USE_VIRTUAL_ISOLATION_FLAG = 0x00020000 // Request VBS KeyGuard (Hypervisor-Isolated) key
-	NCRYPT_USE_PER_BOOT_KEY_FLAG     = 0x00040000 // Key material valid only for the current boot
+	NCRYPT_USE_PER_BOOT_KEY_FLAG      = 0x00040000 // Key material valid only for the current boot
 )
 
 var (
@@ -175,9 +175,77 @@ type bcryptPKCS1PaddingInfo struct {
 	pszAlgId *uint16
 }
 
+// bcryptPSSPaddingInfo mirrors the Windows BCRYPT_PSS_PADDING_INFO struct.
+type bcryptPSSPaddingInfo struct {
+	pszAlgId *uint16
+	cbSalt   uint32
+}
+
 func (s *cngSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	// Check if PSS padding is requested (e.g. when generating an RSA-PSS CSR).
+	if pssOpts, ok := opts.(*rsa.PSSOptions); ok {
+		return s.signPSS(digest, pssOpts)
+	}
+	// Default: PKCS1v15 padding.
+	return s.signPKCS1v15(digest, opts)
+}
+
+func (s *cngSigner) signPSS(digest []byte, opts *rsa.PSSOptions) ([]byte, error) {
+	// NCRYPT_PAD_PSS_FLAG = 0x00000008
+	const ncryptPadPSSFlag = 0x00000008
+
+	hashAlgName, err := hashAlgIDFromOpts(opts)
+	if err != nil {
+		return nil, err
+	}
+	algNameUTF16, err := syscall.UTF16PtrFromString(hashAlgName)
+	if err != nil {
+		return nil, fmt.Errorf("converting hash alg name for PSS: %w", err)
+	}
+
+	saltLen := uint32(opts.SaltLength)
+	if opts.SaltLength == rsa.PSSSaltLengthEqualsHash || opts.SaltLength == rsa.PSSSaltLengthAuto {
+		// SHA-256 → 32 bytes salt; SHA-384 → 48; SHA-512 → 64
+		saltLen = uint32(opts.Hash.Size())
+	}
+
+	padding := bcryptPSSPaddingInfo{pszAlgId: algNameUTF16, cbSalt: saltLen}
+	paddingFlags := uint32(ncryptPadPSSFlag)
+
+	var sigLen uint32
+	ret, _, _ := procNCryptSignHash.Call(
+		s.hKey,
+		uintptr(unsafe.Pointer(&padding)),
+		uintptr(unsafe.Pointer(&digest[0])),
+		uintptr(len(digest)),
+		0,
+		0,
+		uintptr(unsafe.Pointer(&sigLen)),
+		uintptr(paddingFlags),
+	)
+	if ret != 0 {
+		return nil, fmt.Errorf("NCryptSignHash PSS (size query) failed: 0x%x", ret)
+	}
+
+	sig := make([]byte, sigLen)
+	ret, _, _ = procNCryptSignHash.Call(
+		s.hKey,
+		uintptr(unsafe.Pointer(&padding)),
+		uintptr(unsafe.Pointer(&digest[0])),
+		uintptr(len(digest)),
+		uintptr(unsafe.Pointer(&sig[0])),
+		uintptr(sigLen),
+		uintptr(unsafe.Pointer(&sigLen)),
+		uintptr(paddingFlags),
+	)
+	if ret != 0 {
+		return nil, fmt.Errorf("NCryptSignHash PSS failed: 0x%x", ret)
+	}
+	return sig[:sigLen], nil
+}
+
+func (s *cngSigner) signPKCS1v15(digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	// NCRYPT_PAD_PKCS1_FLAG = 0x00000002
-	// NCryptSignHash with PKCS1 padding requires a pointer to BCRYPT_PKCS1_PADDING_INFO.
 	hashAlgName, err := hashAlgIDFromOpts(opts)
 	if err != nil {
 		return nil, err
@@ -254,10 +322,13 @@ func hashAlgIDFromOpts(opts crypto.SignerOpts) (string, error) {
 // a generic key-creation failure.
 func GetOrCreateManagedIdentityKey(keyName string) (crypto.Signer, managedIdentityKeyType, error) {
 	// 1. Try KeyGuard (USER scope + VBS Virtual Isolation flags).
+	// VBS flags must be passed to NCryptCreatePersistedKey (as KeyCreationOptions),
+	// NOT to NCryptFinalizeKey — this mirrors CngKeyCreationParameters.KeyCreationOptions
+	// in MSAL.NET's WindowsCngKeyOperations.CreateFresh().
 	kgSigner, err := tryGetOrCreateCNGKey(keyName,
-		uintptr(NCRYPT_SILENT_FLAG),                                                             // open: USER scope (no MACHINE flag)
-		uintptr(NCRYPT_OVERWRITE_KEY_FLAG),                                                      // create: USER scope
-		uintptr(NCRYPT_USE_VIRTUAL_ISOLATION_FLAG|NCRYPT_USE_PER_BOOT_KEY_FLAG|NCRYPT_SILENT_FLAG), // finalize: request VBS
+		uintptr(NCRYPT_SILENT_FLAG),                                                              // open: USER scope, silent
+		uintptr(NCRYPT_OVERWRITE_KEY_FLAG|NCRYPT_USE_VIRTUAL_ISOLATION_FLAG|NCRYPT_USE_PER_BOOT_KEY_FLAG), // create: USER scope + VBS flags
+		uintptr(NCRYPT_SILENT_FLAG),                                                              // finalize: silent only
 	)
 	if err == nil {
 		if isKeyGuardProtected(kgSigner.hKey) {
@@ -268,8 +339,8 @@ func GetOrCreateManagedIdentityKey(keyName string) (crypto.Signer, managedIdenti
 		procNCryptDeleteKey.Call(kgSigner.hKey, 0)
 		kgSigner, err = tryGetOrCreateCNGKey(keyName,
 			uintptr(NCRYPT_SILENT_FLAG),
-			uintptr(NCRYPT_OVERWRITE_KEY_FLAG),
-			uintptr(NCRYPT_USE_VIRTUAL_ISOLATION_FLAG|NCRYPT_USE_PER_BOOT_KEY_FLAG|NCRYPT_SILENT_FLAG),
+			uintptr(NCRYPT_OVERWRITE_KEY_FLAG|NCRYPT_USE_VIRTUAL_ISOLATION_FLAG|NCRYPT_USE_PER_BOOT_KEY_FLAG),
+			uintptr(NCRYPT_SILENT_FLAG),
 		)
 		if err == nil {
 			if isKeyGuardProtected(kgSigner.hKey) {
@@ -358,11 +429,11 @@ func tryGetOrCreateCNGKey(keyName string, openFlags, createFlags, finalizeFlags 
 		}
 
 		if err := setDWORDProperty(hKey, "Length", 2048); err != nil {
-			procNCryptFreeObject.Call(hKey)
+			procNCryptDeleteKey.Call(hKey, 0)
 			return nil, fmt.Errorf("set Length: %w", err)
 		}
 		if err := setDWORDProperty(hKey, "Export Policy", NCRYPT_ALLOW_EXPORT_NONE); err != nil {
-			procNCryptFreeObject.Call(hKey)
+			procNCryptDeleteKey.Call(hKey, 0)
 			return nil, fmt.Errorf("set Export Policy: %w", err)
 		}
 
