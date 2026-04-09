@@ -11,13 +11,11 @@ package main
 
 import (
 	"context"
-	"encoding/base64"
-	"encoding/json"
 	"fmt"
 	"log"
-	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/tests/devapps/mtls-pop/internal/jwtutil"
 )
 
 func main() {
@@ -95,7 +93,7 @@ func printResult(label string, result managedidentity.AuthResult) {
 	fmt.Printf("  Expires:     %s\n", result.ExpiresOn)
 	fmt.Printf("  TokenSource: %v\n", result.Metadata.TokenSource)
 
-	tokenType, cnf := decodeJWTClaims(result.AccessToken)
+	tokenType, cnf := jwtutil.DecodeClaims(result.AccessToken)
 	fmt.Printf("  token_type (JWT): %s\n", tokenType)
 	fmt.Printf("  cnf claim (JWT):  %s\n", cnf)
 
@@ -106,30 +104,5 @@ func printResult(label string, result managedidentity.AuthResult) {
 	}
 }
 
-// decodeJWTClaims decodes the JWT payload and returns (token_type, cnf) claims.
-func decodeJWTClaims(token string) (tokenType, cnf string) {
-	parts := strings.Split(token, ".")
-	if len(parts) < 2 {
-		return "(not a JWT)", ""
-	}
-	data, err := base64.RawURLEncoding.DecodeString(parts[1])
-	if err != nil {
-		return "(decode error)", ""
-	}
-	var claims map[string]interface{}
-	if err := json.Unmarshal(data, &claims); err != nil {
-		return "(json error)", ""
-	}
-	if tt, ok := claims["token_type"].(string); ok {
-		tokenType = tt
-	} else {
-		tokenType = "(not present)"
-	}
-	if c, ok := claims["cnf"]; ok {
-		b, _ := json.Marshal(c)
-		cnf = string(b)
-	} else {
-		cnf = "(not present)"
-	}
-	return
-}
+
+
