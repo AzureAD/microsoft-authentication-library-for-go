@@ -84,24 +84,7 @@ func printResult(label string, result managedidentity.AuthResult) {
 	} else {
 		fmt.Println("  ❌ BindingCertificate is nil — expected non-nil for mTLS PoP")
 	}
-
-	tokenLen := len(result.AccessToken)
-	if tokenLen > 60 {
-		tokenLen = 60
-	}
-	fmt.Printf("  Token (first 60 chars): %s...\n", result.AccessToken[:tokenLen])
-	fmt.Printf("  Expires:     %s\n", result.ExpiresOn)
-	fmt.Printf("  TokenSource: %v\n", result.Metadata.TokenSource)
-
-	tokenType, cnf := jwtutil.DecodeClaims(result.AccessToken)
-	fmt.Printf("  token_type (JWT): %s\n", tokenType)
-	fmt.Printf("  cnf claim (JWT):  %s\n", cnf)
-
-	if tokenType == "mtls_pop" {
-		fmt.Println("  ✅ Token type is mtls_pop")
-	} else {
-		fmt.Printf("  ⚠️  Token type is %q (expected mtls_pop)\n", tokenType)
-	}
+	jwtutil.PrintTokenInfo(result.AccessToken, result.ExpiresOn, int(result.Metadata.TokenSource))
 }
 
 

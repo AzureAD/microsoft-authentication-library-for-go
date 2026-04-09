@@ -4,7 +4,9 @@ package jwtutil
 import (
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"strings"
+	"time"
 )
 
 // DecodeClaims decodes the JWT payload and returns (token_type, cnf) claims.
@@ -34,4 +36,26 @@ func DecodeClaims(token string) (tokenType, cnf string) {
 		cnf = "(not present)"
 	}
 	return
+}
+
+// PrintTokenInfo prints common mTLS PoP token details: token preview, expiry,
+// token source, and decoded JWT claims (token_type, cnf).
+func PrintTokenInfo(accessToken string, expiresOn time.Time, tokenSource int) {
+	tokenLen := len(accessToken)
+	if tokenLen > 60 {
+		tokenLen = 60
+	}
+	fmt.Printf("  Token (first 60 chars): %s...\n", accessToken[:tokenLen])
+	fmt.Printf("  Expires:     %s\n", expiresOn)
+	fmt.Printf("  TokenSource: %v\n", tokenSource)
+
+	tokenType, cnf := DecodeClaims(accessToken)
+	fmt.Printf("  token_type (JWT): %s\n", tokenType)
+	fmt.Printf("  cnf claim (JWT):  %s\n", cnf)
+
+	if tokenType == "mtls_pop" {
+		fmt.Println("  ✅ Token type is mtls_pop")
+	} else {
+		fmt.Printf("  ⚠️  Token type is %q (expected mtls_pop)\n", tokenType)
+	}
 }

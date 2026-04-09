@@ -210,38 +210,7 @@ func (s *cngSigner) signPSS(digest []byte, opts *rsa.PSSOptions) ([]byte, error)
 	}
 
 	padding := bcryptPSSPaddingInfo{pszAlgId: algNameUTF16, cbSalt: saltLen}
-	paddingFlags := uint32(ncryptPadPSSFlag)
-
-	var sigLen uint32
-	ret, _, _ := procNCryptSignHash.Call(
-		s.hKey,
-		uintptr(unsafe.Pointer(&padding)),
-		uintptr(unsafe.Pointer(&digest[0])),
-		uintptr(len(digest)),
-		0,
-		0,
-		uintptr(unsafe.Pointer(&sigLen)),
-		uintptr(paddingFlags),
-	)
-	if ret != 0 {
-		return nil, fmt.Errorf("NCryptSignHash PSS (size query) failed: 0x%x", ret)
-	}
-
-	sig := make([]byte, sigLen)
-	ret, _, _ = procNCryptSignHash.Call(
-		s.hKey,
-		uintptr(unsafe.Pointer(&padding)),
-		uintptr(unsafe.Pointer(&digest[0])),
-		uintptr(len(digest)),
-		uintptr(unsafe.Pointer(&sig[0])),
-		uintptr(sigLen),
-		uintptr(unsafe.Pointer(&sigLen)),
-		uintptr(paddingFlags),
-	)
-	if ret != 0 {
-		return nil, fmt.Errorf("NCryptSignHash PSS failed: 0x%x", ret)
-	}
-	return sig[:sigLen], nil
+	return ncryptSign(s.hKey, unsafe.Pointer(&padding), ncryptPadPSSFlag, digest, "PSS")
 }
 
 func (s *cngSigner) signPKCS1v15(digest []byte, opts crypto.SignerOpts) ([]byte, error) {
@@ -255,13 +224,16 @@ func (s *cngSigner) signPKCS1v15(digest []byte, opts crypto.SignerOpts) ([]byte,
 		return nil, fmt.Errorf("converting hash alg name: %w", err)
 	}
 	padding := bcryptPKCS1PaddingInfo{pszAlgId: algNameUTF16}
-	paddingFlags := uint32(0x00000002) // NCRYPT_PAD_PKCS1_FLAG
+	return ncryptSign(s.hKey, unsafe.Pointer(&padding), 0x00000002, digest, "PKCS1v15")
+}
 
-	// Get required buffer size
+// ncryptSign performs a two-step NCryptSignHash call (size query, then sign)
+// using the provided key handle, padding info pointer, padding flags, and digest.
+func ncryptSign(hKey uintptr, padding unsafe.Pointer, paddingFlags uint32, digest []byte, label string) ([]byte, error) {
 	var sigLen uint32
 	ret, _, _ := procNCryptSignHash.Call(
-		s.hKey,
-		uintptr(unsafe.Pointer(&padding)),
+		hKey,
+		uintptr(padding),
 		uintptr(unsafe.Pointer(&digest[0])),
 		uintptr(len(digest)),
 		0,
@@ -270,13 +242,13 @@ func (s *cngSigner) signPKCS1v15(digest []byte, opts crypto.SignerOpts) ([]byte,
 		uintptr(paddingFlags),
 	)
 	if ret != 0 {
-		return nil, fmt.Errorf("NCryptSignHash (size query) failed: 0x%x", ret)
+		return nil, fmt.Errorf("NCryptSignHash %s (size query) failed: 0x%x", label, ret)
 	}
 
 	sig := make([]byte, sigLen)
 	ret, _, _ = procNCryptSignHash.Call(
-		s.hKey,
-		uintptr(unsafe.Pointer(&padding)),
+		hKey,
+		uintptr(padding),
 		uintptr(unsafe.Pointer(&digest[0])),
 		uintptr(len(digest)),
 		uintptr(unsafe.Pointer(&sig[0])),
@@ -285,7 +257,7 @@ func (s *cngSigner) signPKCS1v15(digest []byte, opts crypto.SignerOpts) ([]byte,
 		uintptr(paddingFlags),
 	)
 	if ret != 0 {
-		return nil, fmt.Errorf("NCryptSignHash failed: 0x%x", ret)
+		return nil, fmt.Errorf("NCryptSignHash %s failed: 0x%x", label, ret)
 	}
 	return sig[:sigLen], nil
 }

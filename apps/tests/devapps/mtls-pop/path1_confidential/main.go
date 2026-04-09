@@ -212,22 +212,7 @@ func testHappyPath(cred confidential.Credential, certPEM, keyPEM []byte, tenantI
 		fmt.Println("  ❌ BindingCertificate is nil — expected non-nil for mTLS PoP")
 	}
 
-	tokenLen := len(result.AccessToken)
-	if tokenLen > 60 {
-		tokenLen = 60
-	}
-	fmt.Printf("  Token (first 60 chars): %s...\n", result.AccessToken[:tokenLen])
-	fmt.Printf("  Expires: %s\n", result.ExpiresOn)
-	fmt.Printf("  Source: %v\n", result.Metadata.TokenSource)
-
-	tokenType, cnf := jwtutil.DecodeClaims(result.AccessToken)
-	fmt.Printf("  token_type (JWT): %s\n", tokenType)
-	fmt.Printf("  cnf claim (JWT):  %s\n", cnf)
-	if tokenType == "mtls_pop" {
-		fmt.Println("  ✅ Token type is mtls_pop")
-	} else {
-		fmt.Printf("  ⚠️  Token type is %q (expected mtls_pop — verify tenant has mtlsauth enabled)\n", tokenType)
-	}
+	jwtutil.PrintTokenInfo(result.AccessToken, result.ExpiresOn, int(result.Metadata.TokenSource))
 
 	// Second call — should hit cache
 	fmt.Println("\n  Acquiring again (expect cache hit)...")
