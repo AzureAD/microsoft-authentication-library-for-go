@@ -179,10 +179,7 @@ Windows searches for the DLL in the standard load order: application directory f
 2. The DLL will appear at: `%USERPROFILE%\.nuget\packages\microsoft.azure.security.keyguardattestation\<version>\runtimes\win-x64\native\AttestationClientLib.dll`
 3. Copy it to the same directory as the msal-go application binary.
 
-This is a **known difference** from msal-dotnet, for two reasons:
-
-1. **Licensing:** `AttestationClientLib.dll` is a proprietary Microsoft binary. An open-source Go module repository cannot redistribute it directly (unlike a closed NuGet package published by Microsoft).
-2. **No equivalent mechanism:** Go modules have no concept of native runtime assets (like NuGet's `runtimes/win-x64/native/` folder). There is no standard way to bundle a `.dll` alongside a Go module that will automatically land next to the user's binary.
+This is a **known difference** from msal-dotnet. Go modules have no concept of native runtime assets (like NuGet's `runtimes/win-x64/native/` folder). There is no standard way to bundle a `.dll` alongside a Go module that will automatically land next to the user's binary.
 
 In practice this is low-friction for users: Path 2 mTLS PoP only runs on Trusted Launch Azure VMs with Credential Guard enabled — environments where the deployment pipeline is already controlled and placing one additional DLL is straightforward.
 
