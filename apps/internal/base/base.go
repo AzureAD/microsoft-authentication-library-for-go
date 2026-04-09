@@ -5,6 +5,7 @@ package base
 
 import (
 	"context"
+	"crypto/tls"
 	"crypto/x509"
 	"fmt"
 	"net/url"
@@ -99,6 +100,10 @@ type AuthResult struct {
 	// SendCertificateOverMtls. Use it as the client certificate in downstream mTLS calls
 	// with the Authorization header set to "mtls_pop <AccessToken>".
 	BindingCertificate *x509.Certificate
+	// BindingTLSCertificate is the complete TLS certificate (public cert + private key) for
+	// use in downstream mTLS calls. It is set alongside BindingCertificate when the token
+	// was acquired with WithMtlsProofOfPossession(). Use it to configure tls.Config.Certificates.
+	BindingTLSCertificate *tls.Certificate
 }
 
 // AuthResultMetadata which contains meta data for the AuthResult

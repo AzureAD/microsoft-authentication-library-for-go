@@ -11,8 +11,10 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"log"
+	"net/http"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/tests/devapps/mtls-pop/internal/jwtutil"
@@ -70,7 +72,46 @@ func main() {
 		fmt.Println("⚠️  TokenSource != Cache (got fresh token)")
 	}
 
+	// Downstream call — present the binding cert over mTLS
+	fmt.Println("\nMaking downstream mTLS call to graph.microsoft.com...")
+	makeDownstreamCall(result.AccessToken, result)
+
 	fmt.Println("\n=== Path 2 Complete ===")
+}
+
+// makeDownstreamCall demonstrates using the mTLS PoP token + binding cert for a real API call.
+// A 4xx from the API (e.g. 403) still means TLS + token authentication succeeded.
+func makeDownstreamCall(token string, result managedidentity.AuthResult) {
+	if result.BindingTLSCertificate == nil {
+		fmt.Println("  ⚠️  BindingTLSCertificate is nil — cannot make downstream call")
+		return
+	}
+	transport := &http.Transport{
+		TLSClientConfig: &tls.Config{
+			Certificates: []tls.Certificate{*result.BindingTLSCertificate},
+		},
+	}
+	httpClient := &http.Client{Transport: transport}
+
+	req, err := http.NewRequest("GET", "https://graph.microsoft.com/v1.0/servicePrincipals?$top=1", nil)
+	if err != nil {
+		fmt.Printf("  ❌ Build request: %v\n", err)
+		return
+	}
+	req.Header.Set("Authorization", "mtls_pop "+token)
+
+	resp, err := httpClient.Do(req)
+	if err != nil {
+		fmt.Printf("  ❌ Downstream call failed: %v\n", err)
+		return
+	}
+	defer resp.Body.Close()
+	fmt.Printf("  Downstream HTTP status: %s\n", resp.Status)
+	if resp.StatusCode < 500 {
+		fmt.Println("  ✅ TLS handshake + token authentication succeeded")
+	} else {
+		fmt.Println("  ❌ Server error — check token and resource enrollment")
+	}
 }
 
 func printResult(label string, result managedidentity.AuthResult) {

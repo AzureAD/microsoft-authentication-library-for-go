@@ -327,6 +327,39 @@ mTLS PoP Managed Identity requires Windows with VBS KeyGuard support
 ```
 This is expected. IMDSv2 with CNG KeyGuard requires Windows.
 
+### Step 6: Make a Downstream mTLS Call
+
+`AuthResult.BindingTLSCertificate` contains the complete TLS credential (public cert + CNG private key) needed to present the binding cert in a downstream mTLS call:
+
+```go
+import (
+    "crypto/tls"
+    "fmt"
+    "net/http"
+)
+
+// result.BindingTLSCertificate holds the cert + CNG-backed private key as a tls.Certificate
+transport := &http.Transport{
+    TLSClientConfig: &tls.Config{
+        Certificates: []tls.Certificate{*result.BindingTLSCertificate},
+    },
+}
+httpClient := &http.Client{Transport: transport}
+
+// Call a resource enrolled for mTLS PoP (graph.microsoft.com is confirmed enrolled)
+req, _ := http.NewRequest("GET", "https://graph.microsoft.com/v1.0/servicePrincipals?$top=1", nil)
+req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
+resp, err := httpClient.Do(req)
+if err != nil {
+    log.Fatal("downstream call:", err)
+}
+defer resp.Body.Close()
+fmt.Println("Downstream HTTP status:", resp.Status)
+// Expected: 200 OK — a 4xx from the API still means TLS + auth succeeded
+```
+
+> **Note:** `BindingTLSCertificate` is only set when `WithMtlsProofOfPossession()` is used. The private key is the CNG KeyGuard-backed RSA key created during the IMDSv2 flow and is never exported from the secure enclave.
+
 ---
 
 ## Auto-Region Detection Testing

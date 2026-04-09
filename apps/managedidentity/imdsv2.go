@@ -452,6 +452,7 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	if stResp, cacheErr := cacheManager.Read(ctx, cacheAuthParams); cacheErr == nil {
 		if ar, arErr := base.AuthResultFromStorage(stResp); arErr == nil {
 			ar.BindingCertificate = info.x509Cert
+			ar.BindingTLSCertificate = &info.tlsCert
 			ar.AccessToken, _ = mtlsScheme.FormatAccessToken(ar.AccessToken)
 			return ar, nil
 		}
@@ -515,6 +516,7 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	if err != nil {
 		return AuthResult{}, err
 	}
+	ar.BindingTLSCertificate = &info.tlsCert
 	ar.AccessToken, err = mtlsScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
 }
