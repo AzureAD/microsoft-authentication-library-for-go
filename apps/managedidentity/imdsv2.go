@@ -32,8 +32,11 @@ import (
 )
 
 const (
-	imdsV2PlatformMetadataEndpoint = "http://169.254.169.254/metadata/identity/getplatformmetadata"
-	imdsV2IssueCredentialEndpoint  = "http://169.254.169.254/metadata/identity/issuecredential?cred-api-version=2.0"
+	// 169.254.169.254 is the well-known Azure IMDS link-local address, standardized across all Azure regions.
+	// It is not a hardcoded production IP — it is the Azure Instance Metadata Service (IMDS) endpoint
+	// defined by the Azure platform and used by all Azure SDKs (MSAL.NET, MSAL Python, MSAL JS, etc.).
+	imdsV2PlatformMetadataEndpoint = "http://169.254.169.254/metadata/identity/getplatformmetadata" //NOSONAR
+	imdsV2IssueCredentialEndpoint  = "http://169.254.169.254/metadata/identity/issuecredential?cred-api-version=2.0" //NOSONAR
 	imdsV2CredAPIVersion           = "2.0"
 	errMsgCSRTooLarge              = "certification request info too large"
 )
