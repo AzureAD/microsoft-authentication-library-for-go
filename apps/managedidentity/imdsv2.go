@@ -429,17 +429,30 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 		return AuthResult{}, fmt.Errorf("acquiring binding certificate: %w", err)
 	}
 
-	// 3. Build token endpoint
+	// 3. Check token cache before making a network request
+	mtlsScheme := authority.NewMtlsPopAuthenticationScheme(info.x509Cert)
+	cacheAuthParams := c.authParams
+	cacheAuthParams.Scopes = []string{resource}
+	cacheAuthParams.AuthnScheme = mtlsScheme
+	if stResp, cacheErr := cacheManager.Read(ctx, cacheAuthParams); cacheErr == nil {
+		if ar, arErr := base.AuthResultFromStorage(stResp); arErr == nil {
+			ar.BindingCertificate = info.x509Cert
+			ar.AccessToken, _ = mtlsScheme.FormatAccessToken(ar.AccessToken)
+			return ar, nil
+		}
+	}
+
+	// 4. Build token endpoint
 	tokenEndpoint := info.endpoint
 	if !strings.HasSuffix(tokenEndpoint, "/") {
 		tokenEndpoint += "/"
 	}
 	tokenEndpoint += info.tenantID + "/oauth2/v2.0/token"
 
-	// 4. Build mTLS HTTP client
+	// 5. Build mTLS HTTP client
 	mtlsHTTPClient := newMtlsHTTPClient(info.tlsCert)
 
-	// 5. POST token request
+	// 6. POST token request
 	qv := url.Values{}
 	qv.Set("grant_type", "client_credentials")
 	qv.Set("client_id", info.clientID)
@@ -473,11 +486,12 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	tokenResp.GrantedScopes.Slice = append(tokenResp.GrantedScopes.Slice, resource)
 	tokenResp.BindingCertificate = info.x509Cert
 
-	// Build authParams for the mTLS endpoint, using the tenant from IMDS
+	// Build authParams with the mTLS PoP scheme for cache key discrimination
 	authParams := c.authParams
 	authParams.Scopes = []string{resource}
+	authParams.AuthnScheme = mtlsScheme
 
-	// 6. Write to cache and build AuthResult
+	// 7. Write to cache and build AuthResult
 	account, err := cacheManager.Write(authParams, tokenResp)
 	if err != nil {
 		return AuthResult{}, fmt.Errorf("writing token to cache: %w", err)
@@ -486,6 +500,6 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	if err != nil {
 		return AuthResult{}, err
 	}
-	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	ar.AccessToken, err = mtlsScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
 }
