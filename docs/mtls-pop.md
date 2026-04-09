@@ -64,6 +64,19 @@ result, err := client.AcquireTokenByCredential(ctx, []string{"https://graph.micr
 
 **Token caching:** mTLS PoP tokens are cached separately from bearer tokens using the certificate's x5t#S256 thumbprint as part of the cache key.
 
+**Why a region is required:** Path 1 sends the token request to a separate regional mTLS endpoint (`{region}.mtlsauth.microsoft.com`) rather than the standard `login.microsoftonline.com`. The mTLS TLS handshake — where the certificate authenticates the client — must terminate at a regional load balancer that can validate it. Without a region, there is no valid endpoint and msal-go returns an error.
+
+| Cloud | Token Endpoint |
+|-------|----------------|
+| Public | `https://{region}.mtlsauth.microsoft.com/{tenantID}/oauth2/v2.0/token` |
+| US Government | `https://{region}.mtlsauth.microsoftonline.us/{tenantID}/oauth2/v2.0/token` |
+| China | `https://{region}.mtlsauth.partner.microsoftonline.cn/{tenantID}/oauth2/v2.0/token` |
+| DSTS | Standard DSTS endpoint (no region required) |
+
+Use `confidential.WithAzureRegion("westus2")` to specify a region explicitly, or `confidential.WithAzureRegion(authority.AutoDetectRegion)` to detect it automatically via IMDS (only works inside an Azure VM). The `REGION_NAME` environment variable is also respected.
+
+> **Path 2 (Managed Identity)** does not require a region from the caller — IMDS returns the correct mTLS endpoint directly in the `/issuecredential` response.
+
 ---
 
 ### Path 2 — Managed Identity (IMDSv2)
@@ -75,7 +88,7 @@ On Azure VMs, the IMDS (Instance Metadata Service) v2 can issue a short-lived bi
 - IMDSv2 enabled (`cred-api-version=2.0`)
 - Windows OS with VBS (Virtualization-Based Security) KeyGuard available
 - **[Trusted Launch Azure VM](https://learn.microsoft.com/azure/virtual-machines/trusted-launch)** with Secure Boot + vTPM — `Is Capable For Attestation: True` (verify with `tpmtool.exe getdeviceinformation`)
-- `AttestationClientLib.dll` present at `C:\Windows\System32\` (standard on Azure Windows VMs)
+- `AttestationClientLib.dll` deployed alongside the binary (see [architecture doc](mtls-pop-architecture.md#4-attestationclientlibdll-interop-and-distribution) for how to obtain it)
 - `DefaultToIMDS` source (not Arc, AppService, CloudShell, etc.)
 
 **API:**
@@ -98,31 +111,6 @@ result, err := client.AcquireToken(ctx, "https://graph.microsoft.com",
 > **Resource note:** Not all Azure resources accept mTLS PoP tokens yet. Use `https://graph.microsoft.com` or `https://storage.azure.com` for testing. `https://management.azure.com` may return `AADSTS392196` if the resource is not enrolled.
 
 **Non-Windows:** Returns an error (`mTLS PoP Managed Identity requires Windows with VBS KeyGuard support`).
-
----
-
-## Regional mTLS Token Endpoints
-
-mTLS PoP uses a separate regional token endpoint, not the standard `login.microsoftonline.com` endpoint:
-
-| Cloud | Endpoint Pattern |
-|-------|-----------------|
-| Public | `https://{region}.mtlsauth.microsoft.com/{tenantID}/oauth2/v2.0/token` |
-| US Government | `https://{region}.mtlsauth.microsoftonline.us/{tenantID}/oauth2/v2.0/token` |
-| China | `https://{region}.mtlsauth.partner.microsoftonline.cn/{tenantID}/oauth2/v2.0/token` |
-| DSTS | Standard DSTS token endpoint (no region required) |
-
-The region must be an Azure region name (e.g., `westus2`, `eastus`, `northeurope`).
-
-### Auto-Detecting the Region
-
-```go
-confidential.WithAzureRegion(authority.AutoDetectRegion)
-```
-
-When `AutoDetectRegion` is used, msal-go queries the IMDS instance metadata endpoint (`http://169.254.169.254/metadata/instance`) to determine the Azure region. The result is cached. This only works inside an Azure VM.
-
-Alternatively, set the `REGION_NAME` environment variable.
 
 ---
 
