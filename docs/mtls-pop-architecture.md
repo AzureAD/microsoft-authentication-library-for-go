@@ -4,6 +4,55 @@ This document describes the internal architecture of the mTLS Proof of Possessio
 
 ---
 
+## Flow Diagrams
+
+### Path 1 — Confidential Client (SNI Certificate)
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant MSAL as msal-go
+    participant mtlsauth as {region}.mtlsauth.microsoft.com
+
+    App->>MSAL: AcquireTokenByCredential(WithMtlsProofOfPossession())
+    MSAL->>MSAL: Resolve region → build mTLS endpoint URL
+    MSAL->>mtlsauth: POST /{tenant}/oauth2/v2.0/token<br/>(TLS handshake with caller cert — no client_assertion)
+    mtlsauth-->>MSAL: token_type=mtls_pop, access_token
+    MSAL-->>App: AuthResult{AccessToken, BindingCertificate}
+    Note over App: Subsequent calls → TokenSource=Cache
+```
+
+### Path 2 — Managed Identity (IMDSv2)
+
+```mermaid
+sequenceDiagram
+    participant App
+    participant MSAL as msal-go
+    participant IMDS as IMDS (169.254.169.254)
+    participant CNG as Windows CNG (ncrypt.dll)
+    participant Attest as AttestationClientLib.dll → MAA
+    participant Token as mTLS Token Endpoint
+
+    App->>MSAL: AcquireToken(resource, WithMtlsProofOfPossession())
+    MSAL->>IMDS: GET /metadata/identity/getplatformmetadata
+    IMDS-->>MSAL: clientID, tenantID, cuID, attestationEndpoint
+    MSAL->>CNG: GetOrCreateManagedIdentityKey(MSALMtlsKey_{cuID})
+    Note over CNG: KeyGuard (VBS) → Hardware → InMemory
+    CNG-->>MSAL: RSA-2048 key handle (cngSigner)
+    MSAL->>MSAL: Build PKCS#10 CSR (encoding/asn1)
+    MSAL->>Attest: AttestKeyGuardImportKey(attestationEndpoint, keyHandle)
+    Attest-->>MSAL: MAA JWT (proves VBS KeyGuard protection)
+    MSAL->>IMDS: POST /metadata/identity/issuecredential {csr, attestation_token}
+    IMDS-->>MSAL: binding_certificate + mtls_authentication_endpoint
+    MSAL->>MSAL: Cache binding cert (expires 5 min before NotAfter)
+    MSAL->>Token: POST /{tenant}/oauth2/v2.0/token<br/>(TLS handshake with binding cert)
+    Token-->>MSAL: token_type=mtls_pop, access_token
+    MSAL-->>App: AuthResult{AccessToken, BindingCertificate, BindingTLSCertificate}
+    Note over App: Subsequent calls → TokenSource=Cache (cert + token both cached)
+```
+
+---
+
 ## 1. Go-to-Windows-CNG Without CGo
 
 Go has no built-in C FFI (like Python's `ctypes` or Java's JNI). The standard approach for calling native Windows DLLs from Go is `syscall.NewLazyDLL` / `NewProc` — no CGo compilation, no C headers, no build toolchain beyond the Go compiler.
