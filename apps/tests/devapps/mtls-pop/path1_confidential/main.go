@@ -93,8 +93,17 @@ func main() {
 
 func testErrorCases(cred confidential.Credential, tenantID, clientID, region string) {
 	ctx := context.Background()
-	// Use a real tenanted authority (tenant from IMDS)
-	authority := "https://login.microsoftonline.com/72f988bf-86f1-41af-91ab-2d7cd011db47"
+	// Use a tenanted authority for error-case validation. Errors are caught before any
+	// network call, so the actual tenant value doesn't matter — just needs to be a GUID.
+	// Prefer the -tenant flag, then AZURE_TENANT_ID env var, then a safe placeholder.
+	errorTenant := tenantID
+	if errorTenant == "" {
+		errorTenant = os.Getenv("AZURE_TENANT_ID")
+	}
+	if errorTenant == "" {
+		errorTenant = "00000000-0000-0000-0000-000000000000"
+	}
+	authority := "https://login.microsoftonline.com/" + errorTenant
 	cID := clientID
 	if cID == "" {
 		cID = "00000000-0000-0000-0000-000000000000" // placeholder — errors trigger before network call
