@@ -290,6 +290,7 @@ func main() {
 ✅ CNG key `MSALMtlsKey_{cuID}` visible in key storage: `certutil -csp "Microsoft Software Key Storage Provider" -key`  
 ✅ JWT payload contains `"cnf": { "x5t#S256": "<thumbprint>" }` matching the binding cert  
 ✅ JWT payload contains `"xms_tbflags": 2` (mTLS binding enforced) and `"appidacr": "2"` (cert auth)  
+✅ Downstream mTLS call to `graph.microsoft.com` returns `401 Unauthorized` — this is **expected and correct**; the `401` means the TLS handshake and token were accepted; the managed identity simply has no Graph role assigned
 
 ### Step 5: Common Failure Scenarios
 

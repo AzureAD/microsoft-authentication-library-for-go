@@ -90,7 +90,8 @@ result, err := client.AcquireToken(ctx, "https://graph.microsoft.com",
 )
 
 // result.BindingCertificate is the IMDS-issued cert bound to the token.
-// Use it (with the CNG-backed private key) in downstream mTLS connections.
+// result.BindingTLSCertificate is the complete tls.Certificate (cert + CNG key) —
+// use it directly in tls.Config.Certificates for downstream mTLS calls.
 // result.Metadata.TokenSource == base.TokenSourceCache on subsequent calls.
 ```
 
@@ -157,21 +158,39 @@ result, err := client.AcquireTokenByCredential(ctx, scopes)
 
 After acquiring an mTLS PoP token, downstream resource calls must use the same certificate in their TLS connection:
 
-```go
-// Build TLS client using the binding certificate
-tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
-// or for CNG keys: construct tls.Certificate{Certificate: certDER, PrivateKey: cnfSigner}
+### Path 1 — Confidential Client
 
-tlsConfig := &tls.Config{Certificates: []tls.Certificate{tlsCert}}
-transport := &http.Transport{TLSClientConfig: tlsConfig}
+Build a `tls.Certificate` from your certificate PEM and private key, then attach the token:
+
+```go
+tlsCert, err := tls.X509KeyPair(certPEM, keyPEM)
+
+transport := &http.Transport{TLSClientConfig: &tls.Config{Certificates: []tls.Certificate{tlsCert}}}
 httpClient := &http.Client{Transport: transport}
 
-req, _ := http.NewRequest("GET", "https://resource.example.com/api", nil)
-req.Header.Set("Authorization", "mtls_pop " + result.AccessToken)
+req, _ := http.NewRequest("GET", "https://graph.microsoft.com/v1.0/organization", nil)
+req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
 resp, err := httpClient.Do(req)
 ```
 
-For Managed Identity (Path 2), use `result.BindingCertificate` (the `*x509.Certificate`) together with the CNG `crypto.Signer` returned by `GetOrCreateKeyGuardKey` — the private key stays in the VBS KeyGuard and is never exported.
+### Path 2 — Managed Identity
+
+`AuthResult.BindingTLSCertificate` is populated automatically with the IMDS-issued cert and CNG private key. The private key never leaves the VBS KeyGuard secure enclave:
+
+```go
+transport := &http.Transport{
+    TLSClientConfig: &tls.Config{
+        Certificates: []tls.Certificate{*result.BindingTLSCertificate},
+    },
+}
+httpClient := &http.Client{Transport: transport}
+
+req, _ := http.NewRequest("GET", "https://graph.microsoft.com/v1.0/servicePrincipals?$top=1", nil)
+req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
+resp, err := httpClient.Do(req)
+// A 4xx response from the API (e.g. 401/403) still confirms TLS + token auth succeeded.
+// 401 is expected if the managed identity has no Graph API role assigned.
+```
 
 ---
 
