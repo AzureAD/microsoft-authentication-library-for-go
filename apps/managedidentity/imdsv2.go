@@ -35,6 +35,7 @@ const (
 	imdsV2PlatformMetadataEndpoint = "http://169.254.169.254/metadata/identity/getplatformmetadata"
 	imdsV2IssueCredentialEndpoint  = "http://169.254.169.254/metadata/identity/issuecredential?cred-api-version=2.0"
 	imdsV2CredAPIVersion           = "2.0"
+	errMsgCSRTooLarge              = "certification request info too large"
 )
 
 type csrMetadata struct {
@@ -227,15 +228,15 @@ func generateCSR(key crypto.Signer, clientID, tenantID string, cuID csrMetadataC
 	// Guard against integer overflow in the capacity calculation (CodeQL).
 	totalLen := len(version)
 	if totalLen > math.MaxInt-len(subjectDER) {
-		return "", fmt.Errorf("certification request info too large")
+		return "", fmt.Errorf(errMsgCSRTooLarge)
 	}
 	totalLen += len(subjectDER)
 	if totalLen > math.MaxInt-len(pubKeyDER) {
-		return "", fmt.Errorf("certification request info too large")
+		return "", fmt.Errorf(errMsgCSRTooLarge)
 	}
 	totalLen += len(pubKeyDER)
 	if totalLen > math.MaxInt-len(attributes) {
-		return "", fmt.Errorf("certification request info too large")
+		return "", fmt.Errorf(errMsgCSRTooLarge)
 	}
 	totalLen += len(attributes)
 	certReqInfoBytes := make([]byte, 0, totalLen)
@@ -359,86 +360,7 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	// 2. Get or create binding cert (with caching)
 	cacheKey := meta.ClientID + "_" + meta.TenantID
 	info, err := globalMtlsCertCache.GetOrCreate(ctx, cacheKey, func(ctx context.Context) (*mtlsBindingInfo, error) {
-		// a. Get/create CNG key — mirrors MSAL.NET WindowsManagedIdentityKeyProvider:
-		//    Priority: KeyGuard (VBS) > Hardware (Software KSP) > InMemory (ephemeral RSA)
-		cuID := meta.CuID.cuIDString()
-		if cuID == "" {
-			cuID = meta.ClientID
-		}
-		key, keyType, err := GetOrCreateManagedIdentityKey("MSALMtlsKey_" + cuID)
-		if err != nil {
-			return nil, fmt.Errorf("GetOrCreateManagedIdentityKey: %w", err)
-		}
-
-		// mTLS PoP requires a VBS KeyGuard-protected key. Hardware and InMemory keys
-		// are not accepted. This matches MSAL.NET's "mtls_pop_requires_keyguard" check.
-		if keyType != keyTypeKeyGuard {
-			return nil, fmt.Errorf(
-				"mTLS PoP requires a VBS KeyGuard-protected RSA key (got: %s). "+
-					"Ensure Credential Guard / Core Isolation is enabled on this VM: "+
-					"Trusted Launch (Secure Boot + vTPM) must be enabled, and VBS/Credential Guard "+
-					"must be active (check msinfo32.exe: 'Virtualization-based security' = Running). "+
-					"See docs/mtls-pop-manual-testing.md for VM setup instructions.",
-				keyType)
-		}
-
-		// b. Generate CSR
-		csrB64, err := generateCSR(key, meta.ClientID, meta.TenantID, meta.CuID)
-		if err != nil {
-			return nil, fmt.Errorf("generateCSR: %w", err)
-		}
-
-		// c. Get MAA JWT attestation: proves to IMDS that the key is hardware-protected
-		// (KeyGuard/VBS). Only called for KeyGuard keys — mirrors MSAL.NET which only
-		// attests when keyInfo.Type == ManagedIdentityKeyType.KeyGuard.
-		var attestationToken string
-		if keyType == keyTypeKeyGuard && meta.AttestationEndpoint != "" {
-			attestationToken, err = GetKeyGuardAttestationJWT(key, meta.AttestationEndpoint, meta.ClientID)
-			if err != nil {
-				return nil, fmt.Errorf("GetKeyGuardAttestationJWT: %w", err)
-			}
-		}
-
-		// d. Issue credential
-		credResp, err := issueCredential(ctx, c.httpClient, issueCredentialRequest{
-			CSR:              csrB64,
-			AttestationToken: attestationToken,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("issueCredential: %w", err)
-		}
-
-		// d. Parse cert DER from base64
-		certDER, err := base64.StdEncoding.DecodeString(credResp.Certificate)
-		if err != nil {
-			return nil, fmt.Errorf("decoding certificate: %w", err)
-		}
-		x509Cert, err := x509.ParseCertificate(certDER)
-		if err != nil {
-			return nil, fmt.Errorf("parsing certificate: %w", err)
-		}
-
-		clientID := credResp.ClientID
-		if clientID == "" {
-			clientID = meta.ClientID
-		}
-		tenantID := credResp.TenantID
-		if tenantID == "" {
-			tenantID = meta.TenantID
-		}
-
-		return &mtlsBindingInfo{
-			tlsCert: tls.Certificate{
-				Certificate: [][]byte{certDER},
-				PrivateKey:  key,
-				Leaf:        x509Cert,
-			},
-			x509Cert:  x509Cert,
-			endpoint:  credResp.MtlsAuthenticationEndpoint,
-			clientID:  clientID,
-			tenantID:  tenantID,
-			expiresAt: x509Cert.NotAfter.Add(-5 * time.Minute),
-		}, nil
+		return buildMtlsBindingInfo(ctx, c.httpClient, meta)
 	})
 	if err != nil {
 		return AuthResult{}, fmt.Errorf("acquiring binding certificate: %w", err)
@@ -458,17 +380,112 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 		}
 	}
 
-	// 4. Build token endpoint
+	return c.fetchMtlsPopToken(ctx, resource, info, mtlsScheme)
+}
+
+// buildMtlsBindingInfo creates the CNG key, CSR, attestation JWT, and IMDS binding cert.
+// This is the body of the globalMtlsCertCache.GetOrCreate callback for acquireTokenForImdsV2.
+func buildMtlsBindingInfo(ctx context.Context, httpClient ops.HTTPClient, meta csrMetadata) (*mtlsBindingInfo, error) {
+	// a. Get/create CNG key — mirrors MSAL.NET WindowsManagedIdentityKeyProvider:
+	//    Priority: KeyGuard (VBS) > Hardware (Software KSP) > InMemory (ephemeral RSA)
+	cuID := meta.CuID.cuIDString()
+	if cuID == "" {
+		cuID = meta.ClientID
+	}
+	key, keyType, err := GetOrCreateManagedIdentityKey("MSALMtlsKey_" + cuID)
+	if err != nil {
+		return nil, fmt.Errorf("GetOrCreateManagedIdentityKey: %w", err)
+	}
+
+	// mTLS PoP requires a VBS KeyGuard-protected key. Hardware and InMemory keys
+	// are not accepted. This matches MSAL.NET's "mtls_pop_requires_keyguard" check.
+	if keyType != keyTypeKeyGuard {
+		return nil, fmt.Errorf(
+			"mTLS PoP requires a VBS KeyGuard-protected RSA key (got: %s). "+
+				"Ensure Credential Guard / Core Isolation is enabled on this VM: "+
+				"Trusted Launch (Secure Boot + vTPM) must be enabled, and VBS/Credential Guard "+
+				"must be active (check msinfo32.exe: 'Virtualization-based security' = Running). "+
+				"See docs/mtls-pop-manual-testing.md for VM setup instructions.",
+			keyType)
+	}
+
+	// b. Generate CSR
+	csrB64, err := generateCSR(key, meta.ClientID, meta.TenantID, meta.CuID)
+	if err != nil {
+		return nil, fmt.Errorf("generateCSR: %w", err)
+	}
+
+	// c. Get MAA JWT attestation
+	attestationToken, err := maybeAttest(key, keyType, meta)
+	if err != nil {
+		return nil, err
+	}
+
+	// d. Issue credential
+	credResp, err := issueCredential(ctx, httpClient, issueCredentialRequest{
+		CSR:              csrB64,
+		AttestationToken: attestationToken,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("issueCredential: %w", err)
+	}
+
+	// e. Parse cert DER from base64
+	certDER, err := base64.StdEncoding.DecodeString(credResp.Certificate)
+	if err != nil {
+		return nil, fmt.Errorf("decoding certificate: %w", err)
+	}
+	x509Cert, err := x509.ParseCertificate(certDER)
+	if err != nil {
+		return nil, fmt.Errorf("parsing certificate: %w", err)
+	}
+
+	clientID := credResp.ClientID
+	if clientID == "" {
+		clientID = meta.ClientID
+	}
+	tenantID := credResp.TenantID
+	if tenantID == "" {
+		tenantID = meta.TenantID
+	}
+
+	return &mtlsBindingInfo{
+		tlsCert: tls.Certificate{
+			Certificate: [][]byte{certDER},
+			PrivateKey:  key,
+			Leaf:        x509Cert,
+		},
+		x509Cert:  x509Cert,
+		endpoint:  credResp.MtlsAuthenticationEndpoint,
+		clientID:  clientID,
+		tenantID:  tenantID,
+		expiresAt: x509Cert.NotAfter.Add(-5 * time.Minute),
+	}, nil
+}
+
+// maybeAttest returns a MAA attestation JWT when the key is KeyGuard-protected and an
+// attestation endpoint is available. Returns empty string (no error) otherwise.
+func maybeAttest(key crypto.Signer, keyType managedIdentityKeyType, meta csrMetadata) (string, error) {
+	if keyType == keyTypeKeyGuard && meta.AttestationEndpoint != "" {
+		token, err := GetKeyGuardAttestationJWT(key, meta.AttestationEndpoint, meta.ClientID)
+		if err != nil {
+			return "", fmt.Errorf("GetKeyGuardAttestationJWT: %w", err)
+		}
+		return token, nil
+	}
+	return "", nil
+}
+
+// fetchMtlsPopToken posts the token request to the mTLS endpoint, writes to cache, and returns an AuthResult.
+func (c Client) fetchMtlsPopToken(ctx context.Context, resource string, info *mtlsBindingInfo, mtlsScheme authority.AuthenticationScheme) (AuthResult, error) {
+	// Build token endpoint
 	tokenEndpoint := info.endpoint
 	if !strings.HasSuffix(tokenEndpoint, "/") {
 		tokenEndpoint += "/"
 	}
 	tokenEndpoint += info.tenantID + "/oauth2/v2.0/token"
 
-	// 5. Build mTLS HTTP client
-	mtlsHTTPClient := newMtlsHTTPClient(info.tlsCert)
-
-	// 6. POST token request
+	// POST token request
 	qv := url.Values{}
 	qv.Set("grant_type", "client_credentials")
 	qv.Set("client_id", info.clientID)
@@ -481,6 +498,7 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	}
 	httpReq.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 
+	mtlsHTTPClient := newMtlsHTTPClient(info.tlsCert)
 	resp, err := mtlsHTTPClient.Do(httpReq)
 	if err != nil {
 		return AuthResult{}, fmt.Errorf("posting token request: %w", err)
@@ -502,12 +520,10 @@ func (c Client) acquireTokenForImdsV2(ctx context.Context, resource string) (Aut
 	tokenResp.GrantedScopes.Slice = append(tokenResp.GrantedScopes.Slice, resource)
 	tokenResp.BindingCertificate = info.x509Cert
 
-	// Build authParams with the mTLS PoP scheme for cache key discrimination
 	authParams := c.authParams
 	authParams.Scopes = []string{resource}
 	authParams.AuthnScheme = mtlsScheme
 
-	// 7. Write to cache and build AuthResult
 	account, err := cacheManager.Write(authParams, tokenResp)
 	if err != nil {
 		return AuthResult{}, fmt.Errorf("writing token to cache: %w", err)

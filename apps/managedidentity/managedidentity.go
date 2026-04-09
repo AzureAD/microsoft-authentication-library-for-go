@@ -344,23 +344,33 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		stResp, err := cacheManager.Read(ctx, c.authParams)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		ar, err := base.AuthResultFromStorage(stResp)
-		if err == nil {
-			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
-				defer c.canRefresh.Store(false)
-				if tr, er := c.getToken(ctx, resource); er == nil {
-					return tr, nil
-				}
-			}
-			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+		if ar, ok, err := c.tryAcquireFromCache(ctx, resource); ok {
 			return ar, err
 		}
 	}
 	return c.getToken(ctx, resource)
+}
+
+// tryAcquireFromCache attempts to serve the token from the in-memory cache.
+// Returns (result, true, nil) on a clean cache hit, (result, true, err) if formatting fails,
+// or (zero, false, nil) if the cache miss or a background refresh was triggered.
+func (c Client) tryAcquireFromCache(ctx context.Context, resource string) (AuthResult, bool, error) {
+	stResp, err := cacheManager.Read(ctx, c.authParams)
+	if err != nil {
+		return AuthResult{}, false, nil
+	}
+	ar, err := base.AuthResultFromStorage(stResp)
+	if err != nil {
+		return AuthResult{}, false, nil
+	}
+	if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
+		defer c.canRefresh.Store(false)
+		if tr, er := c.getToken(ctx, resource); er == nil {
+			return tr, true, nil
+		}
+	}
+	ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	return ar, true, err
 }
 
 func (c Client) getToken(ctx context.Context, resource string) (AuthResult, error) {

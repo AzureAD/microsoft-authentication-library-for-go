@@ -20,6 +20,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
+const loginMicrosoftonline = "login.microsoftonline.com"
+
 // mtlsTestCert generates an RSA cert and key for use in mTLS PoP unit tests.
 func mtlsTestCert(t *testing.T) (*x509.Certificate, *rsa.PrivateKey) {
 	t.Helper()
@@ -66,9 +68,9 @@ func mtlsFakeClient(t *testing.T, tr accesstokens.TokenResponse, cert *x509.Cert
 			TenantDiscoveryEndpoint: tenantedAuthority + "/discovery/endpoint",
 			Metadata: []authority.InstanceDiscoveryMetadata{
 				{
-					PreferredNetwork: "login.microsoftonline.com",
-					PreferredCache:   "login.microsoftonline.com",
-					Aliases:          []string{"login.microsoftonline.com"},
+					PreferredNetwork: loginMicrosoftonline,
+					PreferredCache:   loginMicrosoftonline,
+					Aliases:          []string{loginMicrosoftonline},
 				},
 			},
 		},
@@ -131,7 +133,7 @@ func TestWithMtlsProofOfPossession_RequiresTenantedAuthority(t *testing.T) {
 		InstanceResp: authority.InstanceDiscoveryResponse{
 			TenantDiscoveryEndpoint: "https://login.microsoftonline.com/common/discovery/endpoint",
 			Metadata: []authority.InstanceDiscoveryMetadata{
-				{PreferredNetwork: "login.microsoftonline.com", PreferredCache: "login.microsoftonline.com"},
+				{PreferredNetwork: loginMicrosoftonline, PreferredCache: loginMicrosoftonline},
 			},
 		},
 	}

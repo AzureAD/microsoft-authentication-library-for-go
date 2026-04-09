@@ -33,6 +33,13 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/tests/devapps/mtls-pop/internal/jwtutil"
 )
 
+const (
+	certFileName = "test-cert.pem"
+	keyFileName  = "test-key.pem"
+	graphScope   = "https://graph.microsoft.com/.default"
+	bodyFmt      = "     Body: %.300s\n"
+)
+
 func main() {
 	tenantID := flag.String("tenant", "", "Azure AD tenant ID")
 	clientID := flag.String("client", "", "Azure AD application (client) ID")
@@ -44,16 +51,16 @@ func main() {
 	// Cert files are in the parent directory (mtls-pop/)
 	certDir := filepath.Join(filepath.Dir(os.Args[0]), "..")
 	// Also try relative to working directory
-	certPEM, err := os.ReadFile(filepath.Join("..", "test-cert.pem"))
+	certPEM, err := os.ReadFile(filepath.Join("..", certFileName))
 	if err != nil {
-		certPEM, err = os.ReadFile(filepath.Join(certDir, "test-cert.pem"))
+		certPEM, err = os.ReadFile(filepath.Join(certDir, certFileName))
 		if err != nil {
-			log.Fatalf("read cert (tried ../test-cert.pem and %s): %v", filepath.Join(certDir, "test-cert.pem"), err)
+			log.Fatalf("read cert (tried ../test-cert.pem and %s): %v", filepath.Join(certDir, certFileName), err)
 		}
 	}
-	keyPEM, err := os.ReadFile(filepath.Join("..", "test-key.pem"))
+	keyPEM, err := os.ReadFile(filepath.Join("..", keyFileName))
 	if err != nil {
-		keyPEM, err = os.ReadFile(filepath.Join(certDir, "test-key.pem"))
+		keyPEM, err = os.ReadFile(filepath.Join(certDir, keyFileName))
 		if err != nil {
 			log.Fatalf("read key: %v", err)
 		}
@@ -102,7 +109,7 @@ func testErrorCases(cred confidential.Credential, tenantID, clientID, region str
 	if errorTenant == "" {
 		errorTenant = "00000000-0000-0000-0000-000000000000"
 	}
-	authority := "https://login.microsoftonline.com/" + errorTenant
+	auth := "https://login.microsoftonline.com/" + errorTenant
 	cID := clientID
 	if cID == "" {
 		cID = "00000000-0000-0000-0000-000000000000" // placeholder — errors trigger before network call
@@ -126,41 +133,35 @@ func testErrorCases(cred confidential.Credential, tenantID, clientID, region str
 		}
 	}
 
+	// tryClient creates a confidential client or records a setup failure and returns (client, false) on error.
+	tryClient := func(setupName, authority string, c confidential.Credential, opts ...confidential.Option) (confidential.Client, bool) {
+		cl, err := confidential.New(authority, cID, c, opts...)
+		if err != nil {
+			fmt.Printf("  ❌ FAIL [%s]: unexpected error creating client: %v\n", setupName, err)
+			fail++
+			return cl, false
+		}
+		return cl, true
+	}
+
 	// NOTE: The errors package defines code constants like "mtls_pop_no_region" but the
 	// actual error messages currently use plain-English text. Tests check the actual messages.
 
 	// Error case 1: missing region
-	client1, err := confidential.New(authority, cID, cred) // no WithAzureRegion
-	if err != nil {
-		fmt.Printf("  ❌ FAIL [no-region setup]: unexpected error creating client: %v\n", err)
-		fail++
-	} else {
-		_, err = client1.AcquireTokenByCredential(ctx, []string{"https://graph.microsoft.com/.default"},
-			confidential.WithMtlsProofOfPossession())
+	if cl, ok := tryClient("no-region setup", auth, cred); ok {
+		_, err := cl.AcquireTokenByCredential(ctx, []string{graphScope}, confidential.WithMtlsProofOfPossession())
 		check("missing-region", "mTLS PoP requires an Azure region", err)
 	}
 
 	// Error case 2: non-tenanted authority (/common)
-	client2, err := confidential.New("https://login.microsoftonline.com/common", cID, cred,
-		confidential.WithAzureRegion(region))
-	if err != nil {
-		fmt.Printf("  ❌ FAIL [common-authority setup]: unexpected error: %v\n", err)
-		fail++
-	} else {
-		_, err = client2.AcquireTokenByCredential(ctx, []string{"https://graph.microsoft.com/.default"},
-			confidential.WithMtlsProofOfPossession())
+	if cl, ok := tryClient("common-authority setup", "https://login.microsoftonline.com/common", cred, confidential.WithAzureRegion(region)); ok {
+		_, err := cl.AcquireTokenByCredential(ctx, []string{graphScope}, confidential.WithMtlsProofOfPossession())
 		check("non-tenanted-authority(/common)", "mTLS PoP requires a tenanted authority", err)
 	}
 
 	// Error case 3: non-tenanted authority (/organizations)
-	client3, err := confidential.New("https://login.microsoftonline.com/organizations", cID, cred,
-		confidential.WithAzureRegion(region))
-	if err != nil {
-		fmt.Printf("  ❌ FAIL [organizations-authority setup]: unexpected error: %v\n", err)
-		fail++
-	} else {
-		_, err = client3.AcquireTokenByCredential(ctx, []string{"https://graph.microsoft.com/.default"},
-			confidential.WithMtlsProofOfPossession())
+	if cl, ok := tryClient("organizations-authority setup", "https://login.microsoftonline.com/organizations", cred, confidential.WithAzureRegion(region)); ok {
+		_, err := cl.AcquireTokenByCredential(ctx, []string{graphScope}, confidential.WithMtlsProofOfPossession())
 		check("non-tenanted-authority(/organizations)", "mTLS PoP requires a tenanted authority", err)
 	}
 
@@ -169,17 +170,9 @@ func testErrorCases(cred confidential.Credential, tenantID, clientID, region str
 	if err != nil {
 		fmt.Printf("  ❌ FAIL [secret-cred setup]: unexpected error: %v\n", err)
 		fail++
-	} else {
-		client4, err := confidential.New(authority, cID, secretCred,
-			confidential.WithAzureRegion(region))
-		if err != nil {
-			fmt.Printf("  ❌ FAIL [secret-cred client setup]: unexpected error: %v\n", err)
-			fail++
-		} else {
-			_, err = client4.AcquireTokenByCredential(ctx, []string{"https://graph.microsoft.com/.default"},
-				confidential.WithMtlsProofOfPossession())
-			check("secret-credential", "mTLS requires a certificate credential", err)
-		}
+	} else if cl, ok := tryClient("secret-cred client setup", auth, secretCred, confidential.WithAzureRegion(region)); ok {
+		_, err = cl.AcquireTokenByCredential(ctx, []string{graphScope}, confidential.WithMtlsProofOfPossession())
+		check("secret-credential", "mTLS requires a certificate credential", err)
 	}
 
 	fmt.Printf("\n  Error cases: %d passed, %d failed\n", pass, fail)
@@ -286,13 +279,13 @@ func makeDownstreamCall(token string, certPEM, keyPEM []byte, resource string) {
 		fmt.Printf("     Response (first 200 chars): %.200s\n", string(body))
 	case resp.StatusCode == 401:
 		fmt.Printf("  ❌ Downstream call returned HTTP 401 — token or mTLS cert rejected\n")
-		fmt.Printf("     Body: %.300s\n", string(body))
+		fmt.Printf(bodyFmt, string(body))
 	case resp.StatusCode == 403:
 		fmt.Printf("  ⚠️  Downstream call returned HTTP 403 — TLS handshake OK, token accepted, but missing permissions\n")
-		fmt.Printf("     Body: %.300s\n", string(body))
+		fmt.Printf(bodyFmt, string(body))
 	default:
 		fmt.Printf("  ⚠️  Downstream call returned HTTP %d\n", resp.StatusCode)
-		fmt.Printf("     Body: %.300s\n", string(body))
+		fmt.Printf(bodyFmt, string(body))
 	}
 }
 
