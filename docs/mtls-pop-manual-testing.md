@@ -225,7 +225,28 @@ If `NCryptFinalizeKey` still returns `NTE_BAD_FLAGS (0x80090009)` after Credenti
 - The VM SKU may not support nested virtualization. Try a **Ddsv5-series** or **Esv5-series** VM.
 - Ensure the VM generation is **Gen 2** (required for Trusted Launch).
 
-### Step 2: Install Go and the Application
+### Step 2: Obtain and Deploy `AttestationClientLib.dll`
+
+The attestation step requires `AttestationClientLib.dll` to be present in the same directory as the compiled binary. msal-go cannot bundle this DLL automatically — Go modules are source-only and have no equivalent to NuGet's native asset pipeline, which is how msal-dotnet delivers the DLL transparently. See the [architecture doc](mtls-pop-architecture.md#why-msal-go-cannot-bundle-the-dll-automatically) for a full explanation.
+
+**How to obtain the DLL (on any Windows machine with the .NET SDK):**
+
+```powershell
+# Install the NuGet package (only needs the .NET SDK, not the full runtime)
+dotnet add package Microsoft.Azure.Security.KeyGuardAttestation
+
+# The DLL will be at:
+# %USERPROFILE%\.nuget\packages\microsoft.azure.security.keyguardattestation\<version>\runtimes\win-x64\native\AttestationClientLib.dll
+$version = (Get-ChildItem "$env:USERPROFILE\.nuget\packages\microsoft.azure.security.keyguardattestation" | Sort-Object Name -Descending | Select-Object -First 1).Name
+$dll = "$env:USERPROFILE\.nuget\packages\microsoft.azure.security.keyguardattestation\$version\runtimes\win-x64\native\AttestationClientLib.dll"
+Write-Host "DLL path: $dll"
+```
+
+Copy `AttestationClientLib.dll` to the directory where your compiled msal-go binary will run. If you are building and running on the Azure VM directly, the simplest approach is to copy it to the same folder before running `go run` or the compiled `.exe`.
+
+> **Note:** You can run the `dotnet add package` command on any Windows machine — even a developer machine — and then transfer the DLL to the Azure VM as part of your deployment. The .NET SDK does not need to be installed on the VM itself.
+
+### Step 3: Install Go and the Application
 
 On the VM:
 ```powershell
@@ -233,7 +254,7 @@ winget install GoLang.Go
 # or download from https://go.dev/dl/
 ```
 
-### Step 3: Write the Test Code
+### Step 4: Write the Test Code
 
 ```go
 package main
@@ -282,7 +303,7 @@ func main() {
 }
 ```
 
-### Step 4: Verify Expected Behavior
+### Step 5: Verify Expected Behavior
 
 ✅ `result.BindingCertificate != nil` (IMDS-issued cert from `managedidentitysnissuer.login.microsoft.com`)  
 ✅ `result.BindingCertificate.Subject.CommonName` matches the VM's managed identity client ID  
@@ -292,7 +313,7 @@ func main() {
 ✅ JWT payload contains `"xms_tbflags": 2` (mTLS binding enforced) and `"appidacr": "2"` (cert auth)  
 ✅ Downstream mTLS call to `graph.microsoft.com` returns `401 Unauthorized` — this is **expected and correct**; the `401` means the TLS handshake and token were accepted; the managed identity simply has no Graph role assigned
 
-### Step 5: Common Failure Scenarios
+### Step 6: Common Failure Scenarios
 
 **"mTLS PoP requires a VBS KeyGuard-protected RSA key (got: Hardware)"** or **"...got: InMemory"**
 - `NCryptFinalizeKey` rejected the VBS Virtual Isolation flags — VBS/Credential Guard is not enabled
@@ -328,9 +349,9 @@ mTLS PoP Managed Identity requires Windows with VBS KeyGuard support
 ```
 This is expected. IMDSv2 with CNG KeyGuard requires Windows.
 
-### Step 6: Make a Downstream mTLS Call
+### Step 7: Make a Downstream mTLS Call
 
-`AuthResult.BindingTLSCertificate` contains the complete TLS credential (public cert + CNG private key) needed to present the binding cert in a downstream mTLS call:
+`AuthResult.BindingTLSCertificate`contains the complete TLS credential (public cert + CNG private key) needed to present the binding cert in a downstream mTLS call:
 
 ```go
 import (

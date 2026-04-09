@@ -88,7 +88,10 @@ On Azure VMs, the IMDS (Instance Metadata Service) v2 can issue a short-lived bi
 - IMDSv2 enabled (`cred-api-version=2.0`)
 - Windows OS with VBS (Virtualization-Based Security) KeyGuard available
 - **[Trusted Launch Azure VM](https://learn.microsoft.com/azure/virtual-machines/trusted-launch)** with Secure Boot + vTPM — `Is Capable For Attestation: True` (verify with `tpmtool.exe getdeviceinformation`)
-- `AttestationClientLib.dll` deployed alongside the binary (see [architecture doc](mtls-pop-architecture.md#4-attestationclientlibdll-interop-and-distribution) for how to obtain it)
+- `AttestationClientLib.dll` present alongside the binary. This DLL is not bundled by msal-go (Go modules have no native asset distribution mechanism — see [architecture doc](mtls-pop-architecture.md#why-msal-go-cannot-bundle-the-dll-automatically) for the full explanation). To obtain it:
+  1. Run: `dotnet add package Microsoft.Azure.Security.KeyGuardAttestation --version <latest>`
+  2. Copy from: `%USERPROFILE%\.nuget\packages\microsoft.azure.security.keyguardattestation\<version>\runtimes\win-x64\native\AttestationClientLib.dll`
+  3. Place it in the same directory as the msal-go application binary.
 - `DefaultToIMDS` source (not Arc, AppService, CloudShell, etc.)
 
 **API:**

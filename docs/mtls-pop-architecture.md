@@ -179,9 +179,21 @@ Windows searches for the DLL in the standard load order: application directory f
 2. The DLL will appear at: `%USERPROFILE%\.nuget\packages\microsoft.azure.security.keyguardattestation\<version>\runtimes\win-x64\native\AttestationClientLib.dll`
 3. Copy it to the same directory as the msal-go application binary.
 
-This is a **known difference** from msal-dotnet. Go modules have no concept of native runtime assets (like NuGet's `runtimes/win-x64/native/` folder). There is no standard way to bundle a `.dll` alongside a Go module that will automatically land next to the user's binary.
+### Why msal-go Cannot Bundle the DLL Automatically
 
-In practice this is low-friction for users: Path 2 mTLS PoP only runs on Trusted Launch Azure VMs with Credential Guard enabled — environments where the deployment pipeline is already controlled and placing one additional DLL is straightforward.
+msal-dotnet's zero-touch distribution works because NuGet has a first-class **native asset pipeline**:
+
+- The NuGet package places the DLL under `runtimes/win-x64/native/` inside the package.
+- When a .NET project is built or published, MSBuild automatically resolves that path and copies the DLL to the project's output directory alongside the `.exe`.
+- The developer only runs `dotnet add package` — the DLL placement is invisible.
+
+Go modules have no equivalent mechanism:
+
+- A Go module is **source files only**. `go get` and `go mod download` retrieve `.go` files; there is no convention or tooling for bundling binary artifacts in a module.
+- Even if a `.dll` were committed into the module's repository (under, say, `_native/`), there is no build pipeline step that would automatically copy it to the user's output directory.
+- CGo does not help here. CGo links C libraries at **compile time** (static or shared link). `AttestationClientLib.dll` is a **runtime** dynamic dependency, loaded on-demand via `LoadLibrary`/`NewLazyDLL`. Even with CGo, the DLL would still need to be present at runtime alongside the binary.
+
+In practice this is low-friction: Path 2 only runs on Trusted Launch Azure VMs with Credential Guard enabled — environments where the deployment pipeline is already controlled and placing one additional file is straightforward.
 
 ### Interop Pattern
 
