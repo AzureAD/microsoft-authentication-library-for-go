@@ -13,17 +13,18 @@ mTLS Proof of Possession (RFC 8705) binds an access token to an X.509 certificat
 
 ---
 
-## Why Go Uses the .NET Approach
+## Cross-SDK Implementation Comparison
 
-Go's `crypto/tls` is a pure-Go TLS implementation that accepts any `crypto.PrivateKey` implementing `crypto.Signer` — including keys backed by Windows CNG (Cryptography Next Generation). This means:
+Go's `crypto/tls` is a pure-Go TLS implementation that accepts any `crypto.PrivateKey` implementing `crypto.Signer` — including keys backed by Windows CNG (Cryptography Next Generation). This allows msal-go to use the KeyGuard key directly in the TLS handshake with no subprocess.
 
 | Library | TLS Stack | CNG Support | Approach |
 |---------|-----------|-------------|----------|
-| **msal-go** | `crypto/tls` (pure Go) | ✅ Via `crypto.Signer` | Direct cert use |
-| **msal-dotnet** | Schannel (.NET) | ✅ Native | Direct cert use |
+| **msal-go** | `crypto/tls` (pure Go) | ✅ Via `crypto.Signer` | In-process |
+| **msal-dotnet** | Schannel (.NET) | ✅ Native | In-process |
+| **msal-java** | JSSE + custom `SSLSocketFactory` (Path 1); JNA → `ncrypt.dll` (Path 2) | ✅ Via JNA | In-process |
 | **msal-node** | OpenSSL (Node.js) | ❌ None | .NET subprocess (`MsalMtlsMsiHelper.exe`) |
 
-No subprocess is needed in msal-go.
+No subprocess is needed in msal-go, msal-dotnet, or msal-java. Node.js uses OpenSSL on all platforms, which cannot accept a non-exportable CNG key handle — so msal-node delegates the entire Managed Identity flow to a .NET subprocess.
 
 ---
 
