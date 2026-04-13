@@ -20,6 +20,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
+	"github.com/google/uuid"
 )
 
 const (
@@ -395,6 +396,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			endpoint := imdsDefaultEndpoint
 
 			var localUrl *url.URL
+			var localHeader http.Header
 			mockClient := mock.NewClient()
 			responseBody, err := getSuccessfulResponse(resource, true)
 			if err != nil {
@@ -403,6 +405,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 
 			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
 				localUrl = r.URL
+				localHeader = r.Header
 			}))
 			// resetting cache
 			before := cacheManager
@@ -441,6 +444,18 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 				if query.Get(miQueryParameterObjectId) != i.value() {
 					t.Fatalf("resource objectid is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterObjectId))
 				}
+			}
+			// Validate IMDS client metadata headers
+			const expectedSKU = "MSAL.Go"
+			if got := localHeader.Get("x-client-SKU"); got != expectedSKU {
+				t.Errorf("x-client-SKU = %q, want %q", got, expectedSKU)
+			}
+			if got := localHeader.Get("x-client-Ver"); got == "" {
+				t.Error("x-client-Ver header is empty")
+			}
+			corrID := localHeader.Get("x-ms-client-request-id")
+			if _, err := uuid.Parse(corrID); err != nil {
+				t.Errorf("x-ms-client-request-id not a valid UUID: %q", corrID)
 			}
 			if result.Metadata.TokenSource != TokenSourceIdentityProvider {
 				t.Fatalf("expected IndenityProvider tokensource, got %d", result.Metadata.TokenSource)
