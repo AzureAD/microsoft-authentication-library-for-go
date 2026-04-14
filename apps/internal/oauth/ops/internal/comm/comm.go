@@ -311,7 +311,7 @@ func addStdHeaders(headers http.Header) http.Header {
 		headers.Set("client-request-id", uuid.New().String())
 		headers.Set("Return-Client-Request-Id", "false")
 	}
-	headers.Set("x-client-sku", "MSAL.Go")
+	headers.Set("x-client-sku", version.SKU)
 	headers.Set("x-client-os", runtime.GOOS)
 	headers.Set("x-client-cpu", runtime.GOARCH)
 	headers.Set("x-client-ver", version.Version)
