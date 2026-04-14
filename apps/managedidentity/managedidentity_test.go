@@ -450,7 +450,7 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 			if got := localHeader.Get("x-client-SKU"); got != expectedSKU {
 				t.Errorf("x-client-SKU = %q, want %q", got, expectedSKU)
 			}
-			if got := localHeader.Get("x-client-Ver"); got == "" {
+			if localHeader.Get("x-client-Ver") == "" {
 				t.Error("x-client-Ver header is empty")
 			}
 			corrID := localHeader.Get("x-ms-client-request-id")

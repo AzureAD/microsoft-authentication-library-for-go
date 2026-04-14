@@ -623,7 +623,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 		return nil, fmt.Errorf("error creating http request %s", err)
 	}
 	req.Header.Set(metaHTTPHeaderName, "true")
-	req.Header.Set("x-client-SKU", "MSAL.Go")
+	req.Header.Set("x-client-SKU", version.SKU)
 	req.Header.Set("x-client-Ver", version.Version)
 	req.Header.Set("x-ms-client-request-id", uuid.New().String())
 	return req, nil
