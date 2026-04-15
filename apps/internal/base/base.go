@@ -5,6 +5,8 @@ package base
 
 import (
 	"context"
+	"crypto/tls"
+	"crypto/x509"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -93,6 +95,15 @@ type AuthResult struct {
 	GrantedScopes  []string
 	DeclinedScopes []string
 	Metadata       AuthResultMetadata
+	// BindingCertificate is the X.509 certificate bound to an mTLS PoP access token (RFC 8705).
+	// It is set when the token was acquired with WithMtlsProofOfPossession() or
+	// SendCertificateOverMtls. Use it as the client certificate in downstream mTLS calls
+	// with the Authorization header set to "mtls_pop <AccessToken>".
+	BindingCertificate *x509.Certificate
+	// BindingTLSCertificate is the complete TLS certificate (public cert + private key) for
+	// use in downstream mTLS calls. It is set alongside BindingCertificate when the token
+	// was acquired with WithMtlsProofOfPossession(). Use it to configure tls.Config.Certificates.
+	BindingTLSCertificate *tls.Certificate
 }
 
 // AuthResultMetadata which contains meta data for the AuthResult
@@ -146,11 +157,12 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		return AuthResult{}, fmt.Errorf("token response failed because declined scopes are present: %s", strings.Join(tokenResponse.DeclinedScopes, ","))
 	}
 	return AuthResult{
-		Account:       account,
-		IDToken:       tokenResponse.IDToken,
-		AccessToken:   tokenResponse.AccessToken,
-		ExpiresOn:     tokenResponse.ExpiresOn,
-		GrantedScopes: tokenResponse.GrantedScopes.Slice,
+		Account:            account,
+		IDToken:            tokenResponse.IDToken,
+		AccessToken:        tokenResponse.AccessToken,
+		ExpiresOn:          tokenResponse.ExpiresOn,
+		GrantedScopes:      tokenResponse.GrantedScopes.Slice,
+		BindingCertificate: tokenResponse.BindingCertificate,
 		Metadata: AuthResultMetadata{
 			TokenSource: TokenSourceIdentityProvider,
 			RefreshOn:   tokenResponse.RefreshOn.T,

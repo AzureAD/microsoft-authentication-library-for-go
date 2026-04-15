@@ -245,8 +245,9 @@ func AutoDetectRegion() string {
 // package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
-	base base.Client
-	cred *accesstokens.Credential
+	base             base.Client
+	cred             *accesstokens.Credential
+	sendCertOverMtls bool
 }
 
 // clientOptions are optional settings for New(). These options are set using various functions
@@ -256,6 +257,7 @@ type clientOptions struct {
 	authority, azureRegion            string
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
+	sendCertOverMtls                  bool
 	httpClient                        ops.HTTPClient
 }
 
@@ -318,6 +320,17 @@ func WithAzureRegion(val string) Option {
 	}
 }
 
+// WithSendCertificateOverMtls enables bearer-over-mTLS authentication.
+// When set, the client certificate authenticates via the TLS handshake instead of
+// a JWT client_assertion in the request body. The token type remains Bearer.
+// Requires the client to be configured with a certificate credential (NewCredFromCert).
+// Mirrors MSAL.NET's WithSendCertificateOverMtls().
+func WithSendCertificateOverMtls() Option {
+	return func(o *clientOptions) {
+		o.sendCertOverMtls = true
+	}
+}
+
 // New is the constructor for Client. authority is the URL of a token authority such as "https://login.microsoftonline.com/<your tenant>".
 // If the Client will connect directly to AD FS, use "adfs" for the tenant. clientID is the application's client ID (also called its
 // "application ID").
@@ -354,7 +367,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	base.AuthParams.IsConfidentialClient = true
 
-	return Client{base: base, cred: internalCred}, nil
+	return Client{base: base, cred: internalCred, sendCertOverMtls: opts.sendCertOverMtls}, nil
 }
 
 // authCodeURLOptions contains options for AuthCodeURL
@@ -748,6 +761,7 @@ type acquireTokenByCredentialOptions struct {
 	authnScheme         AuthenticationScheme
 	extraBodyParameters map[string]string
 	cacheKeyComponents  map[string]string
+	isMtlsPopRequested  bool
 }
 
 // AcquireByCredentialOption is implemented by options for AcquireTokenByCredential
@@ -757,7 +771,7 @@ type AcquireByCredentialOption interface {
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options: [WithClaims], [WithTenantID], [WithFMIPath], [WithAttribute]
+// Options: [WithClaims], [WithTenantID], [WithFMIPath], [WithAttribute], [WithMtlsProofOfPossession]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -776,6 +790,12 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	}
 	authParams.ExtraBodyParameters = o.extraBodyParameters
 	authParams.CacheKeyComponents = o.cacheKeyComponents
+
+	// Configure mTLS transport if requested via WithMtlsProofOfPossession or WithSendCertificateOverMtls.
+	if err := cca.applyMtlsParams(&authParams, o.isMtlsPopRequested); err != nil {
+		return AuthResult{}, err
+	}
+
 	if o.claims == "" {
 		silentParameters := base.AcquireTokenSilentParameters{
 			Scopes:              scopes,
@@ -784,7 +804,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 			Credential:          cca.cred,
 			IsAppCache:          true,
 			TenantID:            o.tenantID,
-			AuthnScheme:         o.authnScheme,
+			AuthnScheme:         authParams.AuthnScheme,
 			Claims:              o.claims,
 			ExtraBodyParameters: o.extraBodyParameters,
 			CacheKeyComponents:  o.cacheKeyComponents,
@@ -802,6 +822,40 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		return AuthResult{}, err
 	}
 	return cca.base.AuthResultFromToken(ctx, authParams, token)
+}
+
+// applyMtlsParams configures authParams for mTLS when WithMtlsProofOfPossession or
+// WithSendCertificateOverMtls is requested. Extracted to reduce cognitive complexity
+// of AcquireTokenByCredential.
+func (cca Client) applyMtlsParams(authParams *authority.AuthParams, isMtlsPopRequested bool) error {
+	if !isMtlsPopRequested && !cca.sendCertOverMtls {
+		return nil
+	}
+	if cca.cred.Cert == nil {
+		return errors.New("mTLS requires a certificate credential; use NewCredFromCert")
+	}
+	if isMtlsPopRequested {
+		if err := validateMtlsPopAuthority(authParams); err != nil {
+			return err
+		}
+		authParams.AuthnScheme = authority.NewMtlsPopAuthenticationScheme(cca.cred.Cert)
+	}
+	authParams.UseMtlsTransport = true
+	authParams.MtlsBindingCert = cca.cred.Cert
+	return nil
+}
+
+// validateMtlsPopAuthority checks that the authority is suitable for mTLS PoP
+// (must be tenanted and must have a region configured).
+func validateMtlsPopAuthority(authParams *authority.AuthParams) error {
+	tenant := authParams.AuthorityInfo.Tenant
+	if tenant == "common" || tenant == "organizations" || tenant == "consumers" {
+		return errors.New("mTLS PoP requires a tenanted authority; use a specific tenant ID in the authority URL")
+	}
+	if authParams.AuthorityInfo.Region == "" && authParams.AuthorityInfo.AuthorityType != authority.DSTS {
+		return errors.New("mTLS PoP requires an Azure region; use WithAzureRegion() or AutoDetectRegion()")
+	}
+	return nil
 }
 
 // acquireTokenOnBehalfOfOptions contains optional configuration for AcquireTokenOnBehalfOf
@@ -894,6 +948,34 @@ func WithAttribute(attrValue string) interface {
 						t.extraBodyParameters = make(map[string]string)
 					}
 					t.extraBodyParameters["attributes"] = attrValue
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithMtlsProofOfPossession requests an mTLS Proof of Possession access token (RFC 8705) instead of
+// a standard Bearer token. The client must be configured with a certificate credential (NewCredFromCert)
+// and an Azure region (WithAzureRegion or AutoDetectRegion). The authority URL must be tenanted
+// (not /common or /organizations). On success, AuthResult.BindingCertificate is set to the
+// certificate bound to the token; use it as the client certificate in downstream mTLS calls
+// with the "Authorization: mtls_pop <token>" header. Mirrors MSAL.NET's WithProofOfPossession().
+func WithMtlsProofOfPossession() interface {
+	AcquireByCredentialOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByCredentialOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByCredentialOptions:
+					t.isMtlsPopRequested = true
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}

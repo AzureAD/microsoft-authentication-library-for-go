@@ -22,3 +22,11 @@ github.com/
 golang.org/
 .vscode/
 .idea/
+
+# mTLS PoP test credentials — private key and PFX must not be committed.
+# test-cert.pem (public cert only) is safe to commit.
+# Regenerate with:
+#   openssl req -x509 -newkey rsa:2048 -keyout apps/tests/devapps/mtls-pop/test-key.pem \
+#     -out apps/tests/devapps/mtls-pop/test-cert.pem -days 365 -nodes -subj "/CN=msal-go-mtls-test"
+apps/tests/devapps/mtls-pop/test-key.pem
+apps/tests/devapps/mtls-pop/test-mtls.pfx

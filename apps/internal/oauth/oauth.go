@@ -5,6 +5,7 @@ package oauth
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -35,6 +36,7 @@ type AccessTokens interface {
 	FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error)
 	FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
 	FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
+	FromMtlsCertificate(ctx context.Context, authParameters authority.AuthParams, tlsCert tls.Certificate, mtlsEndpoint string) (accesstokens.TokenResponse, error)
 	FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion string, clientSecret string) (accesstokens.TokenResponse, error)
 	FromUserAssertionClientCertificate(ctx context.Context, authParameters authority.AuthParams, userAssertion string, assertion string) (accesstokens.TokenResponse, error)
 	FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error)
@@ -102,41 +104,14 @@ func (t *Client) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest)
 // Credential acquires a token from the authority using a client credentials grant.
 func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
 	if cred.TokenProvider != nil {
-		now := time.Now()
-		scopes := make([]string, len(authParams.Scopes))
-		copy(scopes, authParams.Scopes)
-		params := exported.TokenProviderParameters{
-			Claims:        authParams.Claims,
-			CorrelationID: uuid.New().String(),
-			Scopes:        scopes,
-			TenantID:      authParams.AuthorityInfo.Tenant,
-		}
-		pr, err := cred.TokenProvider(ctx, params)
-		if err != nil {
-			if len(scopes) == 0 {
-				err = fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
-				return accesstokens.TokenResponse{}, err
-			}
-			return accesstokens.TokenResponse{}, err
-		}
-		tr := accesstokens.TokenResponse{
-			TokenType:     authParams.AuthnScheme.AccessTokenType(),
-			AccessToken:   pr.AccessToken,
-			ExpiresOn:     now.Add(time.Duration(pr.ExpiresInSeconds) * time.Second),
-			GrantedScopes: accesstokens.Scopes{Slice: authParams.Scopes},
-		}
-		if pr.RefreshInSeconds > 0 {
-			tr.RefreshOn = internalTime.DurationTime{
-				T: now.Add(time.Duration(pr.RefreshInSeconds) * time.Second),
-			}
-		}
-		return tr, nil
+		return t.credentialFromTokenProvider(ctx, authParams, cred)
 	}
-
+	if authParams.UseMtlsTransport && authParams.MtlsBindingCert != nil {
+		return t.credentialFromMtls(ctx, authParams, cred)
+	}
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-
 	if cred.Secret != "" {
 		return t.AccessTokens.FromClientSecret(ctx, authParams, cred.Secret)
 	}
@@ -145,6 +120,64 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 		return accesstokens.TokenResponse{}, err
 	}
 	return t.AccessTokens.FromAssertion(ctx, authParams, jwt)
+}
+
+// credentialFromTokenProvider handles the custom TokenProvider path in Credential().
+func (t *Client) credentialFromTokenProvider(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
+	now := time.Now()
+	scopes := make([]string, len(authParams.Scopes))
+	copy(scopes, authParams.Scopes)
+	params := exported.TokenProviderParameters{
+		Claims:        authParams.Claims,
+		CorrelationID: uuid.New().String(),
+		Scopes:        scopes,
+		TenantID:      authParams.AuthorityInfo.Tenant,
+	}
+	pr, err := cred.TokenProvider(ctx, params)
+	if err != nil {
+		if len(scopes) == 0 {
+			err = fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
+		}
+		return accesstokens.TokenResponse{}, err
+	}
+	tr := accesstokens.TokenResponse{
+		TokenType:     authParams.AuthnScheme.AccessTokenType(),
+		AccessToken:   pr.AccessToken,
+		ExpiresOn:     now.Add(time.Duration(pr.ExpiresInSeconds) * time.Second),
+		GrantedScopes: accesstokens.Scopes{Slice: authParams.Scopes},
+	}
+	if pr.RefreshInSeconds > 0 {
+		tr.RefreshOn = internalTime.DurationTime{
+			T: now.Add(time.Duration(pr.RefreshInSeconds) * time.Second),
+		}
+	}
+	return tr, nil
+}
+
+// credentialFromMtls handles the mTLS transport path (mTLS PoP and bearer-over-mTLS) in Credential().
+func (t *Client) credentialFromMtls(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
+	tlsCert := tls.Certificate{
+		Certificate: [][]byte{authParams.MtlsBindingCert.Raw},
+		PrivateKey:  cred.Key,
+		Leaf:        authParams.MtlsBindingCert,
+	}
+	endpoint, err := t.resolveMtlsEndpoint(ctx, &authParams)
+	if err != nil {
+		return accesstokens.TokenResponse{}, err
+	}
+	return t.AccessTokens.FromMtlsCertificate(ctx, authParams, tlsCert, endpoint)
+}
+
+// resolveMtlsEndpoint returns the token endpoint for mTLS PoP (regional) or bearer-over-mTLS (standard).
+func (t *Client) resolveMtlsEndpoint(ctx context.Context, authParams *authority.AuthParams) (string, error) {
+	if authParams.AuthnScheme != nil && authParams.AuthnScheme.AccessTokenType() == authority.AccessTokenTypeMtlsPop {
+		region := authority.ResolveRegion(ctx, authParams.AuthorityInfo.Region)
+		return authority.BuildMtlsEndpoint(region, authParams.AuthorityInfo.Tenant, authParams.AuthorityInfo)
+	}
+	if err := t.resolveEndpoint(ctx, authParams, ""); err != nil {
+		return "", err
+	}
+	return authParams.Endpoints.TokenEndpoint, nil
 }
 
 // Credential acquires a token from the authority using a client credentials grant.
@@ -191,7 +224,6 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 	if err := scopeError(authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-
 	if authParams.AuthorityInfo.AuthorityType == authority.ADFS {
 		if err := t.resolveEndpoint(ctx, &authParams, authParams.Username); err != nil {
 			return accesstokens.TokenResponse{}, err
@@ -201,30 +233,13 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-
 	userRealm, err := t.Authority.UserRealm(ctx, authParams)
 	if err != nil {
 		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting user realm from authority: %w", err)
 	}
-
 	switch userRealm.AccountType {
 	case authority.Federated:
-		mexDoc, err := t.WSTrust.Mex(ctx, userRealm.FederationMetadataURL)
-		if err != nil {
-			err = fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
-			return accesstokens.TokenResponse{}, err
-		}
-
-		saml, err := t.WSTrust.SAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
-		if err != nil {
-			err = fmt.Errorf("problem getting SAML token info: %w", err)
-			return accesstokens.TokenResponse{}, err
-		}
-		tr, err := t.AccessTokens.FromSamlGrant(ctx, authParams, saml)
-		if err != nil {
-			return accesstokens.TokenResponse{}, err
-		}
-		return tr, nil
+		return t.usernamePasswordFederated(ctx, authParams, userRealm)
 	case authority.Managed:
 		if len(authParams.Scopes) == 0 {
 			err = fmt.Errorf("token request had an empty authority.AuthParams.Scopes, which may cause the following error: %w", err)
@@ -233,6 +248,19 @@ func (t *Client) UsernamePassword(ctx context.Context, authParams authority.Auth
 		return t.AccessTokens.FromUsernamePassword(ctx, authParams)
 	}
 	return accesstokens.TokenResponse{}, errors.New("unknown account type")
+}
+
+// usernamePasswordFederated handles the Federated realm branch of UsernamePassword().
+func (t *Client) usernamePasswordFederated(ctx context.Context, authParams authority.AuthParams, userRealm authority.UserRealm) (accesstokens.TokenResponse, error) {
+	mexDoc, err := t.WSTrust.Mex(ctx, userRealm.FederationMetadataURL)
+	if err != nil {
+		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting mex doc from federated url(%s): %w", userRealm.FederationMetadataURL, err)
+	}
+	saml, err := t.WSTrust.SAMLTokenInfo(ctx, authParams, userRealm.CloudAudienceURN, mexDoc.UsernamePasswordEndpoint)
+	if err != nil {
+		return accesstokens.TokenResponse{}, fmt.Errorf("problem getting SAML token info: %w", err)
+	}
+	return t.AccessTokens.FromSamlGrant(ctx, authParams, saml)
 }
 
 // DeviceCode is the result of a call to Token.DeviceCode().
