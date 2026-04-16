@@ -6,6 +6,7 @@
 package time
 
 import (
+	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -23,7 +24,7 @@ func (u Unix) MarshalJSON() ([]byte, error) {
 	if u.T.IsZero() {
 		return []byte(""), nil
 	}
-	return []byte(fmt.Sprintf("%q", strconv.FormatInt(u.T.Unix(), 10))), nil
+	return json.Marshal(strconv.FormatInt(u.T.Unix(), 10))
 }
 
 // UnmarshalJSON implements encoding/json.UnmarshalJSON().
@@ -56,7 +57,7 @@ func (d DurationTime) MarshalJSON() ([]byte, error) {
 	}
 
 	dt := time.Until(d.T)
-	return []byte(fmt.Sprintf("%d", int64(dt*time.Second))), nil
+	return json.Marshal(strconv.FormatInt(int64(dt/time.Second), 10))
 }
 
 // UnmarshalJSON implements encoding/json.UnmarshalJSON().
