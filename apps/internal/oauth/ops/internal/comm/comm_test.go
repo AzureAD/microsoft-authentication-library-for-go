@@ -11,6 +11,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strings"
 	"testing"
 
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
@@ -542,5 +543,84 @@ func TestURLFormCall(t *testing.T) {
 		if diff := pretty.Compare(test.want, test.resp); diff != "" {
 			t.Errorf("TestXMLCall(%s): result: -want/+got:\n%s", test.desc, diff)
 		}
+	}
+}
+
+// TestAddStdHeadersAcceptEncodingIdentity locks in that the client advertises
+// "Accept-Encoding: identity" rather than "gzip". This is a security
+// regression test: requesting gzip re-enables the decompression-bomb path
+// previously present in this package (issue #613). It also disables the
+// stdlib's transparent gzip handling, which would otherwise re-introduce the
+// same risk at the net/http layer.
+func TestAddStdHeadersAcceptEncodingIdentity(t *testing.T) {
+	h := addStdHeaders(http.Header{})
+	if got := h.Get("Accept-Encoding"); got != "identity" {
+		t.Fatalf("Accept-Encoding = %q, want %q (gzip must not be requested)", got, "identity")
+	}
+}
+
+// TestReadBodyRejectsCompressedResponse verifies readBody refuses any
+// non-identity Content-Encoding from the server. Because the client only
+// advertises identity encoding, a response with Content-Encoding: gzip (or
+// any other non-identity value) is unsolicited and is treated as an error
+// rather than silently decoded — closing the decompression-bomb vector.
+func TestReadBodyRejectsCompressedResponse(t *testing.T) {
+	tests := []struct {
+		name     string
+		encoding string
+		wantErr  bool
+	}{
+		{name: "no encoding header", encoding: "", wantErr: false},
+		{name: "identity (case insensitive)", encoding: "Identity", wantErr: false},
+		{name: "gzip rejected", encoding: "gzip", wantErr: true},
+		{name: "deflate rejected", encoding: "deflate", wantErr: true},
+		{name: "br rejected", encoding: "br", wantErr: true},
+		{name: "x-gzip rejected", encoding: "x-gzip", wantErr: true},
+		{name: "multiple encodings with gzip rejected", encoding: "gzip, identity", wantErr: true},
+		{name: "multiple encodings reversed rejected", encoding: "identity, gzip", wantErr: true},
+	}
+	c := &Client{}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := &http.Response{
+				Header: http.Header{},
+				Body:   io.NopCloser(strings.NewReader(`{"ok":true}`)),
+			}
+			if tc.encoding != "" {
+				resp.Header.Set("Content-Encoding", tc.encoding)
+			}
+			body, err := c.readBody(resp)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected error for Content-Encoding %q, got body %q", tc.encoding, body)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error for Content-Encoding %q: %v", tc.encoding, err)
+			}
+			if string(body) != `{"ok":true}` {
+				t.Errorf("body = %q, want %q", body, `{"ok":true}`)
+			}
+		})
+	}
+}
+
+// TestJSONCallSendsAcceptEncodingIdentity is an end-to-end check that an
+// outbound JSONCall request carries Accept-Encoding: identity on the wire,
+// not gzip. Together with TestReadBodyRejectsCompressedResponse this provides
+// regression coverage for issue #613 across the whole request/response path.
+func TestJSONCallSendsAcceptEncodingIdentity(t *testing.T) {
+	rec := &recorder{statusCode: http.StatusOK, ret: &SampleData{Ok: "true"}}
+	srv := httptest.NewServer(rec)
+	defer srv.Close()
+
+	c := New(srv.Client())
+	resp := &SampleData{}
+	if err := c.JSONCall(context.Background(), srv.URL, http.Header{}, nil, nil, resp); err != nil {
+		t.Fatalf("JSONCall: %v", err)
+	}
+	if got := rec.gotHeaders.Get("Accept-Encoding"); got != "identity" {
+		t.Fatalf("outbound Accept-Encoding = %q, want %q", got, "identity")
 	}
 }
