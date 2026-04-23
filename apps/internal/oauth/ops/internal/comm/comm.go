@@ -54,11 +54,9 @@ func New(httpClient HTTPClient) *Client {
 // a struct. If the body struct contains a field called "AdditionalFields" we use a custom
 // marshal/unmarshal engine.
 //
-// Responses are read uncompressed: the client sends "Accept-Encoding: identity" so a malicious or
-// compromised endpoint cannot mount a gzip decompression-bomb attack against the process. AAD,
-// MSI, instance discovery, and other Microsoft auth endpoints serve uncompressed responses fine,
-// matching the behavior of the other MSAL SDKs (.NET / Java / Python / JS) which also do not opt
-// into client-side gzip.
+// Responses are read uncompressed: the client sends "Accept-Encoding: identity" because the
+// auth endpoints don't require compression. This matches the other MSAL SDKs (.NET / Java /
+// Python / JS), which also do not request compressed responses.
 func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error {
 	if qv == nil {
 		qv = url.Values{}
@@ -293,10 +291,7 @@ func (c *Client) checkResp(v reflect.Value) error {
 // readBody reads the body out of an *http.Response.
 //
 // The client advertises "Accept-Encoding: identity" (see addStdHeaders), so any non-identity
-// Content-Encoding from the server is unexpected and rejected rather than silently decoded. This
-// closes the gzip decompression-bomb vector previously present in this package: a malicious or
-// compromised endpoint cannot cause unbounded memory allocation by returning a tiny gzip payload
-// that expands to gigabytes.
+// Content-Encoding from the server is unexpected and rejected rather than silently decoded.
 func (c *Client) readBody(resp *http.Response) ([]byte, error) {
 	if enc := resp.Header.Get("Content-Encoding"); enc != "" && !strings.EqualFold(enc, "identity") {
 		return nil, fmt.Errorf("comm.Client: server returned unsupported Content-Encoding %q; the client requests identity encoding only", enc)
@@ -308,10 +303,9 @@ var testID string
 
 // addStdHeaders adds the standard headers we use on all calls.
 func addStdHeaders(headers http.Header) http.Header {
-	// Explicitly opt out of compression. This both prevents a malicious endpoint from mounting a
-	// gzip decompression-bomb attack and disables Go's net/http transparent gzip handling (which
-	// only kicks in when the caller has not set Accept-Encoding itself). Sibling MSAL SDKs
-	// (.NET / Java / Python / JS) also do not request compression on the auth endpoints.
+	// Opt out of compression. This disables Go's net/http transparent gzip handling (which only
+	// kicks in when the caller has not set Accept-Encoding itself). The auth endpoints don't
+	// require compression and sibling MSAL SDKs (.NET / Java / Python / JS) also skip it.
 	headers.Set("Accept-Encoding", "identity")
 	// So that I can have a static id for tests.
 	if testID != "" {
