@@ -443,3 +443,134 @@ func TestAuthResultFromStorage(t *testing.T) {
 		}
 	}
 }
+
+// recordingCache is a cache.ExportReplace test double that records the
+// PartitionKey passed to Replace/Export, so tests can assert the partition
+// MSAL asks the external cache to load.
+type recordingCache struct {
+	replaceKey string
+	exportKey  string
+	replaceErr error
+}
+
+func (r *recordingCache) Replace(_ context.Context, _ cache.Unmarshaler, h cache.ReplaceHints) error {
+	r.replaceKey = h.PartitionKey
+	return r.replaceErr
+}
+
+func (r *recordingCache) Export(_ context.Context, _ cache.Marshaler, h cache.ExportHints) error {
+	r.exportKey = h.PartitionKey
+	return nil
+}
+
+// TestAccountPassesHomeAccountIDAsPartitionKey is a regression test for issue #577.
+// Before the fix, Account() called CacheKey on the unmodified b.AuthParams (whose
+// AuthorizationType is the zero value, ATUnknown), so CacheKey fell through every
+// branch and returned "". External ExportReplace implementations were therefore
+// asked to load the empty partition, never hydrated the in-memory cache, and
+// Account() silently returned a zero shared.Account{}. The fix calls CacheKey on
+// the local copy that has AuthorizationType=AccountByID and HomeAccountID set,
+// so the partition key correctly equals the caller's homeAccountID.
+func TestAccountPassesHomeAccountIDAsPartitionKey(t *testing.T) {
+	const homeAccountID = "uid.utid"
+	rc := &recordingCache{}
+	client := fakeClient(t, WithCacheAccessor(rc))
+
+	if _, err := client.Account(context.Background(), homeAccountID); err != nil {
+		t.Fatal(err)
+	}
+	if rc.replaceKey != homeAccountID {
+		t.Fatalf("Account() called Replace with PartitionKey %q, want %q (issue #577 regression: the partition key must equal the home account ID, not the empty string)", rc.replaceKey, homeAccountID)
+	}
+}
+
+// TestAccountPartitionKeyEmptyHomeAccountID guards the edge case: when the caller
+// passes an empty home account ID, the partition key should also be empty (the
+// AccountByID branch of CacheKey returns HomeAccountID verbatim). This pins the
+// behavior so a future "fix" doesn't accidentally substitute a non-empty default.
+func TestAccountPartitionKeyEmptyHomeAccountID(t *testing.T) {
+	rc := &recordingCache{}
+	client := fakeClient(t, WithCacheAccessor(rc))
+
+	if _, err := client.Account(context.Background(), ""); err != nil {
+		t.Fatal(err)
+	}
+	if rc.replaceKey != "" {
+		t.Fatalf("Account(\"\") called Replace with PartitionKey %q, want \"\"", rc.replaceKey)
+	}
+}
+
+// roundTripCache is a more realistic ExportReplace double: Export saves the
+// marshaled cache bytes under a partition key, and Replace overwrites the
+// in-memory cache with whatever bytes are stored under the requested key
+// (delivering an empty cache "{}" when no match exists, mirroring how a real
+// external store behaves on a miss). Used by TestAccountReturnsSeededAccount
+// to prove the issue #577 fix works end-to-end.
+type roundTripCache struct {
+	bytes map[string][]byte
+}
+
+func (r *roundTripCache) Replace(_ context.Context, u cache.Unmarshaler, h cache.ReplaceHints) error {
+	data, ok := r.bytes[h.PartitionKey]
+	if !ok {
+		data = []byte("{}")
+	}
+	return u.Unmarshal(data)
+}
+
+func (r *roundTripCache) Export(_ context.Context, m cache.Marshaler, h cache.ExportHints) error {
+	data, err := m.Marshal()
+	if err != nil {
+		return err
+	}
+	if r.bytes == nil {
+		r.bytes = map[string][]byte{}
+	}
+	r.bytes[h.PartitionKey] = data
+	return nil
+}
+
+// TestAccountReturnsSeededAccount is the end-to-end regression test for issue #577.
+// It seeds an account through MSAL's normal Export path under partition key
+// "uid.utid" (using ATRefreshToken so token.CacheKey returns HomeAccountID),
+// then calls Account("uid.utid") and asserts a non-zero account is returned.
+// With the bug, Account() requests partition "" → no bytes stored under "" →
+// Replace overwrites the in-memory cache with "{}" → manager.Account returns
+// the zero shared.Account{}. With the fix, Account() requests partition
+// "uid.utid" → seeded bytes delivered → manager.Account returns the seeded
+// account.
+func TestAccountReturnsSeededAccount(t *testing.T) {
+	const hid = "uid.utid"
+	ctx := context.Background()
+	rc := &roundTripCache{}
+	client := fakeClient(t, WithCacheAccessor(rc))
+
+	if _, err := client.AuthResultFromToken(ctx,
+		authority.AuthParams{
+			AuthorityInfo:     authority.Info{Host: fakeAuthority, Tenant: fakeTenantID},
+			ClientID:          fakeClientID,
+			HomeAccountID:     hid,
+			Scopes:            testScopes,
+			AuthorizationType: authority.ATRefreshToken,
+			AuthnScheme:       &authority.BearerAuthenticationScheme{},
+		},
+		accesstokens.TokenResponse{
+			AccessToken:   "at",
+			ClientInfo:    accesstokens.ClientInfo{UID: "uid", UTID: "utid"},
+			ExpiresOn:     time.Now().Add(time.Hour),
+			GrantedScopes: accesstokens.Scopes{Slice: testScopes},
+			IDToken:       fakeIDToken,
+			RefreshToken:  "rt",
+		},
+	); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+
+	got, err := client.Account(ctx, hid)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.HomeAccountID != hid {
+		t.Fatalf("Account(%q).HomeAccountID = %q, want %q (issue #577 regression: external cache wasn't loaded with the right partition key, so manager.Account returned zero value)", hid, got.HomeAccountID, hid)
+	}
+}
