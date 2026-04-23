@@ -53,10 +53,6 @@ func New(httpClient HTTPClient) *Client {
 // of body in the HTTP body. The response is JSON unmarshalled into resp. resp must be a pointer to
 // a struct. If the body struct contains a field called "AdditionalFields" we use a custom
 // marshal/unmarshal engine.
-//
-// Responses are read uncompressed: the client sends "Accept-Encoding: identity" because the
-// auth endpoints don't require compression. This matches the other MSAL SDKs (.NET / Java /
-// Python / JS), which also do not request compressed responses.
 func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error {
 	if qv == nil {
 		qv = url.Values{}
@@ -288,14 +284,10 @@ func (c *Client) checkResp(v reflect.Value) error {
 	return nil
 }
 
-// readBody reads the body out of an *http.Response.
-//
-// The client advertises "Accept-Encoding: identity" (see addStdHeaders), so any non-identity
-// Content-Encoding from the server is unexpected and rejected rather than silently decoded.
+// readBody reads the body out of an *http.Response. Any Content-Encoding negotiated by the
+// underlying http.Transport (typically gzip) is transparently decoded by the standard library
+// before we get here.
 func (c *Client) readBody(resp *http.Response) ([]byte, error) {
-	if enc := resp.Header.Get("Content-Encoding"); enc != "" && !strings.EqualFold(enc, "identity") {
-		return nil, fmt.Errorf("comm.Client: server returned unsupported Content-Encoding %q; the client requests identity encoding only", enc)
-	}
 	return io.ReadAll(resp.Body)
 }
 
@@ -303,10 +295,6 @@ var testID string
 
 // addStdHeaders adds the standard headers we use on all calls.
 func addStdHeaders(headers http.Header) http.Header {
-	// Opt out of compression. This disables Go's net/http transparent gzip handling (which only
-	// kicks in when the caller has not set Accept-Encoding itself). The auth endpoints don't
-	// require compression and sibling MSAL SDKs (.NET / Java / Python / JS) also skip it.
-	headers.Set("Accept-Encoding", "identity")
 	// So that I can have a static id for tests.
 	if testID != "" {
 		headers.Set("client-request-id", testID)
