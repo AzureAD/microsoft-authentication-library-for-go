@@ -55,6 +55,9 @@ func (rec *recorder) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// This gets added by the test server.
 	delete(r.Header, "User-Agent")
 	delete(r.Header, "Content-Length")
+	// Auto-injected by Go's net/http transport when the caller sets no
+	// Accept-Encoding itself; not part of MSAL's expected headers.
+	delete(r.Header, "Accept-Encoding")
 
 	rec.gotHeaders = r.Header
 
