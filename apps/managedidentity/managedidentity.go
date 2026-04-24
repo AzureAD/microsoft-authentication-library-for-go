@@ -170,7 +170,34 @@ func SystemAssigned() ID {
 
 // cache never uses the client because instance discovery is always disabled.
 var cacheManager *storage.Manager = storage.New(nil)
-var cacheAccessorMu *sync.RWMutex = &sync.RWMutex{}
+
+// refreshLocks deduplicates concurrent token refreshes by cache key. Each
+// (identity, resource) pair gets its own sync.Mutex, so refreshes for different
+// keys run in parallel while concurrent callers for the same key serialize and
+// share a single in-flight IMDS call (the waiters re-check the cache after
+// acquiring the lock and return the freshly written token).
+//
+// storage.Manager has its own internal locking, so cache Read/Write do not need
+// an additional outer mutex.
+var refreshLocks = struct {
+	mu sync.Mutex
+	m  map[string]*sync.Mutex
+}{m: map[string]*sync.Mutex{}}
+
+// refreshLockFor returns the per-key mutex for the given cache key, creating it
+// on first use. The number of unique (identity, resource) keys per process is
+// bounded by application configuration, so the map does not grow unboundedly in
+// practice.
+func refreshLockFor(key string) *sync.Mutex {
+	refreshLocks.mu.Lock()
+	defer refreshLocks.mu.Unlock()
+	m, ok := refreshLocks.m[key]
+	if !ok {
+		m = &sync.Mutex{}
+		refreshLocks.m[key] = m
+	}
+	return m
+}
 
 type Client struct {
 	httpClient         ops.HTTPClient
@@ -308,6 +335,30 @@ func GetSource() (Source, error) {
 // was created to test the function against refreshin
 var now = time.Now
 
+// cacheLookup classifies the cache state for the current authParams.
+//   - hit  == true : a fresh, formatted token is returned in result; caller may return immediately.
+//   - hit  == false && stale == true : result holds a still-valid (formatted) token whose
+//     RefreshOn has passed; caller should attempt a proactive refresh and fall back to result on failure.
+//   - hit  == false && stale == false : cache miss; result is unset, caller must refresh.
+//   - err  != nil : a real cache read error; caller should propagate.
+func (c Client) cacheLookup(ctx context.Context) (result AuthResult, hit, stale bool, err error) {
+	stResp, err := cacheManager.Read(ctx, c.authParams)
+	if err != nil {
+		return AuthResult{}, false, false, err
+	}
+	ar, err := base.AuthResultFromStorage(stResp)
+	if err != nil {
+		// no usable cached token; treat as miss, not as error
+		return AuthResult{}, false, false, nil
+	}
+	stale = !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now())
+	ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	if err != nil {
+		return AuthResult{}, false, false, err
+	}
+	return ar, !stale, stale, nil
+}
+
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
@@ -319,27 +370,43 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		option(&o)
 	}
 	c.authParams.Scopes = []string{resource}
+	useCache := o.claims == ""
 
-	cacheAccessorMu.Lock()
-	defer cacheAccessorMu.Unlock()
-	// ignore cached access tokens when given claims
-	if o.claims == "" {
-		stResp, err := cacheManager.Read(ctx, c.authParams)
+	// 1) Fast path: serve from cache without any locking when the token is fresh.
+	var staleFallback *AuthResult
+	if useCache {
+		ar, hit, stale, err := c.cacheLookup(ctx)
 		if err != nil {
 			return AuthResult{}, err
 		}
-		ar, err := base.AuthResultFromStorage(stResp)
-		if err == nil {
-			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) {
-				if tr, er := c.getToken(ctx, resource); er == nil {
-					return tr, nil
-				}
-			}
-			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			return ar, err
+		if hit {
+			return ar, nil
+		}
+		if stale {
+			ar := ar
+			staleFallback = &ar
 		}
 	}
-	return c.getToken(ctx, resource)
+
+	// 2) Refresh path, deduplicated per (identity, resource) so concurrent callers
+	// share a single in-flight IMDS request. Refreshes for different keys run in parallel.
+	lock := refreshLockFor(c.authParams.CacheKey(false) + "|" + resource)
+	lock.Lock()
+	defer lock.Unlock()
+
+	// 3) Re-check the cache: another goroutine may have refreshed while we waited.
+	if useCache {
+		if ar, hit, _, _ := c.cacheLookup(ctx); hit {
+			return ar, nil
+		}
+	}
+
+	// 4) Issue the refresh. On failure, return the stale-but-valid token if we have one.
+	tr, err := c.getToken(ctx, resource)
+	if err != nil && staleFallback != nil {
+		return *staleFallback, nil
+	}
+	return tr, err
 }
 
 func (c Client) getToken(ctx context.Context, resource string) (AuthResult, error) {

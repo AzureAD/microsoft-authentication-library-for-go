@@ -1267,3 +1267,197 @@ func TestAcquireTokenConcurrency(t *testing.T) {
 	default:
 	}
 }
+
+// TestCacheHitsNotBlockedByInFlightRefresh verifies that while one goroutine is
+// performing a proactive refresh against a slow IMDS endpoint, other goroutines
+// hitting a fresh (non-stale) cache entry are NOT serialized behind the refresh.
+// This is the behavioral promise that motivated splitting cacheAccessorMu (cache I/O
+// only) from refreshMu (refresh dedupe): the previous coarse single-mutex design
+// held the lock across the HTTP call, blocking all callers including cache hits.
+func TestCacheHitsNotBlockedByInFlightRefresh(t *testing.T) {
+	staleResource := "https://stale.resource/.default"
+	freshResource := "https://fresh.resource/.default"
+	setEnvVars(t, DefaultToIMDS)
+
+	originalNow := now
+	defer func() { now = originalNow }()
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	mockClient := mock.NewClient()
+	makeBody := func(tok string, expIn, refIn int64) []byte {
+		return []byte(fmt.Sprintf(`{"access_token":%q,"expires_in":%d,"refresh_in":%d,"token_type":"Bearer"}`, tok, expIn, refIn))
+	}
+	// Response 1: prime stale resource (small refresh_in so it goes stale quickly).
+	mockClient.AppendResponse(mock.WithBody(makeBody("stale-tok", 86400, 100)))
+	// Response 2: prime fresh resource (huge refresh_in so it never goes stale during the test).
+	mockClient.AppendResponse(mock.WithBody(makeBody("fresh-tok", 86400, 86000)))
+	// Response 3: slow refresh for stale resource.
+	refreshStarted := make(chan struct{})
+	releaseRefresh := make(chan struct{})
+	mockClient.AppendResponse(
+		mock.WithBody(makeBody("stale-tok-refreshed", 86400, 100)),
+		mock.WithCallback(func(*http.Request) {
+			close(refreshStarted)
+			<-releaseRefresh
+		}),
+	)
+
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AcquireToken(context.Background(), staleResource); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AcquireToken(context.Background(), freshResource); err != nil {
+		t.Fatal(err)
+	}
+
+	// Advance time past staleResource's RefreshOn (~100s) but well below freshResource's (~86000s).
+	fixedTime := time.Now().Add(time.Duration(200) * time.Second)
+	now = func() time.Time { return fixedTime }
+
+	// Goroutine 1: triggers proactive refresh on staleResource; the mock callback blocks
+	// until releaseRefresh is closed.
+	refreshDone := make(chan struct{})
+	go func() {
+		defer close(refreshDone)
+		_, _ = client.AcquireToken(context.Background(), staleResource)
+	}()
+
+	// Wait for the refresh to actually be in flight.
+	select {
+	case <-refreshStarted:
+	case <-time.After(5 * time.Second):
+		close(releaseRefresh)
+		t.Fatal("refresh did not start in time")
+	}
+
+	// While refresh is blocked in the HTTP call, fire many cache-hit goroutines on freshResource.
+	// They MUST complete promptly without blocking on the in-flight refresh.
+	const hits = 200
+	hitDone := make(chan error, hits)
+	start := time.Now()
+	var wg sync.WaitGroup
+	for i := 0; i < hits; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			ar, err := client.AcquireToken(context.Background(), freshResource)
+			if err != nil {
+				hitDone <- err
+				return
+			}
+			if ar.AccessToken != "fresh-tok" {
+				hitDone <- fmt.Errorf("unexpected token %q", ar.AccessToken)
+				return
+			}
+			hitDone <- nil
+		}()
+	}
+
+	allHitsCompleted := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(allHitsCompleted)
+	}()
+
+	select {
+	case <-allHitsCompleted:
+		elapsed := time.Since(start)
+		if elapsed > 2*time.Second {
+			close(releaseRefresh)
+			t.Fatalf("cache hits were serialized behind the in-flight refresh (took %v); "+
+				"refreshMu must not block cacheAccessorMu cache reads", elapsed)
+		}
+	case <-time.After(2 * time.Second):
+		close(releaseRefresh)
+		t.Fatal("cache-hit goroutines did not complete within 2s while a refresh was in flight; " +
+			"the refresh path is blocking cache reads")
+	}
+
+	for i := 0; i < hits; i++ {
+		if err := <-hitDone; err != nil {
+			close(releaseRefresh)
+			t.Fatalf("cache-hit goroutine failed: %v", err)
+		}
+	}
+
+	// Now release the refresh and ensure the original goroutine completes.
+	close(releaseRefresh)
+	select {
+	case <-refreshDone:
+	case <-time.After(5 * time.Second):
+		t.Fatal("refresh goroutine did not complete after release")
+	}
+}
+
+// TestNoDeadlockUnderMixedConcurrentLoad stress-tests AcquireToken with many goroutines
+// performing a mix of cache hits, proactive refreshes, and cold-cache misses across
+// multiple resources. Run with -race to catch data races; a deadlock would manifest as
+// the test exceeding its timeout.
+func TestNoDeadlockUnderMixedConcurrentLoad(t *testing.T) {
+	setEnvVars(t, DefaultToIMDS)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	mockClient := mock.NewClient()
+	makeBody := func(tok string) []byte {
+		return []byte(fmt.Sprintf(`{"access_token":%q,"expires_in":86400,"refresh_in":43200,"token_type":"Bearer"}`, tok))
+	}
+	// Generously seed enough responses so the mock never panics under contention.
+	for i := 0; i < 500; i++ {
+		mockClient.AppendResponse(mock.WithBody(makeBody(fmt.Sprintf("tok-%d", i))))
+	}
+
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	resources := []string{
+		"https://r1.example/.default",
+		"https://r2.example/.default",
+		"https://r3.example/.default",
+	}
+	// Prime caches.
+	for _, r := range resources {
+		if _, err := client.AcquireToken(context.Background(), r); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	const goroutines = 500
+	done := make(chan error, goroutines)
+	var wg sync.WaitGroup
+	wg.Add(goroutines)
+	for i := 0; i < goroutines; i++ {
+		go func(i int) {
+			defer wg.Done()
+			r := resources[i%len(resources)]
+			_, err := client.AcquireToken(context.Background(), r)
+			done <- err
+		}(i)
+	}
+
+	complete := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(complete)
+	}()
+
+	select {
+	case <-complete:
+	case <-time.After(15 * time.Second):
+		t.Fatal("possible deadlock: AcquireToken goroutines did not complete within 15s")
+	}
+
+	for i := 0; i < goroutines; i++ {
+		if err := <-done; err != nil {
+			t.Fatalf("goroutine returned error: %v", err)
+		}
+	}
+}
