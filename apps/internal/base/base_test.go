@@ -321,6 +321,98 @@ func TestCacheIOErrors(t *testing.T) {
 	})
 }
 
+// partitionKeyCache records the partition keys passed to Replace and Export
+type partitionKeyCache struct {
+	replaceKeys []string
+	exportKeys  []string
+}
+
+func (c *partitionKeyCache) Export(_ context.Context, _ cache.Marshaler, hints cache.ExportHints) error {
+	c.exportKeys = append(c.exportKeys, hints.PartitionKey)
+	return nil
+}
+
+func (c *partitionKeyCache) Replace(_ context.Context, _ cache.Unmarshaler, hints cache.ReplaceHints) error {
+	c.replaceKeys = append(c.replaceKeys, hints.PartitionKey)
+	return nil
+}
+
+// TestAccountCachePartitionKey verifies that Account() calls cache.Replace with the
+// correct partition key. This guards against the regression fixed in
+// https://github.com/AzureAD/microsoft-authentication-library-for-go/pull/615,
+// where b.AuthParams.CacheKey(false) was used instead of the locally-modified
+// authParams.CacheKey(false), causing the partition key to always be empty
+// regardless of the homeAccountID passed in.
+func TestAccountCachePartitionKey(t *testing.T) {
+	ctx := context.Background()
+
+	tests := []struct {
+		desc             string
+		homeAccountID    string
+		withCacheAccessor bool
+		wantReplaceCount int
+		wantPartitionKey string
+	}{
+		{
+			desc:             "typical homeAccountID produces correct partition key",
+			homeAccountID:    "uid.utid",
+			withCacheAccessor: true,
+			wantReplaceCount: 1,
+			wantPartitionKey: "uid.utid",
+		},
+		{
+			desc:             "different homeAccountID produces its own partition key",
+			homeAccountID:    "other-uid.other-utid",
+			withCacheAccessor: true,
+			wantReplaceCount: 1,
+			wantPartitionKey: "other-uid.other-utid",
+		},
+		{
+			desc:             "empty homeAccountID produces empty partition key",
+			homeAccountID:    "",
+			withCacheAccessor: true,
+			wantReplaceCount: 1,
+			wantPartitionKey: "",
+		},
+		{
+			desc:             "no cache accessor means Replace is never called",
+			homeAccountID:    "uid.utid",
+			withCacheAccessor: false,
+			wantReplaceCount: 0,
+			wantPartitionKey: "",
+		},
+	}
+
+	for _, test := range tests {
+		pkCache := &partitionKeyCache{}
+
+		var opts []Option
+
+		if test.withCacheAccessor {
+			opts = append(opts, WithCacheAccessor(pkCache))
+		}
+
+		client := fakeClient(t, opts...)
+
+
+		if _, err := client.Account(ctx, test.homeAccountID); err != nil {
+			t.Errorf("TestAccountCachePartitionKey(%s): unexpected error: %s", test.desc, err.Error())
+			continue
+		}
+
+		if got := len(pkCache.replaceKeys); got != test.wantReplaceCount {
+			t.Errorf("TestAccountCachePartitionKey(%s): expected cache.Replace to be called %d time(s), got %d", test.desc, test.wantReplaceCount, got)
+			continue
+		}
+
+		if test.wantReplaceCount > 0 {
+			if got := pkCache.replaceKeys[0]; got != test.wantPartitionKey {
+				t.Errorf("TestAccountCachePartitionKey(%s): expected partition key %q, got %q (empty string may indicate the regression from PR#615)", test.desc, test.wantPartitionKey, got)
+			}
+		}
+	}
+}
+
 func TestCreateAuthenticationResult(t *testing.T) {
 	future := time.Now().Add(400 * time.Second)
 
