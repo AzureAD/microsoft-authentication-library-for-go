@@ -58,7 +58,13 @@ func Marshal(i interface{}) ([]byte, error) {
 // Unmarshal unmarshals a []byte representing JSON into i, which must be a *struct. In addition, if the struct has
 // a field called AdditionalFields of type map[string]interface{}, JSON data representing fields not in the struct
 // will be written as key/value pairs to AdditionalFields.
-func Unmarshal(b []byte, i interface{}) error {
+func Unmarshal(b []byte, i interface{}) (err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("json: panic during Unmarshal: %v", r)
+		}
+	}()
+
 	if len(b) == 0 {
 		return nil
 	}
