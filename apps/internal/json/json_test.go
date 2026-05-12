@@ -6,6 +6,7 @@ package json
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -200,5 +201,113 @@ func TestDelimIs(t *testing.T) {
 		if got != test.want {
 			t.Errorf("TestDelimIs(%s): got %v, want %v", test.desc, got, test.want)
 		}
+	}
+}
+
+// panicUnmarshaler is a type whose UnmarshalJSON always panics. It is used to
+// simulate a panic escaping the reflect-based decoder so we can verify that
+// Unmarshal recovers and returns an error instead of crashing the caller.
+type panicUnmarshaler struct{}
+
+func (p *panicUnmarshaler) UnmarshalJSON(_ []byte) error {
+	panic("reflect: New of type that may not be allocated in heap (possibly undefined cgo C type)")
+}
+
+type withPanicField struct {
+	Inner            map[string]panicUnmarshaler
+	AdditionalFields map[string]interface{}
+}
+
+// TestUnmarshalPanicRecovery verifies that a panic originating deep in the
+// reflect-based decoder (see issue #579) is converted into an error by
+// Unmarshal rather than propagating to the caller. The panic unwinds through
+// the same frames as the #579 stack trace
+// (unmarshalStruct -> decoder.storeValue -> unmarshalMap -> mapWalk.run ->
+// mapWalk.storeStruct -> unmarshalStruct), so this proves the recover()
+// boundary catches panics on the reported code path.
+func TestUnmarshalPanicRecovery(t *testing.T) {
+	target := &withPanicField{}
+	err := Unmarshal([]byte(`{"Inner":{"k":{}}}`), target)
+	if err == nil {
+		t.Fatal("TestUnmarshalPanicRecovery: expected an error from recovered panic, got nil")
+	}
+	if !strings.Contains(err.Error(), "panic during Unmarshal") {
+		t.Errorf("TestUnmarshalPanicRecovery: expected error to mention recovered panic, got %q", err.Error())
+	}
+}
+
+// runtimePanicUnmarshaler triggers a real runtime.Error (nil pointer
+// dereference) from inside its UnmarshalJSON. The original #579 panic
+// ("reflect: New of type that may not be allocated in heap") is also a
+// runtime.Error emitted by reflect.New, but a notinheap type cannot be
+// constructed from user code. Triggering a nil-deref runtime.Error here is
+// the closest faithful reproduction available and proves that Unmarshal's
+// recover() catches runtime-level panics (not just panics with string args).
+type runtimePanicUnmarshaler struct{}
+
+func (r *runtimePanicUnmarshaler) UnmarshalJSON(_ []byte) error {
+	var p *int
+	_ = *p // nil pointer dereference -> runtime.Error panic
+	return nil
+}
+
+type runtimePanicMapHolder struct {
+	Inner            map[string]runtimePanicUnmarshaler
+	AdditionalFields map[string]interface{}
+}
+
+type runtimePanicSliceHolder struct {
+	Inner            []runtimePanicUnmarshaler
+	AdditionalFields map[string]interface{}
+}
+
+type runtimePanicStructHolder struct {
+	Inner            runtimePanicUnmarshaler
+	AdditionalFields map[string]interface{}
+}
+
+// TestUnmarshalRuntimePanicRecovery is a regression test that locks in
+// recover() coverage for every reflect-bearing code path inside the json
+// package. If a future change moves the recover, restructures the unwind, or
+// otherwise lets a runtime panic escape Unmarshal on any of these paths, this
+// test will fail.
+//
+// Paths covered:
+//   - map[string]<struct>  -> mapslice.mapWalk.storeStruct (exact #579 frames)
+//   - []<struct>           -> mapslice.sliceWalk.storeStruct
+//   - <struct> field       -> struct.go decoder.storeValue (struct branch)
+func TestUnmarshalRuntimePanicRecovery(t *testing.T) {
+	tests := []struct {
+		name   string
+		input  string
+		target interface{}
+	}{
+		{
+			name:   "map of struct (issue #579 stack)",
+			input:  `{"Inner":{"k":{}}}`,
+			target: &runtimePanicMapHolder{},
+		},
+		{
+			name:   "slice of struct",
+			input:  `{"Inner":[{}]}`,
+			target: &runtimePanicSliceHolder{},
+		},
+		{
+			name:   "nested struct field",
+			input:  `{"Inner":{}}`,
+			target: &runtimePanicStructHolder{},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			err := Unmarshal([]byte(test.input), test.target)
+			if err == nil {
+				t.Fatalf("expected an error from recovered runtime panic on path %q, got nil", test.name)
+			}
+			if !strings.Contains(err.Error(), "panic during Unmarshal") {
+				t.Errorf("expected error to mention recovered panic on path %q, got %q", test.name, err.Error())
+			}
+		})
 	}
 }
