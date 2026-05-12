@@ -644,11 +644,14 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			aliases:     nil,
 			expectError: false,
 		}, {
-			desc:        "regional authority subdomain with matching trusted issuer",
+			// Regional-shaped subdomain of an UNKNOWN base host: rejected.
+			// The same-cloud check is gated on the dictionary lookup, not on a
+			// generic "ends with the issuer host" suffix heuristic.
+			desc:        "regional-shaped authority of unknown base host",
 			issuer:      "https://login.dummy-uri.com/tenant-id",
 			authority:   "https://region.login.dummy-uri.com/tenant-id",
 			aliases:     nil,
-			expectError: false,
+			expectError: true,
 		},
 	}
 

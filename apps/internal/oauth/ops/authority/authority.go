@@ -50,30 +50,13 @@ type jsonCaller interface {
 }
 
 // For backward compatibility, accept both old and new China endpoints for a transition period.
-// This list is derived from the AAD instance discovery metadata and represents all known trusted hosts
-// across different Azure clouds (Public, China, Germany, US Government, etc.)
-var aadTrustedHostList = map[string]bool{
-	"login.windows.net":                true, // Microsoft Azure Worldwide - Used in validation scenarios where host is not this list
-	"login.partner.microsoftonline.cn": true, // Microsoft Azure China (new)
-	"login.chinacloudapi.cn":           true, // Microsoft Azure China (legacy, backward compatibility)
-	"login.microsoftonline.de":         true, // Microsoft Azure Blackforest
-	"login-us.microsoftonline.com":     true, // Microsoft Azure US Government - Legacy
-	"login.microsoftonline.us":         true, // Microsoft Azure US Government
-	"login.microsoftonline.com":        true, // Microsoft Azure Worldwide
-	"login.microsoft.com":              true,
-	"sts.windows.net":                  true,
-	"login.usgovcloudapi.net":          true,
-	"login.sovcloud-identity.fr":       true, // Bleu (France sovereign cloud)
-	"login.sovcloud-identity.de":       true, // Delos (Germany sovereign cloud)
-	"login.sovcloud-identity.sg":       true, // GovSG (Singapore sovereign cloud)
-}
+// TrustedHost is a thin wrapper over GetKnownMetadata so the trusted-host set
+// cannot drift from the canonical knownClouds list in known_metadata.go.
 
 // TrustedHost checks if an AAD host is trusted/valid.
 func TrustedHost(host string) bool {
-	if _, ok := aadTrustedHostList[host]; ok {
-		return true
-	}
-	return false
+	_, ok := GetKnownMetadata(host)
+	return ok
 }
 
 // OAuthResponseBase is the base JSON return message for an OAuth call.
@@ -111,8 +94,15 @@ func (r *TenantDiscoveryResponse) Validate() error {
 	return nil
 }
 
-// ValidateIssuerMatchesAuthority validates that the issuer in the TenantDiscoveryResponse matches the authority.
-// This is used to identity security or configuration issues in authorities and the OIDC endpoint
+// ValidateIssuerMatchesAuthority validates that the issuer in the TenantDiscoveryResponse
+// matches the authority. Acceptance rules:
+//
+//	Rule 1: exact scheme + host match.
+//	Rule 2: known-Microsoft https issuer
+//	        2a) custom-domain authority + known-MS issuer (#5927 federation).
+//	        2b) known-MS authority + same-cloud issuer (cross-cloud rejected).
+//	Rule 3: instance-discovery alias match.
+//	Rule 4: CIAM tenant pattern — https://{tenant}.ciamlogin.com[/{tenant}[/v2.0]].
 func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI string, aliases map[string]bool) error {
 	if authorityURI == "" {
 		return errors.New("TenantDiscoveryResponse: empty authorityURI provided for validation")
@@ -130,30 +120,112 @@ func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI st
 		return fmt.Errorf("TenantDiscoveryResponse: failed to parse authority URL: %w", err)
 	}
 
-	// Fast path: exact scheme + host match
-	if issuerURL.Scheme == authorityURL.Scheme && issuerURL.Host == authorityURL.Host {
+	issuerHost := strings.ToLower(issuerURL.Host)
+	authorityHost := strings.ToLower(authorityURL.Host)
+
+	// Rule 1: exact scheme + host match.
+	if strings.EqualFold(issuerURL.Scheme, authorityURL.Scheme) && issuerHost == authorityHost {
 		return nil
 	}
 
-	// Alias-based acceptance
-	if aliases != nil && aliases[issuerURL.Host] {
-		return nil
+	// Rule 2: known-Microsoft issuer over HTTPS.
+	if strings.EqualFold(issuerURL.Scheme, "https") {
+		if issuerCloud := ResolveKnownCloud(issuerHost); issuerCloud != "" {
+			authorityCloud := ResolveKnownCloud(authorityHost)
+			// Rule 2a: authority is a custom domain (not a known Microsoft host) —
+			// accept any known-MS issuer (legitimate federation, see
+			// AzureAD/microsoft-authentication-library-for-dotnet#5927).
+			if authorityCloud == "" {
+				return nil
+			}
+			// Rule 2b: both sides resolve to a known cloud — must be the SAME cloud.
+			if authorityCloud == issuerCloud {
+				return nil
+			}
+			// Cross-cloud: fall through to other rules, then reject.
+		}
 	}
 
-	issuerHost := issuerURL.Host
-	authorityHost := authorityURL.Host
-
-	// Accept if issuer host is trusted
-	if TrustedHost(issuerHost) {
-		return nil
+	// Rule 3: instance-discovery alias acceptance (case-insensitive).
+	if len(aliases) > 0 {
+		if aliases[issuerHost] {
+			return nil
+		}
+		for alias := range aliases {
+			if strings.EqualFold(alias, issuerHost) {
+				return nil
+			}
+		}
 	}
 
-	// Accept if authority is a regional variant ending with ".<issuerHost>"
-	if strings.HasSuffix(authorityHost, "."+issuerHost) {
+	// Rule 4: CIAM tenant pattern.
+	if matchesCIAMIssuer(authorityURL, issuerURL) {
 		return nil
 	}
 
 	return fmt.Errorf("TenantDiscoveryResponse: issuer '%s' does not match authority '%s' or any trusted/alias rule", r.Issuer, authorityURI)
+}
+
+// matchesCIAMIssuer reports whether issuer matches the CIAM tenant pattern
+// derived from authority. Accepted issuer shapes:
+//
+//	https://{tenant}.ciamlogin.com
+//	https://{tenant}.ciamlogin.com/{tenant}
+//	https://{tenant}.ciamlogin.com/{tenant}/v2.0
+//
+// {tenant} is the authority's first path segment, or the first hostname label
+// if the authority has no path.
+func matchesCIAMIssuer(authorityURL, issuerURL *url.URL) bool {
+	if !strings.EqualFold(issuerURL.Scheme, "https") {
+		return false
+	}
+	issuerHost := strings.ToLower(issuerURL.Host)
+	if !strings.HasSuffix(issuerHost, ".ciamlogin.com") {
+		return false
+	}
+	tenantFromIssuerHost := strings.TrimSuffix(issuerHost, ".ciamlogin.com")
+	if tenantFromIssuerHost == "" || strings.Contains(tenantFromIssuerHost, ".") {
+		return false
+	}
+
+	// Derive the tenant from the authority: prefer the first non-empty path
+	// segment, fall back to the first hostname label.
+	tenantFromAuthority := ""
+	for _, seg := range strings.Split(authorityURL.EscapedPath(), "/") {
+		if seg != "" {
+			tenantFromAuthority = seg
+			break
+		}
+	}
+	if tenantFromAuthority == "" {
+		host := strings.ToLower(authorityURL.Host)
+		if i := strings.Index(host, "."); i > 0 {
+			tenantFromAuthority = host[:i]
+		} else {
+			tenantFromAuthority = host
+		}
+	}
+	if !strings.EqualFold(tenantFromAuthority, tenantFromIssuerHost) {
+		return false
+	}
+
+	// Validate the issuer path is one of: empty, "/", "/{tenant}", "/{tenant}/",
+	// "/{tenant}/v2.0", "/{tenant}/v2.0/".
+	path := strings.Trim(issuerURL.EscapedPath(), "/")
+	if path == "" {
+		return true
+	}
+	parts := strings.Split(path, "/")
+	if !strings.EqualFold(parts[0], tenantFromIssuerHost) {
+		return false
+	}
+	if len(parts) == 1 {
+		return true
+	}
+	if len(parts) == 2 && strings.EqualFold(parts[1], "v2.0") {
+		return true
+	}
+	return false
 }
 
 type InstanceDiscoveryMetadata struct {

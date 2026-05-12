@@ -11,6 +11,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
 	"strings"
 	"sync"
 
@@ -21,12 +22,10 @@ import (
 type cacheEntry struct {
 	Endpoints             authority.Endpoints
 	ValidForDomainsInList map[string]bool
-	// Aliases stores host aliases from instance discovery for quick lookup
-	Aliases map[string]bool
 }
 
 func createcacheEntry(endpoints authority.Endpoints) cacheEntry {
-	return cacheEntry{endpoints, map[string]bool{}, map[string]bool{}}
+	return cacheEntry{endpoints, map[string]bool{}}
 }
 
 // AuthorityEndpoint retrieves endpoints from an authority for auth and token acquisition.
@@ -50,7 +49,7 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 		return endpoints, nil
 	}
 
-	endpoint, err := m.openIDConfigurationEndpoint(ctx, authorityInfo)
+	endpoint, err := m.openIDConfigurationEndpoint(ctx, &authorityInfo)
 	if err != nil {
 		return authority.Endpoints{}, err
 	}
@@ -71,14 +70,67 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 		strings.Replace(resp.Issuer, "{tenant}", tenant, -1),
 		authorityInfo.Host)
 
-	m.addCachedEndpoints(authorityInfo, userPrincipalName, endpoints)
+	// Build aliases from instance-discovery metadata. Computed locally so
+	// validation runs BEFORE addCachedEndpoints (a tampered doc must not poison
+	// the cache).
+	aliases := map[string]bool{}
+	for _, metadata := range authorityInfo.InstanceDiscoveryMetadata {
+		for _, alias := range metadata.Aliases {
+			aliases[alias] = true
+		}
+	}
 
-	if err := resp.ValidateIssuerMatchesAuthority(authorityInfo.CanonicalAuthorityURI,
-		m.cache[authorityInfo.CanonicalAuthorityURI].Aliases); err != nil {
+	if err := resp.ValidateIssuerMatchesAuthority(authorityInfo.CanonicalAuthorityURI, aliases); err != nil {
 		return authority.Endpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
 	}
 
+	// Cross-cloud endpoint check: refuse a discovery doc whose token_endpoint
+	// or authorization_endpoint resolves to a different sovereign cloud than
+	// the configured authority.
+	if err := ensureKnownAuthorityEndpointSameCloud(authorityInfo, endpoints.TokenEndpoint, "token_endpoint"); err != nil {
+		return authority.Endpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
+	}
+	if err := ensureKnownAuthorityEndpointSameCloud(authorityInfo, endpoints.AuthorizationEndpoint, "authorization_endpoint"); err != nil {
+		return authority.Endpoints{}, fmt.Errorf("ResolveEndpoints(): %w", err)
+	}
+
+	m.addCachedEndpoints(authorityInfo, userPrincipalName, endpoints)
+
 	return endpoints, nil
+}
+
+// ensureKnownAuthorityEndpointSameCloud rejects an OIDC endpoint that does not
+// resolve to the same Microsoft sovereign cloud as authorityInfo. Custom-domain
+// authorities are skipped (see AzureAD/microsoft-authentication-library-for-dotnet#5927).
+// Once the rule is in scope, malformed or non-absolute URLs fail closed.
+func ensureKnownAuthorityEndpointSameCloud(authorityInfo authority.Info, endpoint, endpointName string) error {
+	if endpoint == "" {
+		return nil
+	}
+	authorityCloud := authority.ResolveKnownCloud(authorityInfo.Host)
+	if authorityCloud == "" {
+		// Custom-domain authority — not constrained.
+		return nil
+	}
+	rejectf := func(reason string) error {
+		return fmt.Errorf(
+			"OIDC discovery for authority %q returned a %s %q that %s. "+
+				"MSAL refused to use that endpoint. Verify the OIDC discovery endpoint is not being intercepted and that the configured authority points at the correct sovereign cloud.",
+			authorityInfo.CanonicalAuthorityURI, endpointName, endpoint, reason,
+		)
+	}
+	endpointURL, err := url.Parse(endpoint)
+	if err != nil || !endpointURL.IsAbs() {
+		return rejectf("is not a parseable absolute URL")
+	}
+	if !strings.EqualFold(endpointURL.Scheme, "https") {
+		return rejectf("is not an https URL")
+	}
+	endpointCloud := authority.ResolveKnownCloud(endpointURL.Hostname())
+	if endpointCloud == "" || endpointCloud != authorityCloud {
+		return rejectf("is not in the same Microsoft sovereign cloud as the authority")
+	}
+	return nil
 }
 
 // cachedEndpoints returns the cached endpoints if they exist. If not, we return false.
@@ -120,31 +172,28 @@ func (m *authorityEndpoint) addCachedEndpoints(authorityInfo authority.Info, use
 		}
 	}
 
-	// Extract aliases from instance discovery metadata and add to cache
-	for _, metadata := range authorityInfo.InstanceDiscoveryMetadata {
-		for _, alias := range metadata.Aliases {
-			updatedCacheEntry.Aliases[alias] = true
-		}
-	}
-
 	m.cache[authorityInfo.CanonicalAuthorityURI] = updatedCacheEntry
 }
 
-func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo authority.Info) (string, error) {
+// openIDConfigurationEndpoint resolves the OIDC discovery endpoint URL.
+// authorityInfo is taken by pointer so AAD instance-discovery metadata
+// (resp.Metadata) propagates back to the caller; a value receiver would
+// silently leave the caller's alias set empty.
+func (m *authorityEndpoint) openIDConfigurationEndpoint(ctx context.Context, authorityInfo *authority.Info) (string, error) {
 	if authorityInfo.AuthorityType == authority.ADFS {
 		return fmt.Sprintf("https://%s/adfs/.well-known/openid-configuration", authorityInfo.Host), nil
 	} else if authorityInfo.AuthorityType == authority.DSTS {
 		return fmt.Sprintf("https://%s/dstsv2/%s/v2.0/.well-known/openid-configuration", authorityInfo.Host, authority.DSTSTenant), nil
 
 	} else if authorityInfo.ValidateAuthority && !authority.TrustedHost(authorityInfo.Host) {
-		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
+		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, *authorityInfo)
 		if err != nil {
 			return "", err
 		}
 		authorityInfo.InstanceDiscoveryMetadata = resp.Metadata
 		return resp.TenantDiscoveryEndpoint, nil
 	} else if authorityInfo.Region != "" {
-		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, authorityInfo)
+		resp, err := m.rest.Authority().AADInstanceDiscovery(ctx, *authorityInfo)
 		if err != nil {
 			return "", err
 		}

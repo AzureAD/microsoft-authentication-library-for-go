@@ -96,24 +96,41 @@ func TestPublicCloudAliasesShareEntry(t *testing.T) {
 	}
 }
 
-// TestTrustedHostsHaveKnownMetadata verifies that every host in the
-// aadTrustedHostList has a corresponding entry in GetKnownMetadata. This
-// catches maintenance mistakes where a new cloud is added to one list but
-// not the other, which would cause fallback to produce a degraded self-entry
-// instead of the correct alias set.
-func TestTrustedHostsHaveKnownMetadata(t *testing.T) {
-	for host := range aadTrustedHostList {
-		t.Run(host, func(t *testing.T) {
-			md, ok := GetKnownMetadata(host)
+// TestKnownCloudsAreInternallyConsistent verifies that every alias declared
+// in the canonical knownClouds list is reachable through GetKnownMetadata
+// and through TrustedHost, that PreferredNetwork is non-empty, and that
+// PreferredCache is unique per cloud (ResolveKnownCloud uses it as the
+// cloud-identity sentinel, so collisions would silently merge clouds).
+func TestKnownCloudsAreInternallyConsistent(t *testing.T) {
+	preferredCacheSeen := make(map[string]string)
+	for _, cloud := range knownClouds {
+		if cloud.PreferredNetwork == "" {
+			t.Errorf("cloud %+v has empty PreferredNetwork", cloud)
+		}
+		if cloud.PreferredCache == "" {
+			t.Errorf("cloud %+v has empty PreferredCache", cloud)
+		}
+		if prev, dup := preferredCacheSeen[cloud.PreferredCache]; dup {
+			t.Errorf("PreferredCache %q used by two clouds: %q and %q (must be unique per cloud)",
+				cloud.PreferredCache, prev, cloud.PreferredNetwork)
+		}
+		preferredCacheSeen[cloud.PreferredCache] = cloud.PreferredNetwork
+		if len(cloud.Aliases) == 0 {
+			t.Errorf("cloud %q has no aliases", cloud.PreferredNetwork)
+		}
+		for _, alias := range cloud.Aliases {
+			md, ok := GetKnownMetadata(alias)
 			if !ok {
-				t.Fatalf("trusted host %q has no entry in GetKnownMetadata", host)
+				t.Errorf("alias %q not reachable through GetKnownMetadata", alias)
+				continue
 			}
-			if md.PreferredNetwork == "" {
-				t.Errorf("trusted host %q has empty PreferredNetwork", host)
+			if md.PreferredNetwork != cloud.PreferredNetwork {
+				t.Errorf("alias %q resolves to PreferredNetwork %q, want %q",
+					alias, md.PreferredNetwork, cloud.PreferredNetwork)
 			}
-			if len(md.Aliases) == 0 {
-				t.Errorf("trusted host %q has no aliases", host)
+			if !TrustedHost(alias) {
+				t.Errorf("alias %q is not a TrustedHost", alias)
 			}
-		})
+		}
 	}
 }
