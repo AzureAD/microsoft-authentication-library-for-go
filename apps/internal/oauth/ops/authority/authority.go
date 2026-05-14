@@ -6,6 +6,7 @@ package authority
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -283,6 +284,12 @@ type AuthParams struct {
 	ExtraBodyParameters map[string]string
 	// CacheKeyComponents are additional components to include in the cache key.
 	CacheKeyComponents map[string]string
+	// UseMtlsTransport indicates the token request should use a mutual TLS HTTP client.
+	// Set for both mTLS PoP (RFC 8705) and bearer-over-mTLS (SendCertificateOverMtls) flows.
+	UseMtlsTransport bool
+	// MtlsBindingCert is the X.509 certificate to present in the mTLS handshake.
+	// Set when UseMtlsTransport is true. The corresponding private key is in the Credential.
+	MtlsBindingCert *x509.Certificate
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -680,6 +687,14 @@ func (a *AuthParams) AppKey() string {
 	baseKey := a.ClientID + "_"
 	if a.AuthorityInfo.Tenant != "" {
 		baseKey += a.AuthorityInfo.Tenant
+	}
+
+	// Include the authentication scheme's key ID (e.g., mTLS cert thumbprint) so that tokens
+	// of different types (Bearer vs mtls_pop) are cached under distinct keys.
+	if a.AuthnScheme != nil {
+		if keyID := a.AuthnScheme.KeyID(); keyID != "" {
+			baseKey += "_" + keyID
+		}
 	}
 
 	// Include extra body parameters in the cache key

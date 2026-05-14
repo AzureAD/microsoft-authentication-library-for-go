@@ -34,6 +34,8 @@ import (
 	"github.com/google/uuid"
 )
 
+var errMtlsPopWindowsOnly = errors.New("mTLS PoP Managed Identity requires Windows with VBS KeyGuard support")
+
 // AuthResult contains the results of one token acquisition operation.
 // For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult = base.AuthResult
@@ -183,7 +185,8 @@ type Client struct {
 }
 
 type AcquireTokenOptions struct {
-	claims string
+	claims             string
+	isMtlsPopRequested bool
 }
 
 type ClientOption func(*Client)
@@ -195,6 +198,15 @@ type AcquireTokenOption func(o *AcquireTokenOptions)
 func WithClaims(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
 		o.claims = claims
+	}
+}
+
+// WithMtlsProofOfPossession requests an mTLS Proof of Possession token (RFC 8705) from IMDSv2.
+// Only supported on DefaultToIMDS source on Windows with VBS KeyGuard available.
+// On success, AuthResult.BindingCertificate is set to the certificate bound to the token.
+func WithMtlsProofOfPossession() AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.isMtlsPopRequested = true
 	}
 }
 
@@ -316,7 +328,7 @@ var now = time.Now
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
-// Options: [WithClaims]
+// Options: [WithClaims], [WithMtlsProofOfPossession]
 func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (AuthResult, error) {
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
@@ -325,25 +337,42 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	}
 	c.authParams.Scopes = []string{resource}
 
+	if o.isMtlsPopRequested {
+		if c.source != DefaultToIMDS {
+			return AuthResult{}, errors.New("mTLS PoP Managed Identity is only supported with IMDS (DefaultToIMDS source)")
+		}
+		return c.acquireTokenForImdsV2(ctx, resource)
+	}
+
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
-		stResp, err := cacheManager.Read(ctx, c.authParams)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		ar, err := base.AuthResultFromStorage(stResp)
-		if err == nil {
-			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
-				defer c.canRefresh.Store(false)
-				if tr, er := c.getToken(ctx, resource); er == nil {
-					return tr, nil
-				}
-			}
-			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+		if ar, ok, err := c.tryAcquireFromCache(ctx, resource); ok {
 			return ar, err
 		}
 	}
 	return c.getToken(ctx, resource)
+}
+
+// tryAcquireFromCache attempts to serve the token from the in-memory cache.
+// Returns (result, true, nil) on a clean cache hit, (result, true, err) if formatting fails,
+// or (zero, false, nil) if the cache miss or a background refresh was triggered.
+func (c Client) tryAcquireFromCache(ctx context.Context, resource string) (AuthResult, bool, error) {
+	stResp, err := cacheManager.Read(ctx, c.authParams)
+	if err != nil {
+		return AuthResult{}, false, nil
+	}
+	ar, err := base.AuthResultFromStorage(stResp)
+	if err != nil {
+		return AuthResult{}, false, nil
+	}
+	if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
+		defer c.canRefresh.Store(false)
+		if tr, er := c.getToken(ctx, resource); er == nil {
+			return tr, true, nil
+		}
+	}
+	ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	return ar, true, err
 }
 
 func (c Client) getToken(ctx context.Context, resource string) (AuthResult, error) {
