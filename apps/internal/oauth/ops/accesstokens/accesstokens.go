@@ -344,6 +344,9 @@ func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authPara
 // FromUserFederatedIdentityCredential acquires a user-scoped token using the user_fic grant type.
 // This exchanges a federated identity credential for a user token.
 func (c Client) FromUserFederatedIdentityCredential(ctx context.Context, authParameters authority.AuthParams, cred *Credential) (TokenResponse, error) {
+	if cred.Secret == "" && cred.Cert == nil && cred.AssertionCallback == nil {
+		return TokenResponse{}, fmt.Errorf("user_fic requires a client secret or assertion credential; token provider credentials are not supported")
+	}
 	qv := url.Values{}
 	if err := addClaims(qv, authParameters); err != nil {
 		return TokenResponse{}, err

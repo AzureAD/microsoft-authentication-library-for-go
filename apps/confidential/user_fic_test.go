@@ -562,12 +562,19 @@ func assertBodyContains(t *testing.T, body, key, expectedValue string) {
 	if len(values) == 0 {
 		t.Fatalf("expected %q in request body, but not found. Body: %s", key, body)
 	}
-	for _, v := range values {
-		if strings.Contains(v, expectedValue) {
-			return
+	// For scope (space-delimited multi-value), check membership; for all others, check exact match
+	if key == "scope" {
+		for _, v := range values {
+			if strings.Contains(v, expectedValue) {
+				return
+			}
+		}
+		t.Fatalf("expected scope to contain %q, got %v", expectedValue, values)
+	} else {
+		if values[0] != expectedValue {
+			t.Fatalf("expected %q = %q, got %q", key, expectedValue, values[0])
 		}
 	}
-	t.Fatalf("expected %q to contain %q, got %v", key, expectedValue, values)
 }
 
 func assertBodyNotContains(t *testing.T, body, key string) {
@@ -576,7 +583,7 @@ func assertBodyNotContains(t *testing.T, body, key string) {
 	if err != nil {
 		t.Fatalf("failed to parse request body: %v", err)
 	}
-	if v := parsed.Get(key); v != "" {
-		t.Fatalf("expected %q NOT to be in request body, but found value %q", key, v)
+	if _, present := parsed[key]; present {
+		t.Fatalf("expected %q NOT to be in request body, but found value %q", key, parsed.Get(key))
 	}
 }
