@@ -353,17 +353,15 @@ func (c Client) FromUserFederatedIdentityCredential(ctx context.Context, authPar
 	qv.Set("user_federated_identity_credential", authParameters.UserFederatedIdentityCredential)
 	qv.Set(clientInfo, clientInfoVal)
 
-	// Set user identifier: either user_id (OID) or username (UPN), mutually exclusive
+	// Set user identifier: either user_id (OID) or username (UPN)
 	if authParameters.UserObjectID != "" {
 		qv.Set("user_id", authParameters.UserObjectID)
 	} else if authParameters.Username != "" {
 		qv.Set("username", authParameters.Username)
 	}
 
-	// Scope augmentation: add openid, offline_access, profile (same as auth code flow)
 	addScopeQueryParam(qv, authParameters)
 
-	// Add client credential (assertion or secret)
 	credParams, err := prepURLVals(ctx, cred, authParameters)
 	if err != nil {
 		return TokenResponse{}, err

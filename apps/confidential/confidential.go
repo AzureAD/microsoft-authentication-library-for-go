@@ -923,10 +923,11 @@ type acquireTokenByUserFICOptions struct {
 	userObjectID     string
 }
 
+// acquireByUserFICOption is a marker method that restricts option types to the user_fic API.
 func (acquireTokenByUserFICOptions) acquireByUserFICOption() {}
 
 // WithUserObjectID specifies the target user by their object ID (OID) for the user_fic flow.
-// This is mutually exclusive with WithUsername.
+// This is mutually exclusive with WithUserFICUsername.
 func WithUserObjectID(oid string) interface {
 	AcquireByUserFICOption
 	options.CallOption
@@ -975,12 +976,13 @@ func WithUserFICUsername(username string) interface {
 
 // AcquireTokenByUserFederatedIdentityCredential acquires a user-scoped token using the user_fic grant type.
 // This exchanges a federated identity credential (assertion) for a user token, enabling an agent
-// to act on behalf of a user.
+// to act on behalf of a user. The result includes an Account that can be used with
+// [Client.AcquireTokenSilent] for subsequent cached access.
 //
 // Parameters:
 //   - ctx: Context for the request.
 //   - scopes: Scopes requested for the token.
-//   - assertion: The federated identity credential token (e.g., T2 from agent identity Leg 2).
+//   - assertion: The federated identity credential (instance token) to exchange.
 //   - opts: Options including user identification (exactly one of WithUserObjectID or WithUserFICUsername
 //     is required), [WithClaims], [WithTenantID].
 //
@@ -991,7 +993,6 @@ func (cca Client) AcquireTokenByUserFederatedIdentityCredential(ctx context.Cont
 		return AuthResult{}, err
 	}
 
-	// Validate inputs
 	if assertion == "" {
 		return AuthResult{}, errors.New("assertion must not be empty")
 	}

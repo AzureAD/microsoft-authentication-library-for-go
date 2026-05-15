@@ -284,7 +284,7 @@ type AuthParams struct {
 	ExtraBodyParameters map[string]string
 	// CacheKeyComponents are additional components to include in the cache key.
 	CacheKeyComponents map[string]string
-	// UserFederatedIdentityCredential is the federated credential token (T2) for user_fic flow.
+	// UserFederatedIdentityCredential is the federated credential token for user_fic flow.
 	UserFederatedIdentityCredential string
 	// UserObjectID is the target user's object ID for user_fic flow (mutually exclusive with Username).
 	UserObjectID string

@@ -13,7 +13,7 @@ type AssertionRequestOptions struct {
 	TokenEndpoint string
 
 	// FMIPath is the federated managed identity path for the current request, if any.
-	// This allows assertion providers to include the FMI path in signed assertions when needed.
+	// Assertion providers can use this to scope the credential they return.
 	FMIPath string
 }
 
