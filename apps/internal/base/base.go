@@ -83,6 +83,17 @@ type AcquireTokenOnBehalfOfParameters struct {
 	UserAssertion string
 }
 
+// AcquireTokenByUserFICParameters contains the parameters to acquire a user token via the user_fic flow.
+type AcquireTokenByUserFICParameters struct {
+	Scopes                          []string
+	Claims                          string
+	Credential                      *accesstokens.Credential
+	TenantID                        string
+	UserFederatedIdentityCredential string
+	Username                        string
+	UserObjectID                    string
+}
+
 // AuthResult contains the results of one token acquisition operation in PublicClientApplication
 // or ConfidentialClientApplication. For details see https://aka.ms/msal-net-authenticationresult
 type AuthResult struct {
@@ -469,6 +480,26 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 		ar, err = b.AuthResultFromToken(ctx, authParams, token)
 	}
 	return ar, err
+}
+
+// AcquireTokenByUserFIC acquires a user-scoped token using the user_fic grant type.
+func (b Client) AcquireTokenByUserFIC(ctx context.Context, params AcquireTokenByUserFICParameters) (AuthResult, error) {
+	authParams, err := b.AuthParams.WithTenant(params.TenantID)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	authParams.AuthorizationType = authority.ATUserFIC
+	authParams.Claims = params.Claims
+	authParams.Scopes = params.Scopes
+	authParams.UserFederatedIdentityCredential = params.UserFederatedIdentityCredential
+	authParams.Username = params.Username
+	authParams.UserObjectID = params.UserObjectID
+
+	token, err := b.Token.UserFederatedIdentityCredential(ctx, authParams, params.Credential)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	return b.AuthResultFromToken(ctx, authParams, token)
 }
 
 func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse) (AuthResult, error) {

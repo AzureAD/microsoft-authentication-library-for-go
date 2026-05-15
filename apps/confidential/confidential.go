@@ -465,6 +465,7 @@ func WithClaims(claims string) interface {
 	AcquireByUsernamePasswordOption
 	AcquireSilentOption
 	AuthCodeURLOption
+	AcquireByUserFICOption
 	options.CallOption
 } {
 	return struct {
@@ -474,6 +475,7 @@ func WithClaims(claims string) interface {
 		AcquireByUsernamePasswordOption
 		AcquireSilentOption
 		AuthCodeURLOption
+		AcquireByUserFICOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -490,6 +492,8 @@ func WithClaims(claims string) interface {
 				case *acquireTokenSilentOptions:
 					t.claims = claims
 				case *authCodeURLOptions:
+					t.claims = claims
+				case *acquireTokenByUserFICOptions:
 					t.claims = claims
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
@@ -536,6 +540,7 @@ func WithTenantID(tenantID string) interface {
 	AcquireByUsernamePasswordOption
 	AcquireSilentOption
 	AuthCodeURLOption
+	AcquireByUserFICOption
 	options.CallOption
 } {
 	return struct {
@@ -545,6 +550,7 @@ func WithTenantID(tenantID string) interface {
 		AcquireByUsernamePasswordOption
 		AcquireSilentOption
 		AuthCodeURLOption
+		AcquireByUserFICOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -561,6 +567,8 @@ func WithTenantID(tenantID string) interface {
 				case *acquireTokenSilentOptions:
 					t.tenantID = tenantID
 				case *authCodeURLOptions:
+					t.tenantID = tenantID
+				case *acquireTokenByUserFICOptions:
 					t.tenantID = tenantID
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
@@ -901,4 +909,107 @@ func WithAttribute(attrValue string) interface {
 			},
 		),
 	}
+}
+
+// AcquireByUserFICOption is implemented by options for AcquireTokenByUserFederatedIdentityCredential.
+type AcquireByUserFICOption interface {
+	acquireByUserFICOption()
+}
+
+// acquireTokenByUserFICOptions contains optional configuration for AcquireTokenByUserFederatedIdentityCredential.
+type acquireTokenByUserFICOptions struct {
+	claims, tenantID string
+	username         string
+	userObjectID     string
+}
+
+func (acquireTokenByUserFICOptions) acquireByUserFICOption() {}
+
+// WithUserObjectID specifies the target user by their object ID (OID) for the user_fic flow.
+// This is mutually exclusive with WithUsername.
+func WithUserObjectID(oid string) interface {
+	AcquireByUserFICOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByUserFICOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByUserFICOptions:
+					t.userObjectID = oid
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// WithUserFICUsername specifies the target user by their UPN (username) for the user_fic flow.
+// This is mutually exclusive with WithUserObjectID.
+func WithUserFICUsername(username string) interface {
+	AcquireByUserFICOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByUserFICOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByUserFICOptions:
+					t.username = username
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// AcquireTokenByUserFederatedIdentityCredential acquires a user-scoped token using the user_fic grant type.
+// This exchanges a federated identity credential (assertion) for a user token, enabling an agent
+// to act on behalf of a user.
+//
+// Parameters:
+//   - ctx: Context for the request.
+//   - scopes: Scopes requested for the token.
+//   - assertion: The federated identity credential token (e.g., T2 from agent identity Leg 2).
+//   - opts: Options including user identification (exactly one of WithUserObjectID or WithUserFICUsername
+//     is required), [WithClaims], [WithTenantID].
+//
+// Options: [WithUserObjectID], [WithUserFICUsername], [WithClaims], [WithTenantID]
+func (cca Client) AcquireTokenByUserFederatedIdentityCredential(ctx context.Context, scopes []string, assertion string, opts ...AcquireByUserFICOption) (AuthResult, error) {
+	o := acquireTokenByUserFICOptions{}
+	if err := options.ApplyOptions(&o, opts); err != nil {
+		return AuthResult{}, err
+	}
+
+	// Validate inputs
+	if assertion == "" {
+		return AuthResult{}, errors.New("assertion must not be empty")
+	}
+	if o.username == "" && o.userObjectID == "" {
+		return AuthResult{}, errors.New("exactly one of WithUserObjectID or WithUserFICUsername must be specified")
+	}
+	if o.username != "" && o.userObjectID != "" {
+		return AuthResult{}, errors.New("WithUserObjectID and WithUserFICUsername are mutually exclusive")
+	}
+
+	params := base.AcquireTokenByUserFICParameters{
+		Scopes:                          scopes,
+		Claims:                          o.claims,
+		Credential:                      cca.cred,
+		TenantID:                        o.tenantID,
+		UserFederatedIdentityCredential: assertion,
+		Username:                        o.username,
+		UserObjectID:                    o.userObjectID,
+	}
+	return cca.base.AcquireTokenByUserFIC(ctx, params)
 }

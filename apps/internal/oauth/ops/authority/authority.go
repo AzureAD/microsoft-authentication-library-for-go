@@ -188,6 +188,7 @@ const (
 	ATRefreshToken
 	AccountByID
 	ATOnBehalfOf
+	ATUserFIC
 )
 
 // These are all authority types
@@ -283,6 +284,10 @@ type AuthParams struct {
 	ExtraBodyParameters map[string]string
 	// CacheKeyComponents are additional components to include in the cache key.
 	CacheKeyComponents map[string]string
+	// UserFederatedIdentityCredential is the federated credential token (T2) for user_fic flow.
+	UserFederatedIdentityCredential string
+	// UserObjectID is the target user's object ID for user_fic flow (mutually exclusive with Username).
+	UserObjectID string
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -663,7 +668,7 @@ func (a *AuthParams) CacheKey(isAppCache bool) string {
 	if a.AuthorizationType == ATClientCredentials || isAppCache {
 		return a.AppKey()
 	}
-	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
+	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID || a.AuthorizationType == ATUserFIC {
 		return a.HomeAccountID
 	}
 	return ""
