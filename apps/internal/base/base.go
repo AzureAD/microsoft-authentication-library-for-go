@@ -525,7 +525,7 @@ func (b Client) Account(ctx context.Context, homeAccountID string) (shared.Accou
 		authParams := b.AuthParams // This is a copy, as we don't have a pointer receiver and .AuthParams is not a pointer.
 		authParams.AuthorizationType = authority.AccountByID
 		authParams.HomeAccountID = homeAccountID
-		key := b.AuthParams.CacheKey(false)
+		key := authParams.CacheKey(false)
 		err := b.cacheAccessor.Replace(ctx, b.manager, cache.ReplaceHints{PartitionKey: key})
 		if err != nil {
 			return shared.Account{}, err
