@@ -364,6 +364,7 @@ func (c Client) FromUserFederatedIdentityCredential(ctx context.Context, authPar
 	}
 
 	addScopeQueryParam(qv, authParameters)
+	addExtraBodyParameters(ctx, qv, authParameters)
 
 	credParams, err := prepURLVals(ctx, cred, authParameters)
 	if err != nil {
