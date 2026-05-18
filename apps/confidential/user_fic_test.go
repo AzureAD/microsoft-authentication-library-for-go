@@ -538,6 +538,45 @@ func TestUserFIC_BothUserIdentifiers_ReturnsError(t *testing.T) {
 	}
 }
 
+func TestUserFIC_AssertionCredential_SendsClientAssertionParams(t *testing.T) {
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	auth := fmt.Sprintf(authorityFmt, lmo, tenant)
+
+	cred := NewCredFromAssertionCallback(
+		func(ctx context.Context, opts AssertionRequestOptions) (string, error) {
+			return "fake-client-assertion-jwt", nil
+		},
+	)
+
+	var requestBody string
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody("user-token", mock.GetIDToken(tenant, auth), "rt", fakeClientInfo("uid", tenant), 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			body, _ := readAndRestoreBody(r)
+			requestBody = string(body)
+		}),
+	)
+
+	client, err := New(auth, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, err = client.AcquireTokenByUserFederatedIdentityCredential(
+		context.Background(), tokenScope, "t2-assertion", WithUserObjectID("uid"),
+	)
+	if err != nil {
+		t.Fatalf("AcquireTokenByUserFederatedIdentityCredential failed: %v", err)
+	}
+
+	assertBodyContains(t, requestBody, "client_assertion", "fake-client-assertion-jwt")
+	assertBodyContains(t, requestBody, "client_assertion_type", "urn:ietf:params:oauth:client-assertion-type:jwt-bearer")
+	assertBodyContains(t, requestBody, "grant_type", "user_fic")
+}
+
 // --- Helper functions ---
 
 func readAndRestoreBody(r *http.Request) ([]byte, error) {
@@ -562,14 +601,16 @@ func assertBodyContains(t *testing.T, body, key, expectedValue string) {
 	if len(values) == 0 {
 		t.Fatalf("expected %q in request body, but not found. Body: %s", key, body)
 	}
-	// For scope (space-delimited multi-value), check membership; for all others, check exact match
+	// For scope (space-delimited multi-value), check exact token membership; for all others, check exact match
 	if key == "scope" {
 		for _, v := range values {
-			if strings.Contains(v, expectedValue) {
-				return
+			for _, scope := range strings.Fields(v) {
+				if scope == expectedValue {
+					return
+				}
 			}
 		}
-		t.Fatalf("expected scope to contain %q, got %v", expectedValue, values)
+		t.Fatalf("expected scope to contain token %q, got %v", expectedValue, values)
 	} else {
 		if values[0] != expectedValue {
 			t.Fatalf("expected %q = %q, got %q", key, expectedValue, values[0])
