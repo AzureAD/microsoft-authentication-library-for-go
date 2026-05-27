@@ -20,6 +20,8 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+
+	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 )
 
 const (
@@ -61,6 +63,9 @@ var aadTrustedHostList = map[string]bool{
 	"login.microsoft.com":              true,
 	"sts.windows.net":                  true,
 	"login.usgovcloudapi.net":          true,
+	"login.sovcloud-identity.fr":       true, // Bleu (France sovereign cloud)
+	"login.sovcloud-identity.de":       true, // Delos (Germany sovereign cloud)
+	"login.sovcloud-identity.sg":       true, // GovSG (Singapore sovereign cloud)
 }
 
 // TrustedHost checks if an AAD host is trusted/valid.
@@ -183,6 +188,7 @@ const (
 	ATRefreshToken
 	AccountByID
 	ATOnBehalfOf
+	ATUserFIC
 )
 
 // These are all authority types
@@ -278,6 +284,10 @@ type AuthParams struct {
 	ExtraBodyParameters map[string]string
 	// CacheKeyComponents are additional components to include in the cache key.
 	CacheKeyComponents map[string]string
+	// UserFederatedIdentityCredential is the federated credential token for user_fic flow.
+	UserFederatedIdentityCredential string
+	// UserObjectID is the target user's object ID for user_fic flow (mutually exclusive with Username).
+	UserObjectID string
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -607,6 +617,14 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 
 		endpoint := fmt.Sprintf(aadInstanceDiscoveryEndpoint, discoveryHost)
 		err = c.Comm.JSONCall(ctx, endpoint, http.Header{}, qv, nil, &resp)
+		if err != nil {
+			var callErr msalerrors.CallErr
+			if errors.As(err, &callErr) && callErr.Resp != nil && callErr.Resp.StatusCode == http.StatusBadRequest {
+				if strings.Contains(callErr.Err.Error(), "invalid_instance") {
+					return resp, fmt.Errorf("invalid_instance: the authority host is not valid: %w", err)
+				}
+			}
+		}
 	}
 	return resp, err
 }
@@ -650,7 +668,7 @@ func (a *AuthParams) CacheKey(isAppCache bool) string {
 	if a.AuthorizationType == ATClientCredentials || isAppCache {
 		return a.AppKey()
 	}
-	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID {
+	if a.AuthorizationType == ATRefreshToken || a.AuthorizationType == AccountByID || a.AuthorizationType == ATUserFIC {
 		return a.HomeAccountID
 	}
 	return ""

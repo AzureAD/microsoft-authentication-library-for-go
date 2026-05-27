@@ -946,6 +946,7 @@ func TestWithDomainHint(t *testing.T) {
 
 func TestWithPrompt(t *testing.T) {
 	prompt := shared.PromptCreate
+	defaultPrompt := shared.PromptSelectAccount
 	client, err := New("client-id")
 	if err != nil {
 		t.Fatal(err)
@@ -956,16 +957,30 @@ func TestWithPrompt(t *testing.T) {
 	for _, expectPrompt := range []bool{true, false} {
 		t.Run(fmt.Sprint(expectPrompt), func(t *testing.T) {
 			called := false
-			validate := func(v url.Values) error {
+			expectedInteractive := defaultPrompt.String()
+			if expectPrompt {
+				expectedInteractive = prompt.String()
+			}
+			validateInteractive := func(v url.Values) error {
+				if !v.Has("prompt") {
+					return errors.New("expected a prompt")
+				}
+
+				if actual := v["prompt"]; len(actual) != 1 || actual[0] != expectedInteractive {
+					err = fmt.Errorf(`unexpected prompt "%v"`, actual[0])
+				}
+				return err
+			}
+			validateAuthCodeURL := func(v url.Values) error {
 				if !v.Has("prompt") {
 					if !expectPrompt {
 						return nil
 					}
 					return errors.New("expected a prompt")
-				} else if !expectPrompt {
+				}
+				if !expectPrompt {
 					return fmt.Errorf("expected no prompt, got %v", v["prompt"][0])
 				}
-
 				if actual := v["prompt"]; len(actual) != 1 || actual[0] != prompt.String() {
 					err = fmt.Errorf(`unexpected prompt "%v"`, actual[0])
 				}
@@ -981,7 +996,7 @@ func TestWithPrompt(t *testing.T) {
 				if err != nil {
 					return err
 				}
-				if err = validate(query); err != nil {
+				if err = validateInteractive(query); err != nil {
 					t.Fatal(err)
 					return err
 				}
@@ -1006,7 +1021,7 @@ func TestWithPrompt(t *testing.T) {
 				var parsed *url.URL
 				parsed, err = url.Parse(u)
 				if err == nil {
-					err = validate(parsed.Query())
+					err = validateAuthCodeURL(parsed.Query())
 				}
 			}
 			if err != nil {

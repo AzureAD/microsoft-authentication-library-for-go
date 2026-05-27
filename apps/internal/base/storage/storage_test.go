@@ -952,9 +952,17 @@ func TestRead(t *testing.T) {
 		want        TokenResponse
 	}{
 		{
-			desc:        "Error: AAD Discovery Fails",
+			// Transient discovery failure falls back gracefully with a self-entry.
+			// Tokens cached under "env" are still found because the fallback aliases include "env".
+			desc:        "Fallback: AAD Discovery Fails with transient error",
 			discRespErr: true,
-			err:         true,
+			err:         false,
+			want: TokenResponse{
+				AccessToken:  accessTokenCacheItem,
+				RefreshToken: testRefreshToken,
+				IDToken:      testIDToken,
+				Account:      testAccount,
+			},
 		},
 		{
 			desc: "Success",

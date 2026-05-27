@@ -124,6 +124,12 @@ func (f *AccessTokens) FromSamlGrant(ctx context.Context, authParameters authori
 	}
 	return f.AccessToken, nil
 }
+func (f *AccessTokens) FromUserFederatedIdentityCredential(ctx context.Context, authParameters authority.AuthParams, cred *accesstokens.Credential) (accesstokens.TokenResponse, error) {
+	if f.Err {
+		return accesstokens.TokenResponse{}, fmt.Errorf("error")
+	}
+	return f.AccessToken, nil
+}
 
 // Authority is a fake implementation of the oauth.fetchAuthority interface.
 type Authority struct {
