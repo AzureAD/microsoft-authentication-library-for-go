@@ -428,6 +428,8 @@ func TestAuthParamsWithTenant(t *testing.T) {
 		"can't override tenant for ADFS ever":   {authority: host + "adfs", tenant: uuid1, expectError: true},
 		"can't override tenant for dSTS ever":   {authority: host + "dstsv2/" + DSTSTenant, tenant: uuid1, expectError: true},
 		"can't override AAD tenant consumers":   {authority: host + "consumers", tenant: uuid1, expectError: true},
+
+		"path traversal does not change host": {authority: host + uuid1, tenant: "../../other.com/tenant", expectedAuthority: host + "other.com/tenant"},
 	}
 
 	for name, test := range tests {

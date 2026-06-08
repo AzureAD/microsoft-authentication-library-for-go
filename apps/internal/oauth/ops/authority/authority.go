@@ -325,7 +325,11 @@ func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 		if p.AuthorityInfo.Tenant == "consumers" {
 			return p, errors.New(`client is configured to authenticate only personal Microsoft accounts, via the "consumers" endpoint`)
 		}
-		authority = "https://" + path.Join(p.AuthorityInfo.Host, ID)
+		authority = (&url.URL{
+			Scheme: "https",
+			Host:   p.AuthorityInfo.Host,
+			Path:   "/",
+		}).ResolveReference(&url.URL{Path: ID}).String()
 	case ADFS:
 		return p, errors.New("ADFS authority doesn't support tenants")
 	case DSTS:
