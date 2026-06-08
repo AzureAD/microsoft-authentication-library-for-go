@@ -6,7 +6,8 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 type StructWithUnmarshal struct {
@@ -191,7 +192,8 @@ func TestUnmarshalMap(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.want, test.got); diff != "" {
+		got := reflect.ValueOf(test.got)
+		if diff := cmp.Diff(test.want, got.Elem().Interface(), cmpopts.EquateEmpty()); diff != "" {
 			t.Errorf("TestUnmarshalMap(%s): -want/+got\n%s", test.desc, diff)
 		}
 	}
@@ -372,7 +374,8 @@ func TestUnmarshalSlice(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.want, test.got); diff != "" {
+		got := reflect.ValueOf(test.got)
+		if diff := cmp.Diff(test.want, got.Elem().Interface(), cmpopts.EquateEmpty()); diff != "" {
 			t.Errorf("TestUnmarshalSlice(%s): -want/+got\n%s", test.desc, diff)
 		}
 	}

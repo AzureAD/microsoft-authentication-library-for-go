@@ -19,7 +19,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 const (
@@ -464,7 +465,7 @@ func TestCreateAuthenticationResult(t *testing.T) {
 			continue
 		}
 
-		if diff := pretty.Compare(test.want, got); diff != "" {
+		if diff := cmp.Diff(test.want, got); diff != "" {
 			t.Errorf("TestCreateAuthenticationResult(%s): -want/+got:\n%s", test.desc, diff)
 		}
 	}
@@ -530,7 +531,7 @@ func TestAuthResultFromStorage(t *testing.T) {
 			continue
 		}
 
-		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, got); diff != "" {
+		if diff := cmp.Diff(test.want, got, cmpopts.IgnoreUnexported(time.Time{})); diff != "" {
 			t.Errorf("TestAuthResultFromStorage: -want/+got:\n%s", diff)
 		}
 	}

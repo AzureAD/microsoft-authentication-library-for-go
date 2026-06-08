@@ -13,7 +13,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 func newPartitionedManagerForTest(authorityClient aadInstanceDiscoveryer) *PartitionedManager {
@@ -182,7 +182,7 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 	if err != nil {
 		t.Errorf("TestReadPartitionedAccessToken: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAccessToken, retAccessToken); diff != "" {
+	if diff := cmp.Diff(testAccessToken, retAccessToken); diff != "" {
 		t.Fatalf("Returned access token is not the same as expected access token: -want/+got:\n%s", diff)
 	}
 	_, err = storageManager.readAccessToken(
@@ -224,7 +224,7 @@ func TestWritePartitionedAccessToken(t *testing.T) {
 		t.Fatalf("TestWritePartitionedAccessToken: got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(testAccessToken, storageManager.contract.AccessTokensPartition["at_partition"][key]); diff != "" {
+	if diff := cmp.Diff(testAccessToken, storageManager.contract.AccessTokensPartition["at_partition"][key]); diff != "" {
 		t.Errorf("TestWritePartitionedAccessToken: -want/+got:\n%s", diff)
 	}
 }
@@ -244,7 +244,7 @@ func TestReadPartitionedAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestReadPartitionedAccount: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAcc, returnedAccount); diff != "" {
+	if diff := cmp.Diff(testAcc, returnedAccount); diff != "" {
 		t.Errorf("TestReadPartitionedAccount: -want/+got:\n%s", diff)
 	}
 
@@ -264,7 +264,7 @@ func TestWritePartitionedAccount(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestWritePartitionedAccount: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAcc, storageManager.contract.AccountsPartition["acc_partition"][key]); diff != "" {
+	if diff := cmp.Diff(testAcc, storageManager.contract.AccountsPartition["acc_partition"][key]); diff != "" {
 		t.Errorf("TestWritePartitionedAccount: -want/+got:\n%s", diff)
 	}
 }
@@ -284,7 +284,7 @@ func TestReadAppMetaDataPartitionedManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestreadAppMetaDataPartitionedManager(readAppMetaData): got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAppMeta, returnedAppMeta); diff != "" {
+	if diff := cmp.Diff(testAppMeta, returnedAppMeta); diff != "" {
 		t.Fatalf("TestreadAppMetaDataPartitionedManager(readAppMetaData): -want/+got:\n%s", diff)
 	}
 
@@ -303,7 +303,7 @@ func TestWriteAppMetaDataPartitionedManager(t *testing.T) {
 	if err != nil {
 		t.Fatalf("TestwriteAppMetaDataPartitionedManager: got err == %s, want err == nil", err)
 	}
-	if diff := pretty.Compare(testAppMeta, storageManager.contract.AppMetaData[key]); diff != "" {
+	if diff := cmp.Diff(testAppMeta, storageManager.contract.AppMetaData[key]); diff != "" {
 		t.Errorf("TestwriteAppMetaDataPartitionedManager: -want/+got:\n%s", diff)
 	}
 }
@@ -338,7 +338,7 @@ func TestReadPartitionedIDToken(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(testIDToken, returnedIDToken); diff != "" {
+	if diff := cmp.Diff(testIDToken, returnedIDToken); diff != "" {
 		t.Fatalf("TestReadPartitionedIDToken(good token): -want/+got:\n%s", diff)
 	}
 
@@ -372,7 +372,7 @@ func TestWritePartitionedIDToken(t *testing.T) {
 		t.Fatalf("TestWritePartitionedIDToken: got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(testIDToken, storageManager.contract.IDTokensPartition["idt_partition"][key]); diff != "" {
+	if diff := cmp.Diff(testIDToken, storageManager.contract.IDTokensPartition["idt_partition"][key]); diff != "" {
 		t.Errorf("TestWritePartitionedIDToken: -want/+got:\n%s", diff)
 	}
 }
@@ -594,7 +594,7 @@ func TestReadPartionedRefreshToken(t *testing.T) {
 		case err != nil:
 			continue
 		}
-		if diff := pretty.Compare(test.want, got); diff != "" {
+		if diff := cmp.Diff(test.want, got); diff != "" {
 			t.Errorf("TestDefaultStorageManagerreadRefreshToken(%s): -want/+got:\n%s", test.name, diff)
 		}
 	}
