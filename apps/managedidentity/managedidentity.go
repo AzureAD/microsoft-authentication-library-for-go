@@ -462,15 +462,15 @@ func authResultFromToken(authParams authority.AuthParams, token accesstokens.Tok
 	if cacheManager == nil {
 		return AuthResult{}, errors.New("cache instance is nil")
 	}
-	account, err := cacheManager.Write(authParams, token)
-	if err != nil {
-		return AuthResult{}, err
-	}
 	// if refreshOn is not set, set it to half of the time until expiry if expiry is more than 2 hours away
 	if token.RefreshOn.T.IsZero() {
 		if lifetime := time.Until(token.ExpiresOn); lifetime > 2*time.Hour {
 			token.RefreshOn.T = time.Now().Add(lifetime / 2)
 		}
+	}
+	account, err := cacheManager.Write(authParams, token)
+	if err != nil {
+		return AuthResult{}, err
 	}
 	ar, err := base.NewAuthResult(token, account)
 	if err != nil {
