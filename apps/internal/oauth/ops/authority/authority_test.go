@@ -841,3 +841,37 @@ func (f *fakeCallErrCaller) JSONCall(ctx context.Context, endpoint string, heade
 		Err: fmt.Errorf("http call(%s)(GET) error: reply status code was %d:\n%s", endpoint, f.statusCode, f.body),
 	}
 }
+
+func TestParseRegionFromIMDSResponse(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want string
+	}{
+		{name: "valid location", body: `{"location":"westus2"}`, want: "westus2"},
+		{name: "location among other fields", body: `{"location":"eastus","name":"vm"}`, want: "eastus"},
+		{name: "missing location", body: `{}`, want: ""},
+		{name: "null location", body: `{"location":null}`, want: ""},
+		{name: "malformed json", body: `not json`, want: ""},
+		{name: "empty body", body: ``, want: ""},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			if got := parseRegionFromIMDSResponse([]byte(test.body)); got != test.want {
+				t.Fatalf("parseRegionFromIMDSResponse(%q) = %q, want %q", test.body, got, test.want)
+			}
+		})
+	}
+}
+
+func TestIMDSEndpoint(t *testing.T) {
+	if !strings.Contains(imdsEndpoint, "/metadata/instance/compute?api-version=2021-02-01") {
+		t.Errorf("imdsEndpoint should target the compute JSON endpoint, got %q", imdsEndpoint)
+	}
+	if strings.Contains(imdsEndpoint, "/location") {
+		t.Errorf("imdsEndpoint should not use the /location route parameter, got %q", imdsEndpoint)
+	}
+	if strings.Contains(imdsEndpoint, "format=text") {
+		t.Errorf("imdsEndpoint should not request format=text, got %q", imdsEndpoint)
+	}
+}
