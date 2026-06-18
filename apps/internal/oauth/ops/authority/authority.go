@@ -28,8 +28,8 @@ const (
 	aadInstanceDiscoveryEndpoint      = "https://%v/common/discovery/instance"
 	tenantDiscoveryEndpointWithRegion = "https://%s.%s/%s/v2.0/.well-known/openid-configuration"
 	regionName                        = "REGION_NAME"
-	defaultAPIVersion                 = "2021-10-01"
-	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute/location?format=text&api-version=" + defaultAPIVersion
+	defaultAPIVersion                 = "2021-02-01"
+	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute?api-version=" + defaultAPIVersion
 	autoDetectRegion                  = "TryAutoDetect"
 	AccessTokenTypeBearer             = "Bearer"
 )
@@ -661,7 +661,24 @@ func detectRegion(ctx context.Context) string {
 	if err != nil {
 		return ""
 	}
-	return string(response)
+	return parseRegionFromIMDSResponse(response)
+}
+
+// imdsComputeResponse models the subset of the IMDS compute metadata response
+// (http://169.254.169.254/metadata/instance/compute) used for region detection.
+type imdsComputeResponse struct {
+	Location string `json:"location"`
+}
+
+// parseRegionFromIMDSResponse extracts the Azure region from an IMDS compute
+// metadata JSON response body. It returns an empty string when the body cannot
+// be parsed or the location field is absent.
+func parseRegionFromIMDSResponse(body []byte) string {
+	var parsed imdsComputeResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return ""
+	}
+	return parsed.Location
 }
 
 func (a *AuthParams) CacheKey(isAppCache bool) string {
