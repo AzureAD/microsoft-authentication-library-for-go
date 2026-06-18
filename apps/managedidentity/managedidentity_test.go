@@ -1224,3 +1224,65 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	}
 	close(ch)
 }
+
+func TestAcquireTokenPreservesFallbackRefreshOnInCache(t *testing.T) {
+	firstToken := "first token"
+	expiresIn := 86400
+	resource := "https://resource/.default"
+	miType := SystemAssigned()
+	setEnvVars(t, CloudShell)
+
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	responseBody, err := json.Marshal(SuccessfulResponse{
+		AccessToken: firstToken,
+		ExpiresIn:   int64(expiresIn),
+		ExpiresOn:   time.Now().Add(time.Duration(expiresIn) * time.Second).Unix(),
+		Resource:    resource,
+		TokenType:   "Bearer",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(
+		mock.WithHTTPStatusCode(http.StatusOK),
+		mock.WithBody(responseBody),
+	)
+
+	client, err := New(miType, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("expected IdentityProvider tokensource, got %d", result.Metadata.TokenSource)
+	}
+	if result.AccessToken != firstToken {
+		t.Fatalf("wanted %q, got %q", firstToken, result.AccessToken)
+	}
+	if result.Metadata.RefreshOn.IsZero() {
+		t.Fatal("expected fallback RefreshOn from identity provider response")
+	}
+
+	// The mock has no second response, so this acquisition must come from cache.
+	result, err = client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("wanted cache token source, got %d", result.Metadata.TokenSource)
+	}
+	if result.AccessToken != firstToken {
+		t.Fatalf("wanted cached token %q, got %q", firstToken, result.AccessToken)
+	}
+	if result.Metadata.RefreshOn.IsZero() {
+		t.Fatal("expected cached token to preserve fallback RefreshOn")
+	}
+}
