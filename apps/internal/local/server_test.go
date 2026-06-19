@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 func TestServer(t *testing.T) {
@@ -129,7 +129,7 @@ func TestServer(t *testing.T) {
 		}
 
 		res := serv.Result(ctx)
-		if diff := pretty.Compare(Result{Code: "code"}, res); diff != "" {
+		if diff := cmp.Diff(Result{Code: "code"}, res); diff != "" {
 			t.Errorf("TestServer(%s): -want/+got:\n%s", test.desc, diff)
 		}
 	}
