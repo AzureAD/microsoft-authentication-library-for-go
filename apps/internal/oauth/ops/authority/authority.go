@@ -14,6 +14,8 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
+	"regexp"
 	"sort"
 	"strings"
 	"time"
@@ -42,6 +44,9 @@ const (
 	loginSTSWindows      = "sts.windows.net"
 	loginMicrosoftOnline = defaultHost
 )
+
+// validRegion matches Azure region names: lowercase alphanumeric and hyphens only.
+var validRegion = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
 
 // jsonCaller is an interface that allows us to mock the JSONCall method.
 type jsonCaller interface {
@@ -595,6 +600,9 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 		region = detectRegion(ctx)
 	}
 	if region != "" {
+		if !validRegion.MatchString(region) {
+			return resp, fmt.Errorf("invalid region %q: region must contain only lowercase alphanumeric characters and hyphens", region)
+		}
 		environment := authorityInfo.Host
 		switch environment {
 		case loginMicrosoft, loginWindows, loginSTSWindows, defaultHost:
