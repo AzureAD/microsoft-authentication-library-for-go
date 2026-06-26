@@ -101,6 +101,25 @@ func TestCacheKeyComponentHashInConsistency(t *testing.T) {
 	}
 }
 
+// TestCacheKeyComponentHashNoBoundaryCollision guards against ambiguous component encoding. With a
+// plain key+value concatenation (no separators) these two distinct component sets both render to
+// "axbYbZ" (sorted keys "a","b"):
+//
+//	{"a":"xbY", "b":"Z"}  -> "a"+"xbY"+"b"+"Z"
+//	{"a":"x",   "b":"YbZ"} -> "a"+"x"+"b"+"YbZ"
+//
+// so they would share a cache entry and could return the wrong token. The length-prefixed encoding
+// must keep them distinct. This matters because client_claims is arbitrary caller JSON that can
+// contain another component's key (e.g. "fmi_path") at a colliding boundary.
+func TestCacheKeyComponentHashNoBoundaryCollision(t *testing.T) {
+	ap1 := AuthParams{CacheKeyComponents: map[string]string{"a": "xbY", "b": "Z"}}
+	ap2 := AuthParams{CacheKeyComponents: map[string]string{"a": "x", "b": "YbZ"}}
+
+	if ap1.CacheExtKeyGenerator() == ap2.CacheExtKeyGenerator() {
+		t.Error("distinct cache key components must not produce the same hash")
+	}
+}
+
 func TestAppKeyWithCacheKeyComponent(t *testing.T) {
 	tests := []struct {
 		name                string
@@ -124,7 +143,7 @@ func TestAppKeyWithCacheKeyComponent(t *testing.T) {
 				"key1": "value1",
 				"key2": "value2",
 			},
-			wantedExtraCacheKey: "bns2ytmx5hxkh4fnfixridmezpbbayhnmuh6t4bbghi",
+			wantedExtraCacheKey: "latlwkpewb_a0rcsmjvkecqt0_huumkw4sflzociike",
 		},
 		{
 			name:     "with extra params 2",
@@ -134,7 +153,7 @@ func TestAppKeyWithCacheKeyComponent(t *testing.T) {
 				"key3": "value3",
 				"key4": "value4",
 			},
-			wantedExtraCacheKey: "3-rg6_wyjx5bcy0c3cqq7gajtzgsqy3oxqpwj4y8k4u",
+			wantedExtraCacheKey: "jjoe9jgfmdtnj0rzuetsqy7kzs2m1xfnjjxwsfxsrxq",
 		},
 		{
 			name:     "with extra 5 params",
@@ -147,7 +166,7 @@ func TestAppKeyWithCacheKeyComponent(t *testing.T) {
 				"key6": "value6",
 				"key7": "value7",
 			},
-			wantedExtraCacheKey: "gkpxxkkqjxcqnvnmr2duvxg66xanvkz6qfqpwp2e",
+			wantedExtraCacheKey: "prrdp31y37ufw3lo7hly0oimjjvg_34m9ji30ocu4tw",
 		},
 		{
 			name:     "with extra 5 params different order ",
@@ -160,7 +179,7 @@ func TestAppKeyWithCacheKeyComponent(t *testing.T) {
 				"key5": "value5",
 				"key3": "value3",
 			},
-			wantedExtraCacheKey: "gkpxxkkqjxcqnvnmr2duvxg66xanvkz6qfqpwp2e",
+			wantedExtraCacheKey: "prrdp31y37ufw3lo7hly0oimjjvg_34m9ji30ocu4tw",
 		},
 	}
 

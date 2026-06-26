@@ -2662,8 +2662,6 @@ func TestWithAttributeAndFMIPath(t *testing.T) {
 	}
 }
 
-// placeholder-client-claims-tests
-
 // clientClaimsA and clientClaimsB are sample client-originated claims payloads (NSP style).
 const (
 	clientClaimsA = `{"access_token":{"xms_az_nwperimid":{"values":["a"]}}}`

@@ -377,9 +377,10 @@ func (p AuthParams) MergeCapabilitiesAndClaims() (string, error) {
 }
 
 // mergeClaims merges two JSON claims objects into one. If either side is empty the other is returned
-// verbatim (the common case, which keeps the value byte-for-byte identical to what the caller passed).
-// When both are present they are parsed, deep-merged with the second object's values winning on
-// conflicting keys, and re-serialized. Each side must be a JSON object; anything else is an error.
+// verbatim and unvalidated (the common case; this keeps the value byte-for-byte identical to what the
+// caller passed and mirrors MSAL .NET's MergeClaimsObjects). Only when both sides are present are they
+// parsed as JSON objects (anything that is not a JSON object is an error), deep-merged with the second
+// object's values winning on conflicting keys, and re-serialized.
 func mergeClaims(claims1, claims2 string) (string, error) {
 	if claims1 == "" {
 		return claims2, nil
@@ -799,13 +800,18 @@ func (a *AuthParams) CacheExtKeyGenerator() string {
 	}
 	sort.Strings(keys)
 
-	// Create a string by concatenating key+value pairs
-	keyStr := ""
+	// Concatenate length-prefixed key/value pairs so the boundaries between
+	// components are unambiguous. A plain key+value concatenation with no
+	// separators can collide when a value happens to contain another component's
+	// key or value (client_claims, for example, is arbitrary caller-supplied
+	// JSON), which would map two distinct component sets to the same hash and
+	// return the wrong cached token. Length prefixes make the encoding injective.
+	var sb strings.Builder
 	for _, key := range keys {
-		// Append key followed by its value with no separator
-		keyStr += key + a.CacheKeyComponents[key]
+		val := a.CacheKeyComponents[key]
+		fmt.Fprintf(&sb, "%d:%s%d:%s", len(key), key, len(val), val)
 	}
 
-	hash := sha256.Sum256([]byte(keyStr))
+	hash := sha256.Sum256([]byte(sb.String()))
 	return strings.ToLower(base64.RawURLEncoding.EncodeToString(hash[:]))
 }
