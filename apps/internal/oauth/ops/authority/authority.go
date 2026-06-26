@@ -269,6 +269,11 @@ type AuthParams struct {
 	Capabilities ClientCapabilities
 	// Claims required for an access token to satisfy a conditional access policy
 	Claims string
+	// ClientClaims are client-originated claims set via the request-level WithClaimsFromClient option.
+	// Unlike Claims (server-issued challenge claims, which bypass the cache), ClientClaims participate
+	// in the token cache and are keyed on the raw claims string as passed by the caller. They are merged
+	// with Claims and Capabilities into the request's "claims" parameter.
+	ClientClaims string
 	// KnownAuthorityHosts don't require metadata discovery because they're known to the user
 	KnownAuthorityHosts []string
 	// LoginHint is a username with which to pre-populate account selection during interactive auth
@@ -339,9 +344,15 @@ func (p AuthParams) WithTenant(ID string) (AuthParams, error) {
 	return p, err
 }
 
-// MergeCapabilitiesAndClaims combines client capabilities and challenge claims into a value suitable for an authentication request's "claims" parameter.
+// MergeCapabilitiesAndClaims combines client capabilities, server-issued challenge claims and
+// client-originated claims into a value suitable for an authentication request's "claims" parameter.
 func (p AuthParams) MergeCapabilitiesAndClaims() (string, error) {
-	claims := p.Claims
+	// Combine server-issued claims (from WithClaims) with client-originated claims
+	// (from WithClaimsFromClient). When both set the same key, the client claims win.
+	claims, err := mergeClaims(p.Claims, p.ClientClaims)
+	if err != nil {
+		return "", err
+	}
 	if len(p.Capabilities.asMap) > 0 {
 		if claims == "" {
 			// without claims the result is simply the capabilities
@@ -363,6 +374,63 @@ func (p AuthParams) MergeCapabilitiesAndClaims() (string, error) {
 		claims = string(b)
 	}
 	return claims, nil
+}
+
+// mergeClaims merges two JSON claims objects into one. If either side is empty the other is returned
+// verbatim (the common case, which keeps the value byte-for-byte identical to what the caller passed).
+// When both are present they are parsed, deep-merged with the second object's values winning on
+// conflicting keys, and re-serialized. Each side must be a JSON object; anything else is an error.
+func mergeClaims(claims1, claims2 string) (string, error) {
+	if claims1 == "" {
+		return claims2, nil
+	}
+	if claims2 == "" {
+		return claims1, nil
+	}
+	m1, err := parseClaimsObject(claims1)
+	if err != nil {
+		return "", err
+	}
+	m2, err := parseClaimsObject(claims2)
+	if err != nil {
+		return "", err
+	}
+	b, err := json.Marshal(deepMergeClaims(m1, m2))
+	if err != nil {
+		return "", err
+	}
+	return string(b), nil
+}
+
+// parseClaimsObject unmarshals a non-empty claims string into a JSON object. A value that is valid
+// JSON but not an object (e.g. an array, a scalar, or the literal "null") is rejected, mirroring the
+// behavior of the other MSAL libraries.
+func parseClaimsObject(claims string) (map[string]any, error) {
+	var m map[string]any
+	if err := json.Unmarshal([]byte(claims), &m); err != nil {
+		return nil, fmt.Errorf(`claims must be JSON. Are they base64 encoded? json.Unmarshal returned "%v"`, err)
+	}
+	if m == nil {
+		return nil, errors.New("claims must be a JSON object")
+	}
+	return m, nil
+}
+
+// deepMergeClaims merges src into dst, with src's values winning on conflicting keys. When both
+// values for a key are JSON objects the merge recurses; otherwise src's value overwrites dst's.
+func deepMergeClaims(dst, src map[string]any) map[string]any {
+	for k, sv := range src {
+		if dv, ok := dst[k]; ok {
+			if dm, dok := dv.(map[string]any); dok {
+				if sm, sok := sv.(map[string]any); sok {
+					dst[k] = deepMergeClaims(dm, sm)
+					continue
+				}
+			}
+		}
+		dst[k] = sv
+	}
+	return dst
 }
 
 // merges a into b without overwriting b's values. Returns an error when a and b share a key for which either has a non-object value.
