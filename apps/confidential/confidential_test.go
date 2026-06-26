@@ -2983,3 +2983,135 @@ func TestWithClaimsFromClientOnBehalfOf(t *testing.T) {
 		t.Fatalf("expected fresh obo-token-b, got token %q source %d", ar.AccessToken, ar.Metadata.TokenSource)
 	}
 }
+
+// TestWithClaimsFromClientByUserFederatedIdentityCredential verifies that client-originated claims are
+// forwarded as the "claims" body parameter for the user federated identity credential (FIC) flow,
+// which uses the "user_fic" grant and (unlike OBO) the standard, non-partitioned cache manager.
+func TestWithClaimsFromClientByUserFederatedIdentityCredential(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+	accessToken := "fic-client-claims"
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "rt", fakeClientInfo("user-oid", tenant), 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if !r.Form.Has("claims") {
+				t.Fatal("expected 'claims' parameter in request body")
+			}
+			if got := r.Form.Get("claims"); got != clientClaimsA {
+				t.Fatalf("expected claims body param %q, got %q", clientClaimsA, got)
+			}
+		}),
+	)
+
+	client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireTokenByUserFederatedIdentityCredential(
+		context.Background(), tokenScope, "federated-credential",
+		WithUserObjectID("user-oid-value"), WithClaimsFromClient(clientClaimsA))
+	if err != nil {
+		t.Fatalf("AcquireTokenByUserFederatedIdentityCredential failed: %v", err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected access token %q, got %q", accessToken, ar.AccessToken)
+	}
+}
+
+// TestWithClaimsFromClientByAuthCode verifies that client-originated claims are forwarded as the
+// "claims" body parameter for the authorization code flow.
+func TestWithClaimsFromClientByAuthCode(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+	accessToken := "authcode-client-claims"
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if !r.Form.Has("claims") {
+				t.Fatal("expected 'claims' parameter in request body")
+			}
+			if got := r.Form.Get("claims"); got != clientClaimsA {
+				t.Fatalf("expected claims body param %q, got %q", clientClaimsA, got)
+			}
+		}),
+	)
+
+	client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireTokenByAuthCode(
+		context.Background(), "code", localhost, tokenScope, WithClaimsFromClient(clientClaimsA))
+	if err != nil {
+		t.Fatalf("AcquireTokenByAuthCode failed: %v", err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected access token %q, got %q", accessToken, ar.AccessToken)
+	}
+}
+
+// TestWithClaimsFromClientByUsernamePassword verifies that client-originated claims are forwarded as
+// the "claims" body parameter for the resource-owner password credential flow.
+func TestWithClaimsFromClientByUsernamePassword(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lmo := "login.microsoftonline.com"
+	tenant := "test-tenant"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+	accessToken := "up-client-claims"
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(tenant, authority), "", "", 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			if err := r.ParseForm(); err != nil {
+				t.Fatal(err)
+			}
+			if !r.Form.Has("claims") {
+				t.Fatal("expected 'claims' parameter in request body")
+			}
+			if got := r.Form.Get("claims"); got != clientClaimsA {
+				t.Fatalf("expected claims body param %q, got %q", clientClaimsA, got)
+			}
+		}),
+	)
+
+	client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ar, err := client.AcquireTokenByUsernamePassword(
+		context.Background(), tokenScope, "username", "password", WithClaimsFromClient(clientClaimsA))
+	if err != nil {
+		t.Fatalf("AcquireTokenByUsernamePassword failed: %v", err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("expected access token %q, got %q", accessToken, ar.AccessToken)
+	}
+}
