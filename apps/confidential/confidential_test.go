@@ -2857,6 +2857,106 @@ func TestWithClaimsFromClientCacheIsolation(t *testing.T) {
 	}
 }
 
+// TestWithClaimsFromClientRefreshStaysInPartition verifies that when a token acquired with client
+// claims is proactively refreshed (its RefreshOn has passed), the refreshed token is written back into
+// the SAME client-claims cache partition. A later silent call with the same claims must return the
+// refreshed token from the cache, and a silent call without claims must NOT see it. This guards against
+// the cross-MSAL bug where the proactive-refresh write-back dropped the claims (ext-cache-key) and broke
+// claims-based cache isolation.
+func TestWithClaimsFromClientRefreshStaysInPartition(t *testing.T) {
+	accessToken := "token-claims-a-initial"
+	refreshedToken := "token-claims-a-refreshed"
+	noClaimsToken := "token-no-claims"
+	homeTenant := "home-tenant"
+	clientInfo := base64.RawStdEncoding.EncodeToString([]byte(
+		fmt.Sprintf(`{"uid":"uid","utid":"%s"}`, homeTenant),
+	))
+	lmo := "login.microsoftonline.com"
+	idToken := mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant))
+
+	originalTime := base.Now
+	defer func() { base.Now = originalTime }()
+
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
+	// Initial auth-code token for claimsA. RefreshOn is 1000s out so we can later move time past it.
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, idToken, "rt", clientInfo, 36000, 1000)))
+	// Proactive-refresh token for claimsA. No refresh_in so it won't itself be eligible for refresh,
+	// letting step 5 observe it as a clean cache hit.
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(refreshedToken, idToken, "rt", clientInfo, 36000, 0)))
+	// No-claims silent falls back to a fresh network call (the claimsA token is ext-cache-keyed).
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(noClaimsToken, idToken, "rt", clientInfo, 36000, 1000)))
+
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, "common"), fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	// 1. Acquire with claimsA via auth code.
+	ar, err := client.AcquireTokenByAuthCode(ctx, "code", "https://localhost", tokenScope, WithClaimsFromClient(clientClaimsA))
+	if err != nil {
+		t.Fatalf("auth-code claimsA acquire failed: %v", err)
+	}
+	if ar.AccessToken != accessToken {
+		t.Fatalf("auth-code claimsA: expected %q, got %q", accessToken, ar.AccessToken)
+	}
+	account := ar.Account
+
+	// 2. Silent with claimsA → served from cache (the initial token).
+	ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(account), WithClaimsFromClient(clientClaimsA))
+	if err != nil {
+		t.Fatalf("silent claimsA (cache) failed: %v", err)
+	}
+	if ar.AccessToken != accessToken || ar.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("silent claimsA (cache): got token %q source %d", ar.AccessToken, ar.Metadata.TokenSource)
+	}
+
+	// 3. Move time past RefreshOn so the next claimsA silent proactively refreshes.
+	fixedTime := originalTime().Add(1001 * time.Second)
+	base.Now = func() time.Time { return fixedTime }
+
+	// 4. Silent with claimsA → proactive refresh → new token from the IdP.
+	ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(account), WithClaimsFromClient(clientClaimsA))
+	if err != nil {
+		t.Fatalf("silent claimsA (refresh) failed: %v", err)
+	}
+	if ar.AccessToken != refreshedToken || ar.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("silent claimsA (refresh): expected refreshed IdP token, got token %q source %d", ar.AccessToken, ar.Metadata.TokenSource)
+	}
+
+	// 5. PRIMARY REGRESSION: silent with claimsA again → served from the cache and returns the REFRESHED
+	// token, proving the refresh write-back stayed in the claimsA partition (ext-cache-key preserved).
+	ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(account), WithClaimsFromClient(clientClaimsA))
+	if err != nil {
+		t.Fatalf("silent claimsA (cached refresh) failed: %v", err)
+	}
+	if ar.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("silent claimsA (cached refresh): expected cache source, got %d", ar.Metadata.TokenSource)
+	}
+	if ar.AccessToken != refreshedToken {
+		t.Fatalf("silent claimsA (cached refresh): expected refreshed token %q, got %q", refreshedToken, ar.AccessToken)
+	}
+
+	// 6. ISOLATION: a no-claims silent must NOT return the refreshed claimsA token. The claimsA access
+	// token is ext-cache-keyed, so a no-claims read skips it and falls back to a fresh network call.
+	ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(account))
+	if err != nil {
+		t.Fatalf("silent no-claims failed: %v", err)
+	}
+	if ar.AccessToken == refreshedToken {
+		t.Fatal("isolation broken: the refreshed client-claims token leaked into the no-claims read")
+	}
+	if ar.AccessToken != noClaimsToken {
+		t.Fatalf("silent no-claims: expected fresh token %q, got %q", noClaimsToken, ar.AccessToken)
+	}
+}
+
 // TestWithClaimsFromClientCombinedWithServerClaims verifies that when both WithClaims (server-issued)
 // and WithClaimsFromClient are supplied, the server claims still bypass the cache (forcing a network
 // call) and the wire "claims" parameter carries the merged value.

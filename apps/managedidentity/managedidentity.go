@@ -626,7 +626,8 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 func validateClaimsJSONObject(claimsJSON string) error {
 	var parsed map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(claimsJSON), &parsed); err != nil {
-		return fmt.Errorf("WithClaimsFromClient: claims must be a JSON object: %w", err)
+		// Don't wrap the parser error in the message: claims may carry sensitive data.
+		return errors.New("WithClaimsFromClient: claims must be a JSON object")
 	}
 	if parsed == nil {
 		return errors.New("WithClaimsFromClient: claims must be a JSON object")

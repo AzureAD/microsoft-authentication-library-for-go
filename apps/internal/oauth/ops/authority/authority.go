@@ -409,7 +409,8 @@ func mergeClaims(claims1, claims2 string) (string, error) {
 func parseClaimsObject(claims string) (map[string]any, error) {
 	var m map[string]any
 	if err := json.Unmarshal([]byte(claims), &m); err != nil {
-		return nil, fmt.Errorf(`claims must be JSON. Are they base64 encoded? json.Unmarshal returned "%v"`, err)
+		// Don't include the parser error or the raw value in the message: claims may carry sensitive data.
+		return nil, errors.New("claims must be a JSON object")
 	}
 	if m == nil {
 		return nil, errors.New("claims must be a JSON object")
