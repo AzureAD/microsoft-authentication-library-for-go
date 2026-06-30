@@ -283,6 +283,11 @@ type AuthParams struct {
 	ExtraBodyParameters map[string]string
 	// CacheKeyComponents are additional components to include in the cache key.
 	CacheKeyComponents map[string]string
+	// IsAppCache indicates the request targets the app-only (client credentials) token
+	// cache partition. It is propagated onto silent requests so the proactive-refresh
+	// write-back computes the same partition key as the read path, even though
+	// AcquireTokenSilent overrides AuthorizationType to ATRefreshToken. See issue #630.
+	IsAppCache bool
 	// UserFederatedIdentityCredential is the federated credential token for user_fic flow.
 	UserFederatedIdentityCredential string
 	// UserObjectID is the target user's object ID for user_fic flow (mutually exclusive with Username).

@@ -413,6 +413,86 @@ func TestAccountCachePartitionKey(t *testing.T) {
 	}
 }
 
+// TestAppTokenProactiveRefreshCachePartitionKey verifies that a proactive refresh
+// (RefreshOn elapsed) of an app-only (client credentials) token writes the refreshed
+// token back to the external cache under the app-token-cache partition key, i.e. the
+// same partition key the read path uses, rather than the empty partition key "".
+//
+// This guards against the regression described in
+// https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/630, where
+// AuthResultFromToken computed the write-back key via token.CacheKey(authParams).
+// Because AcquireTokenSilent overrides AuthorizationType to ATRefreshToken and an
+// app-only token has no home account, that returned "" instead of the app-token-cache
+// key, so subsequent silent reads missed the refreshed token and re-hit the IdP.
+func TestAppTokenProactiveRefreshCachePartitionKey(t *testing.T) {
+	ctx := context.Background()
+	pkCache := &partitionKeyCache{}
+	client := fakeClient(t, WithCacheAccessor(pkCache))
+
+	// The proactively-refreshed token is app-only (no ID token), so its HomeAccountID()
+	// is empty — exactly the condition that exposed the bug.
+	client.Token.AccessTokens.(*fake.AccessTokens).AccessToken = accesstokens.TokenResponse{
+		AccessToken:   "refreshed-app-token",
+		ExpiresOn:     time.Now().Add(time.Hour),
+		GrantedScopes: accesstokens.Scopes{Slice: testScopes},
+		TokenType:     "Bearer",
+	}
+
+	// Seed the cache with a still-valid app token whose RefreshOn has already elapsed,
+	// so the next silent acquire serves it from cache and triggers a proactive refresh.
+	_, err := client.manager.Write(
+		authority.AuthParams{
+			AuthorityInfo: authority.Info{
+				AuthorityType: authority.AAD,
+				Host:          fakeAuthority,
+				Tenant:        fakeTenantID,
+			},
+			ClientID:          fakeClientID,
+			Scopes:            testScopes,
+			AuthorizationType: authority.ATClientCredentials,
+			AuthnScheme:       &authority.BearerAuthenticationScheme{},
+		},
+		accesstokens.TokenResponse{
+			AccessToken:   "cached-app-token",
+			ExpiresOn:     time.Now().Add(time.Hour),
+			RefreshOn:     internalTime.DurationTime{T: time.Now().Add(-time.Hour)},
+			GrantedScopes: accesstokens.Scopes{Slice: testScopes},
+			TokenType:     "Bearer",
+		},
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.AcquireTokenSilent(ctx, AcquireTokenSilentParameters{
+		Scopes:      testScopes,
+		Account:     shared.Account{},
+		RequestType: accesstokens.ATConfidential,
+		Credential:  &accesstokens.Credential{Secret: "secret"},
+		IsAppCache:  true,
+	}); err != nil {
+		t.Fatalf("AcquireTokenSilent returned an unexpected error: %v", err)
+	}
+
+	wantKey := fmt.Sprintf("%s_%s_AppTokenCache", fakeClientID, fakeTenantID)
+
+	if len(pkCache.exportKeys) == 0 {
+		t.Fatal("expected the proactive refresh to export the refreshed token to the external cache")
+	}
+	for i, got := range pkCache.exportKeys {
+		if got != wantKey {
+			t.Errorf("export partition key[%d] = %q, want %q (an empty key indicates the issue #630 regression)", i, got, wantKey)
+		}
+	}
+	// Every partition key touched during the flow (the initial read plus the
+	// refresh write-back) must be the app-token-cache key.
+	for i, got := range pkCache.replaceKeys {
+		if got != wantKey {
+			t.Errorf("replace partition key[%d] = %q, want %q", i, got, wantKey)
+		}
+	}
+}
+
 func TestCreateAuthenticationResult(t *testing.T) {
 	future := time.Now().Add(400 * time.Second)
 
