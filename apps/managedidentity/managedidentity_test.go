@@ -1224,3 +1224,226 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	}
 	close(ch)
 }
+
+// Client claims (WithClaimsFromClient) — only the IMDS source forwards them, MSAL validates only that
+// the value is a JSON object (IMDS decides which keys it accepts), and the cache is partitioned on the
+// raw claims value.
+const (
+	validNspClaim     = `{"xms_az_nwperimid":{"values":["perimid-1234"]}}`
+	validNspClaimB    = `{"xms_az_nwperimid":{"values":["perimid-5678"]}}`
+	nonNwperimidClaim = `{"custom_claim":{"essential":true}}`
+	malformedClaims   = `not-a-json-object`
+)
+
+// TestWithClaimsFromClientForwardedToIMDS verifies that a valid xms_az_nwperimid claim is forwarded
+// to IMDS as the (URL-encoded) "claims" query parameter and that the request reaches the identity provider.
+func TestWithClaimsFromClientForwardedToIMDS(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	var localUrl *url.URL
+	mockClient := mock.NewClient()
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+		localUrl = r.URL
+	}))
+
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource, WithClaimsFromClient(validNspClaim))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("expected IdentityProvider token source, got %d", result.Metadata.TokenSource)
+	}
+	if localUrl == nil {
+		t.Fatal("no request was issued")
+	}
+	// url.Values.Get returns the percent-decoded value, so it must equal the raw claims JSON.
+	if got := localUrl.Query().Get("claims"); got != validNspClaim {
+		t.Fatalf("claims query parameter = %q, want %q", got, validNspClaim)
+	}
+}
+
+// TestWithClaimsFromClientIMDSCacheIsolation verifies the token cache is partitioned on the raw
+// claims value: the same claims hit the cache while different claims force a fresh network call.
+func TestWithClaimsFromClientIMDSCacheIsolation(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	mockClient := mock.NewClient()
+	// Exactly two network responses are expected: one for claimsA, one for claimsB. Any cache miss
+	// that should have been a hit would attempt a third call and fail (no response queued).
+	for i := 0; i < 2; i++ {
+		responseBody, err := getSuccessfulResponse(resource, true)
+		if err != nil {
+			t.Fatalf(errorFormingJsonResponse, err.Error())
+		}
+		mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody))
+	}
+
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cases := []struct {
+		name       string
+		claims     string
+		wantSource TokenSource
+	}{
+		{"claimsA first call -> network", validNspClaim, TokenSourceIdentityProvider},
+		{"claimsA second call -> cache", validNspClaim, TokenSourceCache},
+		{"claimsB first call -> network", validNspClaimB, TokenSourceIdentityProvider},
+		{"claimsB second call -> cache", validNspClaimB, TokenSourceCache},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			result, err := client.AcquireToken(context.Background(), resource, WithClaimsFromClient(tc.claims))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if result.Metadata.TokenSource != tc.wantSource {
+				t.Fatalf("token source = %d, want %d", result.Metadata.TokenSource, tc.wantSource)
+			}
+		})
+	}
+}
+
+// TestWithClaimsFromClientNoClaimsParamAbsent verifies the "claims" query parameter is absent when no
+// client claims are supplied, including the whitespace-only no-op case.
+func TestWithClaimsFromClientNoClaimsParamAbsent(t *testing.T) {
+	cases := []struct {
+		name    string
+		options []AcquireTokenOption
+	}{
+		{"no option", nil},
+		{"whitespace only", []AcquireTokenOption{WithClaimsFromClient("   ")}},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
+
+			var localUrl *url.URL
+			mockClient := mock.NewClient()
+			responseBody, err := getSuccessfulResponse(resource, true)
+			if err != nil {
+				t.Fatalf(errorFormingJsonResponse, err.Error())
+			}
+			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+				localUrl = r.URL
+			}))
+
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := client.AcquireToken(context.Background(), resource, tc.options...); err != nil {
+				t.Fatal(err)
+			}
+			if localUrl == nil {
+				t.Fatal("no request was issued")
+			}
+			if _, ok := localUrl.Query()["claims"]; ok {
+				t.Fatalf("claims query parameter should be absent, got %q", localUrl.Query().Get("claims"))
+			}
+		})
+	}
+}
+
+// TestWithClaimsFromClientNonIMDSSourceErrors verifies that client claims are rejected at
+// token-acquisition time for every non-IMDS managed identity source, before any network call, with
+// an error that names the detected source and explains only IMDS is supported.
+func TestWithClaimsFromClientNonIMDSSourceErrors(t *testing.T) {
+	sources := []Source{AppService, AzureArc, CloudShell, ServiceFabric, AzureML}
+	for _, source := range sources {
+		t.Run(string(source), func(t *testing.T) {
+			setEnvVars(t, source)
+			before := cacheManager
+			defer func() { cacheManager = before }()
+			cacheManager = storage.New(nil)
+
+			// No responses queued: the guard must fire before any request is issued.
+			mockClient := mock.NewClient()
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+			_, err = client.AcquireToken(context.Background(), resource, WithClaimsFromClient(validNspClaim))
+			if err == nil {
+				t.Fatal("expected an error for a non-IMDS source, got nil")
+			}
+			if !strings.Contains(err.Error(), string(source)) {
+				t.Errorf("error %q should name the detected source %q", err.Error(), source)
+			}
+			if !strings.Contains(err.Error(), "IMDS") {
+				t.Errorf("error %q should explain only IMDS sources are supported", err.Error())
+			}
+		})
+	}
+}
+
+// TestWithClaimsFromClientIMDSForwardsNonNwperimidClaims verifies MSAL no longer enforces an allowlist:
+// a well-formed JSON object whose key is not xms_az_nwperimid is forwarded to IMDS as-is, leaving the
+// service to accept or reject it.
+func TestWithClaimsFromClientIMDSForwardsNonNwperimidClaims(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	var localUrl *url.URL
+	mockClient := mock.NewClient()
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+		localUrl = r.URL
+	}))
+
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.AcquireToken(context.Background(), resource, WithClaimsFromClient(nonNwperimidClaim)); err != nil {
+		t.Fatal(err)
+	}
+	if localUrl == nil {
+		t.Fatal("no request was issued")
+	}
+	if got := localUrl.Query().Get("claims"); got != nonNwperimidClaim {
+		t.Fatalf("claims query parameter = %q, want %q", got, nonNwperimidClaim)
+	}
+}
+
+// TestWithClaimsFromClientIMDSRejectsMalformedClaims verifies a value that is not a JSON object is
+// rejected before any network call.
+func TestWithClaimsFromClientIMDSRejectsMalformedClaims(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	// No responses queued: validation must fail before any request is issued.
+	mockClient := mock.NewClient()
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireToken(context.Background(), resource, WithClaimsFromClient(malformedClaims))
+	if err == nil {
+		t.Fatal("expected an error for a malformed (non-object) claims value, got nil")
+	}
+	if !strings.Contains(err.Error(), "JSON object") {
+		t.Errorf("error %q should explain the claims must be a JSON object", err.Error())
+	}
+}

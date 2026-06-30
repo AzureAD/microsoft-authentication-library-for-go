@@ -438,9 +438,9 @@ func TestAuthParamsWithTenant(t *testing.T) {
 
 func TestMergeCapabilitiesAndClaims(t *testing.T) {
 	for _, test := range []struct {
-		capabilities              []string
-		challenge, desc, expected string
-		err                       bool
+		capabilities                            []string
+		challenge, clientClaims, desc, expected string
+		err                                     bool
 	}{
 		{
 			desc:     "no capabilities or challenge",
@@ -480,12 +480,48 @@ func TestMergeCapabilitiesAndClaims(t *testing.T) {
 			challenge:    `{"id_token":{"auth_time":{"essential":true}},"access_token":{"nbf":{"essential":true, "value":"42"}}}`,
 			expected:     `{"id_token":{"auth_time":{"essential":true}},"access_token":{"nbf":{"essential":true, "value":"42"},"xms_cc":{"values":["cp1","cp2"]}}}`,
 		},
+		{
+			desc:         "only client claims",
+			clientClaims: `{"access_token":{"xms_az_nwperimid":{"essential":true}}}`,
+			expected:     `{"access_token":{"xms_az_nwperimid":{"essential":true}}}`,
+		},
+		{
+			desc:         "server and client claims, non-overlapping",
+			challenge:    `{"id_token":{"auth_time":{"essential":true}}}`,
+			clientClaims: `{"access_token":{"xms_az_nwperimid":{"essential":true}}}`,
+			expected:     `{"id_token":{"auth_time":{"essential":true}},"access_token":{"xms_az_nwperimid":{"essential":true}}}`,
+		},
+		{
+			desc:         "server and client claims, overlapping - client wins",
+			challenge:    `{"access_token":{"nbf":{"value":"server"}}}`,
+			clientClaims: `{"access_token":{"nbf":{"value":"client"}}}`,
+			expected:     `{"access_token":{"nbf":{"value":"client"}}}`,
+		},
+		{
+			desc:         "capabilities and client claims",
+			capabilities: []string{"cp1"},
+			clientClaims: `{"access_token":{"xms_az_nwperimid":{"essential":true}}}`,
+			expected:     `{"access_token":{"xms_az_nwperimid":{"essential":true},"xms_cc":{"values":["cp1"]}}}`,
+		},
+		{
+			desc:         "capabilities, server claims and client claims",
+			capabilities: []string{"cp1"},
+			challenge:    `{"id_token":{"auth_time":{"essential":true}}}`,
+			clientClaims: `{"access_token":{"xms_az_nwperimid":{"essential":true}}}`,
+			expected:     `{"id_token":{"auth_time":{"essential":true}},"access_token":{"xms_az_nwperimid":{"essential":true},"xms_cc":{"values":["cp1"]}}}`,
+		},
+		{
+			desc:         "invalid client claims",
+			capabilities: []string{"cp1"},
+			clientClaims: "not-json",
+			err:          true,
+		},
 	} {
 		cpb, err := NewClientCapabilities(test.capabilities)
 		if err != nil {
 			t.Fatal(err)
 		}
-		ap := AuthParams{Capabilities: cpb, Claims: test.challenge}
+		ap := AuthParams{Capabilities: cpb, Claims: test.challenge, ClientClaims: test.clientClaims}
 		t.Run(test.desc, func(t *testing.T) {
 			var expected map[string]any
 			if err := json.Unmarshal([]byte(test.expected), &expected); err != nil && test.expected != "" {
@@ -507,6 +543,103 @@ func TestMergeCapabilitiesAndClaims(t *testing.T) {
 			}
 			if diff := pretty.Compare(expected, actual); diff != "" {
 				t.Fatal(diff)
+			}
+		})
+	}
+}
+
+// Test_mergeClaims covers the string-level claims merge that combines server-issued (WithClaims)
+// and client-originated (WithClaimsFromClient) claims. Ported from the .NET ClaimsHelperTests.
+func Test_mergeClaims(t *testing.T) {
+	for _, test := range []struct {
+		desc             string
+		claims1, claims2 string
+		expected         string // compared as JSON when non-empty
+		err              bool
+	}{
+		{
+			desc:     "both empty returns empty",
+			expected: "",
+		},
+		{
+			desc:     "first empty returns second verbatim",
+			claims2:  `{"a":1}`,
+			expected: `{"a":1}`,
+		},
+		{
+			desc:     "second empty returns first verbatim",
+			claims1:  `{"a":1}`,
+			expected: `{"a":1}`,
+		},
+		{
+			desc:     "non-overlapping keys are merged",
+			claims1:  `{"nsp":{"essential":true}}`,
+			claims2:  `{"userinfo":{"given_name":{"essential":true}}}`,
+			expected: `{"nsp":{"essential":true},"userinfo":{"given_name":{"essential":true}}}`,
+		},
+		{
+			desc:     "overlapping keys - second object wins",
+			claims1:  `{"nsp":{"value":"v1"}}`,
+			claims2:  `{"nsp":{"value":"v2"}}`,
+			expected: `{"nsp":{"value":"v2"}}`,
+		},
+		{
+			desc:     "nested objects deep-merge",
+			claims1:  `{"access_token":{"a":{"essential":true}}}`,
+			claims2:  `{"access_token":{"b":{"essential":true}}}`,
+			expected: `{"access_token":{"a":{"essential":true},"b":{"essential":true}}}`,
+		},
+		{
+			desc:    "invalid JSON is an error",
+			claims1: "not-json",
+			claims2: `{"a":1}`,
+			err:     true,
+		},
+		{
+			desc:    "valid JSON array is not an object - error",
+			claims1: "[]",
+			claims2: `{"a":1}`,
+			err:     true,
+		},
+		{
+			desc:    "valid JSON string is not an object - error",
+			claims1: `"string"`,
+			claims2: `{"a":1}`,
+			err:     true,
+		},
+		{
+			desc:    "literal null is not an object - error",
+			claims1: "null",
+			claims2: `{"a":1}`,
+			err:     true,
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			got, err := mergeClaims(test.claims1, test.claims2)
+			if test.err {
+				if err == nil {
+					t.Fatalf("mergeClaims(%q, %q): expected error, got nil", test.claims1, test.claims2)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("mergeClaims(%q, %q): unexpected error: %v", test.claims1, test.claims2, err)
+			}
+			if test.expected == "" {
+				if got != "" {
+					t.Fatalf("expected empty result, got %q", got)
+				}
+				return
+			}
+			var wantMap, gotMap map[string]any
+			if err := json.Unmarshal([]byte(test.expected), &wantMap); err != nil {
+				t.Fatalf("test bug: expected is not valid JSON: %v", err)
+			}
+			if err := json.Unmarshal([]byte(got), &gotMap); err != nil {
+				t.Fatalf("result is not valid JSON: %v (%q)", err, got)
+			}
+			if !reflect.DeepEqual(wantMap, gotMap) {
+				t.Fatalf("mergeClaims(%q, %q) = %q, want %q", test.claims1, test.claims2, got, test.expected)
 			}
 		})
 	}
