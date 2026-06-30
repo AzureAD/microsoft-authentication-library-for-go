@@ -520,7 +520,12 @@ func WithClaims(claims string) interface {
 //
 // The claims are sent to the authority as the standard OAuth "claims" body parameter (merged with any
 // server-issued claims and client capabilities); they are not embedded in the client assertion JWT.
-// The argument must be a JSON object. An empty or whitespace-only value is ignored.
+//
+// The argument must be a JSON object, but the confidential client does not enforce this locally in all
+// cases: the value is forwarded to the authority verbatim and is validated locally only when it is
+// merged with server-issued claims or client capabilities. Otherwise a malformed or non-object value
+// is not rejected locally and instead surfaces as a server-side error. An empty or whitespace-only
+// value is ignored.
 func WithClaimsFromClient(claims string) interface {
 	AcquireByAuthCodeOption
 	AcquireByCredentialOption
