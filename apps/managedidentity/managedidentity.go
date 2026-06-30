@@ -105,9 +105,6 @@ const (
 	// clientClaimsCacheKey is the CacheKeyComponents key used to partition the token cache by
 	// client-originated claims (see WithClaimsFromClient). The component value is the raw claims string.
 	clientClaimsCacheKey = "client_claims"
-
-	// xmsAzNwperimid is the only custom claim MSIv1 (IMDS v1) accepts (see WithClaimsFromClient).
-	xmsAzNwperimid = "xms_az_nwperimid"
 )
 
 var retryCodesForIMDS = []int{
@@ -206,8 +203,8 @@ func WithClaims(claims string) AcquireTokenOption {
 	}
 }
 
-// WithClaimsFromClient forwards client-originated claims (for example an NSP "xms_az_nwperimid"
-// claim) to the managed identity endpoint.
+// WithClaimsFromClient forwards client-originated claims (a JSON object) to the managed identity
+// endpoint.
 //
 // Unlike [WithClaims] (server-issued claims challenges, which bypass the token cache), tokens acquired
 // with client claims ARE cached and the cache entry is keyed on the claims value, so different claims
@@ -215,9 +212,9 @@ func WithClaims(claims string) AcquireTokenOption {
 // call (the raw string is used verbatim as part of the cache key; MSAL does not normalize it).
 //
 // Client claims are only supported for the IMDS managed identity source; using this option with any
-// other source results in an error at token-acquisition time. For IMDS (MSIv1) the only permitted
-// top-level claim is "xms_az_nwperimid"; any other key results in an error before the network call.
-// An empty or whitespace-only value is ignored. The argument must be a JSON object.
+// other source results in an error at token-acquisition time. The managed identity service (IMDS)
+// decides which claim keys it accepts; MSAL only validates that the value is a JSON object. An empty
+// or whitespace-only value is ignored.
 func WithClaimsFromClient(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
 		if strings.TrimSpace(claims) == "" {
@@ -356,10 +353,21 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	c.authParams.Scopes = []string{resource}
 
 	// Client-originated claims participate in the cache (unlike server-issued WithClaims, which
-	// bypasses it). Partition the cache entry on the raw claims value so different claims values
-	// map to different tokens. The value is forwarded to IMDS later in the request pipeline.
+	// bypasses it). Validate them before touching the cache so a non-IMDS source or a malformed value
+	// fails fast rather than returning a cached token, then partition the cache entry on the raw
+	// claims value so different claims values map to different tokens. The value is forwarded to IMDS
+	// later in the request pipeline.
 	c.authParams.ClientClaims = o.clientClaims
 	if o.clientClaims != "" {
+		// Client claims are only forwarded to the IMDS source. Reject other sources up front rather
+		// than silently dropping the claims and polluting the cache with a key the endpoint never saw.
+		if c.source != DefaultToIMDS {
+			return AuthResult{}, fmt.Errorf("WithClaimsFromClient is only supported for IMDS-based managed identity sources; the detected source is %q", c.source)
+		}
+		// MSAL only checks the value is a JSON object; IMDS decides which claim keys it accepts.
+		if err := validateClaimsJSONObject(o.clientClaims); err != nil {
+			return AuthResult{}, err
+		}
 		if c.authParams.CacheKeyComponents == nil {
 			c.authParams.CacheKeyComponents = make(map[string]string)
 		}
@@ -388,12 +396,6 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 }
 
 func (c Client) getToken(ctx context.Context, resource string) (AuthResult, error) {
-	// Client claims are only forwarded to the IMDS source. Reject other sources before issuing a
-	// request rather than silently dropping the claims and polluting the cache with a key the
-	// endpoint never saw.
-	if c.authParams.ClientClaims != "" && c.source != DefaultToIMDS {
-		return AuthResult{}, fmt.Errorf("WithClaimsFromClient is only supported for IMDS-based managed identity sources; the detected source is %q", c.source)
-	}
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
@@ -618,21 +620,16 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	return r, err
 }
 
-// validateMSIv1Claims enforces the MSIv1 (IMDS v1) allowlist: the only permitted top-level claim is
-// xms_az_nwperimid. Any other key would cause IMDS to return HTTP 400 with no useful diagnostic, so
-// reject it early with a clear error. The claims JSON must be a JSON object.
-func validateMSIv1Claims(claimsJSON string) error {
+// validateClaimsJSONObject verifies the client-originated claims value is a JSON object. MSAL does not
+// validate which claim keys are present — the managed identity service (IMDS) decides what it accepts
+// or rejects.
+func validateClaimsJSONObject(claimsJSON string) error {
 	var parsed map[string]json.RawMessage
 	if err := json.Unmarshal([]byte(claimsJSON), &parsed); err != nil {
 		return fmt.Errorf("WithClaimsFromClient: claims must be a JSON object: %w", err)
 	}
 	if parsed == nil {
 		return errors.New("WithClaimsFromClient: claims must be a JSON object")
-	}
-	for k := range parsed {
-		if k != xmsAzNwperimid {
-			return fmt.Errorf("MSIv1 (IMDS v1) only supports the %q custom claim, but the claims JSON contained the unsupported key %q; remove all keys other than %q when using WithClaimsFromClient", xmsAzNwperimid, k, xmsAzNwperimid)
-		}
 	}
 	return nil
 }
@@ -672,12 +669,8 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string, clientCl
 	msiParameters.Set(resourceQueryParameterName, resource)
 
 	if clientClaims != "" {
-		// MSIv1 (IMDS v1) only accepts the xms_az_nwperimid claim; reject anything else early so
-		// the caller gets a clear error instead of an opaque HTTP 400 from IMDS.
-		if err := validateMSIv1Claims(clientClaims); err != nil {
-			return nil, err
-		}
-		// Set the raw claims JSON; url.Values.Encode below URL-encodes the value.
+		// Forward the raw claims JSON; url.Values.Encode below URL-encodes the value. The value was
+		// validated as a JSON object up front in AcquireToken, and IMDS decides which keys it accepts.
 		msiParameters.Set("claims", clientClaims)
 	}
 

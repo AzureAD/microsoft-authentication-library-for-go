@@ -1225,13 +1225,14 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	close(ch)
 }
 
-// Client claims (WithClaimsFromClient) — only the IMDS source forwards them, MSIv1 allows only
-// the xms_az_nwperimid top-level claim, and the cache is partitioned on the raw claims value.
+// Client claims (WithClaimsFromClient) — only the IMDS source forwards them, MSAL validates only that
+// the value is a JSON object (IMDS decides which keys it accepts), and the cache is partitioned on the
+// raw claims value.
 const (
-	validNspClaim    = `{"xms_az_nwperimid":{"values":["perimid-1234"]}}`
-	validNspClaimB   = `{"xms_az_nwperimid":{"values":["perimid-5678"]}}`
-	unsupportedClaim = `{"custom_claim":{"essential":true}}`
-	mixedClaims      = `{"xms_az_nwperimid":{"values":["perimid-1234"]},"other_claim":{"essential":true}}`
+	validNspClaim     = `{"xms_az_nwperimid":{"values":["perimid-1234"]}}`
+	validNspClaimB    = `{"xms_az_nwperimid":{"values":["perimid-5678"]}}`
+	nonNwperimidClaim = `{"custom_claim":{"essential":true}}`
+	malformedClaims   = `not-a-json-object`
 )
 
 // TestWithClaimsFromClientForwardedToIMDS verifies that a valid xms_az_nwperimid claim is forwarded
@@ -1392,35 +1393,57 @@ func TestWithClaimsFromClientNonIMDSSourceErrors(t *testing.T) {
 	}
 }
 
-// TestWithClaimsFromClientIMDSRejectsDisallowedClaims verifies the MSIv1 allowlist: any top-level
-// claim other than xms_az_nwperimid is rejected before the network call.
-func TestWithClaimsFromClientIMDSRejectsDisallowedClaims(t *testing.T) {
-	cases := []struct {
-		name   string
-		claims string
-	}{
-		{"unsupported claim", unsupportedClaim},
-		{"mixed claims", mixedClaims},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			before := cacheManager
-			defer func() { cacheManager = before }()
-			cacheManager = storage.New(nil)
+// TestWithClaimsFromClientIMDSForwardsNonNwperimidClaims verifies MSAL no longer enforces an allowlist:
+// a well-formed JSON object whose key is not xms_az_nwperimid is forwarded to IMDS as-is, leaving the
+// service to accept or reject it.
+func TestWithClaimsFromClientIMDSForwardsNonNwperimidClaims(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
 
-			// No responses queued: validation must fail before any request is issued.
-			mockClient := mock.NewClient()
-			client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
-			if err != nil {
-				t.Fatal(err)
-			}
-			_, err = client.AcquireToken(context.Background(), resource, WithClaimsFromClient(tc.claims))
-			if err == nil {
-				t.Fatal("expected an error for a disallowed claim, got nil")
-			}
-			if !strings.Contains(err.Error(), xmsAzNwperimid) {
-				t.Errorf("error %q should name the only allowed claim %q", err.Error(), xmsAzNwperimid)
-			}
-		})
+	var localUrl *url.URL
+	mockClient := mock.NewClient()
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithBody(responseBody), mock.WithCallback(func(r *http.Request) {
+		localUrl = r.URL
+	}))
+
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.AcquireToken(context.Background(), resource, WithClaimsFromClient(nonNwperimidClaim)); err != nil {
+		t.Fatal(err)
+	}
+	if localUrl == nil {
+		t.Fatal("no request was issued")
+	}
+	if got := localUrl.Query().Get("claims"); got != nonNwperimidClaim {
+		t.Fatalf("claims query parameter = %q, want %q", got, nonNwperimidClaim)
+	}
+}
+
+// TestWithClaimsFromClientIMDSRejectsMalformedClaims verifies a value that is not a JSON object is
+// rejected before any network call.
+func TestWithClaimsFromClientIMDSRejectsMalformedClaims(t *testing.T) {
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	// No responses queued: validation must fail before any request is issued.
+	mockClient := mock.NewClient()
+	client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireToken(context.Background(), resource, WithClaimsFromClient(malformedClaims))
+	if err == nil {
+		t.Fatal("expected an error for a malformed (non-object) claims value, got nil")
+	}
+	if !strings.Contains(err.Error(), "JSON object") {
+		t.Errorf("error %q should explain the claims must be a JSON object", err.Error())
 	}
 }

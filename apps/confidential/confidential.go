@@ -508,19 +508,19 @@ func WithClaims(claims string) interface {
 	}
 }
 
-// WithClaimsFromClient specifies client-originated claims to include in the token request, for example
-// an NSP (Network Security Perimeter) "xms_az_nwperimid" claim.
+// WithClaimsFromClient specifies client-originated claims (a JSON object) to include in the token
+// request.
 //
 // Unlike [WithClaims] (for server-issued claims challenges, which bypass the token cache), tokens
 // acquired with client claims ARE cached and the cache entry is keyed on the claims value. Different
 // claims values produce separate cache entries, so callers should pass stable, non-dynamic values to
-// avoid unbounded cache growth and should pass the exact same string on each call (the raw string is
-// used verbatim as part of the cache key; MSAL does not normalize it).
+// avoid unbounded cache growth. The exact same string MUST be included on every request: the raw
+// string is used verbatim as part of the cache key (MSAL does not normalize it), so omitting it or
+// changing it on a later call silently moves to a different cache partition.
 //
 // The claims are sent to the authority as the standard OAuth "claims" body parameter (merged with any
 // server-issued claims and client capabilities); they are not embedded in the client assertion JWT.
 // The argument must be a JSON object. An empty or whitespace-only value is ignored.
-// This option is valid for any confidential client token acquisition method.
 func WithClaimsFromClient(claims string) interface {
 	AcquireByAuthCodeOption
 	AcquireByCredentialOption
