@@ -13,6 +13,7 @@ import (
 	"context"
 	"crypto"
 	"crypto/rsa"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
@@ -257,6 +258,7 @@ type clientOptions struct {
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
 	httpClient                        ops.HTTPClient
+	mtlsHTTPClientFactory             ops.MtlsClientFactory
 }
 
 // Option is an optional argument to New().
@@ -279,9 +281,25 @@ func WithClientCapabilities(capabilities []string) Option {
 }
 
 // WithHTTPClient allows for a custom HTTP client to be set.
+//
+// A plain HTTP client cannot carry the client certificate required for mTLS proof-of-possession
+// (see [WithMtlsProofOfPossession]); use [WithMtlsHTTPClient] to override the mTLS transport.
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	return func(o *clientOptions) {
 		o.httpClient = httpClient
+	}
+}
+
+// WithMtlsHTTPClient overrides how the mutual-TLS client is built for mTLS proof-of-possession
+// token requests (see [WithMtlsProofOfPossession]). The factory receives the binding certificate and
+// must return an HTTPClient whose transport presents that certificate during the TLS handshake.
+//
+// This is an escape hatch for keys the built-in transport cannot use (for example CNG/HSM-backed
+// keys). When unset, MSAL auto-builds and caches an mTLS client per certificate thumbprint, which
+// covers exportable keys such as those loaded via [CertFromPEM]/[NewCredFromCert].
+func WithMtlsHTTPClient(factory func(cert tls.Certificate) ops.HTTPClient) Option {
+	return func(o *clientOptions) {
+		o.mtlsHTTPClientFactory = factory
 	}
 }
 
@@ -348,7 +366,11 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		base.WithRegionDetection(opts.azureRegion),
 		base.WithX5C(opts.sendX5C),
 	}
-	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), baseOpts...)
+	tokenClient := oauth.New(opts.httpClient)
+	if opts.mtlsHTTPClientFactory != nil {
+		tokenClient.SetMtlsClientFactory(opts.mtlsHTTPClientFactory)
+	}
+	base, err := base.New(clientID, opts.authority, tokenClient, baseOpts...)
 	if err != nil {
 		return Client{}, err
 	}
@@ -585,6 +607,8 @@ type acquireTokenSilentOptions struct {
 	account          Account
 	claims, tenantID string
 	authnScheme      AuthenticationScheme
+	isMtlsPoP        bool
+	mtlsBindingCert  *tls.Certificate
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
@@ -617,7 +641,7 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options: [WithClaims], [WithSilentAccount], [WithTenantID]
+// Options: [WithClaims], [WithSilentAccount], [WithTenantID], [WithMtlsProofOfPossession]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -633,15 +657,31 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		return AuthResult{}, errors.New("WithSilentAccount option is required")
 	}
 
+	authnScheme := o.authnScheme
+	var mtlsBindingCert *tls.Certificate
+	if o.isMtlsPoP {
+		if err := validateMtlsCredential(cca.cred, o.mtlsBindingCert); err != nil {
+			return AuthResult{}, err
+		}
+		var err error
+		mtlsBindingCert, err = cca.resolveMtlsBindingCert(o.mtlsBindingCert)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		authnScheme = authority.NewMtlsPoPAuthenticationScheme(mtlsBindingCert.Leaf)
+	}
+
 	silentParameters := base.AcquireTokenSilentParameters{
-		Scopes:      scopes,
-		Account:     o.account,
-		RequestType: accesstokens.ATConfidential,
-		Credential:  cca.cred,
-		IsAppCache:  o.account.IsZero(),
-		TenantID:    o.tenantID,
-		AuthnScheme: o.authnScheme,
-		Claims:      o.claims,
+		Scopes:          scopes,
+		Account:         o.account,
+		RequestType:     accesstokens.ATConfidential,
+		Credential:      cca.cred,
+		IsAppCache:      o.account.IsZero(),
+		TenantID:        o.tenantID,
+		AuthnScheme:     authnScheme,
+		Claims:          o.claims,
+		IsMtlsPoP:       o.isMtlsPoP,
+		MtlsBindingCert: mtlsBindingCert,
 	}
 
 	return cca.acquireTokenSilentInternal(ctx, silentParameters)
@@ -756,6 +796,8 @@ type acquireTokenByCredentialOptions struct {
 	authnScheme         AuthenticationScheme
 	extraBodyParameters map[string]string
 	cacheKeyComponents  map[string]string
+	isMtlsPoP           bool
+	mtlsBindingCert     *tls.Certificate
 }
 
 // AcquireByCredentialOption is implemented by options for AcquireTokenByCredential
@@ -765,7 +807,7 @@ type AcquireByCredentialOption interface {
 
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options: [WithClaims], [WithTenantID], [WithFMIPath], [WithAttribute]
+// Options: [WithClaims], [WithTenantID], [WithFMIPath], [WithAttribute], [WithMtlsProofOfPossession]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -779,8 +821,22 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authParams.Scopes = scopes
 	authParams.AuthorizationType = authority.ATClientCredentials
 	authParams.Claims = o.claims
-	if o.authnScheme != nil {
-		authParams.AuthnScheme = o.authnScheme
+	authnScheme := o.authnScheme
+	var mtlsBindingCert *tls.Certificate
+	if o.isMtlsPoP {
+		if err := validateMtlsCredential(cca.cred, o.mtlsBindingCert); err != nil {
+			return AuthResult{}, err
+		}
+		mtlsBindingCert, err = cca.resolveMtlsBindingCert(o.mtlsBindingCert)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		authnScheme = authority.NewMtlsPoPAuthenticationScheme(mtlsBindingCert.Leaf)
+		authParams.IsMtlsPoP = true
+		authParams.MtlsBindingCert = mtlsBindingCert
+	}
+	if authnScheme != nil {
+		authParams.AuthnScheme = authnScheme
 	}
 	authParams.ExtraBodyParameters = o.extraBodyParameters
 	authParams.CacheKeyComponents = o.cacheKeyComponents
@@ -792,10 +848,12 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 			Credential:          cca.cred,
 			IsAppCache:          true,
 			TenantID:            o.tenantID,
-			AuthnScheme:         o.authnScheme,
+			AuthnScheme:         authnScheme,
 			Claims:              o.claims,
 			ExtraBodyParameters: o.extraBodyParameters,
 			CacheKeyComponents:  o.cacheKeyComponents,
+			IsMtlsPoP:           o.isMtlsPoP,
+			MtlsBindingCert:     mtlsBindingCert,
 		}
 
 		// Use internal method with empty account (service principal scenario)
@@ -909,6 +967,154 @@ func WithAttribute(attrValue string) interface {
 			},
 		),
 	}
+}
+
+// MtlsPoPOption configures an mTLS proof-of-possession request. Pass values returned by
+// [WithMtlsBindingCertificate] to [WithMtlsProofOfPossession].
+type MtlsPoPOption interface {
+	mtlsPoPOption()
+}
+
+// mtlsBindingCertOption carries a caller-supplied binding certificate for an assertion-authenticated
+// mTLS PoP request (FIC leg 2).
+type mtlsBindingCertOption struct {
+	certs []*x509.Certificate
+	key   crypto.PrivateKey
+}
+
+func (mtlsBindingCertOption) mtlsPoPOption() {}
+
+// WithMtlsBindingCertificate supplies the certificate presented as the client certificate on the
+// mutual-TLS handshake for an assertion-authenticated request — for example FIC leg 2, where the
+// credential is a federated assertion that has no certificate of its own. The resulting request sends
+// the assertion with client_assertion_type set to the jwt-pop (certificate-bound) value.
+//
+// For a client created with [NewCredFromCert] the binding certificate is inferred from the credential
+// and this option is unnecessary. The certificate's private key is used only for the TLS handshake and
+// is never surfaced in results.
+func WithMtlsBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey) MtlsPoPOption {
+	return mtlsBindingCertOption{certs: certs, key: key}
+}
+
+// WithMtlsProofOfPossession requests an mTLS-bound proof-of-possession token (token_type=mtls_pop):
+// the binding certificate is presented as the client certificate in the mutual-TLS handshake to the
+// token endpoint (rewritten from login.* to mtlsauth.*) and the returned token is bound to that
+// certificate. The authority must be tenanted (not /common or /organizations) and in a supported cloud.
+//
+// For a [NewCredFromCert] client the binding certificate is inferred from the credential. For an
+// assertion credential (for example FIC leg 2) pass [WithMtlsBindingCertificate] to supply it. The
+// result exposes the public binding certificate via [AuthResult.BindingCertificate] and its thumbprint
+// via [AuthResult.BindingCertificateThumbprint]; the private key is never surfaced.
+//
+// Setting this option on each leg of a developer-orchestrated two-leg federated-identity-credential
+// (FIC) flow makes both legs mTLS PoP.
+func WithMtlsProofOfPossession(opts ...MtlsPoPOption) interface {
+	AcquireByCredentialOption
+	AcquireSilentOption
+	options.CallOption
+} {
+	var bindingCert *tls.Certificate
+	var buildErr error
+	for _, opt := range opts {
+		if bc, ok := opt.(mtlsBindingCertOption); ok {
+			bindingCert, buildErr = newTLSBindingCertificate(bc.certs, bc.key)
+		}
+	}
+	return struct {
+		AcquireByCredentialOption
+		AcquireSilentOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				if buildErr != nil {
+					return buildErr
+				}
+				switch t := a.(type) {
+				case *acquireTokenByCredentialOptions:
+					t.isMtlsPoP = true
+					t.mtlsBindingCert = bindingCert
+				case *acquireTokenSilentOptions:
+					t.isMtlsPoP = true
+					t.mtlsBindingCert = bindingCert
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
+// newTLSBindingCertificate assembles a tls.Certificate from a certificate chain and RSA private key,
+// placing the signing (leaf) certificate first as required for the TLS handshake.
+func newTLSBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey) (*tls.Certificate, error) {
+	if len(certs) == 0 || key == nil {
+		return nil, errors.New("WithMtlsBindingCertificate requires a certificate and private key")
+	}
+	k, ok := key.(*rsa.PrivateKey)
+	if !ok {
+		return nil, errors.New("mTLS binding certificate key must be an RSA key")
+	}
+	tlsCert := tls.Certificate{PrivateKey: key}
+	for _, cert := range certs {
+		if cert == nil {
+			continue
+		}
+		certKey, ok := cert.PublicKey.(*rsa.PublicKey)
+		if ok && k.E == certKey.E && k.N.Cmp(certKey.N) == 0 {
+			// The signing (leaf) cert matches the private key and must be first.
+			tlsCert.Certificate = append([][]byte{cert.Raw}, tlsCert.Certificate...)
+			tlsCert.Leaf = cert
+		} else {
+			tlsCert.Certificate = append(tlsCert.Certificate, cert.Raw)
+		}
+	}
+	if tlsCert.Leaf == nil {
+		return nil, errors.New("key doesn't match any certificate")
+	}
+	return &tlsCert, nil
+}
+
+// resolveMtlsBindingCert returns the binding certificate for an mTLS PoP request: the explicit one
+// from WithMtlsBindingCertificate if supplied, otherwise one derived from a certificate credential
+// (NewCredFromCert).
+func (cca Client) resolveMtlsBindingCert(explicit *tls.Certificate) (*tls.Certificate, error) {
+	if explicit != nil {
+		return explicit, nil
+	}
+	if cca.cred != nil && cca.cred.Cert != nil && cca.cred.Key != nil {
+		der := make([][]byte, 0, len(cca.cred.X5c))
+		for _, b64 := range cca.cred.X5c {
+			d, err := base64.StdEncoding.DecodeString(b64)
+			if err != nil {
+				return nil, fmt.Errorf("invalid x5c certificate entry: %w", err)
+			}
+			der = append(der, d)
+		}
+		if len(der) == 0 {
+			der = [][]byte{cca.cred.Cert.Raw}
+		}
+		return &tls.Certificate{Certificate: der, PrivateKey: cca.cred.Key, Leaf: cca.cred.Cert}, nil
+	}
+	return nil, errors.New("mTLS proof-of-possession requires a certificate credential (NewCredFromCert) or WithMtlsBindingCertificate")
+}
+
+// validateMtlsCredential rejects credential kinds that can't perform mTLS proof-of-possession.
+func validateMtlsCredential(cred *accesstokens.Credential, explicitBindingCert *tls.Certificate) error {
+	if cred == nil {
+		return errors.New("mTLS proof-of-possession requires a certificate or assertion credential")
+	}
+	if cred.Secret != "" {
+		return errors.New("mTLS proof-of-possession is not supported with a client secret credential")
+	}
+	if cred.TokenProvider != nil {
+		return errors.New("mTLS proof-of-possession is not supported with a token-provider credential")
+	}
+	if cred.AssertionCallback != nil && explicitBindingCert == nil {
+		return errors.New("mTLS proof-of-possession with an assertion credential requires WithMtlsBindingCertificate")
+	}
+	return nil
 }
 
 // AcquireByUserFICOption is implemented by options for AcquireTokenByUserFederatedIdentityCredential.

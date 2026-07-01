@@ -7,6 +7,7 @@ package comm
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"encoding/xml"
 	"fmt"
@@ -16,6 +17,7 @@ import (
 	"reflect"
 	"runtime"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -38,6 +40,12 @@ type HTTPClient interface {
 // Client provides a wrapper to our *http.Client that handles serialization needs.
 type Client struct {
 	client HTTPClient
+
+	// mtlsMu guards the lazily-built per-certificate mTLS client cache.
+	mtlsMu      sync.Mutex
+	mtlsClients map[string]HTTPClient
+	// mtlsFactory optionally overrides how mTLS clients are built (WithMtlsHTTPClient).
+	mtlsFactory MtlsClientFactory
 }
 
 // New returns a new Client object.
@@ -175,6 +183,21 @@ func (c *Client) xmlCall(ctx context.Context, u *url.URL, headers http.Header, b
 // URLFormCall is used to make a call where we need to send application/x-www-form-urlencoded data
 // to the backend and receive JSON back. qv will be encoded into the request body.
 func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}) error {
+	return c.urlFormCall(ctx, endpoint, qv, resp, c.client)
+}
+
+// URLFormCallWithCertificate behaves like URLFormCall but performs the request over a mutual-TLS
+// connection that presents cert as the client certificate. Used for mTLS proof-of-possession token
+// requests. The mTLS client is built and cached per certificate thumbprint.
+func (c *Client) URLFormCallWithCertificate(ctx context.Context, endpoint string, qv url.Values, resp interface{}, cert *tls.Certificate) error {
+	client, err := c.mtlsClient(cert)
+	if err != nil {
+		return err
+	}
+	return c.urlFormCall(ctx, endpoint, qv, resp, client)
+}
+
+func (c *Client) urlFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}, client HTTPClient) error {
 	if len(qv) == 0 {
 		return fmt.Errorf("URLFormCall() requires qv to have non-zero length")
 	}
@@ -205,7 +228,7 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 		},
 	}
 
-	data, err := c.do(ctx, req)
+	data, err := c.doWithClient(ctx, req, client)
 	if err != nil {
 		return err
 	}
@@ -227,8 +250,15 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	return nil
 }
 
-// do makes the HTTP call to the server and returns the contents of the body.
+// do makes the HTTP call to the server using the default client and returns the contents of the body.
 func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
+	return c.doWithClient(ctx, req, c.client)
+}
+
+// doWithClient makes the HTTP call to the server using the provided client and returns the contents
+// of the body. This lets callers route a specific request (for example an mTLS PoP token request)
+// through a client other than the default one.
+func (c *Client) doWithClient(ctx context.Context, req *http.Request, client HTTPClient) ([]byte, error) {
 	if _, ok := ctx.Deadline(); !ok {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, 30*time.Second)
@@ -236,7 +266,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	}
 	req = req.WithContext(ctx)
 
-	reply, err := c.client.Do(req)
+	reply, err := client.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("server response error:\n %w", err)
 	}

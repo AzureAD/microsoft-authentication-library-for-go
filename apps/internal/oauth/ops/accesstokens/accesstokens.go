@@ -18,6 +18,7 @@ import (
 	/* #nosec */
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -61,6 +62,9 @@ const (
 
 type urlFormCaller interface {
 	URLFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}) error
+	// URLFormCallWithCertificate performs the request over a mutual-TLS connection presenting cert
+	// as the client certificate. Used for mTLS proof-of-possession token requests.
+	URLFormCallWithCertificate(ctx context.Context, endpoint string, qv url.Values, resp interface{}, cert *tls.Certificate) error
 }
 
 // DeviceCodeResponse represents the HTTP response received from the device code endpoint
@@ -294,10 +298,35 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 		return TokenResponse{}, err
 	}
 	qv.Set(grantType, grant.ClientCredential)
-	qv.Set("client_assertion_type", grant.ClientAssertion)
+	// For mTLS proof-of-possession the client assertion is certificate-bound: signal it with the
+	// jwt-pop assertion type and present the binding certificate on the TLS handshake (see doTokenResp).
+	assertionType := grant.ClientAssertion
+	if authParameters.IsMtlsPoP {
+		assertionType = grant.ClientAssertionPoP
+	}
+	qv.Set("client_assertion_type", assertionType)
 	qv.Set("client_assertion", assertion)
 	qv.Set(clientID, authParameters.ClientID)
 	qv.Set(clientInfo, clientInfoVal)
+	addScopeQueryParam(qv, authParameters)
+
+	// Add extra body parameters if provided
+	addExtraBodyParameters(ctx, qv, authParameters)
+
+	return c.doTokenResp(ctx, authParameters, qv)
+}
+
+// FromClientCertificate requests an mTLS proof-of-possession token authenticated solely by the
+// client certificate presented on the mutual-TLS handshake. Unlike the assertion path it sends no
+// client_assertion and no req_cnf: the TLS client certificate authenticates the client and binds the
+// resulting token (token_type=mtls_pop). authParameters.MtlsBindingCert must be set.
+func (c Client) FromClientCertificate(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+	qv := url.Values{}
+	if err := addClaims(qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
+	qv.Set(grantType, grant.ClientCredential)
+	qv.Set(clientID, authParameters.ClientID)
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
@@ -444,7 +473,20 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 			qv.Set(k, v)
 		}
 	}
-	err := c.Comm.URLFormCall(ctx, authParams.Endpoints.TokenEndpoint, qv, &resp)
+	endpoint := authParams.Endpoints.TokenEndpoint
+	var err error
+	if authParams.IsMtlsPoP {
+		// mTLS PoP: rewrite login.* -> mtlsauth.* and present the binding certificate on the TLS
+		// handshake. The endpoint derivation also enforces the mTLS guardrails (tenanted authority,
+		// supported cloud, login.* host).
+		endpoint, err = authParams.MtlsTokenEndpoint()
+		if err != nil {
+			return resp, err
+		}
+		err = c.Comm.URLFormCallWithCertificate(ctx, endpoint, qv, &resp, authParams.MtlsBindingCert)
+	} else {
+		err = c.Comm.URLFormCall(ctx, endpoint, qv, &resp)
+	}
 	if err != nil {
 		return resp, err
 	}

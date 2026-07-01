@@ -35,6 +35,7 @@ type AccessTokens interface {
 	FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error)
 	FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error)
 	FromAssertion(ctx context.Context, authParameters authority.AuthParams, assertion string) (accesstokens.TokenResponse, error)
+	FromClientCertificate(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error)
 	FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion string, clientSecret string) (accesstokens.TokenResponse, error)
 	FromUserAssertionClientCertificate(ctx context.Context, authParameters authority.AuthParams, userAssertion string, assertion string) (accesstokens.TokenResponse, error)
 	FromDeviceCodeResult(ctx context.Context, authParameters authority.AuthParams, deviceCodeResult accesstokens.DeviceCodeResult) (accesstokens.TokenResponse, error)
@@ -60,6 +61,8 @@ type Client struct {
 	AccessTokens AccessTokens
 	Authority    FetchAuthority
 	WSTrust      FetchWSTrust
+
+	rest *ops.REST
 }
 
 // New is the constructor for Token.
@@ -70,7 +73,14 @@ func New(httpClient ops.HTTPClient) *Client {
 		AccessTokens: r.AccessTokens(),
 		Authority:    r.Authority(),
 		WSTrust:      r.WSTrust(),
+		rest:         r,
 	}
+}
+
+// SetMtlsClientFactory installs a custom factory used to build the mutual-TLS client for mTLS
+// proof-of-possession token requests (the confidential.WithMtlsHTTPClient hook).
+func (t *Client) SetMtlsClientFactory(factory ops.MtlsClientFactory) {
+	t.rest.SetMtlsClientFactory(factory)
 }
 
 // ResolveEndpoints gets the authorization and token endpoints and creates an AuthorityEndpoints instance.
@@ -136,6 +146,22 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 
 	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
 		return accesstokens.TokenResponse{}, err
+	}
+
+	if authParams.IsMtlsPoP {
+		// mTLS proof-of-possession: the binding certificate (authParams.MtlsBindingCert) is presented
+		// on the TLS handshake and binds the resulting token. A credential that carries its own
+		// certificate (NewCredFromCert) authenticates purely via the TLS client certificate, so no
+		// client_assertion is sent. An assertion/callback credential (FIC leg 2) still sends its
+		// assertion, certificate-bound via client_assertion_type=jwt-pop.
+		if cred.AssertionCallback != nil {
+			jwt, err := cred.JWT(ctx, authParams)
+			if err != nil {
+				return accesstokens.TokenResponse{}, err
+			}
+			return t.AccessTokens.FromAssertion(ctx, authParams, jwt)
+		}
+		return t.AccessTokens.FromClientCertificate(ctx, authParams)
 	}
 
 	if cred.Secret != "" {
