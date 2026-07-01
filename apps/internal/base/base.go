@@ -5,6 +5,10 @@ package base
 
 import (
 	"context"
+	"crypto/sha256"
+	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
 	"fmt"
 	"net/url"
 	"reflect"
@@ -58,6 +62,10 @@ type AcquireTokenSilentParameters struct {
 	AuthnScheme         authority.AuthenticationScheme
 	ExtraBodyParameters map[string]string
 	CacheKeyComponents  map[string]string
+	// IsMtlsPoP requests an mTLS-bound proof-of-possession token (token_type=mtls_pop).
+	IsMtlsPoP bool
+	// MtlsBindingCert is the certificate presented on the mutual-TLS handshake when IsMtlsPoP is set.
+	MtlsBindingCert *tls.Certificate
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -104,12 +112,46 @@ type AuthResult struct {
 	GrantedScopes  []string
 	DeclinedScopes []string
 	Metadata       AuthResultMetadata
+	// BindingCertificate is the public binding certificate for an mTLS proof-of-possession token
+	// (Metadata.TokenType == "mtls_pop"); it is nil for Bearer tokens. It exposes only public
+	// certificate material — the private key is never surfaced. Present it as the client certificate
+	// when calling the resource so the connection matches the token binding.
+	BindingCertificate *x509.Certificate
 }
 
 // AuthResultMetadata which contains meta data for the AuthResult
 type AuthResultMetadata struct {
 	RefreshOn   time.Time
 	TokenSource TokenSource
+	// TokenType is the token_type of the access token, for example "Bearer" or "mtls_pop".
+	TokenType string
+}
+
+// BindingCertificateThumbprint returns the base64url-encoded SHA-256 thumbprint (x5t#S256) of the
+// binding certificate, or "" when there is no binding certificate.
+func (ar AuthResult) BindingCertificateThumbprint() string {
+	if ar.BindingCertificate == nil {
+		return ""
+	}
+	sum := sha256.Sum256(ar.BindingCertificate.Raw)
+	return base64.RawURLEncoding.EncodeToString(sum[:])
+}
+
+// bindingCertLeaf returns the public leaf certificate of a binding certificate, or nil. It never
+// returns private key material.
+func bindingCertLeaf(cert *tls.Certificate) *x509.Certificate {
+	if cert == nil {
+		return nil
+	}
+	if cert.Leaf != nil {
+		return cert.Leaf
+	}
+	if len(cert.Certificate) > 0 {
+		if leaf, err := x509.ParseCertificate(cert.Certificate[0]); err == nil {
+			return leaf
+		}
+	}
+	return nil
 }
 
 type TokenSource int
@@ -147,6 +189,7 @@ func AuthResultFromStorage(storageTokenResponse storage.TokenResponse) (AuthResu
 		Metadata: AuthResultMetadata{
 			TokenSource: TokenSourceCache,
 			RefreshOn:   storageTokenResponse.AccessToken.RefreshOn.T,
+			TokenType:   storageTokenResponse.AccessToken.TokenType,
 		},
 	}, nil
 }
@@ -165,6 +208,7 @@ func NewAuthResult(tokenResponse accesstokens.TokenResponse, account shared.Acco
 		Metadata: AuthResultMetadata{
 			TokenSource: TokenSourceIdentityProvider,
 			RefreshOn:   tokenResponse.RefreshOn.T,
+			TokenType:   tokenResponse.TokenType,
 		},
 	}, nil
 }
@@ -343,6 +387,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.ExtraBodyParameters != nil {
 		authParams.ExtraBodyParameters = silent.ExtraBodyParameters
 	}
+	authParams.IsMtlsPoP = silent.IsMtlsPoP
+	authParams.MtlsBindingCert = silent.MtlsBindingCert
 	m := b.pmanager
 	if authParams.AuthorizationType != authority.ATOnBehalfOf {
 		authParams.AuthorizationType = authority.ATRefreshToken
@@ -366,6 +412,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
+			ar.BindingCertificate = bindingCertLeaf(authParams.MtlsBindingCert)
 			if rt := storageTokenResponse.AccessToken.RefreshOn.T; !rt.IsZero() && Now().After(rt) {
 				b.canRefreshMu.Lock()
 				refreshValue, ok := b.canRefresh[tenant]
@@ -528,6 +575,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		return AuthResult{}, err
 	}
 
+	ar.BindingCertificate = bindingCertLeaf(authParams.MtlsBindingCert)
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
 }
