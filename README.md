@@ -128,6 +128,43 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     accessToken := result.AccessToken
     ```
 
+## mTLS Proof-of-Possession (SNI)
+
+A confidential client configured with a Subject Name + Issuer (SN/I) certificate can request an
+**mTLS-bound proof-of-possession** token (`token_type=mtls_pop`) instead of a Bearer token. The same
+certificate used for the credential is presented as the **client TLS certificate** in the mutual-TLS
+handshake to Entra ID, and the returned token is cryptographically bound to that certificate
+(`cnf/x5t#S256`). Opt in per call with `WithMtlsProofOfPossession()`:
+
+```go
+certs, key, _ := confidential.CertFromPEM(pem, "")
+cred, _ := confidential.NewCredFromCert(certs, key)
+
+// The authority must be tenanted (not /common, /organizations, or /consumers).
+app, _ := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+
+result, err := app.AcquireTokenByCredential(context.TODO(),
+    []string{"https://vault.azure.net/.default"},
+    confidential.WithMtlsProofOfPossession())
+if err != nil {
+    // TODO: handle error
+}
+_ = result.Metadata.TokenType                  // "mtls_pop"
+_ = result.BindingCertificate                  // public binding certificate (never the private key)
+_ = result.BindingCertificateThumbprint()      // base64url SHA-256 (x5t#S256)
+```
+
+Notes:
+
+- **Binding is via the TLS certificate**: no `client_assertion` and no `req_cnf` are sent for a
+  pure-certificate request. The endpoint is rewritten from `login.*` to `mtlsauth.*`.
+- **Region is optional**: the global `mtlsauth.microsoft.com` endpoint is used when no region is
+  configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
+- **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
+  certificate thumbprint). A plain `WithHTTPClient` cannot carry the certificate; use
+  `WithMtlsHTTPClient` to override the transport for keys the built-in transport can't use.
+- **Not supported** on US Gov / China sovereign clouds today.
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.

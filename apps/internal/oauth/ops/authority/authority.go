@@ -6,6 +6,7 @@ package authority
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -32,6 +33,9 @@ const (
 	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute?api-version=" + defaultAPIVersion
 	autoDetectRegion                  = "TryAutoDetect"
 	AccessTokenTypeBearer             = "Bearer"
+	// AccessTokenTypeMtlsPoP is the token_type ESTS returns for mutual-TLS bound
+	// proof-of-possession tokens.
+	AccessTokenTypeMtlsPoP = "mtls_pop"
 )
 
 // These are various hosts that host AAD Instance discovery endpoints.
@@ -287,6 +291,15 @@ type AuthParams struct {
 	UserFederatedIdentityCredential string
 	// UserObjectID is the target user's object ID for user_fic flow (mutually exclusive with Username).
 	UserObjectID string
+	// IsMtlsPoP indicates the token request must be a mutual-TLS bound proof-of-possession
+	// request (token_type=mtls_pop). When set, MtlsBindingCert is presented as the client
+	// certificate in the TLS handshake to the token endpoint and the endpoint host is rewritten
+	// from login.* to mtlsauth.*.
+	IsMtlsPoP bool
+	// MtlsBindingCert is the certificate (with private key) presented as the client certificate
+	// during the mutual-TLS handshake when IsMtlsPoP is set. Its private key is never surfaced in
+	// results; only the public binding certificate is exposed to callers.
+	MtlsBindingCert *tls.Certificate
 }
 
 // NewAuthParams creates an authorization parameters object.

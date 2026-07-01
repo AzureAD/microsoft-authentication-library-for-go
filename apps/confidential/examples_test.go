@@ -84,3 +84,40 @@ func ExampleClient_AcquireTokenByCredential_withFMIPath() {
 	// TODO: use access token
 	_ = result.AccessToken
 }
+
+// This example demonstrates requesting an mTLS-bound proof-of-possession token (token_type=mtls_pop)
+// using a Subject Name + Issuer (SN/I) certificate as the client TLS certificate. The same
+// certificate loaded for the credential is presented on the mutual-TLS handshake to the token
+// endpoint, and the returned token is bound to it. The authority must be tenanted.
+func ExampleClient_AcquireTokenByCredential_withMtlsProofOfPossession() {
+	b, err := os.ReadFile("cert.pem")
+	if err != nil {
+		log.Fatal(err)
+	}
+	certs, priv, err := confidential.CertFromPEM(b, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	cred, err := confidential.NewCredFromCert(certs, priv)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	client, err := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// The binding certificate is inferred from the credential created by NewCredFromCert.
+	result, err := client.AcquireTokenByCredential(context.TODO(), []string{"https://vault.azure.net/.default"},
+		confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// result.Metadata.TokenType == "mtls_pop"; the public binding certificate and its thumbprint are
+	// available for the caller to present to the resource.
+	_ = result.AccessToken
+	_ = result.BindingCertificate
+	fmt.Println(result.BindingCertificateThumbprint())
+}
