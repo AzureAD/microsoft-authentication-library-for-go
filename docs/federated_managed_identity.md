@@ -119,6 +119,48 @@ func main() {
 }
 ```
 
+## mTLS Proof-of-Possession (both legs)
+
+The two-leg flow above returns Bearer tokens by default. To bind the tokens to the SN/I certificate
+over mutual TLS, opt into mTLS proof-of-possession on **each** leg. The credential is unchanged — only
+the mechanism changes from signing an assertion to presenting the certificate as the client TLS
+certificate. Both legs return `token_type=mtls_pop`.
+
+```go
+// Leg 1 (inside your RMA helper): SN/I cert -> cert-bound federated assertion, itself mTLS PoP.
+// The exchange audience is caller-supplied: api://AzureADTokenExchange for generic S2S FIC, or
+// api://AzureFMITokenExchange (+ WithFMIPath) for the FMI variant.
+leg1, err := rmaClient.AcquireTokenByCredential(
+    ctx,
+    []string{"api://AzureFMITokenExchange/.default"},
+    confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+    confidential.WithMtlsProofOfPossession(),
+)
+// leg1.Metadata.TokenType == "mtls_pop"; leg1.BindingCertificate is the public binding certificate.
+
+// Leg 2: the federated assertion is presented as a jwt-pop client assertion, and the same binding
+// certificate is presented on the TLS handshake. Supply it with WithMtlsBindingCertificate because
+// the leg-2 credential is an assertion callback that has no certificate of its own.
+result, err := app.AcquireTokenByCredential(
+    ctx,
+    []string{"your-resource/.default"},
+    confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+    confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingCertificate(certs, privateKey)),
+)
+// result.Metadata.TokenType == "mtls_pop", bound to the leg-1 certificate thumbprint.
+```
+
+Notes:
+
+- A **tenanted authority** is required (not `/common`, `/organizations`, or `/consumers`).
+- The token endpoint is rewritten from `login.*` to `mtlsauth.*`; region is optional (global
+  `mtlsauth.microsoft.com` is used when no region is configured).
+- `WithMtlsBindingCertificate` is only needed on the assertion-authenticated leg (leg 2). For a leg
+  created with `NewCredFromCert` (leg 1) the binding certificate is inferred from the credential.
+- Results expose only **public** binding material (`BindingCertificate` and
+  `BindingCertificateThumbprint()`); the private key is never surfaced.
+- mTLS PoP is not supported on US Gov / China sovereign clouds today.
+
 ## Cache Behavior
 
 Tokens acquired with FMI are **automatically isolated** in the cache. This means:

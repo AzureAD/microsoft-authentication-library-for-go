@@ -165,6 +165,32 @@ Notes:
   `WithMtlsHTTPClient` to override the transport for keys the built-in transport can't use.
 - **Not supported** on US Gov / China sovereign clouds today.
 
+### Two-leg federated identity credential (FIC) over mTLS PoP
+
+For service-to-service FIC, the application orchestrates two calls, each opting into mTLS PoP. Leg 1
+uses the SN/I certificate to obtain a certificate-bound federated assertion; leg 2 presents that
+assertion (as a jwt-pop client assertion) together with the binding certificate to obtain the final
+`mtls_pop` token:
+
+```go
+// Leg 1: SN/I cert -> cert-bound federated assertion (itself mTLS PoP).
+leg1, _ := rmaApp.AcquireTokenByCredential(ctx,
+    []string{"api://AzureADTokenExchange/.default"},
+    confidential.WithMtlsProofOfPossession())
+
+// Leg 2: assertion (jwt-pop) + binding cert -> final mtls_pop token.
+assertionCred := confidential.NewCredFromAssertionCallback(
+    func(context.Context, confidential.AssertionRequestOptions) (string, error) {
+        return leg1.AccessToken, nil
+    })
+ficApp, _ := confidential.New(authority, ficClientID, assertionCred)
+final, _ := ficApp.AcquireTokenByCredential(ctx, scopes,
+    confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingCertificate(certs, key)))
+```
+
+See [docs/federated_managed_identity.md](docs/federated_managed_identity.md) for the full FIC/FMI
+walkthrough.
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.

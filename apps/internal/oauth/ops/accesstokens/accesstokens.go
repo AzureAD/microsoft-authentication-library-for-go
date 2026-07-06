@@ -298,7 +298,13 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 		return TokenResponse{}, err
 	}
 	qv.Set(grantType, grant.ClientCredential)
-	qv.Set("client_assertion_type", grant.ClientAssertion)
+	// For mTLS proof-of-possession the client assertion is certificate-bound: signal it with the
+	// jwt-pop assertion type and present the binding certificate on the TLS handshake (see doTokenResp).
+	assertionType := grant.ClientAssertion
+	if authParameters.IsMtlsPoP {
+		assertionType = grant.ClientAssertionPoP
+	}
+	qv.Set("client_assertion_type", assertionType)
 	qv.Set("client_assertion", assertion)
 	qv.Set(clientID, authParameters.ClientID)
 	qv.Set(clientInfo, clientInfoVal)
