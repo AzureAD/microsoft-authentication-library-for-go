@@ -12,8 +12,8 @@ import (
 )
 
 // mtlsPoPResourceScope is an ESTS allow-listed resource audience (Azure Key Vault). ESTS gates mTLS
-// proof-of-possession on the final resource being allow-listed (see plan §e note A), so the E2E must
-// request a token for an allow-listed resource regardless of the client app.
+// proof-of-possession on the final resource being allow-listed, so the E2E must request a token for
+// an allow-listed resource regardless of the client app.
 const mtlsPoPResourceScope = "https://vault.azure.net/.default"
 
 // TestConfidentialClientSNIMtlsPoP is the Scope 1 (vanilla SNI -> mTLS PoP) end-to-end test. It uses

@@ -970,7 +970,8 @@ func WithAttribute(attrValue string) interface {
 // WithMtlsProofOfPossession requests an mTLS-bound proof-of-possession token (token_type=mtls_pop):
 // the binding certificate is presented as the client certificate in the mutual-TLS handshake to the
 // token endpoint (rewritten from login.* to mtlsauth.*) and the returned token is bound to that
-// certificate. The authority must be tenanted (not /common or /organizations) and in a supported cloud.
+// certificate. The authority must be tenanted (not /common, /organizations, or /consumers) and in a
+// supported cloud.
 //
 // The binding certificate is inferred from a [NewCredFromCert] credential. The result exposes the
 // public binding certificate via [AuthResult.BindingCertificate] and its thumbprint via

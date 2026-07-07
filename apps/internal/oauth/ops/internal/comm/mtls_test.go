@@ -9,6 +9,10 @@ import (
 	"testing"
 )
 
+// testKey is a non-nil placeholder private key for fixtures that never perform a real TLS handshake.
+var testKey = struct{}{}
+
+
 func TestBuildMtlsClient(t *testing.T) {
 	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
 	client := BuildMtlsClient(cert)
@@ -31,8 +35,8 @@ func TestBuildMtlsClient(t *testing.T) {
 }
 
 func TestMtlsClientCachePerThumbprint(t *testing.T) {
-	certA := &tls.Certificate{Certificate: [][]byte{{0xAA, 0xBB}}}
-	certB := &tls.Certificate{Certificate: [][]byte{{0xCC, 0xDD}}}
+	certA := &tls.Certificate{Certificate: [][]byte{{0xAA, 0xBB}}, PrivateKey: testKey}
+	certB := &tls.Certificate{Certificate: [][]byte{{0xCC, 0xDD}}, PrivateKey: testKey}
 
 	var built int
 	c := &Client{}
@@ -72,10 +76,25 @@ func TestMtlsClientRequiresCert(t *testing.T) {
 	if _, err := c.mtlsClient(&tls.Certificate{}); err == nil {
 		t.Error("mtlsClient(empty) = nil error, want error")
 	}
+	if _, err := c.mtlsClient(&tls.Certificate{Certificate: [][]byte{{}}, PrivateKey: testKey}); err == nil {
+		t.Error("mtlsClient(empty leaf) = nil error, want error")
+	}
+	if _, err := c.mtlsClient(&tls.Certificate{Certificate: [][]byte{{0x01}}}); err == nil {
+		t.Error("mtlsClient(no private key) = nil error, want error")
+	}
+}
+
+func TestMtlsClientRejectsNilFactoryResult(t *testing.T) {
+	cert := &tls.Certificate{Certificate: [][]byte{{0x22}}, PrivateKey: testKey}
+	c := &Client{}
+	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return nil })
+	if _, err := c.mtlsClient(cert); err == nil {
+		t.Error("mtlsClient with nil-returning factory = nil error, want error")
+	}
 }
 
 func TestMtlsClientUsesFactoryOverride(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x11}}}
+	cert := &tls.Certificate{Certificate: [][]byte{{0x11}}, PrivateKey: testKey}
 	sentinel := &http.Client{}
 	c := &Client{}
 	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return sentinel })

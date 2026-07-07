@@ -44,8 +44,11 @@ func BuildMtlsClient(cert tls.Certificate) *http.Client {
 // mtlsClient returns an HTTPClient bound to cert, building and caching one per certificate thumbprint
 // so repeated mTLS PoP calls reuse the same connection pool.
 func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
-	if cert == nil || len(cert.Certificate) == 0 {
+	if cert == nil || len(cert.Certificate) == 0 || len(cert.Certificate[0]) == 0 {
 		return nil, fmt.Errorf("mTLS proof-of-possession requires a binding certificate")
+	}
+	if cert.PrivateKey == nil {
+		return nil, fmt.Errorf("mTLS proof-of-possession binding certificate is missing its private key")
 	}
 	sum := sha256.Sum256(cert.Certificate[0])
 	key := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -63,6 +66,9 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 		client = c.mtlsFactory(*cert)
 	} else {
 		client = BuildMtlsClient(*cert)
+	}
+	if client == nil {
+		return nil, fmt.Errorf("mTLS proof-of-possession client factory returned a nil client")
 	}
 	c.mtlsClients[key] = client
 	return client, nil
