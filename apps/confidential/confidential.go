@@ -1047,13 +1047,19 @@ func WithMtlsProofOfPossession(opts ...MtlsPoPOption) interface {
 	}
 }
 
-// newTLSBindingCertificate assembles a tls.Certificate from a certificate chain and RSA private key,
-// placing the signing (leaf) certificate first as required for the TLS handshake.
+// newTLSBindingCertificate assembles a tls.Certificate from a certificate chain and an RSA private
+// key, placing the signing (leaf) certificate first as required for the TLS handshake. The key may
+// be any RSA key implementing crypto.Signer (including CNG/HSM-backed keys), matched to the leaf via
+// its public key.
 func newTLSBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey) (*tls.Certificate, error) {
 	if len(certs) == 0 || key == nil {
 		return nil, errors.New("WithMtlsBindingCertificate requires a certificate and private key")
 	}
-	k, ok := key.(*rsa.PrivateKey)
+	signer, ok := key.(crypto.Signer)
+	if !ok {
+		return nil, errors.New("mTLS binding certificate key must implement crypto.Signer")
+	}
+	pub, ok := signer.Public().(*rsa.PublicKey)
 	if !ok {
 		return nil, errors.New("mTLS binding certificate key must be an RSA key")
 	}
@@ -1063,7 +1069,7 @@ func newTLSBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey) 
 			continue
 		}
 		certKey, ok := cert.PublicKey.(*rsa.PublicKey)
-		if ok && k.E == certKey.E && k.N.Cmp(certKey.N) == 0 {
+		if ok && pub.E == certKey.E && pub.N.Cmp(certKey.N) == 0 {
 			// The signing (leaf) cert matches the private key and must be first.
 			tlsCert.Certificate = append([][]byte{cert.Raw}, tlsCert.Certificate...)
 			tlsCert.Leaf = cert
