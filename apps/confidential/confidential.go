@@ -1031,13 +1031,19 @@ func WithMtlsProofOfPossession(opts ...MtlsPoPOption) interface {
 				if buildErr != nil {
 					return buildErr
 				}
+				// Only overwrite the binding cert when this option actually carries one, so composing
+				// multiple WithMtlsProofOfPossession options can't clear a previously supplied cert.
 				switch t := a.(type) {
 				case *acquireTokenByCredentialOptions:
 					t.isMtlsPoP = true
-					t.mtlsBindingCert = bindingCert
+					if bindingCert != nil {
+						t.mtlsBindingCert = bindingCert
+					}
 				case *acquireTokenSilentOptions:
 					t.isMtlsPoP = true
-					t.mtlsBindingCert = bindingCert
+					if bindingCert != nil {
+						t.mtlsBindingCert = bindingCert
+					}
 				default:
 					return fmt.Errorf("unexpected options type %T", a)
 				}
