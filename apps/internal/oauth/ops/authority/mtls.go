@@ -80,25 +80,29 @@ func isPublicMtlsEnvironment(host string) bool {
 	return false
 }
 
-// mtlsPoPSupportedForCloud is the single, isolated guardrail predicate gating which clouds may use
-// mTLS PoP today. It is intentionally the ONLY place the sovereign-cloud restriction lives so it can
-// be lifted trivially as mtlsauth.* rolls out to more clouds (do not entrench this check across the
-// code path). It returns false for US Gov and China (21Vianet) hosts.
-func mtlsPoPSupportedForCloud(host string) bool {
-	switch strings.ToLower(host) {
-	case "login.microsoftonline.us", "login.usgovcloudapi.net",
-		"login.chinacloudapi.cn", "login.partner.microsoftonline.cn":
-		return false
-	}
-	return true
+// mtlsPoPUnsupportedHosts maps legacy sovereign login hosts that do not serve the mtlsauth.* endpoint
+// family to the supported host callers should use instead. It mirrors MSAL.NET's
+// RegionAndMtlsDiscoveryProvider s_unsupportedMtlsHosts: the modern sovereign hosts
+// (login.microsoftonline.us and login.partner.microsoftonline.cn) ARE supported and receive the
+// normal login.* -> mtlsauth.* rewrite; only these older alternate hostnames are rejected, with
+// guidance toward their supported equivalent. Keeping the restriction in this one map makes it easy
+// to adjust as mtlsauth.* rolls out.
+var mtlsPoPUnsupportedHosts = map[string]string{
+	"login.usgovcloudapi.net": "login.microsoftonline.us",
+	"login.chinacloudapi.cn":  "login.partner.microsoftonline.cn",
 }
 
 // MtlsTokenEndpoint derives the mutual-TLS token endpoint for an mTLS PoP request from the resolved
 // token endpoint and authority info. It rewrites the host from login.* to mtlsauth.* (preserving any
 // region prefix) and fails fast for authorities that don't support mTLS PoP:
 //   - non-login.* hosts,
-//   - US Gov / China sovereign clouds (see mtlsPoPSupportedForCloud),
+//   - the legacy sovereign hosts login.usgovcloudapi.net and login.chinacloudapi.cn, which don't
+//     serve mtlsauth.* (callers are pointed at login.microsoftonline.us /
+//     login.partner.microsoftonline.cn — see mtlsPoPUnsupportedHosts),
 //   - non-tenanted authorities (/common, /organizations, /consumers).
+//
+// The worldwide public hosts and the modern sovereign hosts (login.microsoftonline.us,
+// login.partner.microsoftonline.cn) are supported, matching MSAL.NET.
 //
 // When a concrete region is configured the endpoint is regionalized ({region}.mtlsauth...);
 // otherwise the global endpoint is used (region is optional — global mtlsauth.microsoft.com is
@@ -113,8 +117,8 @@ func (p AuthParams) MtlsTokenEndpoint() (string, error) {
 	if !strings.HasPrefix(host, loginPrefix+".") {
 		return "", fmt.Errorf("mTLS proof-of-possession is not supported for authority host %q; a login.* host is required", p.AuthorityInfo.Host)
 	}
-	if !mtlsPoPSupportedForCloud(host) {
-		return "", fmt.Errorf("mTLS proof-of-possession is not supported for sovereign cloud host %q", p.AuthorityInfo.Host)
+	if supportedHost, ok := mtlsPoPUnsupportedHosts[host]; ok {
+		return "", fmt.Errorf("mTLS proof-of-possession is not supported for host %q; use %q instead", p.AuthorityInfo.Host, supportedHost)
 	}
 
 	var mtlsHost string

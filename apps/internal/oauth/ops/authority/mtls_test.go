@@ -149,23 +149,28 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 			wantErr: true,
 		},
 		{
-			name:    "US Gov sovereign cloud rejected",
-			params:  mtlsParams("login.microsoftonline.us", "contoso.onmicrosoft.com", "", ""),
-			wantErr: true,
+			name:   "US Gov (login.microsoftonline.us) -> mtlsauth.microsoftonline.us",
+			params: mtlsParams("login.microsoftonline.us", "contoso.onmicrosoft.com", "", "https://login.microsoftonline.us/contoso.onmicrosoft.com/oauth2/v2.0/token"),
+			want:   "https://mtlsauth.microsoftonline.us/contoso.onmicrosoft.com/oauth2/v2.0/token",
 		},
 		{
-			name:    "US Gov (usgovcloudapi) rejected",
+			name:   "US Gov with region -> regional mtlsauth.microsoftonline.us",
+			params: mtlsParams("login.microsoftonline.us", "contoso.onmicrosoft.com", "usgovvirginia", "https://login.microsoftonline.us/contoso.onmicrosoft.com/oauth2/v2.0/token"),
+			want:   "https://usgovvirginia.mtlsauth.microsoftonline.us/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			name:   "China (login.partner.microsoftonline.cn) -> mtlsauth.partner.microsoftonline.cn",
+			params: mtlsParams("login.partner.microsoftonline.cn", "contoso.onmicrosoft.com", "", "https://login.partner.microsoftonline.cn/contoso.onmicrosoft.com/oauth2/v2.0/token"),
+			want:   "https://mtlsauth.partner.microsoftonline.cn/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			name:    "US Gov legacy host (login.usgovcloudapi.net) rejected",
 			params:  mtlsParams("login.usgovcloudapi.net", "contoso.onmicrosoft.com", "", ""),
 			wantErr: true,
 		},
 		{
-			name:    "China (chinacloudapi) rejected",
+			name:    "China legacy host (login.chinacloudapi.cn) rejected",
 			params:  mtlsParams("login.chinacloudapi.cn", "contoso.onmicrosoft.com", "", ""),
-			wantErr: true,
-		},
-		{
-			name:    "China (partner.microsoftonline.cn) rejected",
-			params:  mtlsParams("login.partner.microsoftonline.cn", "contoso.onmicrosoft.com", "", ""),
 			wantErr: true,
 		},
 	}
@@ -189,17 +194,29 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 	}
 }
 
-func TestMtlsPoPSupportedForCloud(t *testing.T) {
-	supported := []string{"login.microsoftonline.com", "login.microsoft.com", "login.windows.net", "login.example.com"}
-	for _, h := range supported {
-		if !mtlsPoPSupportedForCloud(h) {
-			t.Errorf("mtlsPoPSupportedForCloud(%q) = false, want true", h)
+func TestMtlsPoPUnsupportedHosts(t *testing.T) {
+	// The legacy sovereign hostnames are rejected with guidance toward their supported equivalent.
+	wantSuggestions := map[string]string{
+		"login.usgovcloudapi.net": "login.microsoftonline.us",
+		"login.chinacloudapi.cn":  "login.partner.microsoftonline.cn",
+	}
+	for host, want := range wantSuggestions {
+		got, ok := mtlsPoPUnsupportedHosts[host]
+		if !ok {
+			t.Errorf("mtlsPoPUnsupportedHosts[%q] missing; want the host rejected", host)
+			continue
+		}
+		if got != want {
+			t.Errorf("mtlsPoPUnsupportedHosts[%q] = %q, want %q", host, got, want)
 		}
 	}
-	unsupported := []string{"login.microsoftonline.us", "login.usgovcloudapi.net", "login.chinacloudapi.cn", "login.partner.microsoftonline.cn"}
-	for _, h := range unsupported {
-		if mtlsPoPSupportedForCloud(h) {
-			t.Errorf("mtlsPoPSupportedForCloud(%q) = true, want false", h)
+	// Public and modern sovereign hosts are supported (must not be in the block map).
+	for _, host := range []string{
+		"login.microsoftonline.com", "login.microsoft.com", "login.windows.net", "login.example.com",
+		"login.microsoftonline.us", "login.partner.microsoftonline.cn",
+	} {
+		if _, ok := mtlsPoPUnsupportedHosts[host]; ok {
+			t.Errorf("host %q is in the block map but should be supported", host)
 		}
 	}
 }
