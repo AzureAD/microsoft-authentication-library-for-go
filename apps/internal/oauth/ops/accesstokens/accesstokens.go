@@ -28,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
@@ -494,7 +495,20 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 	if c.testing {
 		return resp, nil
 	}
-	return resp, resp.Validate()
+	if err := resp.Validate(); err != nil {
+		return resp, err
+	}
+	// mTLS PoP is a security primitive: when the caller requests a certificate-bound token the
+	// identity provider must honor it. Fail closed on a downgrade (e.g. token_type=Bearer) rather
+	// than returning a token that only looks bound. Mirrors MSAL .NET's TokenClient token_type
+	// check (error code "token_type_mismatch").
+	if authParams.IsMtlsPoP && !strings.EqualFold(resp.TokenType, authority.AccessTokenTypeMtlsPoP) {
+		return resp, msalerrors.MtlsPoPTokenTypeMismatchError{
+			Expected: authority.AccessTokenTypeMtlsPoP,
+			Actual:   resp.TokenType,
+		}
+	}
+	return resp, nil
 }
 
 // prepURLVals returns an url.Values that sets various key/values if we are doing secrets
