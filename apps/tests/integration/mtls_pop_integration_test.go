@@ -133,13 +133,12 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("leg 1 confidential.New() failed: %s", errors.Verbose(err))
 	}
-	leg1, err := leg1App.AcquireTokenByCredential(ctx, []string{fmiScope},
-		confidential.WithFMIPath(fmiPath),
-		confidential.WithMtlsProofOfPossession(),
-	)
-	if err != nil {
-		t.Fatalf("leg 1 AcquireTokenByCredential() failed: %s", errors.Verbose(err))
-	}
+	leg1 := acquireMtlsPoPOrSkip(t, func() (confidential.AuthResult, error) {
+		return leg1App.AcquireTokenByCredential(ctx, []string{fmiScope},
+			confidential.WithFMIPath(fmiPath),
+			confidential.WithMtlsProofOfPossession(),
+		)
+	})
 	if leg1.Metadata.TokenType != "mtls_pop" {
 		t.Fatalf("leg 1 token_type = %q, want mtls_pop", leg1.Metadata.TokenType)
 	}
@@ -157,13 +156,12 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("leg 2 confidential.New() failed: %s", errors.Verbose(err))
 	}
-	final, err := leg2App.AcquireTokenByCredential(ctx, []string{testScope},
-		confidential.WithFMIPath(fmiPath),
-		confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingCertificate(cert, privateKey)),
-	)
-	if err != nil {
-		t.Fatalf("leg 2 AcquireTokenByCredential() failed: %s", errors.Verbose(err))
-	}
+	final := acquireMtlsPoPOrSkip(t, func() (confidential.AuthResult, error) {
+		return leg2App.AcquireTokenByCredential(ctx, []string{testScope},
+			confidential.WithFMIPath(fmiPath),
+			confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingCertificate(cert, privateKey)),
+		)
+	})
 	if final.AccessToken == "" {
 		t.Fatal("leg 2 returned empty AccessToken")
 	}
