@@ -159,7 +159,9 @@ Notes:
   created with `NewCredFromCert` (leg 1) the binding certificate is inferred from the credential.
 - Results expose only **public** binding material (`BindingCertificate` and
   `BindingCertificateThumbprint()`); the private key is never surfaced.
-- mTLS PoP is not supported on US Gov / China sovereign clouds today.
+- Sovereign clouds are supported via `login.microsoftonline.us` (US Gov) and
+  `login.partner.microsoftonline.cn` (China); the legacy hosts `login.usgovcloudapi.net` and
+  `login.chinacloudapi.cn` are rejected with guidance toward the supported host.
 
 ## Cache Behavior
 
