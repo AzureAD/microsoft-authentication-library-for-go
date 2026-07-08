@@ -17,10 +17,15 @@ import (
 // (for example CNG/HSM-backed keys). When unset, MSAL auto-builds and caches a client per certificate.
 type MtlsClientFactory func(cert tls.Certificate) HTTPClient
 
-// SetMtlsClientFactory installs a custom factory for building mTLS clients. It must be called during
-// construction, before any concurrent token calls.
+// SetMtlsClientFactory installs a custom factory for building mTLS clients. It is intended to be
+// called during construction, before any concurrent token calls. The assignment is guarded by mtlsMu
+// (paired with the read in mtlsClient) and resets the per-certificate client cache so cached clients
+// can't mix factories.
 func (c *Client) SetMtlsClientFactory(factory MtlsClientFactory) {
+	c.mtlsMu.Lock()
+	defer c.mtlsMu.Unlock()
 	c.mtlsFactory = factory
+	c.mtlsClients = nil
 }
 
 // BuildMtlsClient returns an *http.Client whose transport presents cert as the client certificate
