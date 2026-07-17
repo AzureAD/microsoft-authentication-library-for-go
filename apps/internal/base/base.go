@@ -342,6 +342,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.Claims = silent.Claims
 	authParams.ClientClaims = silent.ClientClaims
 	authParams.UserAssertion = silent.UserAssertion
+	authParams.IsAppTokenCache = silent.IsAppCache
 	if silent.AuthnScheme != nil {
 		authParams.AuthnScheme = silent.AuthnScheme
 	}
