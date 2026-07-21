@@ -302,6 +302,55 @@ func TestAADInstanceDiscoveryWithRegion(t *testing.T) {
 	}
 }
 
+func TestAADInstanceDiscoveryInvalidRegion(t *testing.T) {
+	client := Client{&fakeJSONCaller{}}
+	for _, test := range []struct {
+		desc, region string
+	}{
+		{"contains dot", "east.us"},
+		{"contains slash", "east/us"},
+		{"contains uppercase", "EastUS"},
+		{"contains space", "east us"},
+		{"starts with digit", "1eastus"},
+		{"starts with hyphen", "-eastus"},
+		{"contains underscore", "east_us"},
+		{"contains special char", "east$us"},
+		{"path traversal attempt", "../evil"},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			authInfo := Info{Host: "login.microsoft.com", Tenant: "tenant", Region: test.region}
+			_, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+			if err == nil {
+				t.Fatalf("AADInstanceDiscovery(%q): expected error, got nil", test.region)
+			}
+			if !strings.Contains(err.Error(), "invalid region") {
+				t.Errorf("AADInstanceDiscovery(%q): expected 'invalid region' error, got: %v", test.region, err)
+			}
+		})
+	}
+}
+
+func TestAADInstanceDiscoveryValidRegion(t *testing.T) {
+	client := Client{&fakeJSONCaller{}}
+	for _, region := range []string{
+		"eastus",
+		"westus2",
+		"east-us-2",
+		"centralus",
+		"a",
+		"a1",
+		"a-1",
+	} {
+		t.Run(region, func(t *testing.T) {
+			authInfo := Info{Host: "login.microsoft.com", Tenant: "tenant", Region: region}
+			_, err := client.AADInstanceDiscovery(context.Background(), authInfo)
+			if err != nil {
+				t.Errorf("AADInstanceDiscovery(%q): unexpected error: %v", region, err)
+			}
+		})
+	}
+}
+
 func TestCreateAuthorityInfoFromAuthorityUri(t *testing.T) {
 	const authorityURI = "https://login.microsoftonline.com/common/"
 
