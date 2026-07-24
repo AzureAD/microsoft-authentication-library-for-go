@@ -28,8 +28,7 @@ const (
 	microsoftAuthority     = microsoftAuthorityHost + "microsoft.onmicrosoft.com"
 	organizationsAuthority = microsoftAuthorityHost + "organizations/"
 
-	msIDlabDefaultScope = "https://request.msidlab.com/.default"
-	graphDefaultScope   = "https://graph.windows.net/.default"
+	graphDefaultScope = "https://graph.windows.net/.default"
 
 	defaultClientId = "f62c5ae3-bf3a-4af5-afa8-a68b800396e9"
 
@@ -104,41 +103,6 @@ var (
 
 	httpClient = http.Client{}
 )
-
-type labClient struct {
-	app confidential.Client
-}
-
-func newLabClient() (*labClient, error) {
-	cert, privateKey, err := getCertDataFromFile(pemFile)
-	if err != nil {
-		return nil, fmt.Errorf("could not get cert data: %w", err)
-	}
-
-	cred, err := confidential.NewCredFromCert(cert, privateKey)
-	if err != nil {
-		return nil, fmt.Errorf("could not create a cred from the cert: %w", err)
-	}
-
-	app, err := confidential.New(microsoftAuthority, defaultClientId, cred, confidential.WithX5C())
-	if err != nil {
-		return nil, err
-	}
-
-	return &labClient{app: app}, nil
-}
-
-func (l *labClient) labAccessToken() (string, error) {
-	scopes := []string{msIDlabDefaultScope}
-	result, err := l.app.AcquireTokenSilent(context.Background(), scopes)
-	if err != nil {
-		result, err = l.app.AcquireTokenByCredential(context.Background(), scopes)
-		if err != nil {
-			return "", fmt.Errorf("AcquireTokenByCredential() error: %w", err)
-		}
-	}
-	return result.AccessToken, nil
-}
 
 // initKeyVaultClients initializes the Key Vault access clients using cert auth
 func initKeyVaultClients() error {
