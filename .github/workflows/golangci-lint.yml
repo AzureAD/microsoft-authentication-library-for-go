@@ -6,23 +6,24 @@ on:
     branches:      
       - main      
   pull_request:
-    # This guards against unknown PR until a community member vet it and label it.
-      types: [ labeled ]
+    # Runs automatically on new/updated PRs; `labeled` is kept so a maintainer
+    # can (re)trigger a run by labeling, preserving the community-vetting guard.
+      types: [ opened, synchronize, reopened, labeled ]
 
 jobs:
   golangci:
     name: lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/setup-go@v3
+      - uses: actions/setup-go@v6
         with:
-          go-version: "1.20"
-      - uses: actions/checkout@v3
+          go-version: "1.22"
+      - uses: actions/checkout@v5
       - name: golangci-lint
-        uses: golangci/golangci-lint-action@v3
+        uses: golangci/golangci-lint-action@v9
         with:
           # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
-          version: v1.51
+          version: v2.12
 
           # Optional: golangci-lint command line arguments.
           # args: --issues-exit-code=0
