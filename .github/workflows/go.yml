@@ -4,9 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    # Runs automatically on new/updated PRs; `labeled` is kept so a maintainer
-    # can (re)trigger a run by labeling, preserving the community-vetting guard.
-    types: [ opened, synchronize, reopened, labeled ]
+    # No `branches:` filter, so this runs on ALL pull requests regardless of the
+    # target branch (defaults to opened, synchronize, reopened).
 
 
 jobs:
