@@ -7,50 +7,129 @@ pr:
     include:
       - main
 
-pool:
-  vmImage: "ubuntu-latest"
+variables:
+  goVersion: "1.22.3"
 
-steps:
-  - task: GoTool@0
-    inputs:
-      version: "1.22.3"
-  - task: Go@0
-    inputs:
-      command: "get"
-      arguments: "-d -v -t -d ./..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
-    displayName: "Install dependencies"
-  - task: Go@0
-    inputs:
-      command: "build"
-      arguments: "./apps/..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
+stages:
+  # ──────────────────────────────────────────────
+  # Stage 1 — Build
+  # ──────────────────────────────────────────────
+  - stage: Build
     displayName: "Build"
-  - task: Go@0
-    inputs:
-      command: "test"
-      arguments: "-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
-    displayName: "Run Unit Tests"
-  - task: AzureKeyVault@2
-    displayName: "Connect to Key Vault"
-    inputs:
-      azureSubscription: "AuthSdkResourceManager"
-      KeyVaultName: "msidlabs"
-      SecretsFilter: "LabAuth,IDLABS-APP-Confidential-Client-Cert-OnPrem"
-  - task: Bash@3
-    displayName: Installing certificate
-    inputs:
-      targetType: "inline"
-      script: |
-        echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
-        OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:'' -legacy
-        echo "$(IDLABS-APP-Confidential-Client-Cert-OnPrem)" | base64 -d > $(Build.SourcesDirectory)/ccaCert.pfx
-        OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:'' -legacy
+    dependsOn: []
+    jobs:
+      - job: Build
+        displayName: "Build MSAL Go"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: GoTool@0
+            inputs:
+              version: $(goVersion)
+          - task: Go@0
+            inputs:
+              command: "get"
+              arguments: "-d -v -t -d ./..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Install dependencies"
+          - task: Go@0
+            inputs:
+              command: "build"
+              arguments: "./apps/..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Build"
 
-  - task: Go@0
-    inputs:
-      command: "test"
-      arguments: "-race ./apps/tests/integration/..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
-    displayName: "Run Integration Tests"
+  # ──────────────────────────────────────────────
+  # Stage 2 — Unit Tests
+  # ──────────────────────────────────────────────
+  - stage: UnitTests
+    displayName: "Unit Tests"
+    dependsOn: Build
+    jobs:
+      - job: UnitTests
+        displayName: "Run Unit Tests"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: GoTool@0
+            inputs:
+              version: $(goVersion)
+          - task: Go@0
+            inputs:
+              command: "get"
+              arguments: "-d -v -t -d ./..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Install dependencies"
+          - task: Bash@3
+            displayName: "Run Unit Tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                set -e
+                go install gotest.tools/gotestsum@latest
+                export PATH="$PATH:$(go env GOPATH)/bin"
+                gotestsum --junitfile "$(Build.SourcesDirectory)/unit-tests.xml" -- \
+                  -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/...
+          - task: PublishTestResults@2
+            displayName: "Publish unit test results"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "**/unit-tests.xml"
+              testRunTitle: "Unit Tests"
+
+  # ──────────────────────────────────────────────
+  # Stage 3 — Integration Tests
+  # ──────────────────────────────────────────────
+  - stage: IntegrationTests
+    displayName: "Integration Tests"
+    dependsOn: Build
+    jobs:
+      - job: IntegrationTests
+        displayName: "Run Integration Tests"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: GoTool@0
+            inputs:
+              version: $(goVersion)
+          - task: Go@0
+            inputs:
+              command: "get"
+              arguments: "-d -v -t -d ./..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Install dependencies"
+          - task: AzureKeyVault@2
+            displayName: "Connect to Key Vault"
+            inputs:
+              azureSubscription: "AuthSdkResourceManager"
+              KeyVaultName: "msidlabs"
+              SecretsFilter: "LabAuth,IDLABS-APP-Confidential-Client-Cert-OnPrem"
+          - task: Bash@3
+            displayName: "Installing certificate"
+            inputs:
+              targetType: "inline"
+              script: |
+                echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
+                OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:'' -legacy
+                echo "$(IDLABS-APP-Confidential-Client-Cert-OnPrem)" | base64 -d > $(Build.SourcesDirectory)/ccaCert.pfx
+                OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:'' -legacy
+          - task: Bash@3
+            displayName: "Run Integration Tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                set -e
+                go install gotest.tools/gotestsum@latest
+                export PATH="$PATH:$(go env GOPATH)/bin"
+                gotestsum --junitfile "$(Build.SourcesDirectory)/integration-tests.xml" -- \
+                  -race ./apps/tests/integration/...
+          - task: PublishTestResults@2
+            displayName: "Publish integration test results"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "**/integration-tests.xml"
+              testRunTitle: "Integration Tests"
