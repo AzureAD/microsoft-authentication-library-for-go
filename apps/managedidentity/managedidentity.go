@@ -10,6 +10,7 @@ without using credentials.
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -490,32 +491,70 @@ func contains[T comparable](list []T, element T) bool {
 	return false
 }
 
+// bufferResponseBody reads resp.Body fully into memory and replaces it with an
+// in-memory reader. This lets the caller consume the response after the
+// per-attempt context that produced it has been canceled. See issue #634.
+func bufferResponseBody(resp *http.Response) error {
+	if resp == nil || resp.Body == nil {
+		return nil
+	}
+	body, err := io.ReadAll(resp.Body)
+	resp.Body.Close()
+	if err != nil {
+		return err
+	}
+	resp.Body = io.NopCloser(bytes.NewReader(body))
+	return nil
+}
+
 // retry performs an HTTP request with retries based on the provided options.
 func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
+	// cancelPrev cancels the context of the previous attempt. It is invoked only
+	// after that attempt's body has been drained, so the transport connection can
+	// still be reused, while avoiding the resource retention of deferring every
+	// per-attempt cancel until retry() returns.
+	var cancelPrev context.CancelFunc
+	retrylist := retryStatusCodes
+	if c.source == DefaultToIMDS {
+		retrylist = retryCodesForIMDS
+	}
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Minute)
-		defer tryCancel()
 		if resp != nil && resp.Body != nil {
 			_, _ = io.Copy(io.Discard, resp.Body)
 			resp.Body.Close()
 		}
+		if cancelPrev != nil {
+			cancelPrev()
+		}
+		cancelPrev = tryCancel
 		cloneReq := req.Clone(tryCtx)
 		resp, err = c.httpClient.Do(cloneReq)
-		retrylist := retryStatusCodes
-		if c.source == DefaultToIMDS {
-			retrylist = retryCodesForIMDS
-		}
-		if err == nil && !contains(retrylist, resp.StatusCode) {
-			return resp, nil
+		succeeded := err == nil && !contains(retrylist, resp.StatusCode)
+		if succeeded || attempt == maxRetries-1 {
+			// Buffer the body into memory while tryCtx is still alive so the
+			// caller can read resp.Body after we cancel this attempt's context.
+			// Without this, the deferred/explicit cancel would race the caller's
+			// read and surface as "context canceled" on an otherwise successful
+			// response. See issue #634.
+			if bufErr := bufferResponseBody(resp); bufErr != nil && err == nil {
+				err = bufErr
+			}
+			tryCancel()
+			return resp, err
 		}
 		select {
 		case <-time.After(time.Second):
 		case <-req.Context().Done():
 			err = req.Context().Err()
+			tryCancel()
 			return resp, err
 		}
+	}
+	if cancelPrev != nil {
+		cancelPrev()
 	}
 	return resp, err
 }
