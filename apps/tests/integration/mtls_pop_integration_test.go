@@ -201,7 +201,10 @@ func TestCredential_X509_Output_Bearer(t *testing.T) {
 
 	// WithX5C enables subject-name/issuer auth; without WithMtlsProofOfPossession the credential still
 	// signs and sends a client_assertion and ESTS returns a Bearer token.
-	app, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, cred, confidential.WithX5C())
+	// WithAzureRegion pins the regional mTLS endpoint. A region is forbidden for mtls_pop (it can cause a
+	// silent mtls_pop->Bearer downgrade), but it is correct and desirable on this deterministic Bearer
+	// cell to keep live regional-endpoint coverage. Do not remove it.
+	app, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, cred, confidential.WithX5C(), confidential.WithAzureRegion(sniAllowlistedRegion))
 	if err != nil {
 		t.Fatalf("confidential.New() failed: %s", errors.Verbose(err))
 	}
@@ -291,55 +294,6 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 	// The final token is bound to the leg-1 certificate thumbprint.
 	if final.BindingCertificateThumbprint() != leg1.BindingCertificateThumbprint() {
 		t.Fatal("final token is not bound to the leg-1 certificate thumbprint")
-	}
-}
-
-// TestConfidentialClientSNIMtlsPoPRegional mirrors MSAL Java's
-// acquireTokenClientCredentials_Certificate_MtlsPop_Regional: it pins the SDK to a concrete Azure
-// region so the request is routed to the regional mTLS endpoint ({region}.mtlsauth.microsoft.com),
-// then verifies the mtls_pop token type and that a second call is served from the cache.
-func TestConfidentialClientSNIMtlsPoPRegional(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test")
-	}
-
-	cert, privateKey, err := getCertDataFromFile(pemFile)
-	if err != nil {
-		t.Fatalf("getCertDataFromFile() failed: %s", errors.Verbose(err))
-	}
-	cred, err := confidential.NewCredFromCert(cert, privateKey)
-	if err != nil {
-		t.Fatalf("NewCredFromCert() failed: %s", errors.Verbose(err))
-	}
-
-	app, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, cred, confidential.WithAzureRegion(sniAllowlistedRegion))
-	if err != nil {
-		t.Fatalf("confidential.New() failed: %s", errors.Verbose(err))
-	}
-
-	ctx := context.Background()
-	scopes := []string{mtlsPoPResourceScope}
-
-	result, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
-	if err != nil {
-		t.Fatalf("regional AcquireTokenByCredential() with mTLS PoP failed: %s", errors.Verbose(err))
-	}
-	if result.AccessToken == "" {
-		t.Fatal("AcquireTokenByCredential() returned empty AccessToken")
-	}
-	if result.Metadata.TokenType != "mtls_pop" {
-		t.Fatalf("expected token_type mtls_pop, got %q", result.Metadata.TokenType)
-	}
-
-	cached, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
-	if err != nil {
-		t.Fatalf("second regional AcquireTokenByCredential() failed: %s", errors.Verbose(err))
-	}
-	if cached.Metadata.TokenSource != confidential.TokenSourceCache {
-		t.Fatal("second regional AcquireTokenByCredential() did not return the token from cache")
-	}
-	if cached.Metadata.TokenType != "mtls_pop" {
-		t.Fatalf("cached token_type = %q, want mtls_pop", cached.Metadata.TokenType)
 	}
 }
 
