@@ -4,8 +4,8 @@ on:
   push:
     branches: [main]
   pull_request:
-    # This guards against unknown PR until a community member vet it and label it.
-    types: [ labeled ]
+    # No `branches:` filter, so this runs on ALL pull requests regardless of the
+    # target branch (defaults to opened, synchronize, reopened).
 
 
 jobs:
@@ -20,13 +20,13 @@ jobs:
 
     steps:
       - name: Set up Go 1.x
-        uses: actions/setup-go@v2
+        uses: actions/setup-go@v6
         with:
           go-version: ${{ matrix.go }}
         id: go
 
       - name: Check out code into the Go module directory
-        uses: actions/checkout@v2
+        uses: actions/checkout@v5
 
       - name: Get dependencies
         run: go get -v -t -d ./...

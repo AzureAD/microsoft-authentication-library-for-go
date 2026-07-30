@@ -178,6 +178,7 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		"at_partition",
 		"Bearer",
 		"",
+		"",
 	)
 	if err != nil {
 		t.Errorf("TestReadPartitionedAccessToken: got err == %s, want err == nil", err)
@@ -193,6 +194,7 @@ func TestReadPartitionedAccessToken(t *testing.T) {
 		[]string{"user.read", "openid"},
 		"at_partition",
 		"Bearer",
+		"",
 		"",
 	)
 	if err == nil {
