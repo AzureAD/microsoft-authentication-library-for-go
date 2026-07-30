@@ -7,50 +7,263 @@ pr:
     include:
       - main
 
-pool:
-  vmImage: "ubuntu-latest"
+variables:
+  goVersion: "1.22.3"
 
-steps:
-  - task: GoTool@0
-    inputs:
-      version: "1.22.3"
-  - task: Go@0
-    inputs:
-      command: "get"
-      arguments: "-d -v -t -d ./..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
-    displayName: "Install dependencies"
-  - task: Go@0
-    inputs:
-      command: "build"
-      arguments: "./apps/..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
+stages:
+  # ──────────────────────────────────────────────
+  # Stage 1 — Build
+  # ──────────────────────────────────────────────
+  - stage: Build
     displayName: "Build"
-  - task: Go@0
-    inputs:
-      command: "test"
-      arguments: "-race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
-    displayName: "Run Unit Tests"
-  - task: AzureKeyVault@2
-    displayName: "Connect to Key Vault"
-    inputs:
-      azureSubscription: "AuthSdkResourceManager"
-      KeyVaultName: "msidlabs"
-      SecretsFilter: "LabAuth,IDLABS-APP-Confidential-Client-Cert-OnPrem"
-  - task: Bash@3
-    displayName: Installing certificate
-    inputs:
-      targetType: "inline"
-      script: |
-        echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
-        OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:'' -legacy
-        echo "$(IDLABS-APP-Confidential-Client-Cert-OnPrem)" | base64 -d > $(Build.SourcesDirectory)/ccaCert.pfx
-        OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:'' -legacy
+    dependsOn: []
+    jobs:
+      - job: Build
+        displayName: "Build MSAL Go"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: GoTool@0
+            inputs:
+              version: $(goVersion)
+          - task: Go@0
+            inputs:
+              command: "get"
+              arguments: "-d -v -t -d ./..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Install dependencies"
+          - task: Go@0
+            inputs:
+              command: "build"
+              arguments: "./apps/..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Build"
 
-  - task: Go@0
-    inputs:
-      command: "test"
-      arguments: "-race ./apps/tests/integration/..."
-      workingDirectory: "$(System.DefaultWorkingDirectory)"
-    displayName: "Run Integration Tests"
+  # ──────────────────────────────────────────────
+  # Stage 2 — Unit Tests
+  # ──────────────────────────────────────────────
+  - stage: UnitTests
+    displayName: "Unit Tests"
+    dependsOn: Build
+    jobs:
+      - job: UnitTests
+        displayName: "Run Unit Tests"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: GoTool@0
+            inputs:
+              version: $(goVersion)
+          - task: Go@0
+            inputs:
+              command: "get"
+              arguments: "-d -v -t -d ./..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Install dependencies"
+          - task: Bash@3
+            displayName: "Run Unit Tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                set -e
+                (cd "$(Build.SourcesDirectory)/build/tools" && go install gotest.tools/gotestsum)
+                export PATH="$PATH:$(go env GOPATH)/bin"
+                gotestsum --junitfile "$(Build.SourcesDirectory)/unit-tests.xml" -- \
+                  -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/...
+          - task: PublishTestResults@2
+            displayName: "Publish unit test results"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "**/unit-tests.xml"
+              testRunTitle: "Unit Tests"
+
+  # ──────────────────────────────────────────────
+  # Stage 3 — Integration Tests
+  # ──────────────────────────────────────────────
+  - stage: IntegrationTests
+    displayName: "Integration Tests"
+    dependsOn: Build
+    jobs:
+      - job: IntegrationTests
+        displayName: "Run Integration Tests"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: GoTool@0
+            inputs:
+              version: $(goVersion)
+          - task: Go@0
+            inputs:
+              command: "get"
+              arguments: "-d -v -t -d ./..."
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+            displayName: "Install dependencies"
+          - task: AzureKeyVault@2
+            displayName: "Connect to Key Vault"
+            inputs:
+              azureSubscription: "AuthSdkResourceManager"
+              KeyVaultName: "msidlabs"
+              SecretsFilter: "LabAuth,IDLABS-APP-Confidential-Client-Cert-OnPrem"
+          - task: Bash@3
+            displayName: "Installing certificate"
+            inputs:
+              targetType: "inline"
+              script: |
+                echo $(LabAuth) | base64 -d > $(Build.SourcesDirectory)/cert.pfx
+                OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/cert.pfx -out $(Build.SourcesDirectory)/cert.pem -nodes -passin pass:'' -legacy
+                echo "$(IDLABS-APP-Confidential-Client-Cert-OnPrem)" | base64 -d > $(Build.SourcesDirectory)/ccaCert.pfx
+                OPENSSL_CONF=/dev/null openssl pkcs12 -in $(Build.SourcesDirectory)/ccaCert.pfx -out $(Build.SourcesDirectory)/ccaCert.pem -nodes -passin pass:'' -legacy
+          - task: Bash@3
+            displayName: "Run Integration Tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                set -e
+                (cd "$(Build.SourcesDirectory)/build/tools" && go install gotest.tools/gotestsum)
+                export PATH="$PATH:$(go env GOPATH)/bin"
+                gotestsum --junitfile "$(Build.SourcesDirectory)/integration-tests.xml" -- \
+                  -race ./apps/tests/integration/...
+          - task: PublishTestResults@2
+            displayName: "Publish integration test results"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "**/integration-tests.xml"
+              testRunTitle: "Integration Tests"
+
+  # ──────────────────────────────────────────────
+  # Stage 4 — Managed Identity E2E Tests (IMDS v1)
+  #
+  # Runs on the self-hosted "MISEManagedIdentity" VM (Windows), which has a
+  # system-assigned managed identity plus the user-assigned managed identities
+  # assigned to it and IMDS reachable. These are the SAME identities used by the
+  # MSAL .NET IMDS E2E tests, so both SDKs exercise the same lab configuration.
+  #
+  # Runs on every PR. Go is installed only when the VM does not already have it
+  # (checked below) so we don't re-install Go on every run.
+  # ──────────────────────────────────────────────
+  - stage: MIE2EIMDS
+    displayName: "MI E2E – IMDS"
+    dependsOn: [] # Builds from source — independent of the Build stage
+    jobs:
+      - job: RunManagedIdentityE2ETestsOnImds
+        displayName: "Managed Identity E2E Tests – VM / IMDS"
+        pool:
+          name: "MISEManagedIdentity"
+        steps:
+          - task: PowerShell@2
+            displayName: "Check for Go"
+            inputs:
+              targetType: "inline"
+              script: |
+                $go = Get-Command go -ErrorAction SilentlyContinue
+                if ($go) {
+                  Write-Host "Go already installed: $(go version)"
+                  Write-Host "##vso[task.setvariable variable=goInstalled]true"
+                } else {
+                  Write-Host "Go not found on agent; it will be installed."
+                  Write-Host "##vso[task.setvariable variable=goInstalled]false"
+                }
+          - task: GoTool@0
+            displayName: "Install Go (only if missing)"
+            condition: eq(variables['goInstalled'], 'false')
+            inputs:
+              version: $(goVersion)
+          - task: PowerShell@2
+            displayName: "Run Managed Identity IMDS E2E Tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                $ErrorActionPreference = "Stop"
+                go version
+                Push-Location "$(Build.SourcesDirectory)\build\tools"
+                go install gotest.tools/gotestsum
+                Pop-Location
+                $env:PATH = "$env:PATH;$(go env GOPATH)\bin"
+                gotestsum --junitfile "$(Build.SourcesDirectory)\mi-e2e-imds-tests.xml" -- -tags e2e -count=1 -run '^TestManagedIdentityImds$' ./apps/tests/e2e/...
+          - task: PublishTestResults@2
+            displayName: "Publish MI E2E test results"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "**/mi-e2e-imds-tests.xml"
+              testRunTitle: "MI E2E – IMDS"
+
+  # ──────────────────────────────────────────────
+  # Stage 5 — Managed Identity E2E Tests (Azure Arc)
+  #
+  # Runs on the self-hosted "MISEAZUREARC" pool, an Azure Arc-enabled machine.
+  # Azure Arc supports the system-assigned identity only. Mirrors the MSAL .NET
+  # Azure Arc E2E test.
+  #
+  # Runs on every PR. Go is installed only when the machine does not already have
+  # it (checked below) so we don't re-install Go on every run.
+  # ──────────────────────────────────────────────
+  - stage: MIE2EAzureArc
+    displayName: "MI E2E – Azure Arc"
+    dependsOn: [] # Builds from source — independent of the Build stage
+    jobs:
+      - job: RunManagedIdentityE2ETestsOnAzureArc
+        displayName: "Managed Identity E2E Tests – Azure Arc"
+        pool:
+          name: "MISEAZUREARC"
+        # The Arc agent's Go/.NET TLS is reset by egress inspection, so
+        # "go install" / "go test" can't fetch modules from proxy.golang.org.
+        # curl (Schannel) is NOT blocked, so we warm a private module cache with
+        # curl from go.sum, then run "go test" offline (GOPROXY=off).
+        steps:
+          - task: PowerShell@2
+            displayName: "Run Managed Identity Azure Arc E2E Tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                $ErrorActionPreference = "Stop"
+                $env:PATH = "C:\Go\bin;$env:PATH"
+                $env:GOTOOLCHAIN = "local"
+                go version
+
+                # Prefer a pre-baked module cache at C:\gomodcache (copied onto
+                # the agent out-of-band). If it's absent, fall back to warming a
+                # cache with curl (Schannel isn't TLS-blocked like Go's downloader).
+                $prebaked = "C:\gomodcache"
+                if (Test-Path (Join-Path $prebaked "cache\download")) {
+                  Write-Host "Using pre-baked module cache at $prebaked"
+                  $env:GOMODCACHE = $prebaked
+                } else {
+                  Write-Host "No pre-baked cache found; warming from go.sum via curl"
+                  $cache = Join-Path "$(Agent.TempDirectory)" "gomodcache"
+                  $dl = Join-Path $cache "cache\download"
+                  $seen = @{}
+                  Get-Content "go.sum" | ForEach-Object {
+                    $p = $_ -split '\s+'
+                    if ($p.Count -lt 2) { return }
+                    $mod = $p[0]
+                    $ver = $p[1] -replace '/go.mod$',''
+                    $key = "$mod@$ver"
+                    if ($seen[$key]) { return }
+                    $seen[$key] = $true
+                    $esc = -join ($mod.ToCharArray() | ForEach-Object {
+                      if ($_ -cmatch '[A-Z]') { '!' + [char]::ToLower($_) } else { $_ } })
+                    $dir = Join-Path $dl (($esc -replace '/','\') + "\@v")
+                    New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                    foreach ($ext in 'info','mod','zip') {
+                      $out = Join-Path $dir "$ver.$ext"
+                      curl.exe -s -L --tlsv1.2 --retry 3 -o $out "https://proxy.golang.org/$esc/@v/$ver.$ext"
+                      if (-not (Test-Path $out) -or (Get-Item $out).Length -eq 0) {
+                        throw "Failed to fetch $esc/@v/$ver.$ext"
+                      }
+                    }
+                    Write-Host "cached $mod $ver"
+                  }
+                  $env:GOMODCACHE = $cache
+                }
+
+                # Build/run entirely from the module cache — no network.
+                $env:GOPROXY = "off"
+                $env:GOSUMDB = "off"
+                go test -tags e2e -count=1 -v -run '^TestManagedIdentityAzureArc$' ./apps/tests/e2e/...

@@ -9,11 +9,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/httptest"
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -1223,4 +1226,88 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 		t.Error("Error should be called at least once")
 	}
 	close(ch)
+}
+
+// newSlowBodyTokenServer simulates a managed identity endpoint that is briefly
+// unhealthy: when failFirst is set the first request gets a retryable 500, and
+// the (retried) successful request delivers its body slowly. This exercises the
+// window in retry() where the returned response's per-attempt context could be
+// canceled before the caller finishes reading the body. See issue #634.
+func newSlowBodyTokenServer(t *testing.T, failFirst bool, bodyDelay time.Duration) *httptest.Server {
+	t.Helper()
+	tokenBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	var calls atomic.Int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if failFirst && calls.Add(1) == 1 {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("Content-Length", strconv.Itoa(len(tokenBody)))
+		w.WriteHeader(http.StatusOK)
+		if bodyDelay > 0 {
+			_, _ = w.Write(tokenBody[:1])
+			w.(http.Flusher).Flush()
+			time.Sleep(bodyDelay)
+			_, _ = w.Write(tokenBody[1:])
+			return
+		}
+		_, _ = w.Write(tokenBody)
+	}))
+	t.Cleanup(srv.Close)
+	return srv
+}
+
+func newAppServiceClient(t *testing.T, endpoint string, opts ...ClientOption) Client {
+	t.Helper()
+	// IDENTITY_ENDPOINT + IDENTITY_HEADER selects the AppService source, which
+	// shares retry()/getTokenForRequest with the IMDS path.
+	t.Setenv("IDENTITY_ENDPOINT", endpoint)
+	t.Setenv("IDENTITY_HEADER", "test")
+	client, err := New(SystemAssigned(), opts...)
+	if err != nil {
+		t.Fatalf("managedidentity.New: %v", err)
+	}
+	return client
+}
+
+// TestRetrySlowBodyDoesNotCancelContext is a regression test for issue #634.
+// retry() previously deferred every per-attempt context cancel until it
+// returned, so the context bound to the returned resp.Body was already canceled
+// when the caller read it. When the endpoint delivered the body slowly, the
+// caller's io.ReadAll raced (and lost) against that cancel, surfacing a
+// "context canceled" error on an otherwise successful HTTP 200.
+func TestRetrySlowBodyDoesNotCancelContext(t *testing.T) {
+	srv := newSlowBodyTokenServer(t, true, 750*time.Millisecond)
+	client := newAppServiceClient(t, srv.URL)
+
+	ar, err := client.AcquireToken(context.Background(), "https://issue634-retry", WithClaims("noCache"))
+	if err != nil {
+		if strings.Contains(err.Error(), "context canceled") {
+			t.Fatalf("issue #634 regression: successful response reported %v", err)
+		}
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if ar.AccessToken != token {
+		t.Fatalf("expected token %q, got %q", token, ar.AccessToken)
+	}
+}
+
+// TestRetryPolicyDisabledSlowBody confirms the single-request path (retry
+// policy disabled) also reads a slow body successfully. It isolates the bug in
+// TestRetrySlowBodyDoesNotCancelContext to retry().
+func TestRetryPolicyDisabledSlowBody(t *testing.T) {
+	srv := newSlowBodyTokenServer(t, false, 750*time.Millisecond)
+	client := newAppServiceClient(t, srv.URL, WithRetryPolicyDisabled())
+
+	ar, err := client.AcquireToken(context.Background(), "https://issue634-noretry", WithClaims("noCache"))
+	if err != nil {
+		t.Fatalf("expected success, got: %v", err)
+	}
+	if ar.AccessToken != token {
+		t.Fatalf("expected token %q, got %q", token, ar.AccessToken)
+	}
 }
