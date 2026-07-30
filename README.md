@@ -156,8 +156,14 @@ _ = result.BindingCertificateThumbprint()      // base64url SHA-256 (x5t#S256)
 
 Notes:
 
-- **Binding is via the TLS certificate**: no `client_assertion` and no `req_cnf` are sent for a
-  pure-certificate request. The endpoint is rewritten from `login.*` to `mtlsauth.*`.
+- **Binding is via the TLS certificate**: on the mTLS PoP path no `client_assertion` and no `req_cnf`
+  are sent — the certificate presented on the TLS handshake is the proof. This omission is specific to
+  mTLS PoP: a normal Bearer acquisition with the same SN/I certificate (i.e. without
+  `WithMtlsProofOfPossession()`) still signs and sends a `client_assertion`. The endpoint is rewritten
+  from `login.*` to `mtlsauth.*`.
+- **Using the token**: present it to the resource with the `mtls_pop` authorization scheme (not
+  `Bearer`) and the `BindingCertificate` as the client certificate on the TLS handshake, so the
+  connection matches the token binding.
 - **Region is optional**: the global `mtlsauth.microsoft.com` endpoint is used when no region is
   configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
