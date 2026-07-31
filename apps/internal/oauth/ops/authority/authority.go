@@ -314,6 +314,11 @@ type AuthParams struct {
 	// during the mutual-TLS handshake when IsMtlsPoP is set. Its private key is never surfaced in
 	// results; only the public binding certificate is exposed to callers.
 	MtlsBindingCert *tls.Certificate
+	// MtlsTransport requests Bearer-over-mTLS: MtlsBindingCert is presented as the client certificate
+	// on the TLS handshake and the endpoint host is rewritten from login.* to mtlsauth.*, but the
+	// token stays a plain Bearer token (no token_type=mtls_pop, no binding, no thumbprint fencing).
+	// It is independent of IsMtlsPoP; either flag routes the request over the mutual-TLS transport.
+	MtlsTransport bool
 }
 
 // NewAuthParams creates an authorization parameters object.

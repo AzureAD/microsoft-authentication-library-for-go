@@ -250,19 +250,20 @@ func AutoDetectRegion() string {
 // package doc. A new Client should be created PER SERVICE USER.
 // For more information, visit https://docs.microsoft.com/azure/active-directory/develop/msal-client-applications
 type Client struct {
-	base base.Client
-	cred *accesstokens.Credential
+	base             base.Client
+	cred             *accesstokens.Credential
+	sendCertOverMtls bool
 }
 
 // clientOptions are optional settings for New(). These options are set using various functions
 // returning Option calls.
 type clientOptions struct {
-	accessor                          cache.ExportReplace
-	authority, azureRegion            string
-	capabilities                      []string
-	disableInstanceDiscovery, sendX5C bool
-	httpClient                        ops.HTTPClient
-	mtlsHTTPClientFactory             ops.MtlsClientFactory
+	accessor                                            cache.ExportReplace
+	authority, azureRegion                              string
+	capabilities                                        []string
+	disableInstanceDiscovery, sendX5C, sendCertOverMtls bool
+	httpClient                                          ops.HTTPClient
+	mtlsHTTPClientFactory                               ops.MtlsClientFactory
 }
 
 // Option is an optional argument to New().
@@ -314,6 +315,22 @@ func WithX5C() Option {
 	}
 }
 
+// WithSendCertificateOverMtls configures the confidential client to present its certificate
+// credential as the client certificate on the mutual-TLS handshake to the token endpoint, route the
+// request to the mTLS endpoint (mtlsauth.*), and receive a plain Bearer access token back. The
+// certificate authenticates the transport; unlike [WithMtlsProofOfPossession] the resulting token is
+// NOT bound to it — token_type stays Bearer and the token is cached under the normal Bearer cache key.
+//
+// This is an app-level option honored by every confidential flow (client credentials, on-behalf-of,
+// authorization code, and silent refresh). A per-request [WithMtlsProofOfPossession] always takes
+// precedence over it. It requires a certificate credential (see [NewCredFromCert]); New returns an
+// error for any other credential kind.
+func WithSendCertificateOverMtls() Option {
+	return func(o *clientOptions) {
+		o.sendCertOverMtls = true
+	}
+}
+
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(enabled bool) Option {
 	return func(o *clientOptions) {
@@ -362,6 +379,9 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	if strings.EqualFold(opts.azureRegion, "DisableMsalForceRegion") {
 		opts.azureRegion = ""
 	}
+	if opts.sendCertOverMtls && internalCred.Cert == nil {
+		return Client{}, errors.New("WithSendCertificateOverMtls requires a certificate credential (NewCredFromCert)")
+	}
 
 	baseOpts := []base.Option{
 		base.WithCacheAccessor(opts.accessor),
@@ -380,7 +400,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	base.AuthParams.IsConfidentialClient = true
 
-	return Client{base: base, cred: internalCred}, nil
+	return Client{base: base, cred: internalCred, sendCertOverMtls: opts.sendCertOverMtls}, nil
 }
 
 // authCodeURLOptions contains options for AuthCodeURL
@@ -749,6 +769,14 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 			return AuthResult{}, err
 		}
 		authnScheme = authority.NewMtlsPoPAuthenticationScheme(mtlsBindingCert.Leaf)
+	} else if cca.sendCertOverMtls {
+		// Bearer-over-mTLS: derive the binding certificate for the mutual-TLS handshake but keep the
+		// default (Bearer) scheme. A refresh triggered from this silent call routes over mtlsauth.*.
+		var err error
+		mtlsBindingCert, err = cca.resolveMtlsBindingCert()
+		if err != nil {
+			return AuthResult{}, err
+		}
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
@@ -764,6 +792,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		CacheKeyComponents: o.cacheKeyComponents,
 		IsMtlsPoP:          o.isMtlsPoP,
 		MtlsBindingCert:    mtlsBindingCert,
+		MtlsTransport:      cca.sendCertOverMtls && !o.isMtlsPoP,
 	}
 
 	return cca.acquireTokenSilentInternal(ctx, silentParameters)
@@ -866,6 +895,15 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 		return AuthResult{}, err
 	}
 
+	var mtlsBindingCert *tls.Certificate
+	if cca.sendCertOverMtls {
+		var err error
+		mtlsBindingCert, err = cca.resolveMtlsBindingCert()
+		if err != nil {
+			return AuthResult{}, err
+		}
+	}
+
 	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:             scopes,
 		Code:               code,
@@ -877,6 +915,8 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 		RedirectURI:        redirectURI,
 		TenantID:           o.tenantID,
 		CacheKeyComponents: o.cacheKeyComponents,
+		MtlsBindingCert:    mtlsBindingCert,
+		MtlsTransport:      cca.sendCertOverMtls,
 	}
 
 	return cca.base.AcquireTokenByAuthCode(ctx, params)
@@ -927,6 +967,18 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		authnScheme = authority.NewMtlsPoPAuthenticationScheme(mtlsBindingCert.Leaf)
 		authParams.IsMtlsPoP = true
 		authParams.MtlsBindingCert = mtlsBindingCert
+	} else if cca.sendCertOverMtls {
+		// Bearer-over-mTLS: present the certificate on the TLS handshake and route to the mtlsauth
+		// endpoint, but keep the default (Bearer) scheme so the result is a plain, unbound Bearer token
+		// cached under the normal Bearer key. x5c is forced on the private_key_jwt client assertion. A
+		// per-request WithMtlsProofOfPossession (handled above) takes precedence over the app-level flag.
+		mtlsBindingCert, err = cca.resolveMtlsBindingCert()
+		if err != nil {
+			return AuthResult{}, err
+		}
+		authParams.MtlsBindingCert = mtlsBindingCert
+		authParams.MtlsTransport = true
+		authParams.SendX5C = true
 	}
 	if authnScheme != nil {
 		authParams.AuthnScheme = authnScheme
@@ -948,6 +1000,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 			CacheKeyComponents:  o.cacheKeyComponents,
 			IsMtlsPoP:           o.isMtlsPoP,
 			MtlsBindingCert:     mtlsBindingCert,
+			MtlsTransport:       authParams.MtlsTransport,
 		}
 
 		// Use internal method with empty account (service principal scenario)
@@ -985,6 +1038,14 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
+	var mtlsBindingCert *tls.Certificate
+	if cca.sendCertOverMtls {
+		var err error
+		mtlsBindingCert, err = cca.resolveMtlsBindingCert()
+		if err != nil {
+			return AuthResult{}, err
+		}
+	}
 	params := base.AcquireTokenOnBehalfOfParameters{
 		Scopes:             scopes,
 		UserAssertion:      userAssertion,
@@ -993,6 +1054,8 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 		Credential:         cca.cred,
 		TenantID:           o.tenantID,
 		CacheKeyComponents: o.cacheKeyComponents,
+		MtlsBindingCert:    mtlsBindingCert,
+		MtlsTransport:      cca.sendCertOverMtls,
 	}
 	return cca.base.AcquireTokenOnBehalfOf(ctx, params)
 }
