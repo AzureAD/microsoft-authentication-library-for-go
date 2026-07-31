@@ -7,6 +7,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -34,6 +35,39 @@ func assertClientAssertionHasX5C(t *testing.T, assertion string) {
 	}
 	if !strings.Contains(string(hdr), "x5c") {
 		t.Errorf("client_assertion header must carry x5c for SN/I: %s", hdr)
+	}
+}
+
+// assertAccessTokenCachedUnder fails unless every access token in the serialized cache is stored under
+// wantEnv and none is keyed under an mtlsauth.* host. Bearer-over-mTLS rewrites only the transport
+// endpoint (inside accesstokens.doTokenResp), so the cache environment must remain the login-derived
+// authority host. This is the deterministic guard against a .NET-style mis-cache under the rewritten
+// transport host; the positive check (env == login host) plus the negative check (no "mtlsauth"
+// anywhere in the key or environment) locks the transport-vs-cache separation in CI.
+func assertAccessTokenCachedUnder(t *testing.T, tc testCache, wantEnv string) {
+	t.Helper()
+	var found bool
+	for _, blob := range tc {
+		var root struct {
+			AccessToken map[string]struct {
+				Environment string `json:"environment"`
+			} `json:"AccessToken"`
+		}
+		if err := json.Unmarshal(blob, &root); err != nil {
+			t.Fatalf("unmarshaling cache snapshot: %v", err)
+		}
+		for key, at := range root.AccessToken {
+			found = true
+			if at.Environment != wantEnv {
+				t.Errorf("access token cached under environment %q, want %q (Bearer-over-mTLS must cache under the login host, not the rewritten mtlsauth host)", at.Environment, wantEnv)
+			}
+			if strings.Contains(strings.ToLower(key), "mtlsauth") || strings.Contains(strings.ToLower(at.Environment), "mtlsauth") {
+				t.Errorf("access token key/environment must not contain mtlsauth (transport host leaked into the cache): key=%q env=%q", key, at.Environment)
+			}
+		}
+	}
+	if !found {
+		t.Fatal("no access token found in the serialized cache")
 	}
 }
 
@@ -608,5 +642,66 @@ func TestSendCertificateOverMtls_OnBehalfOf_NoFlag(t *testing.T) {
 	}
 	if gotURL.Host != lmo {
 		t.Errorf("token endpoint host = %q, want %s (no flag → regular endpoint)", gotURL.Host, lmo)
+	}
+}
+
+// TestSendCertificateOverMtls_ClientCredential_CachesUnderLoginHost locks the transport-vs-cache
+// separation for Bearer-over-mTLS: the mtlsauth rewrite is a transport-only concern, so the access
+// token must be cached under the ORIGINAL login.* authority environment, never under the rewritten
+// mtlsauth host. Instance discovery is deliberately left ON so the second call exercises the
+// metadata-resolution path where MSAL .NET's second-call regression lived (feeding the rewritten host
+// into region/instance discovery). A token mis-cached under mtlsauth would both fail the negative
+// environment assertion here and crash that path in the regional live cell; a discovery-OFF test would
+// short-circuit it and catch neither. Mirrors the deterministic cache-env guard the sibling SDKs adopted.
+func TestSendCertificateOverMtls_ClientCredential_CachesUnderLoginHost(t *testing.T) {
+	certs, key := loadTestCert(t)
+	cred, err := NewCredFromCert(certs, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tenant := "tenant"
+	lmo := "login.microsoftonline.com"
+	tc := make(testCache)
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+		WithHTTPClient(mockClient),
+		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithSendCertificateOverMtls(),
+		WithCache(&tc),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("bom-token", "", "", "", 3600, 0)))
+
+	res, err := client.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res.Metadata.TokenType != "Bearer" {
+		t.Errorf("Metadata.TokenType = %q, want Bearer", res.Metadata.TokenType)
+	}
+
+	// The access token must be cached under the login-derived environment, NOT the rewritten mtlsauth
+	// host. This negative assertion is what deterministically catches a .NET-style mis-cache.
+	assertAccessTokenCachedUnder(t, tc, lmo)
+
+	// The second call must be served from that cache. No further HTTP responses are queued, so a cache
+	// miss (e.g. because the token was keyed under the wrong environment) would fail with an exhausted
+	// mock rather than silently pass.
+	res2, err := client.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res2.Metadata.TokenSource != TokenSourceCache {
+		t.Errorf("second call TokenSource = %d, want cache", res2.Metadata.TokenSource)
+	}
+	if res2.AccessToken != "bom-token" {
+		t.Errorf("cached AccessToken = %q, want bom-token", res2.AccessToken)
 	}
 }
