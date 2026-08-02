@@ -1150,11 +1150,12 @@ func TestAzureArcUserAssignedCacheIsPartitionedByIdentity(t *testing.T) {
 		echoField string
 		echoValue string
 		token     string
+		cacheID   string
 	}{
-		{"SAMI", SystemAssigned(), "", "", "token-sami"},
-		{"UAMI-ClientID", UserAssignedClientID("11111111-1111-1111-1111-111111111111"), miQueryParameterClientId, "11111111-1111-1111-1111-111111111111", "token-uami-client"},
-		{"UAMI-ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami", "token-uami-resource"},
-		{"UAMI-ObjectID", UserAssignedObjectID("22222222-2222-2222-2222-222222222222"), miQueryParameterObjectId, "22222222-2222-2222-2222-222222222222", "token-uami-object"},
+		{"SAMI", SystemAssigned(), "", "", "token-sami", systemAssignedManagedIdentity},
+		{"UAMI-ClientID", UserAssignedClientID("11111111-1111-1111-1111-111111111111"), miQueryParameterClientId, "11111111-1111-1111-1111-111111111111", "token-uami-client", "11111111-1111-1111-1111-111111111111"},
+		{"UAMI-ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami", "token-uami-resource", "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"},
+		{"UAMI-ObjectID", UserAssignedObjectID("22222222-2222-2222-2222-222222222222"), miQueryParameterObjectId, "22222222-2222-2222-2222-222222222222", "token-uami-object", "22222222-2222-2222-2222-222222222222"},
 	}
 
 	// First acquisition per identity is a cache MISS that reaches the endpoint and caches the
@@ -1169,6 +1170,42 @@ func TestAzureArcUserAssignedCacheIsPartitionedByIdentity(t *testing.T) {
 	for _, id := range identities {
 		assertArcAcquireFromCache(t, id.name, id.id, id.token)
 	}
+
+	// Cache-key assertion (mirrors .NET's RecordAccess client-id check): each identity keys its own
+	// access-token cache entry, so there must be exactly len(identities) distinct entries and each
+	// identity's identifier must appear in exactly one key.
+	keys := arcCacheAccessTokenKeys(t)
+	if len(keys) != len(identities) {
+		t.Fatalf("expected %d cache entries (one per identity), got %d: %v", len(identities), len(keys), keys)
+	}
+	joined := strings.ToLower(strings.Join(keys, "\n"))
+	for _, id := range identities {
+		if strings.Count(joined, strings.ToLower(id.cacheID)) != 1 {
+			t.Fatalf("expected identity %q to key exactly one cache entry; keys=%v", id.cacheID, keys)
+		}
+	}
+}
+
+// arcCacheAccessTokenKeys returns the composite keys of the access-token entries in the managed
+// identity token cache. The client-id component of each key is the requested identity, so the set
+// of keys reflects the cache partitioning by identity.
+func arcCacheAccessTokenKeys(t *testing.T) []string {
+	t.Helper()
+	raw, err := cacheManager.Marshal()
+	if err != nil {
+		t.Fatalf("cache Marshal failed: %v", err)
+	}
+	var c struct {
+		AccessTokens map[string]json.RawMessage `json:"AccessToken"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("cache Unmarshal failed: %v", err)
+	}
+	keys := make([]string, 0, len(c.AccessTokens))
+	for k := range c.AccessTokens {
+		keys = append(keys, k)
+	}
+	return keys
 }
 
 // assertArcAcquireFromIdP acquires an Arc token that echoes the requested identity and asserts the
