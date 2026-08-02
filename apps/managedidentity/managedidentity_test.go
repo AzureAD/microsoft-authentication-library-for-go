@@ -924,8 +924,14 @@ func TestAzureArcUserAssignedAllowedAtConstruction(t *testing.T) {
 // getArcSuccessResponseWithEcho builds an Azure Arc token response that optionally echoes the
 // identity the agent used (client_id / object_id / mi_res_id), mirroring the new agent contract.
 func getArcSuccessResponseWithEcho(resource, echoField, echoValue string) ([]byte, error) {
+	return getArcSuccessResponseWithTokenAndEcho(resource, token, echoField, echoValue)
+}
+
+// getArcSuccessResponseWithTokenAndEcho is like getArcSuccessResponseWithEcho but lets the caller
+// set the access token, so tests can distinguish tokens issued for different identities.
+func getArcSuccessResponseWithTokenAndEcho(resource, accessToken, echoField, echoValue string) ([]byte, error) {
 	m := map[string]interface{}{
-		"access_token": token,
+		"access_token": accessToken,
 		"expires_in":   int64(600),
 		"resource":     resource,
 		"token_type":   "Bearer",
@@ -1125,6 +1131,93 @@ func TestAzureArcUserAssignedNotFoundSurfacesServiceError(t *testing.T) {
 	}
 	if result.AccessToken != "" {
 		t.Fatalf("no token should be returned, got %q", result.AccessToken)
+	}
+}
+
+// TestAzureArcUserAssignedCacheIsPartitionedByIdentity verifies the token cache is partitioned by
+// the requested identity: the system-assigned identity and each user-assigned selector get their
+// own cache entry, so a cache lookup can never return a token for a different identity than the one
+// requested. Mirrors the .NET test AzureArcUserAssignedManagedIdentityCacheIsPartitionedByIdentity.
+func TestAzureArcUserAssignedCacheIsPartitionedByIdentity(t *testing.T) {
+	secretPath := setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	identities := []struct {
+		name      string
+		id        ID
+		echoField string
+		echoValue string
+		token     string
+	}{
+		{"SAMI", SystemAssigned(), "", "", "token-sami"},
+		{"UAMI-ClientID", UserAssignedClientID("11111111-1111-1111-1111-111111111111"), miQueryParameterClientId, "11111111-1111-1111-1111-111111111111", "token-uami-client"},
+		{"UAMI-ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami", "token-uami-resource"},
+		{"UAMI-ObjectID", UserAssignedObjectID("22222222-2222-2222-2222-222222222222"), miQueryParameterObjectId, "22222222-2222-2222-2222-222222222222", "token-uami-object"},
+	}
+
+	// First acquisition per identity is a cache MISS that reaches the endpoint and caches the
+	// identity's own token. A shared (unpartitioned) cache would instead return an earlier
+	// identity's token from cache here.
+	for _, id := range identities {
+		assertArcAcquireFromIdP(t, id.name, secretPath, id.id, id.echoField, id.echoValue, id.token)
+	}
+
+	// Second acquisition per identity is a cache HIT that must return THAT identity's own token,
+	// proving each identity has a separate cache entry.
+	for _, id := range identities {
+		assertArcAcquireFromCache(t, id.name, id.id, id.token)
+	}
+}
+
+// assertArcAcquireFromIdP acquires an Arc token that echoes the requested identity and asserts the
+// call reached the identity provider (a cache miss) and returned the identity's own token.
+func assertArcAcquireFromIdP(t *testing.T, name, secretPath string, id ID, echoField, echoValue, wantToken string) {
+	t.Helper()
+	headers := http.Header{}
+	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
+	body, err := getArcSuccessResponseWithTokenAndEcho(resource, wantToken, echoField, echoValue)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers), mock.WithBody(body))
+
+	client, err := New(id, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatalf("%s: New failed: %v", name, err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("%s: first AcquireToken failed: %v", name, err)
+	}
+	if result.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("%s: first call TokenSource = %v, want IdentityProvider (cache must be partitioned by identity)", name, result.Metadata.TokenSource)
+	}
+	if result.AccessToken != wantToken {
+		t.Fatalf("%s: first call token = %q, want %q", name, result.AccessToken, wantToken)
+	}
+}
+
+// assertArcAcquireFromCache acquires again for the same identity with no queued HTTP responses, so a
+// cache miss would reach the (empty) mock and panic. It asserts the cached token for that identity.
+func assertArcAcquireFromCache(t *testing.T, name string, id ID, wantToken string) {
+	t.Helper()
+	client, err := New(id, WithHTTPClient(mock.NewClient()))
+	if err != nil {
+		t.Fatalf("%s: New failed: %v", name, err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("%s: cached AcquireToken failed: %v", name, err)
+	}
+	if result.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("%s: second call TokenSource = %v, want Cache", name, result.Metadata.TokenSource)
+	}
+	if result.AccessToken != wantToken {
+		t.Fatalf("%s: cached token = %q, want %q (cache must not return another identity's token)", name, result.AccessToken, wantToken)
 	}
 }
 
