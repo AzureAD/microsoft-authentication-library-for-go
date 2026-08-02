@@ -962,39 +962,46 @@ func TestAzureArcUserAssignedHonored(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			secretPath := setupArcSecretPath(t)
-			before := cacheManager
-			defer func() { cacheManager = before }()
-			cacheManager = storage.New(nil)
-
-			headers := http.Header{}
-			headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
-			mockClient := mock.NewClient()
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
-
-			body, err := getArcSuccessResponseWithEcho(resource, tc.param, tc.value)
-			if err != nil {
-				t.Fatalf(errorFormingJsonResponse, err.Error())
-			}
-			var reqURL *url.URL
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
-				mock.WithBody(body), mock.WithCallback(func(r *http.Request) { reqURL = r.URL }))
-
-			client, err := New(tc.id, WithHTTPClient(mockClient))
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := client.AcquireToken(context.Background(), resource)
-			if err != nil {
-				t.Fatalf("expected success, got error: %v", err)
-			}
-			if result.AccessToken != token {
-				t.Fatalf("wanted %q, got %q", token, result.AccessToken)
-			}
-			if reqURL == nil || reqURL.Query().Get(tc.param) != tc.value {
-				t.Fatalf("expected request to carry %s=%s, got %v", tc.param, tc.value, reqURL)
-			}
+			assertArcUserAssignedHonored(t, tc.id, tc.param, tc.value)
 		})
+	}
+}
+
+// assertArcUserAssignedHonored runs the Azure Arc happy path for one selector: the agent echoes the
+// requested identity, MSAL returns the token, and the request carries the selector on the wire.
+func assertArcUserAssignedHonored(t *testing.T, id ID, param, value string) {
+	t.Helper()
+	secretPath := setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	headers := http.Header{}
+	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
+
+	body, err := getArcSuccessResponseWithEcho(resource, param, value)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	var reqURL *url.URL
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
+		mock.WithBody(body), mock.WithCallback(func(r *http.Request) { reqURL = r.URL }))
+
+	client, err := New(id, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+	}
+	if reqURL == nil || reqURL.Query().Get(param) != value {
+		t.Fatalf("expected request to carry %s=%s, got %v", param, value, reqURL)
 	}
 }
 
@@ -1009,37 +1016,44 @@ func TestAzureArcUserAssignedNotHonoredFailsClosed(t *testing.T) {
 	}
 	for _, tc := range testCases {
 		t.Run(tc.name, func(t *testing.T) {
-			secretPath := setupArcSecretPath(t)
-			before := cacheManager
-			defer func() { cacheManager = before }()
-			cacheManager = storage.New(nil)
-
-			headers := http.Header{}
-			headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
-			mockClient := mock.NewClient()
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
-
-			body, err := getArcSuccessResponseWithEcho(resource, tc.echoField, tc.echoValue)
-			if err != nil {
-				t.Fatalf(errorFormingJsonResponse, err.Error())
-			}
-			mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers), mock.WithBody(body))
-
-			client, err := New(UserAssignedClientID("11111111-1111-1111-1111-111111111111"), WithHTTPClient(mockClient))
-			if err != nil {
-				t.Fatal(err)
-			}
-			result, err := client.AcquireToken(context.Background(), resource)
-			if err == nil {
-				t.Fatal("expected fail-closed error, got nil")
-			}
-			if !strings.Contains(err.Error(), "did not confirm the requested user-assigned managed identity") {
-				t.Fatalf("unexpected error: %v", err)
-			}
-			if result.AccessToken != "" {
-				t.Fatalf("no token should be returned, got %q", result.AccessToken)
-			}
+			assertArcUserAssignedFailsClosed(t, tc.echoField, tc.echoValue)
 		})
+	}
+}
+
+// assertArcUserAssignedFailsClosed drives the fail-closed path: the agent returns a token that does
+// not echo the requested user-assigned identity, so MSAL must return an error and no token.
+func assertArcUserAssignedFailsClosed(t *testing.T, echoField, echoValue string) {
+	t.Helper()
+	secretPath := setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	headers := http.Header{}
+	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
+
+	body, err := getArcSuccessResponseWithEcho(resource, echoField, echoValue)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers), mock.WithBody(body))
+
+	client, err := New(UserAssignedClientID("11111111-1111-1111-1111-111111111111"), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err == nil {
+		t.Fatal("expected fail-closed error, got nil")
+	}
+	if !strings.Contains(err.Error(), "did not confirm the requested user-assigned managed identity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.AccessToken != "" {
+		t.Fatalf("no token should be returned, got %q", result.AccessToken)
 	}
 }
 
@@ -1117,9 +1131,8 @@ func TestAzureArcUserAssignedNotFoundSurfacesServiceError(t *testing.T) {
 // TestAzureArcUserAssignedNonExistentE2E performs a REAL token acquisition against the local
 // Azure Arc HIMDS for a user-assigned identity that is not assigned to the machine. It only runs
 // on an actual Azure Arc-enabled machine (the MI E2E pipeline) and skips everywhere else. This
-// mirrors the .NET E2E test AcquireToken_ForNonExistentUami_OnAzureArc_Fails: a legacy agent
-// returns the system-assigned identity (rejected by the fail-closed check) and a newer agent
-// returns identity_not_found; either way no token must be handed back.
+// mirrors the .NET E2E test AcquireToken_ForNonExistentUami_OnAzureArc_Fails: a UAMI-aware agent
+// returns 404 (identity_not_found), which must surface as an error with no token.
 func TestAzureArcUserAssignedNonExistentE2E(t *testing.T) {
 	if src, err := GetSource(); err != nil || src != AzureArc {
 		t.Skip("skipping Azure Arc E2E test: not running on an Azure Arc-enabled machine")
@@ -1131,10 +1144,16 @@ func TestAzureArcUserAssignedNonExistentE2E(t *testing.T) {
 	}
 	result, err := client.AcquireToken(context.Background(), resource)
 	if err == nil {
-		t.Fatalf("expected acquisition to fail for a non-existent user-assigned identity, got token source %v", result.Metadata.TokenSource)
+		t.Fatalf("expected a 404 for a non-existent user-assigned identity, got token source %v", result.Metadata.TokenSource)
 	}
 	if result.AccessToken != "" {
 		t.Fatal("no token should be returned for a non-existent user-assigned identity")
+	}
+	// A UAMI-aware Azure Arc agent returns 404 (identity_not_found) for an identity that isn't
+	// assigned to the machine. Assert that surfaced, rather than the fail-closed "did not confirm"
+	// error (which would mean the agent ignored the selector and returned the system-assigned token).
+	if !strings.Contains(err.Error(), "404") && !strings.Contains(strings.ToLower(err.Error()), "identity_not_found") {
+		t.Fatalf("expected a 404 / identity_not_found error for a non-existent UAMI, got: %v", err)
 	}
 }
 
