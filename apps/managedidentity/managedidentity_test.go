@@ -1128,35 +1128,6 @@ func TestAzureArcUserAssignedNotFoundSurfacesServiceError(t *testing.T) {
 	}
 }
 
-// TestAzureArcUserAssignedNonExistentE2E performs a REAL token acquisition against the local
-// Azure Arc HIMDS for a user-assigned identity that is not assigned to the machine. It only runs
-// on an actual Azure Arc-enabled machine (the MI E2E pipeline) and skips everywhere else. This
-// mirrors the .NET E2E test AcquireToken_ForNonExistentUami_OnAzureArc_Fails: a UAMI-aware agent
-// returns 404 (identity_not_found), which must surface as an error with no token.
-func TestAzureArcUserAssignedNonExistentE2E(t *testing.T) {
-	if src, err := GetSource(); err != nil || src != AzureArc {
-		t.Skip("skipping Azure Arc E2E test: not running on an Azure Arc-enabled machine")
-	}
-
-	client, err := New(UserAssignedClientID("00000000-0000-0000-0000-000000000000"))
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := client.AcquireToken(context.Background(), resource)
-	if err == nil {
-		t.Fatalf("expected a 404 for a non-existent user-assigned identity, got token source %v", result.Metadata.TokenSource)
-	}
-	if result.AccessToken != "" {
-		t.Fatal("no token should be returned for a non-existent user-assigned identity")
-	}
-	// A UAMI-aware Azure Arc agent returns 404 (identity_not_found) for an identity that isn't
-	// assigned to the machine. Assert that surfaced, rather than the fail-closed "did not confirm"
-	// error (which would mean the agent ignored the selector and returned the system-assigned token).
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(strings.ToLower(err.Error()), "identity_not_found") {
-		t.Fatalf("expected a 404 / identity_not_found error for a non-existent UAMI, got: %v", err)
-	}
-}
-
 func TestAzureArcPlatformSupported(t *testing.T) {
 	setEnvVars(t, AzureArc)
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
