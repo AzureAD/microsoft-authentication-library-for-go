@@ -62,11 +62,11 @@ const (
 	wwwAuthenticateHeaderName    = "www-authenticate"
 
 	// UAMI query parameter name
-	miQueryParameterClientId       = "client_id"
-	miQueryParameterObjectId       = "object_id"
-	miQueryParameterPrincipalId    = "principal_id"
-	miQueryParameterResourceIdIMDS = "msi_res_id"
-	miQueryParameterResourceId     = "mi_res_id"
+	miQueryParameterClientId      = "client_id"
+	miQueryParameterObjectId      = "object_id"
+	miQueryParameterPrincipalId   = "principal_id"
+	miQueryParameterMsiResourceId = "msi_res_id"
+	miQueryParameterResourceId    = "mi_res_id"
 
 	// IMDS
 	imdsDefaultEndpoint           = "http://169.254.169.254/metadata/identity/oauth2/token"
@@ -472,7 +472,7 @@ func verifyAzureArcUserAssignedIdentity(id ID, token accesstokens.TokenResponse)
 	case UserAssignedResourceID:
 		requested = string(t)
 		// The request selector is mi_res_id; accept either spelling on the echo.
-		echoed = additionalStringField(token.AdditionalFields, miQueryParameterResourceId, miQueryParameterResourceIdIMDS)
+		echoed = additionalStringField(token.AdditionalFields, miQueryParameterResourceId, miQueryParameterMsiResourceId)
 	case UserAssignedObjectID:
 		requested = string(t)
 		echoed = additionalStringField(token.AdditionalFields, miQueryParameterObjectId)
@@ -697,7 +697,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 	case UserAssignedClientID:
 		msiParameters.Set(miQueryParameterClientId, string(t))
 	case UserAssignedResourceID:
-		msiParameters.Set(miQueryParameterResourceIdIMDS, string(t))
+		msiParameters.Set(miQueryParameterMsiResourceId, string(t))
 	case UserAssignedObjectID:
 		msiParameters.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue: // not adding anything

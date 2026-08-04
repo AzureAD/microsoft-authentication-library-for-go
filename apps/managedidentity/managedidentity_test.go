@@ -440,8 +440,8 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
 				}
 			case UserAssignedResourceID:
-				if query.Get(miQueryParameterResourceIdIMDS) != i.value() {
-					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceIdIMDS))
+				if query.Get(miQueryParameterMsiResourceId) != i.value() {
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterMsiResourceId))
 				}
 			case UserAssignedObjectID:
 				if query.Get(miQueryParameterObjectId) != i.value() {
@@ -1076,7 +1076,7 @@ func TestAzureArcUserAssignedResourceIDAcceptsMsiResIdEcho(t *testing.T) {
 	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
 
-	body, err := getArcSuccessResponseWithEcho(resource, miQueryParameterResourceIdIMDS, rid)
+	body, err := getArcSuccessResponseWithEcho(resource, miQueryParameterMsiResourceId, rid)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
