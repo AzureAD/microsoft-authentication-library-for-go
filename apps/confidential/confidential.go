@@ -18,6 +18,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -80,6 +81,18 @@ const (
 // must contain the public certificate and the private key. If a PEM block is encrypted and
 // password is not an empty string, it attempts to decrypt the PEM blocks using the password.
 // Multiple certs are due to certificate chaining for use cases like TLS that sign from root to leaf.
+//
+// Legacy RFC 1423 encrypted PEM blocks (identified by a DEK-Info header, e.g.
+// "DEK-Info: DES-EDE3-CBC,...") are supported only for backward compatibility. This path uses
+// weak cryptographic primitives: a single-iteration MD5 key derivation function and obsolete
+// DES/3DES ciphers, which offer little resistance to offline password-guessing attacks. A runtime
+// warning is emitted when such a block is encountered. Consuming applications should instead use
+// PKCS#8 encrypted private keys, which are handled by the existing PKCS#8 parsing path. A legacy
+// PEM key can be re-encoded as PKCS#8 with, for example:
+//
+//	openssl pkcs8 -topk8 -v2 aes-256-cbc -in legacy.key -out modern.key
+//
+// Support for legacy encrypted PEM blocks may be removed in a future major version.
 func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.PrivateKey, error) {
 	var certs []*x509.Certificate
 	var priv crypto.PrivateKey
@@ -91,6 +104,10 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 
 		//nolint:staticcheck // x509.IsEncryptedPEMBlock and x509.DecryptPEMBlock are deprecated. They are used here only to support a usecase.
 		if x509.IsEncryptedPEMBlock(block) {
+			// Log deprecation warning to alert consuming applications
+			log.Printf("WARNING: Legacy PEM encryption detected in CertFromPEM. " +
+				"RFC 1423 encrypted PEM blocks use a weak KDF (single MD5 iteration). " +
+				"Migrate to PKCS#8 encrypted keys for stronger private key protection.")
 			b, err := x509.DecryptPEMBlock(block, []byte(password))
 			if err != nil {
 				return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %v", err)

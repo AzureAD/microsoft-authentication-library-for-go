@@ -128,6 +128,25 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     accessToken := result.AccessToken
     ```
 
+## Loading Certificates from PEM
+
+`confidential.CertFromPEM` loads a certificate and private key from PEM data for use with
+`NewCredFromCert`.
+
+> **Security note — legacy encrypted PEM:** `CertFromPEM` supports legacy RFC 1423 encrypted PEM
+> blocks (those with a `DEK-Info` header, e.g. `DEK-Info: DES-EDE3-CBC,...`) **only for backward
+> compatibility**. This path uses weak cryptographic primitives — a single-iteration MD5 key
+> derivation function and obsolete DES/3DES ciphers — which provide little protection against
+> offline password-guessing attacks. A runtime warning is emitted when such a block is
+> encountered, and support for it may be removed in a future major version.
+>
+> Prefer **PKCS#8 encrypted private keys**, which are handled by `CertFromPEM`'s modern parsing
+> path. You can re-encode a legacy encrypted PEM key as PKCS#8 with OpenSSL:
+>
+> ```sh
+> openssl pkcs8 -topk8 -v2 aes-256-cbc -in legacy.key -out modern.key
+> ```
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.
