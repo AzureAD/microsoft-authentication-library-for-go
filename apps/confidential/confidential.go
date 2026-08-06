@@ -77,8 +77,10 @@ const (
 )
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with [NewCredFromCert]. The file
-// must contain the public certificate and the private key. If a PEM block is encrypted and
-// password is not an empty string, it attempts to decrypt the PEM blocks using the password.
+// must contain the public certificate and an unencrypted PKCS#1 or PKCS#8 private key.
+// For security, encrypted PEM blocks are not supported; password is retained for API compatibility
+// and ignored.
+// Convert encrypted keys to an unencrypted PEM private key before calling this function.
 // Multiple certs are due to certificate chaining for use cases like TLS that sign from root to leaf.
 func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.PrivateKey, error) {
 	var certs []*x509.Certificate
@@ -89,16 +91,11 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			break
 		}
 
-		//nolint:staticcheck // x509.IsEncryptedPEMBlock and x509.DecryptPEMBlock are deprecated. They are used here only to support a usecase.
-		if x509.IsEncryptedPEMBlock(block) {
-			b, err := x509.DecryptPEMBlock(block, []byte(password))
-			if err != nil {
-				return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %v", err)
-			}
-			block, _ = pem.Decode(b)
-			if block == nil {
-				return nil, nil, fmt.Errorf("encounter encrypted PEM block that did not decode")
-			}
+		if _, ok := block.Headers["DEK-Info"]; ok {
+			return nil, nil, errors.New("legacy RFC 1423 encrypted PEM is not supported; convert it to an unencrypted PKCS#1 or PKCS#8 private key")
+		}
+		if block.Type == "ENCRYPTED PRIVATE KEY" {
+			return nil, nil, errors.New("encrypted PKCS#8 PEM is not supported; convert it to an unencrypted PKCS#1 or PKCS#8 private key")
 		}
 
 		switch block.Type {

@@ -313,9 +313,16 @@ func TestAADInstanceDiscoveryInvalidRegion(t *testing.T) {
 		{"contains space", "east us"},
 		{"starts with digit", "1eastus"},
 		{"starts with hyphen", "-eastus"},
+		{"ends with hyphen", "eastus-"},
 		{"contains underscore", "east_us"},
 		{"contains special char", "east$us"},
 		{"path traversal attempt", "../evil"},
+		{"URL", "https://eastus.example.com"},
+		{"port", "eastus:443"},
+		{"whitespace", " eastus"},
+		{"tab", "eastus\t"},
+		{"Unicode", "eastusé"},
+		{"too long", "a" + strings.Repeat("b", 63)},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
 			authInfo := Info{Host: "login.microsoft.com", Tenant: "tenant", Region: test.region}
@@ -340,6 +347,7 @@ func TestAADInstanceDiscoveryValidRegion(t *testing.T) {
 		"a",
 		"a1",
 		"a-1",
+		"a" + strings.Repeat("b", 61),
 	} {
 		t.Run(region, func(t *testing.T) {
 			authInfo := Info{Host: "login.microsoft.com", Tenant: "tenant", Region: region}
@@ -1032,8 +1040,18 @@ func TestParseRegionFromIMDSResponse(t *testing.T) {
 	}{
 		{name: "valid location", body: `{"location":"westus2"}`, want: "westus2"},
 		{name: "location among other fields", body: `{"location":"eastus","name":"vm"}`, want: "eastus"},
+		{name: "maximum length", body: `{"location":"a` + strings.Repeat("b", 61) + `"}`, want: "a" + strings.Repeat("b", 61)},
 		{name: "missing location", body: `{}`, want: ""},
 		{name: "null location", body: `{"location":null}`, want: ""},
+		{name: "trailing hyphen", body: `{"location":"westus-"}`, want: ""},
+		{name: "uppercase", body: `{"location":"WestUS"}`, want: ""},
+		{name: "dot", body: `{"location":"west.us"}`, want: ""},
+		{name: "URL", body: `{"location":"https://westus.example.com"}`, want: ""},
+		{name: "port", body: `{"location":"westus:443"}`, want: ""},
+		{name: "path", body: `{"location":"westus/path"}`, want: ""},
+		{name: "whitespace", body: `{"location":" westus "}`, want: ""},
+		{name: "Unicode", body: `{"location":"westusé"}`, want: ""},
+		{name: "too long", body: `{"location":"a` + strings.Repeat("b", 63) + `"}`, want: ""},
 		{name: "malformed json", body: `not json`, want: ""},
 		{name: "empty body", body: ``, want: ""},
 	}
@@ -1041,6 +1059,40 @@ func TestParseRegionFromIMDSResponse(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if got := parseRegionFromIMDSResponse([]byte(test.body)); got != test.want {
 				t.Fatalf("parseRegionFromIMDSResponse(%q) = %q, want %q", test.body, got, test.want)
+			}
+		})
+	}
+}
+
+func TestAADInstanceDiscoveryInvalidAutoDetectedRegionFallsBackToGlobal(t *testing.T) {
+	for _, region := range []string{
+		"westus-",
+		"WestUS",
+		"west.us",
+		" https://westus.example.com ",
+		"eastus:443",
+		"eastus/path",
+		"eastusé",
+		"a" + strings.Repeat("b", 63),
+	} {
+		t.Run(region, func(t *testing.T) {
+			t.Setenv(regionName, region)
+			fake := &fakeJSONCaller{}
+			client := Client{fake}
+
+			resp, err := client.AADInstanceDiscovery(context.Background(), Info{
+				Host:   defaultHost,
+				Tenant: "tenant",
+				Region: autoDetectRegion,
+			})
+			if err != nil {
+				t.Fatal(err)
+			}
+			if fake.gotEndpoint != fmt.Sprintf(aadInstanceDiscoveryEndpoint, defaultHost) {
+				t.Fatalf("got endpoint %q, want global discovery endpoint", fake.gotEndpoint)
+			}
+			if len(resp.Metadata) != 0 || resp.TenantDiscoveryEndpoint != "" {
+				t.Fatalf("invalid auto-detected region must not produce regional metadata: %#v", resp)
 			}
 		})
 	}
