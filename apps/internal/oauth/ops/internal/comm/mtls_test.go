@@ -4,14 +4,115 @@
 package comm
 
 import (
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
+	"crypto/x509"
+	"crypto/x509/pkix"
+	"io"
+	"math/big"
 	"net/http"
+	"net/http/httptest"
 	"testing"
+	"time"
 )
 
 // testKey is a non-nil placeholder private key for fixtures that never perform a real TLS handshake.
 var testKey = struct{}{}
 
+// signerKey models a non-exportable key such as a Windows KeyGuard (VBS-isolated) key: it satisfies
+// crypto.Signer by delegating to an RSA key it never exposes, so nothing can type assert it to an
+// *rsa.PrivateKey. A zero signerKey is a placeholder for fixtures that never sign anything.
+type signerKey struct {
+	key *rsa.PrivateKey
+}
+
+func (s signerKey) Public() crypto.PublicKey {
+	if s.key == nil {
+		return nil
+	}
+	return &s.key.PublicKey
+}
+
+func (s signerKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	if s.key == nil {
+		return nil, nil
+	}
+	return s.key.Sign(r, digest, opts)
+}
+
+// signerOnlyTestCert returns a self-signed certificate whose key is only ever a crypto.Signer.
+func signerOnlyTestCert(t *testing.T) tls.Certificate {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "msal-go-signer-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: signerKey{key: key}}
+}
+
+// TestBuildMtlsClientSignerHandshake proves crypto/tls can complete a client-certificate handshake
+// when the certificate's key is only a crypto.Signer, which is all a non-exportable key
+// (KeyGuard/CNG/HSM) can ever be. TLS 1.3 signs with RSA-PSS and TLS 1.2 with PKCS#1 v1.5, so both
+// are covered.
+func TestBuildMtlsClientSignerHandshake(t *testing.T) {
+	cert := signerOnlyTestCert(t)
+	var gotClientCerts int
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotClientCerts = len(r.TLS.PeerCertificates)
+		w.WriteHeader(http.StatusOK)
+	}))
+	server.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert, MinVersion: tls.VersionTLS12}
+	server.StartTLS()
+	defer server.Close()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+
+	for _, test := range []struct {
+		name       string
+		maxVersion uint16
+	}{
+		{"TLS 1.2", tls.VersionTLS12},
+		{"TLS 1.3", tls.VersionTLS13},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			gotClientCerts = 0
+			client := BuildMtlsClient(cert)
+			transport, ok := client.Transport.(*http.Transport)
+			if !ok {
+				t.Fatalf("client.Transport = %T, want *http.Transport", client.Transport)
+			}
+			transport.TLSClientConfig.RootCAs = roots
+			transport.TLSClientConfig.MaxVersion = test.maxVersion
+
+			resp, err := client.Get(server.URL)
+			if err != nil {
+				t.Fatalf("handshake with a signer-only key failed: %v", err)
+			}
+			defer resp.Body.Close()
+			if resp.StatusCode != http.StatusOK {
+				t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
+			}
+			if gotClientCerts != 1 {
+				t.Errorf("server saw %d client certificates, want 1", gotClientCerts)
+			}
+		})
+	}
+}
 
 func TestBuildMtlsClient(t *testing.T) {
 	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
@@ -31,6 +132,23 @@ func TestBuildMtlsClient(t *testing.T) {
 	}
 	if transport.TLSClientConfig.MinVersion != tls.VersionTLS12 {
 		t.Errorf("MinVersion = %d, want %d (TLS 1.2)", transport.TLSClientConfig.MinVersion, tls.VersionTLS12)
+	}
+}
+
+func TestBuildMtlsClientCarriesSignerKey(t *testing.T) {
+	// A non-exportable key (KeyGuard/CNG/HSM) can only be a crypto.Signer, so the transport must pass
+	// tls.Certificate.PrivateKey through untouched rather than assert a concrete key type.
+	cert := signerOnlyTestCert(t)
+	client := BuildMtlsClient(cert)
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("client.Transport = %T, want *http.Transport", client.Transport)
+	}
+	if got := len(transport.TLSClientConfig.Certificates); got != 1 {
+		t.Fatalf("TLSClientConfig.Certificates has %d entries, want 1", got)
+	}
+	if transport.TLSClientConfig.Certificates[0].PrivateKey != cert.PrivateKey {
+		t.Error("the signer didn't reach TLSClientConfig.Certificates intact")
 	}
 }
 

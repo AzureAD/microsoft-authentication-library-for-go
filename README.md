@@ -168,11 +168,49 @@ Notes:
   configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
   certificate thumbprint). A plain `WithHTTPClient` cannot carry the certificate; use
-  `WithMtlsHTTPClient` to override the transport for keys the built-in transport can't use.
+  `WithMtlsHTTPClient` to override the transport when you need to own the TLS handshake yourself.
 - **Sovereign clouds** are supported on `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China), which rewrite to `mtlsauth.*` like the public cloud.
   The legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are rejected with
   guidance to use the supported host.
+
+### Non-exportable keys (KeyGuard, CNG, HSM)
+
+A key that can't leave its protected store — a Windows KeyGuard (VBS-isolated) key imported with
+`PKCS12_VIRTUAL_ISOLATION_KEY`, a CNG key handle, or an HSM-backed key — can only ever be surfaced in
+Go as a [`crypto.Signer`](https://pkg.go.dev/crypto#Signer), never as an `*rsa.PrivateKey`. Build the
+credential from a `tls.Certificate` holding that signer:
+
+```go
+// signer is your crypto.Signer over the non-exportable key (for example one backed by an NCrypt
+// key handle); MSAL never sees the private material.
+cred, err := confidential.NewCredFromTLSCertificate(tls.Certificate{
+    Certificate: chainDER, // DER chain, leaf first
+    PrivateKey:  signer,
+})
+if err != nil {
+    // TODO: handle error
+}
+
+app, _ := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+result, err := app.AcquireTokenByCredential(context.TODO(),
+    []string{"https://vault.azure.net/.default"},
+    confidential.WithMtlsProofOfPossession())
+```
+
+Notes:
+
+- **mTLS PoP only**: these credentials work exclusively with `WithMtlsProofOfPossession()`, because
+  it's the only flow that never signs a `client_assertion` — the key is used solely for the TLS
+  handshake. Any other flow fails fast with an error saying the key isn't exportable. A normal
+  `private_key_jwt`/SN/I client assertion requires an exportable `*rsa.PrivateKey`.
+- **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
+  TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
+  `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
+- **The signer lives in your code**: MSAL adds no platform-specific dependencies. Implement
+  `crypto.Signer` over your key provider (NCrypt, PKCS#11, KMS, ...) and hand it to MSAL.
+- `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`, with the
+  same mTLS-PoP-only restriction.
 
 ## Community Help and Support
 
