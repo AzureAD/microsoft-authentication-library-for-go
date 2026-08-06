@@ -130,21 +130,19 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
 
 ## Loading Certificates from PEM
 
-`confidential.CertFromPEM` loads a certificate and private key from PEM data for use with
-`NewCredFromCert`.
+`confidential.CertFromPEM` loads a certificate and an **unencrypted** private key from PEM data for
+use with `NewCredFromCert`.
 
-> **Security note — legacy encrypted PEM:** `CertFromPEM` supports legacy RFC 1423 encrypted PEM
-> blocks (those with a `DEK-Info` header, e.g. `DEK-Info: DES-EDE3-CBC,...`) **only for backward
-> compatibility**. This path uses weak cryptographic primitives — a single-iteration MD5 key
-> derivation function and obsolete DES/3DES ciphers — which provide little protection against
-> offline password-guessing attacks. A runtime warning is emitted when such a block is
-> encountered, and support for it may be removed in a future major version.
+> **Security note — encrypted PEM is not supported:** `CertFromPEM` rejects legacy RFC 1423
+> encrypted PEM blocks (those with a `DEK-Info` header, e.g. `DEK-Info: DES-EDE3-CBC,...`) with an
+> error. That format relies on a weak key derivation function (a single MD5 iteration) and obsolete
+> DES/3DES ciphers, which provide little protection against offline password-guessing attacks.
 >
-> Prefer **PKCS#8 encrypted private keys**, which are handled by `CertFromPEM`'s modern parsing
-> path. You can re-encode a legacy encrypted PEM key as PKCS#8 with OpenSSL:
+> Provide the private key **unencrypted** and protect it with filesystem permissions. You can strip
+> legacy encryption with OpenSSL:
 >
 > ```sh
-> openssl pkcs8 -topk8 -v2 aes-256-cbc -in legacy.key -out modern.key
+> openssl pkcs8 -topk8 -nocrypt -in legacy.key -out key.pem
 > ```
 
 ## Community Help and Support

@@ -10,16 +10,17 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"log"
 	"math/big"
 	"strings"
 	"testing"
 	"time"
 )
 
-const legacyPEMWarningSubstr = "Legacy PEM encryption detected"
+// encryptedPEMErrSubstr is a stable fragment of the error CertFromPEM returns for encrypted PEM.
+const encryptedPEMErrSubstr = "not supported"
 
 // testKeyAndCert generates a self-signed certificate and its RSA private key for use in tests.
+// It returns the key, the parsed certificate, and the PEM-encoded certificate.
 func testKeyAndCert(t *testing.T) (*rsa.PrivateKey, *x509.Certificate, []byte) {
 	t.Helper()
 	key, err := rsa.GenerateKey(rand.Reader, 2048)
@@ -36,18 +37,21 @@ func testKeyAndCert(t *testing.T) (*rsa.PrivateKey, *x509.Certificate, []byte) {
 	if err != nil {
 		t.Fatalf("creating certificate: %v", err)
 	}
+	cert, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parsing certificate: %v", err)
+	}
 	certPEM := pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
-	return key, tmpl, certPEM
+	return key, cert, certPEM
 }
 
-// legacyEncryptedKeyPEM builds an RFC 1423 (DEK-Info) encrypted PEM block whose decrypted payload
-// is itself a PEM-encoded "RSA PRIVATE KEY" block, matching how CertFromPEM re-decodes the
-// decrypted bytes.
+// legacyEncryptedKeyPEM builds an RFC 1423 (DEK-Info) encrypted "RSA PRIVATE KEY" PEM block for
+// use as a rejected-input fixture.
 func legacyEncryptedKeyPEM(t *testing.T, key *rsa.PrivateKey, password string) []byte {
 	t.Helper()
-	inner := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(key)})
+	der := x509.MarshalPKCS1PrivateKey(key)
 	//nolint:staticcheck // x509.EncryptPEMBlock is deprecated; used only to construct legacy test fixtures.
-	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", inner, []byte(password), x509.PEMCipher3DES)
+	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", der, []byte(password), x509.PEMCipher3DES)
 	if err != nil {
 		t.Fatalf("encrypting legacy PEM block: %v", err)
 	}
@@ -71,122 +75,33 @@ func pkcs1KeyPEM(t *testing.T, key *rsa.PrivateKey) []byte {
 	return pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: der})
 }
 
-// captureLog redirects the standard logger's output for the duration of fn and returns what was written.
-func captureLog(t *testing.T, fn func()) string {
-	t.Helper()
-	var buf bytes.Buffer
-	origOut := log.Writer()
-	origFlags := log.Flags()
-	log.SetOutput(&buf)
-	log.SetFlags(0)
-	defer func() {
-		log.SetOutput(origOut)
-		log.SetFlags(origFlags)
-	}()
-	fn()
-	return buf.String()
-}
-
-// Test 1 — Legacy encrypted PEM still decrypts successfully after the warning change.
-func TestCertFromPEM_LegacyEncrypted_DecryptsAndWarns(t *testing.T) {
+// Legacy RFC 1423 encrypted PEM is rejected with guidance, regardless of the supplied password.
+func TestCertFromPEM_LegacyEncrypted_Rejected(t *testing.T) {
 	key, _, certPEM := testKeyAndCert(t)
-	const password = "correct horse battery"
-	pemData := append(append([]byte{}, certPEM...), legacyEncryptedKeyPEM(t, key, password)...)
+	const filePassword = "correct horse battery"
+	legacy := legacyEncryptedKeyPEM(t, key, filePassword)
+	pemData := append(append([]byte{}, certPEM...), legacy...)
 
-	var certs []*x509.Certificate
-	var priv interface{}
-	var err error
-	out := captureLog(t, func() {
-		certs, priv, err = CertFromPEM(pemData, password)
-	})
-	if err != nil {
-		t.Fatalf("CertFromPEM returned error: %v", err)
-	}
-	if len(certs) == 0 {
-		t.Fatal("expected at least one certificate, got none")
-	}
-	if priv == nil {
-		t.Fatal("expected a non-nil private key")
-	}
-	if !strings.Contains(out, legacyPEMWarningSubstr) {
-		t.Fatalf("expected log to contain %q, got %q", legacyPEMWarningSubstr, out)
-	}
-	// The returned key must match the key we encrypted.
-	rsaKey, ok := priv.(*rsa.PrivateKey)
-	if !ok {
-		t.Fatalf("expected *rsa.PrivateKey, got %T", priv)
-	}
-	if rsaKey.N.Cmp(key.N) != 0 {
-		t.Fatal("recovered key does not match original key")
+	for _, password := range []string{filePassword, "wrong-password", ""} {
+		t.Run("password="+password, func(t *testing.T) {
+			certs, priv, err := CertFromPEM(pemData, password)
+			if err == nil {
+				t.Fatal("expected an error for legacy encrypted PEM, got nil")
+			}
+			if !strings.Contains(err.Error(), encryptedPEMErrSubstr) {
+				t.Fatalf("expected error to contain %q, got %q", encryptedPEMErrSubstr, err.Error())
+			}
+			if certs != nil || priv != nil {
+				t.Fatal("expected no cert or key to be returned for encrypted PEM")
+			}
+		})
 	}
 }
 
-// Test 2 — Incorrect password for legacy encrypted PEM returns an error.
-func TestCertFromPEM_LegacyEncrypted_WrongPassword(t *testing.T) {
-	key, _, certPEM := testKeyAndCert(t)
-	pemData := append(append([]byte{}, certPEM...), legacyEncryptedKeyPEM(t, key, "the-right-password")...)
-
-	certs, priv, err := CertFromPEM(pemData, "the-WRONG-password")
-	if err == nil {
-		t.Fatal("expected an error for incorrect password, got nil")
-	}
-	if !strings.Contains(err.Error(), "could not decrypt encrypted PEM block") {
-		t.Fatalf("expected error to mention 'could not decrypt encrypted PEM block', got %q", err.Error())
-	}
-	if certs != nil || priv != nil {
-		t.Fatal("expected no cert or key to be returned on failure")
-	}
-}
-
-// Test 3 — Modern PKCS#8 PEM is unaffected: it loads and does not trigger the legacy warning.
-func TestCertFromPEM_PKCS8_NoWarning(t *testing.T) {
-	key, _, certPEM := testKeyAndCert(t)
-	pemData := append(append([]byte{}, certPEM...), pkcs8KeyPEM(t, key)...)
-
-	var certs []*x509.Certificate
-	var priv interface{}
-	var err error
-	out := captureLog(t, func() {
-		certs, priv, err = CertFromPEM(pemData, "")
-	})
-	if err != nil {
-		t.Fatalf("CertFromPEM returned error: %v", err)
-	}
-	if len(certs) == 0 || priv == nil {
-		t.Fatal("expected a certificate and key from PKCS#8 PEM")
-	}
-	if strings.Contains(out, legacyPEMWarningSubstr) {
-		t.Fatalf("legacy warning must not fire for PKCS#8 keys, got log %q", out)
-	}
-}
-
-// Test 4 — Unencrypted PEM is unaffected: it loads and does not trigger the legacy warning.
-func TestCertFromPEM_Unencrypted_NoWarning(t *testing.T) {
-	key, _, certPEM := testKeyAndCert(t)
-	pemData := append(append([]byte{}, certPEM...), pkcs1KeyPEM(t, key)...)
-
-	var certs []*x509.Certificate
-	var priv interface{}
-	var err error
-	out := captureLog(t, func() {
-		certs, priv, err = CertFromPEM(pemData, "")
-	})
-	if err != nil {
-		t.Fatalf("CertFromPEM returned error: %v", err)
-	}
-	if len(certs) == 0 || priv == nil {
-		t.Fatal("expected a certificate and key from unencrypted PEM")
-	}
-	if strings.Contains(out, legacyPEMWarningSubstr) {
-		t.Fatalf("legacy warning must not fire for unencrypted PEM, got log %q", out)
-	}
-}
-
-// Test 5 — Abuse path: a tampered/unsupported DEK-Info header does not silently bypass error handling.
-func TestCertFromPEM_TamperedDEKInfo_Errors(t *testing.T) {
+// A tampered/unsupported DEK-Info header is still detected and rejected — it cannot bypass the check.
+func TestCertFromPEM_TamperedDEKInfo_Rejected(t *testing.T) {
 	key, _, certPEM := testKeyAndCert(t)
 	legacy := legacyEncryptedKeyPEM(t, key, "pw")
-	// Corrupt the DEK-Info header to reference an unknown cipher so decryption cannot proceed.
 	tampered := bytes.Replace(legacy, []byte("DEK-Info: DES-EDE3-CBC"), []byte("DEK-Info: BOGUS-CIPHER"), 1)
 	if bytes.Equal(tampered, legacy) {
 		t.Fatal("test setup failed: DEK-Info header was not replaced")
@@ -197,7 +112,44 @@ func TestCertFromPEM_TamperedDEKInfo_Errors(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected an error for tampered DEK-Info header, got nil")
 	}
+	if !strings.Contains(err.Error(), encryptedPEMErrSubstr) {
+		t.Fatalf("expected error to contain %q, got %q", encryptedPEMErrSubstr, err.Error())
+	}
 	if certs != nil || priv != nil {
 		t.Fatal("expected no cert or key to be returned for tampered PEM")
+	}
+}
+
+// A modern, unencrypted PKCS#8 private key loads successfully.
+func TestCertFromPEM_PKCS8_Loads(t *testing.T) {
+	key, cert, certPEM := testKeyAndCert(t)
+	pemData := append(append([]byte{}, certPEM...), pkcs8KeyPEM(t, key)...)
+
+	certs, priv, err := CertFromPEM(pemData, "")
+	if err != nil {
+		t.Fatalf("CertFromPEM returned error: %v", err)
+	}
+	if len(certs) != 1 || priv == nil {
+		t.Fatalf("expected one certificate and a key, got %d certs, key nil=%v", len(certs), priv == nil)
+	}
+	if certs[0].SerialNumber.Cmp(cert.SerialNumber) != 0 {
+		t.Fatal("returned certificate does not match the generated certificate")
+	}
+}
+
+// An unencrypted PKCS#1 private key loads successfully.
+func TestCertFromPEM_Unencrypted_Loads(t *testing.T) {
+	key, cert, certPEM := testKeyAndCert(t)
+	pemData := append(append([]byte{}, certPEM...), pkcs1KeyPEM(t, key)...)
+
+	certs, priv, err := CertFromPEM(pemData, "")
+	if err != nil {
+		t.Fatalf("CertFromPEM returned error: %v", err)
+	}
+	if len(certs) != 1 || priv == nil {
+		t.Fatalf("expected one certificate and a key, got %d certs, key nil=%v", len(certs), priv == nil)
+	}
+	if certs[0].SerialNumber.Cmp(cert.SerialNumber) != 0 {
+		t.Fatal("returned certificate does not match the generated certificate")
 	}
 }
