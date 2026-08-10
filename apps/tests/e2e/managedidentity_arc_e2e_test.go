@@ -10,8 +10,10 @@
 // Azure Arc-enabled machine, and are compiled only under the "e2e" build tag.
 // The system-assigned identity is fully supported. User-assigned support depends
 // on the Azure Arc agent honoring the request; the user-assigned test below
-// requests a non-existent identity, which fails on every agent (404), so it does
-// not depend on a specific agent version.
+// requests a non-existent identity, which returns no token on any agent — a
+// user-assigned-aware agent surfaces a 404 (identity_not_found), while a legacy
+// agent ignores the selector and returns the system-assigned identity, which MSAL
+// rejects (fails closed) — so it does not depend on a specific agent version.
 //
 // They mirror the MSAL .NET Azure Arc E2E tests
 // (tests/Microsoft.Identity.Test.E2e/ManagedIdentityAzureArcTests.cs) and reuse
@@ -36,10 +38,11 @@ func TestManagedIdentityAzureArc(t *testing.T) {
 }
 
 // TestManagedIdentityAzureArcUserAssignedNotFound requests a user-assigned
-// identity that is not assigned to the Azure Arc machine. A user-assigned-aware
-// agent returns 404 (identity_not_found); MSAL must surface that as an error and
-// return no token. Mirrors the MSAL .NET E2E test
-// AcquireToken_ForNonExistentUami_OnAzureArc_Fails.
+// identity that is not assigned to the Azure Arc machine. No token is returned on
+// any agent: a user-assigned-aware agent returns 404 (identity_not_found), while a
+// legacy agent ignores the selector and returns the system-assigned identity, which
+// MSAL rejects (fails closed). Either way MSAL surfaces an error and no token.
+// Mirrors the MSAL .NET E2E test AcquireToken_ForNonExistentUami_OnAzureArc_Fails.
 func TestManagedIdentityAzureArcUserAssignedNotFound(t *testing.T) {
 	client, err := mi.New(mi.UserAssignedClientID("00000000-0000-0000-0000-000000000000"))
 	if err != nil {
@@ -51,12 +54,16 @@ func TestManagedIdentityAzureArcUserAssignedNotFound(t *testing.T) {
 
 	result, err := client.AcquireToken(ctx, armResource)
 	if err == nil {
-		t.Fatalf("expected a 404 for a non-existent user-assigned identity, got token source %v", result.Metadata.TokenSource)
+		t.Fatalf("expected an error for a non-existent user-assigned identity, got token source %v", result.Metadata.TokenSource)
 	}
 	if result.AccessToken != "" {
 		t.Fatal("no token should be returned for a non-existent user-assigned identity")
 	}
-	if !strings.Contains(err.Error(), "404") && !strings.Contains(strings.ToLower(err.Error()), "identity_not_found") {
-		t.Fatalf("expected a 404 / identity_not_found error, got: %v", err)
+	// A UAMI-aware agent returns 404 (identity_not_found); a legacy agent ignores the
+	// selector and returns the system-assigned identity, which MSAL rejects (fail closed).
+	if !strings.Contains(err.Error(), "404") &&
+		!strings.Contains(strings.ToLower(err.Error()), "identity_not_found") &&
+		!strings.Contains(err.Error(), "did not confirm the requested user-assigned managed identity") {
+		t.Fatalf("expected a 404 / identity_not_found or fail-closed error, got: %v", err)
 	}
 }
