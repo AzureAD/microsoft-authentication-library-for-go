@@ -14,6 +14,7 @@ package accesstokens
 import (
 	"context"
 	"crypto"
+	"crypto/rsa"
 
 	/* #nosec */
 	"crypto/sha1"
@@ -102,8 +103,8 @@ type Credential struct {
 	// X5c is the JWT assertion's x5c header value, required for SN/I authentication.
 	X5c []string
 	// SignerOnly indicates Key is a crypto.Signer whose private material can't be exported (for
-	// example a Windows KeyGuard or other CNG/HSM-backed key). Such a key can only be used for the
-	// mutual-TLS handshake of an mTLS proof-of-possession request, never to sign a client assertion.
+	// example a Windows KeyGuard or other CNG/HSM-backed key). Such a key must be used through its
+	// Sign method, so JWT wraps the signing method rather than handing Key to the JWT library.
 	SignerOnly bool
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
@@ -124,11 +125,6 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		}
 		return c.AssertionCallback(ctx, options)
 	}
-	if c.SignerOnly {
-		// jwt's RSA signing methods require an *rsa.PrivateKey, which a non-exportable key can never
-		// be. Fail here with actionable guidance instead of deep inside the signing method.
-		return "", errors.New("this credential's private key is not exportable and can only be used with WithMtlsProofOfPossession()")
-	}
 	claims := jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
 		"exp": json.Number(strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)),
@@ -147,6 +143,26 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 	if isADFSorDSTS {
 		signingMethod = jwt.SigningMethodRS256
 		thumbprintKey = "x5t"
+	}
+
+	// A non-exportable key (Windows KeyGuard/CNG/HSM) can only ever be a crypto.Signer, which jwt's
+	// built-in RSA methods reject because they need an *rsa.PrivateKey. Wrap the method selected above
+	// in one that delegates to the signer. Alg() is unchanged, so the assertion's wire format is too.
+	if c.SignerOnly {
+		signer, ok := c.Key.(crypto.Signer)
+		if !ok {
+			return "", errors.New("this credential's private key must implement crypto.Signer to sign a client assertion")
+		}
+		if _, ok := signer.Public().(*rsa.PublicKey); !ok {
+			// a credential can hold a signer for another key type because its certificate validates
+			// against it, but the service only accepts RSA client assertions
+			return "", errors.New("this credential's private key must be RSA to sign a client assertion")
+		}
+		method, err := newSignerMethod(signingMethod)
+		if err != nil {
+			return "", err
+		}
+		signingMethod = method
 	}
 
 	token := jwt.NewWithClaims(signingMethod, claims)

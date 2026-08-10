@@ -193,24 +193,31 @@ if err != nil {
 }
 
 app, _ := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+
+// works in every flow, e.g. a plain client-credentials call signing a private_key_jwt assertion
 result, err := app.AcquireTokenByCredential(context.TODO(),
+    []string{"https://vault.azure.net/.default"})
+
+// or bind the token to the certificate with mTLS proof-of-possession
+result, err = app.AcquireTokenByCredential(context.TODO(),
     []string{"https://vault.azure.net/.default"},
     confidential.WithMtlsProofOfPossession())
 ```
 
 Notes:
 
-- **mTLS PoP only**: these credentials work exclusively with `WithMtlsProofOfPossession()`, because
-  it's the only flow that never signs a `client_assertion` — the key is used solely for the TLS
-  handshake. Any other flow fails fast with an error saying the key isn't exportable. A normal
-  `private_key_jwt`/SN/I client assertion requires an exportable `*rsa.PrivateKey`.
+- **Every flow is supported**: MSAL signs the `client_assertion` through the signer, so
+  `private_key_jwt`/SN/I works for client credentials, on-behalf-of, authorization code, refresh
+  token, and ADFS/dSTS. `WithMtlsProofOfPossession()` is the one flow that sends no
+  `client_assertion` at all — the key is used solely for the TLS handshake and the token is bound to
+  the certificate. The signer's public key must be an `*rsa.PublicKey` to sign an assertion, because
+  the service accepts only RSA assertions; a non-RSA signer is limited to mTLS PoP.
 - **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
   TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
   `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
 - **The signer lives in your code**: MSAL adds no platform-specific dependencies. Implement
   `crypto.Signer` over your key provider (NCrypt, PKCS#11, KMS, ...) and hand it to MSAL.
-- `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`, with the
-  same mTLS-PoP-only restriction.
+- `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`.
 
 ## Community Help and Support
 

@@ -11,9 +11,11 @@ import (
 	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,7 +27,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 )
 
 // signerOnlyKey stands in for a non-exportable key such as a Windows KeyGuard (VBS-isolated) key: it
@@ -258,24 +259,79 @@ func TestNewCredFromCertSignerError(t *testing.T) {
 	}
 }
 
-// TestSignerOnlyCredentialRejectsAssertion verifies a non-exportable key fails the client assertion
-// path with actionable guidance instead of an opaque error from the JWT library.
-func TestSignerOnlyCredentialRejectsAssertion(t *testing.T) {
-	tlsCert, _, _ := testSignerCert(t)
+// TestSignerOnlyCredentialAssertion is the end-to-end case for a KeyGuard-style key on the client
+// assertion path: the request carries a client_assertion the signer produced, and it verifies against
+// the certificate's public key.
+func TestSignerOnlyCredentialAssertion(t *testing.T) {
+	tlsCert, certs, _ := testSignerCert(t)
 	cred, err := NewCredFromTLSCertificate(tlsCert)
 	if err != nil {
 		t.Fatal(err)
 	}
-	client, err := fakeClient(accesstokens.TokenResponse{}, cred, fakeAuthority)
+	tenant := "tenant"
+	lmo := "login.microsoftonline.com"
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
 	if err != nil {
 		t.Fatal(err)
 	}
-	_, err = client.AcquireTokenByCredential(context.Background(), tokenScope)
-	if err == nil {
-		t.Fatal("expected an error because a signer-only key can't sign a client assertion")
+
+	var gotBody url.Values
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody("assertion-access-token", "", "", "", 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			b, _ := io.ReadAll(r.Body)
+			gotBody, _ = url.ParseQuery(string(b))
+		}),
+	)
+
+	res, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+	if err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "WithMtlsProofOfPossession") {
-		t.Errorf("error %q should point the caller to WithMtlsProofOfPossession()", err)
+	if res.AccessToken != "assertion-access-token" {
+		t.Fatalf("AccessToken = %q", res.AccessToken)
+	}
+
+	assertion := gotBody.Get("client_assertion")
+	if assertion == "" {
+		t.Fatal("the request must carry a client_assertion signed by the non-exportable key")
+	}
+	parts := strings.Split(assertion, ".")
+	if len(parts) != 3 {
+		t.Fatalf("client_assertion has %d segments, want 3", len(parts))
+	}
+	rawHeader, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	header := map[string]interface{}{}
+	if err := json.Unmarshal(rawHeader, &header); err != nil {
+		t.Fatal(err)
+	}
+	if header["alg"] != "PS256" {
+		t.Errorf(`alg = %v, want "PS256"`, header["alg"])
+	}
+	thumbprint := sha256.Sum256(certs[0].Raw)
+	if got := header["x5t#S256"]; got != base64.StdEncoding.EncodeToString(thumbprint[:]) {
+		t.Errorf("x5t#S256 = %v, want the SHA-256 thumbprint of the leaf certificate", got)
+	}
+
+	sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub, ok := certs[0].PublicKey.(*rsa.PublicKey)
+	if !ok {
+		t.Fatalf("the leaf's public key is %T, want *rsa.PublicKey", certs[0].PublicKey)
+	}
+	digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+	// verify with the salt length PS256 mandates rather than PSSSaltLengthAuto, which accepts any
+	opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256}
+	if err := rsa.VerifyPSS(pub, crypto.SHA256, digest[:], sig, opts); err != nil {
+		t.Fatalf("the client_assertion doesn't verify against the certificate: %v", err)
 	}
 }
 
