@@ -457,32 +457,52 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (A
 	return authResultFromToken(c.authParams, tokenResponse)
 }
 
+// setUserAssignedQueryParam adds the user-assigned identity selector to params. Azure Arc and IMDS
+// both use the IMDS "msi_res_id" spelling for the resource id; a system-assigned identity adds
+// nothing. An unsupported ID type is rejected (New already validates the caller's input).
+func setUserAssignedQueryParam(params url.Values, id ID) error {
+	switch t := id.(type) {
+	case UserAssignedClientID:
+		params.Set(miQueryParameterClientId, string(t))
+	case UserAssignedResourceID:
+		params.Set(miQueryParameterMsiResourceId, string(t))
+	case UserAssignedObjectID:
+		params.Set(miQueryParameterObjectId, string(t))
+	case systemAssignedValue:
+	default:
+		return fmt.Errorf("unsupported type %T", id)
+	}
+	return nil
+}
+
 // verifyAzureArcUserAssignedIdentity fails closed when a user-assigned identity was requested
 // but Azure Arc did not confirm it in the token response. A legacy Azure Arc agent ignores the
-// client_id / mi_res_id / object_id selector and silently returns the machine's system-assigned
+// client_id / msi_res_id / object_id selector and silently returns the machine's system-assigned
 // identity. An agent that supports user-assigned managed identity echoes the identity it used in
 // the token response; when that echo is missing or does not match the requested selector, MSAL
 // must not hand back a token for a different identity than the one requested.
 func verifyAzureArcUserAssignedIdentity(id ID, token accesstokens.TokenResponse) error {
-	var requested, echoed string
-	switch t := id.(type) {
-	case UserAssignedClientID:
-		requested = string(t)
-		echoed = additionalStringField(token.AdditionalFields, miQueryParameterClientId)
-	case UserAssignedResourceID:
-		requested = string(t)
-		// The request selector is msi_res_id; accept either spelling on the echo as a safety net.
-		echoed = additionalStringField(token.AdditionalFields, miQueryParameterMsiResourceId, miQueryParameterResourceId)
-	case UserAssignedObjectID:
-		requested = string(t)
-		echoed = additionalStringField(token.AdditionalFields, miQueryParameterObjectId)
-	default:
+	// Reuse the request selector mapping so the request and validation stay in lock-step.
+	selector := url.Values{}
+	if err := setUserAssignedQueryParam(selector, id); err != nil {
+		return err
+	}
+	if len(selector) == 0 {
 		// System-assigned: there is no requested identity to confirm.
 		return nil
 	}
-
-	// Compare case-insensitively: client_id / object_id are GUIDs, and an ARM resource id
-	// (mi_res_id) can legitimately differ in segment casing.
+	var name, requested string
+	for k := range selector {
+		name, requested = k, selector.Get(k)
+	}
+	// Accept either resource-id spelling on the echo as a safety net; Azure Arc returns msi_res_id.
+	keys := []string{name}
+	if name == miQueryParameterMsiResourceId {
+		keys = append(keys, miQueryParameterResourceId)
+	}
+	echoed := additionalStringField(token.AdditionalFields, keys...)
+	// Compare case-insensitively: client_id / object_id are GUIDs, and an ARM resource id can
+	// legitimately differ in segment casing.
 	if echoed == "" || !strings.EqualFold(echoed, requested) {
 		return errors.New("azure arc did not confirm the requested user-assigned managed identity in the token response; the agent likely does not support user-assigned managed identities and returned the system-assigned identity")
 	}
@@ -693,16 +713,8 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 	msiParameters.Set(apiVersionQueryParameterName, imdsAPIVersion)
 	msiParameters.Set(resourceQueryParameterName, resource)
 
-	switch t := id.(type) {
-	case UserAssignedClientID:
-		msiParameters.Set(miQueryParameterClientId, string(t))
-	case UserAssignedResourceID:
-		msiParameters.Set(miQueryParameterMsiResourceId, string(t))
-	case UserAssignedObjectID:
-		msiParameters.Set(miQueryParameterObjectId, string(t))
-	case systemAssignedValue: // not adding anything
-	default:
-		return nil, fmt.Errorf("unsupported type %T", id)
+	if err := setUserAssignedQueryParam(msiParameters, id); err != nil {
+		return nil, err
 	}
 
 	msiEndpoint.RawQuery = msiParameters.Encode()
@@ -732,18 +744,10 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, key 
 	msiParameters.Set(apiVersionQueryParameterName, azureArcAPIVersion)
 	msiParameters.Set(resourceQueryParameterName, resource)
 
-	switch t := id.(type) {
-	case UserAssignedClientID:
-		msiParameters.Set(miQueryParameterClientId, string(t))
-	case UserAssignedResourceID:
-		// Azure Arc honors the IMDS msi_res_id spelling for the resource-id selector; the
-		// mi_res_id spelling is silently ignored and returns the system-assigned identity.
-		msiParameters.Set(miQueryParameterMsiResourceId, string(t))
-	case UserAssignedObjectID:
-		msiParameters.Set(miQueryParameterObjectId, string(t))
-	case systemAssignedValue:
-	default:
-		return nil, fmt.Errorf("unsupported type %T", id)
+	// Azure Arc honors the IMDS msi_res_id spelling for the resource-id selector; the mi_res_id
+	// spelling is silently ignored and returns the system-assigned identity.
+	if err := setUserAssignedQueryParam(msiParameters, id); err != nil {
+		return nil, err
 	}
 
 	msiEndpoint.RawQuery = msiParameters.Encode()
