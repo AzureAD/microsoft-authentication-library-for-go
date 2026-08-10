@@ -981,6 +981,23 @@ func assertArcUserAssignedHonored(t *testing.T, id ID, param, value string) {
 	assertArcEchoHonored(t, id, param, value, param, value)
 }
 
+// newArcChallengeClient returns a mock client that first replies with the Azure Arc 401 challenge
+// (advertising secretPath) and then a 200 carrying body, mirroring the two-step Arc token flow.
+// When reqURL is non-nil, the authenticated request's URL is recorded into it.
+func newArcChallengeClient(secretPath string, body []byte, reqURL **url.URL) *mock.Client {
+	headers := http.Header{}
+	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
+		mock.WithBody(body), mock.WithCallback(func(r *http.Request) {
+			if reqURL != nil {
+				*reqURL = r.URL
+			}
+		}))
+	return mockClient
+}
+
 // assertArcEchoHonored runs the Azure Arc happy path where the agent echoes echoField=echoValue.
 // It asserts MSAL returns the token and, when requestParam is non-empty, that the request carried
 // requestParam=requestValue on the wire (which may use a different spelling than the echo).
@@ -991,18 +1008,12 @@ func assertArcEchoHonored(t *testing.T, id ID, echoField, echoValue, requestPara
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	headers := http.Header{}
-	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
-
 	body, err := getArcSuccessResponseWithEcho(resource, echoField, echoValue)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
 	var reqURL *url.URL
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
-		mock.WithBody(body), mock.WithCallback(func(r *http.Request) { reqURL = r.URL }))
+	mockClient := newArcChallengeClient(secretPath, body, &reqURL)
 
 	client, err := New(id, WithHTTPClient(mockClient))
 	if err != nil {
@@ -1045,16 +1056,11 @@ func assertArcUserAssignedFailsClosed(t *testing.T, echoField, echoValue string)
 	defer func() { cacheManager = before }()
 	cacheManager = storage.New(nil)
 
-	headers := http.Header{}
-	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
-
 	body, err := getArcSuccessResponseWithEcho(resource, echoField, echoValue)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers), mock.WithBody(body))
+	mockClient := newArcChallengeClient(secretPath, body, nil)
 
 	client, err := New(UserAssignedClientID("11111111-1111-1111-1111-111111111111"), WithHTTPClient(mockClient))
 	if err != nil {
@@ -1196,15 +1202,11 @@ func arcCacheAccessTokenKeys(t *testing.T) []string {
 // call reached the identity provider (a cache miss) and returned the identity's own token.
 func assertArcAcquireFromIdP(t *testing.T, name, secretPath string, id ID, echoField, echoValue, wantToken string) {
 	t.Helper()
-	headers := http.Header{}
-	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
 	body, err := getArcSuccessResponseWithTokenAndEcho(resource, wantToken, echoField, echoValue)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers), mock.WithBody(body))
+	mockClient := newArcChallengeClient(secretPath, body, nil)
 
 	client, err := New(id, WithHTTPClient(mockClient))
 	if err != nil {
