@@ -963,7 +963,7 @@ func TestAzureArcUserAssignedHonored(t *testing.T) {
 		value string
 	}{
 		{"ClientID", UserAssignedClientID("11111111-1111-1111-1111-111111111111"), miQueryParameterClientId, "11111111-1111-1111-1111-111111111111"},
-		{"ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"},
+		{"ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterMsiResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"},
 		{"ObjectID", UserAssignedObjectID("22222222-2222-2222-2222-222222222222"), miQueryParameterObjectId, "22222222-2222-2222-2222-222222222222"},
 	}
 	for _, tc := range testCases {
@@ -1063,8 +1063,9 @@ func assertArcUserAssignedFailsClosed(t *testing.T, echoField, echoValue string)
 	}
 }
 
-func TestAzureArcUserAssignedResourceIDAcceptsMsiResIdEcho(t *testing.T) {
-	// The Arc request selector is mi_res_id, but accept the alternate msi_res_id spelling on the echo.
+func TestAzureArcUserAssignedResourceIDAcceptsMiResIdEcho(t *testing.T) {
+	// The Arc request selector is msi_res_id; as a safety net MSAL also accepts the alternate
+	// mi_res_id spelling on the echo.
 	secretPath := setupArcSecretPath(t)
 	before := cacheManager
 	defer func() { cacheManager = before }()
@@ -1076,7 +1077,7 @@ func TestAzureArcUserAssignedResourceIDAcceptsMsiResIdEcho(t *testing.T) {
 	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
 
-	body, err := getArcSuccessResponseWithEcho(resource, miQueryParameterMsiResourceId, rid)
+	body, err := getArcSuccessResponseWithEcho(resource, miQueryParameterResourceId, rid)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
@@ -1088,7 +1089,7 @@ func TestAzureArcUserAssignedResourceIDAcceptsMsiResIdEcho(t *testing.T) {
 	}
 	result, err := client.AcquireToken(context.Background(), resource)
 	if err != nil {
-		t.Fatalf("expected success when the agent echoes msi_res_id, got error: %v", err)
+		t.Fatalf("expected success when the agent echoes mi_res_id, got error: %v", err)
 	}
 	if result.AccessToken != token {
 		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
@@ -1154,7 +1155,7 @@ func TestAzureArcUserAssignedCacheIsPartitionedByIdentity(t *testing.T) {
 	}{
 		{"SAMI", SystemAssigned(), "", "", "token-sami", systemAssignedManagedIdentity},
 		{"UAMI-ClientID", UserAssignedClientID("11111111-1111-1111-1111-111111111111"), miQueryParameterClientId, "11111111-1111-1111-1111-111111111111", "token-uami-client", "11111111-1111-1111-1111-111111111111"},
-		{"UAMI-ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami", "token-uami-resource", "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"},
+		{"UAMI-ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterMsiResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami", "token-uami-resource", "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"},
 		{"UAMI-ObjectID", UserAssignedObjectID("22222222-2222-2222-2222-222222222222"), miQueryParameterObjectId, "22222222-2222-2222-2222-222222222222", "token-uami-object", "22222222-2222-2222-2222-222222222222"},
 	}
 

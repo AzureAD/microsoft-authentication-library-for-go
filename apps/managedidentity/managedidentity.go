@@ -471,8 +471,8 @@ func verifyAzureArcUserAssignedIdentity(id ID, token accesstokens.TokenResponse)
 		echoed = additionalStringField(token.AdditionalFields, miQueryParameterClientId)
 	case UserAssignedResourceID:
 		requested = string(t)
-		// The request selector is mi_res_id; accept either spelling on the echo.
-		echoed = additionalStringField(token.AdditionalFields, miQueryParameterResourceId, miQueryParameterMsiResourceId)
+		// The request selector is msi_res_id; accept either spelling on the echo as a safety net.
+		echoed = additionalStringField(token.AdditionalFields, miQueryParameterMsiResourceId, miQueryParameterResourceId)
 	case UserAssignedObjectID:
 		requested = string(t)
 		echoed = additionalStringField(token.AdditionalFields, miQueryParameterObjectId)
@@ -736,7 +736,9 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, key 
 	case UserAssignedClientID:
 		msiParameters.Set(miQueryParameterClientId, string(t))
 	case UserAssignedResourceID:
-		msiParameters.Set(miQueryParameterResourceId, string(t))
+		// Azure Arc honors the IMDS msi_res_id spelling for the resource-id selector; the
+		// mi_res_id spelling is silently ignored and returns the system-assigned identity.
+		msiParameters.Set(miQueryParameterMsiResourceId, string(t))
 	case UserAssignedObjectID:
 		msiParameters.Set(miQueryParameterObjectId, string(t))
 	case systemAssignedValue:
