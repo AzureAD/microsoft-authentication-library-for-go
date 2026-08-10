@@ -157,8 +157,9 @@ Notes:
   `mtlsauth.microsoft.com` is used when no region is configured).
 - `WithMtlsBindingCertificate` is only needed on the assertion-authenticated leg (leg 2). For a leg
   created with `NewCredFromCert` (leg 1) the binding certificate is inferred from the credential.
-- Results expose only **public** binding material (`BindingCertificate` and
-  `BindingCertificateThumbprint()`); the private key is never surfaced.
+- Results expose the binding certificate as `BindingCertificate` (a `*tls.Certificate` carrying the
+  parsed leaf and the private key, ready for `tls.Config.Certificates`) and its thumbprint as
+  `BindingCertificateThumbprint()`.
 - Sovereign clouds are supported via `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China); the legacy hosts `login.usgovcloudapi.net` and
   `login.chinacloudapi.cn` are rejected with guidance toward the supported host.

@@ -115,8 +115,8 @@ func ExampleClient_AcquireTokenByCredential_withMtlsProofOfPossession() {
 		// TODO: handle error
 	}
 
-	// result.Metadata.TokenType == "mtls_pop"; the public binding certificate and its thumbprint are
-	// available for the caller to present to the resource.
+	// result.Metadata.TokenType == "mtls_pop"; result.BindingCertificate is the *tls.Certificate the
+	// token is bound to (leaf plus private key), ready to present to the resource on the TLS handshake.
 	_ = result.AccessToken
 	_ = result.BindingCertificate
 	fmt.Println(result.BindingCertificateThumbprint())

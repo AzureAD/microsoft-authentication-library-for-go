@@ -311,8 +311,8 @@ type AuthParams struct {
 	// from login.* to mtlsauth.*.
 	IsMtlsPoP bool
 	// MtlsBindingCert is the certificate (with private key) presented as the client certificate
-	// during the mutual-TLS handshake when IsMtlsPoP is set. Its private key is never surfaced in
-	// results; only the public binding certificate is exposed to callers.
+	// during the mutual-TLS handshake when IsMtlsPoP is set. It is also surfaced to callers as
+	// AuthResult.BindingCertificate so they can present the same certificate to the resource.
 	MtlsBindingCert *tls.Certificate
 }
 

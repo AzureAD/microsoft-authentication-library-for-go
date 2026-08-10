@@ -1090,8 +1090,9 @@ func (mtlsBindingCertOption) mtlsPoPOption() {}
 // the assertion with client_assertion_type set to the jwt-pop (certificate-bound) value.
 //
 // For a client created with [NewCredFromCert] the binding certificate is inferred from the credential
-// and this option is unnecessary. The certificate's private key is used only for the TLS handshake and
-// is never surfaced in results.
+// and this option is unnecessary. The certificate is surfaced on the result as
+// [AuthResult.BindingCertificate], a *tls.Certificate carrying the parsed leaf and the private key, so
+// the caller can present the same certificate to the resource.
 func WithMtlsBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey) MtlsPoPOption {
 	return mtlsBindingCertOption{certs: certs, key: key}
 }
@@ -1104,8 +1105,9 @@ func WithMtlsBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey
 //
 // For a [NewCredFromCert] client the binding certificate is inferred from the credential. For an
 // assertion credential (for example FIC leg 2) pass [WithMtlsBindingCertificate] to supply it. The
-// result exposes the public binding certificate via [AuthResult.BindingCertificate] and its thumbprint
-// via [AuthResult.BindingCertificateThumbprint]; the private key is never surfaced.
+// result exposes it via [AuthResult.BindingCertificate] — a *tls.Certificate carrying the parsed leaf
+// and the private key, ready to drop into tls.Config.Certificates — and its thumbprint via
+// [AuthResult.BindingCertificateThumbprint].
 //
 // Setting this option on each leg of a developer-orchestrated two-leg federated-identity-credential
 // (FIC) flow makes both legs mTLS PoP.
