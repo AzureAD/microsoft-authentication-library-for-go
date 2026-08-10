@@ -977,6 +977,15 @@ func TestAzureArcUserAssignedHonored(t *testing.T) {
 // requested identity, MSAL returns the token, and the request carries the selector on the wire.
 func assertArcUserAssignedHonored(t *testing.T, id ID, param, value string) {
 	t.Helper()
+	// The happy path echoes the same selector it sends, so echo and request params match.
+	assertArcEchoHonored(t, id, param, value, param, value)
+}
+
+// assertArcEchoHonored runs the Azure Arc happy path where the agent echoes echoField=echoValue.
+// It asserts MSAL returns the token and, when requestParam is non-empty, that the request carried
+// requestParam=requestValue on the wire (which may use a different spelling than the echo).
+func assertArcEchoHonored(t *testing.T, id ID, echoField, echoValue, requestParam, requestValue string) {
+	t.Helper()
 	secretPath := setupArcSecretPath(t)
 	before := cacheManager
 	defer func() { cacheManager = before }()
@@ -987,7 +996,7 @@ func assertArcUserAssignedHonored(t *testing.T, id ID, param, value string) {
 	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
 
-	body, err := getArcSuccessResponseWithEcho(resource, param, value)
+	body, err := getArcSuccessResponseWithEcho(resource, echoField, echoValue)
 	if err != nil {
 		t.Fatalf(errorFormingJsonResponse, err.Error())
 	}
@@ -1006,8 +1015,8 @@ func assertArcUserAssignedHonored(t *testing.T, id ID, param, value string) {
 	if result.AccessToken != token {
 		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
 	}
-	if reqURL == nil || reqURL.Query().Get(param) != value {
-		t.Fatalf("expected request to carry %s=%s, got %v", param, value, reqURL)
+	if requestParam != "" && (reqURL == nil || reqURL.Query().Get(requestParam) != requestValue) {
+		t.Fatalf("expected request to carry %s=%s, got %v", requestParam, requestValue, reqURL)
 	}
 }
 
@@ -1065,35 +1074,9 @@ func assertArcUserAssignedFailsClosed(t *testing.T, echoField, echoValue string)
 
 func TestAzureArcUserAssignedResourceIDAcceptsMiResIdEcho(t *testing.T) {
 	// The Arc request selector is msi_res_id; as a safety net MSAL also accepts the alternate
-	// mi_res_id spelling on the echo.
-	secretPath := setupArcSecretPath(t)
-	before := cacheManager
-	defer func() { cacheManager = before }()
-	cacheManager = storage.New(nil)
-
+	// mi_res_id spelling on the echo. The request still carries msi_res_id on the wire.
 	rid := "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"
-	headers := http.Header{}
-	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
-
-	body, err := getArcSuccessResponseWithEcho(resource, miQueryParameterResourceId, rid)
-	if err != nil {
-		t.Fatalf(errorFormingJsonResponse, err.Error())
-	}
-	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers), mock.WithBody(body))
-
-	client, err := New(UserAssignedResourceID(rid), WithHTTPClient(mockClient))
-	if err != nil {
-		t.Fatal(err)
-	}
-	result, err := client.AcquireToken(context.Background(), resource)
-	if err != nil {
-		t.Fatalf("expected success when the agent echoes mi_res_id, got error: %v", err)
-	}
-	if result.AccessToken != token {
-		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
-	}
+	assertArcEchoHonored(t, UserAssignedResourceID(rid), miQueryParameterResourceId, rid, miQueryParameterMsiResourceId, rid)
 }
 
 func TestAzureArcUserAssignedNotFoundSurfacesServiceError(t *testing.T) {
