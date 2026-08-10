@@ -5,9 +5,7 @@ package integration
 
 import (
 	"context"
-	"crypto"
 	"crypto/tls"
-	"crypto/x509"
 	"io"
 	"net/http"
 	"testing"
@@ -45,16 +43,25 @@ const (
 // Graph mTLS host and sends "Authorization: mtls_pop <token>", then requires HTTP 200. The app and
 // certificate are allow-listed for mtls_pop here, so a 401/403 signals a real regression (the binding
 // certificate was not presented on the handshake, or the wrong Authorization scheme was used), not an
-// environment problem. The helper is reused by the two-leg FIC E2E (PR #633), which presents leg 1's
-// binding certificate. Mirrors MSAL .NET's CallResourceOverMtlsPopAsync.
-func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert tls.Certificate) {
+// environment problem. bindingCert is AuthResult.BindingCertificate exactly as MSAL returned it — the
+// test deliberately does not reassemble it, so a regression that strips the private key fails here.
+// The helper is reused by the two-leg FIC E2E (PR #633), which presents leg 1's binding certificate.
+// Mirrors MSAL .NET's CallResourceOverMtlsPopAsync.
+func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert *tls.Certificate) {
 	t.Helper()
+
+	if bindingCert == nil {
+		t.Fatal("result has no binding certificate; cannot present it on the mTLS handshake")
+	}
+	if bindingCert.PrivateKey == nil {
+		t.Fatal("binding certificate has no private key; it cannot be used for the mTLS handshake")
+	}
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
-				Certificates: []tls.Certificate{bindingCert},
+				Certificates: []tls.Certificate{*bindingCert},
 				MinVersion:   tls.VersionTLS12,
 			},
 		},
@@ -78,22 +85,6 @@ func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert tls.
 		t.Fatalf("resource did not accept the mTLS PoP token: got HTTP %d, want 200. A 401/403 means the "+
 			"binding certificate was not presented on the TLS handshake or the Authorization scheme was not "+
 			"\"mtls_pop\". Response: %s", resp.StatusCode, string(body))
-	}
-}
-
-// bindingTLSCert pairs the public binding certificate from an AuthResult with the private key the
-// caller already holds for the SN/I certificate, producing a client certificate to present on the
-// mTLS handshake. AuthResult.BindingCertificate exposes only public certificate material, so the key
-// must be supplied separately. Reused by the two-leg FIC E2E (PR #633).
-func bindingTLSCert(t *testing.T, bindingCert *x509.Certificate, privateKey crypto.PrivateKey) tls.Certificate {
-	t.Helper()
-	if bindingCert == nil {
-		t.Fatal("result has no binding certificate; cannot present it on the mTLS handshake")
-	}
-	return tls.Certificate{
-		Certificate: [][]byte{bindingCert.Raw},
-		PrivateKey:  privateKey,
-		Leaf:        bindingCert,
 	}
 }
 
@@ -137,15 +128,22 @@ func TestCredential_X509_Output_Pop(t *testing.T) {
 		t.Fatalf("expected token_type mtls_pop, got %q", result.Metadata.TokenType)
 	}
 	if result.BindingCertificate == nil {
-		t.Fatal("expected a public binding certificate on the result, got nil")
+		t.Fatal("expected a binding certificate on the result, got nil")
+	}
+	if result.BindingCertificate.Leaf == nil {
+		t.Fatal("expected the binding certificate's parsed leaf, got nil")
+	}
+	if result.BindingCertificate.PrivateKey == nil {
+		t.Fatal("expected the binding certificate to carry its private key, got nil")
 	}
 	if result.BindingCertificateThumbprint() == "" {
 		t.Fatal("expected a non-empty binding certificate thumbprint")
 	}
 
 	// Prove the token is usable by a resource: present it to Microsoft Graph over mTLS with the bound
-	// certificate. This is the strict "200-or-fail" check that a mere acquisition assertion cannot make.
-	requireTokenAcceptedByResource(t, result.AccessToken, bindingTLSCert(t, result.BindingCertificate, privateKey))
+	// certificate exactly as MSAL returned it. This is the strict "200-or-fail" check that a mere
+	// acquisition assertion cannot make.
+	requireTokenAcceptedByResource(t, result.AccessToken, result.BindingCertificate)
 
 	// Second call must come from the cache and keep the mTLS PoP metadata.
 	cached, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())

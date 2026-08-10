@@ -119,11 +119,14 @@ type AuthResult struct {
 	GrantedScopes  []string
 	DeclinedScopes []string
 	Metadata       AuthResultMetadata
-	// BindingCertificate is the public binding certificate for an mTLS proof-of-possession token
-	// (Metadata.TokenType == "mtls_pop"); it is nil for Bearer tokens. It exposes only public
-	// certificate material — the private key is never surfaced. Present it as the client certificate
-	// when calling the resource so the connection matches the token binding.
-	BindingCertificate *x509.Certificate
+	// BindingCertificate is the certificate bound to an mTLS proof-of-possession token
+	// (Metadata.TokenType == "mtls_pop"); it is nil for Bearer tokens. Leaf is always populated with
+	// the parsed public leaf certificate. PrivateKey is the key MSAL used for the token request; it is
+	// a crypto.Signer whose material may be non-exportable (for example a KeyGuard, CNG or HSM-backed
+	// key), so it must not be assumed to be a raw *rsa.PrivateKey. The value drops directly into
+	// tls.Config.Certificates, so present it as the client certificate when calling the resource and
+	// the connection will match the token binding.
+	BindingCertificate *tls.Certificate
 }
 
 // AuthResultMetadata which contains meta data for the AuthResult
@@ -137,25 +140,31 @@ type AuthResultMetadata struct {
 // BindingCertificateThumbprint returns the base64url-encoded SHA-256 thumbprint (x5t#S256) of the
 // binding certificate, or "" when there is no binding certificate.
 func (ar AuthResult) BindingCertificateThumbprint() string {
-	if ar.BindingCertificate == nil {
+	if ar.BindingCertificate == nil || ar.BindingCertificate.Leaf == nil {
 		return ""
 	}
-	sum := sha256.Sum256(ar.BindingCertificate.Raw)
+	sum := sha256.Sum256(ar.BindingCertificate.Leaf.Raw)
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
 
-// bindingCertLeaf returns the public leaf certificate of a binding certificate, or nil. It never
-// returns private key material.
-func bindingCertLeaf(cert *tls.Certificate) *x509.Certificate {
+// bindingCertWithLeaf returns a binding certificate whose Leaf is guaranteed to be populated, or nil
+// when cert is nil or carries no parsable leaf. It returns a shallow copy and never writes to cert:
+// the same *tls.Certificate is retained by the per-thumbprint mTLS client cache, so populating Leaf
+// in place would race with concurrent token acquisitions. The copy keeps PrivateKey, which callers
+// need to present the certificate on the TLS handshake to the resource.
+func bindingCertWithLeaf(cert *tls.Certificate) *tls.Certificate {
 	if cert == nil {
 		return nil
 	}
 	if cert.Leaf != nil {
-		return cert.Leaf
+		out := *cert
+		return &out
 	}
 	if len(cert.Certificate) > 0 {
 		if leaf, err := x509.ParseCertificate(cert.Certificate[0]); err == nil {
-			return leaf
+			out := *cert
+			out.Leaf = leaf
+			return &out
 		}
 	}
 	return nil
@@ -421,7 +430,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			ar.BindingCertificate = bindingCertLeaf(authParams.MtlsBindingCert)
+			ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
 			if rt := storageTokenResponse.AccessToken.RefreshOn.T; !rt.IsZero() && Now().After(rt) {
 				b.canRefreshMu.Lock()
 				refreshValue, ok := b.canRefresh[tenant]
@@ -598,7 +607,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		return AuthResult{}, err
 	}
 
-	ar.BindingCertificate = bindingCertLeaf(authParams.MtlsBindingCert)
+	ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
 }
