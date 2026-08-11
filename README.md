@@ -219,15 +219,43 @@ leg1, _ := rmaApp.AcquireTokenByCredential(ctx,
     []string{"api://AzureADTokenExchange/.default"},
     confidential.WithMtlsProofOfPossession())
 
-// Leg 2: assertion (jwt-pop) + binding cert -> final mtls_pop token.
+// Leg 2: assertion (jwt-pop) + binding cert -> final mtls_pop token. leg1.BindingCertificate is a
+// *tls.Certificate carrying the private key, so it can be handed over without taking it apart.
 assertionCred := confidential.NewCredFromAssertionCallback(
     func(context.Context, confidential.AssertionRequestOptions) (string, error) {
         return leg1.AccessToken, nil
     })
 ficApp, _ := confidential.New(authority, ficClientID, assertionCred)
 final, _ := ficApp.AcquireTokenByCredential(ctx, scopes,
-    confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingCertificate(certs, key)))
+    confidential.WithMtlsProofOfPossession(
+        confidential.WithMtlsBindingTLSCertificate(leg1.BindingCertificate)))
 ```
+
+Routing the assertion through the credential and the certificate through an option lets the two drift
+apart across a certificate rotation. `NewCredFromSignedAssertionCallback` returns both from one
+callback, so they stay paired and leg 2 needs no binding-certificate option at all:
+
+```go
+cred := confidential.NewCredFromSignedAssertionCallback(
+    func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        leg1, err := rmaApp.AcquireTokenByCredential(ctx,
+            []string{"api://AzureADTokenExchange/.default"},
+            confidential.WithMtlsProofOfPossession())
+        if err != nil {
+            return confidential.SignedAssertion{}, err
+        }
+        return confidential.SignedAssertion{
+            Assertion:          leg1.AccessToken,
+            BindingCertificate: leg1.BindingCertificate,
+        }, nil
+    })
+ficApp, _ := confidential.New(authority, ficClientID, cred)
+final, _ := ficApp.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+```
+
+MSAL invokes the callback at most once per token request. The binding certificate's private key may
+be non-exportable (Windows KeyGuard, CNG, an HSM); MSAL only requires that it implement
+`crypto.Signer`.
 
 See [docs/federated_managed_identity.md](docs/federated_managed_identity.md) for the full FIC/FMI
 walkthrough.
