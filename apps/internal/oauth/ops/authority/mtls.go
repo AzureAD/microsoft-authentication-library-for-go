@@ -12,14 +12,10 @@ import (
 	"strings"
 )
 
-// MtlsPoPTokenType is the telemetry token-type value reported for mutual-TLS bound
-// proof-of-possession tokens. It matches the value used by the other MSAL SDKs (for example
-// MSAL.NET's TelemetryTokenTypeConstants.MtlsPop) so cross-SDK telemetry stays aligned.
-const MtlsPoPTokenType = 6
-
 // Host constants for deriving the mutual-TLS token endpoint. These mirror the rewrite performed by
 // MSAL.NET's RegionAndMtlsDiscoveryProvider: public-cloud login hosts normalize to the shared
-// mtlsauth.microsoft.com family, other login.* hosts get a literal login -> mtlsauth swap.
+// mtlsauth.microsoft.com family; any other login.* host is resolved to its preferred-network
+// hostname (when known) and then gets a login -> mtlsauth swap.
 const (
 	loginPrefix        = "login"
 	mtlsAuthPrefix     = "mtlsauth"
@@ -80,29 +76,18 @@ func isPublicMtlsEnvironment(host string) bool {
 	return false
 }
 
-// mtlsPoPUnsupportedHosts maps legacy sovereign login hosts that do not serve the mtlsauth.* endpoint
-// family to the supported host callers should use instead. It mirrors MSAL.NET's
-// RegionAndMtlsDiscoveryProvider s_unsupportedMtlsHosts: the modern sovereign hosts
-// (login.microsoftonline.us and login.partner.microsoftonline.cn) ARE supported and receive the
-// normal login.* -> mtlsauth.* rewrite; only these older alternate hostnames are rejected, with
-// guidance toward their supported equivalent. Keeping the restriction in this one map makes it easy
-// to adjust as mtlsauth.* rolls out.
-var mtlsPoPUnsupportedHosts = map[string]string{
-	"login.usgovcloudapi.net": "login.microsoftonline.us",
-	"login.chinacloudapi.cn":  "login.partner.microsoftonline.cn",
-}
-
 // MtlsTokenEndpoint derives the mutual-TLS token endpoint for an mTLS PoP request from the resolved
 // token endpoint and authority info. It rewrites the host from login.* to mtlsauth.* (preserving any
 // region prefix) and fails fast for authorities that don't support mTLS PoP:
 //   - non-login.* hosts,
-//   - the legacy sovereign hosts login.usgovcloudapi.net and login.chinacloudapi.cn, which don't
-//     serve mtlsauth.* (callers are pointed at login.microsoftonline.us /
-//     login.partner.microsoftonline.cn — see mtlsPoPUnsupportedHosts),
 //   - non-tenanted authorities (/common, /organizations, /consumers).
 //
-// The worldwide public hosts and the modern sovereign hosts (login.microsoftonline.us,
-// login.partner.microsoftonline.cn) are supported, matching MSAL.NET.
+// The worldwide public hosts collapse to the shared mtlsauth.microsoft.com family. Every sovereign
+// cloud is supported: a legacy alias is first normalized to its preferred-network host
+// (login.usgovcloudapi.net -> login.microsoftonline.us, login.chinacloudapi.cn ->
+// login.partner.microsoftonline.cn) and only then swapped to mtlsauth.*, so aliases resolve to the
+// same endpoint as their modern hostname rather than a host that doesn't exist. This mirrors
+// MSAL.NET's RegionAndMtlsDiscoveryProvider.
 //
 // When a concrete region is configured the endpoint is regionalized ({region}.mtlsauth...);
 // otherwise the global endpoint is used (region is optional — global mtlsauth.microsoft.com is
@@ -117,14 +102,18 @@ func (p AuthParams) MtlsTokenEndpoint() (string, error) {
 	if !strings.HasPrefix(host, loginPrefix+".") {
 		return "", fmt.Errorf("mTLS proof-of-possession is not supported for authority host %q; a login.* host is required", p.AuthorityInfo.Host)
 	}
-	if supportedHost, ok := mtlsPoPUnsupportedHosts[host]; ok {
-		return "", fmt.Errorf("mTLS proof-of-possession is not supported for host %q; use %q instead", p.AuthorityInfo.Host, supportedHost)
-	}
 
 	var mtlsHost string
 	if isPublicMtlsEnvironment(host) {
 		mtlsHost = publicMtlsAuthHost
 	} else {
+		// Normalize a known alias to its preferred-network host first, so legacy sovereign
+		// hostnames land on the endpoint their modern equivalent uses (for example
+		// login.usgovcloudapi.net -> login.microsoftonline.us -> mtlsauth.microsoftonline.us)
+		// instead of a literal swap to a host that isn't served.
+		if md, ok := GetKnownMetadata(host); ok && strings.HasPrefix(md.PreferredNetwork, loginPrefix+".") {
+			host = md.PreferredNetwork
+		}
 		// login.<rest> -> mtlsauth.<rest>
 		mtlsHost = mtlsAuthPrefix + host[len(loginPrefix):]
 	}
