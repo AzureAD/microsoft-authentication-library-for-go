@@ -760,8 +760,6 @@ type acquireTokenSilentOptions struct {
 	claims, tenantID   string
 	clientClaims       string
 	authnScheme        AuthenticationScheme
-	isMtlsPoP          bool
-	mtlsBindingCert    *tls.Certificate
 	cacheKeyComponents map[string]string
 }
 
@@ -795,7 +793,7 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options: [WithClaims], [WithClaimsFromClient], [WithSilentAccount], [WithTenantID], [WithMtlsProofOfPossession]
+// Options: [WithClaims], [WithClaimsFromClient], [WithSilentAccount], [WithTenantID]
 func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -811,34 +809,17 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		return AuthResult{}, errors.New("WithSilentAccount option is required")
 	}
 
-	authnScheme := o.authnScheme
-	cred := cca.cred
-	var mtlsBindingCert *tls.Certificate
-	if o.isMtlsPoP {
-		authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		cred, mtlsBindingCert, err = cca.prepareMtlsPoP(ctx, authParams, o.mtlsBindingCert)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		authnScheme = authority.NewMtlsPoPAuthenticationScheme(mtlsBindingCert.Leaf)
-	}
-
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:             scopes,
 		Account:            o.account,
 		RequestType:        accesstokens.ATConfidential,
-		Credential:         cred,
+		Credential:         cca.cred,
 		IsAppCache:         o.account.IsZero(),
 		TenantID:           o.tenantID,
-		AuthnScheme:        authnScheme,
+		AuthnScheme:        o.authnScheme,
 		Claims:             o.claims,
 		ClientClaims:       o.clientClaims,
 		CacheKeyComponents: o.cacheKeyComponents,
-		IsMtlsPoP:          o.isMtlsPoP,
-		MtlsBindingCert:    mtlsBindingCert,
 	}
 
 	return cca.acquireTokenSilentInternal(ctx, silentParameters)
@@ -1215,11 +1196,15 @@ func WithMtlsBindingTLSCertificate(cert *tls.Certificate) MtlsPoPOption {
 // — a *tls.Certificate carrying the parsed leaf and the private key, ready to drop into
 // tls.Config.Certificates — and its thumbprint via [AuthResult.BindingCertificateThumbprint].
 //
+// mTLS PoP is app-only: it is available on [Client.AcquireTokenByCredential] (the client credentials
+// flow) only, because the binding certificate authenticates the application, not a user, so a
+// user-delegated token can never be bound to it. This matches MSAL .NET, where the option exists only
+// on AcquireTokenForClient.
+//
 // Setting this option on each leg of a developer-orchestrated two-leg federated-identity-credential
 // (FIC) flow makes both legs mTLS PoP.
 func WithMtlsProofOfPossession(opts ...MtlsPoPOption) interface {
 	AcquireByCredentialOption
-	AcquireSilentOption
 	options.CallOption
 } {
 	var bindingCert *tls.Certificate
@@ -1237,7 +1222,6 @@ func WithMtlsProofOfPossession(opts ...MtlsPoPOption) interface {
 	}
 	return struct {
 		AcquireByCredentialOption
-		AcquireSilentOption
 		options.CallOption
 	}{
 		CallOption: options.NewCallOption(
@@ -1249,11 +1233,6 @@ func WithMtlsProofOfPossession(opts ...MtlsPoPOption) interface {
 				// multiple WithMtlsProofOfPossession options can't clear a previously supplied cert.
 				switch t := a.(type) {
 				case *acquireTokenByCredentialOptions:
-					t.isMtlsPoP = true
-					if bindingCert != nil {
-						t.mtlsBindingCert = bindingCert
-					}
-				case *acquireTokenSilentOptions:
 					t.isMtlsPoP = true
 					if bindingCert != nil {
 						t.mtlsBindingCert = bindingCert
