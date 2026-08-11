@@ -440,8 +440,8 @@ func TestIMDSAcquireTokenReturnsTokenSuccess(t *testing.T) {
 					t.Fatalf("resource client-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterClientId))
 				}
 			case UserAssignedResourceID:
-				if query.Get(miQueryParameterResourceIdIMDS) != i.value() {
-					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterResourceIdIMDS))
+				if query.Get(miQueryParameterMsiResourceId) != i.value() {
+					t.Fatalf("resource resource-id is incorrect, wanted %s got %s", i.value(), query.Get(miQueryParameterMsiResourceId))
 				}
 			case UserAssignedObjectID:
 				if query.Get(miQueryParameterObjectId) != i.value() {
@@ -904,24 +904,343 @@ func TestAzureArc(t *testing.T) {
 
 }
 
-func TestAzureArcOnlySystemAssignedSupported(t *testing.T) {
+func TestAzureArcUserAssignedAllowedAtConstruction(t *testing.T) {
 	setEnvVars(t, AzureArc)
 	mockClient := mock.NewClient()
 
 	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
+	// Azure Arc now forwards the user-assigned selector and validates the identity the agent
+	// used against the request, so construction no longer rejects user-assigned identities.
 	for _, testCase := range []ID{
 		UserAssignedClientID("client"),
 		UserAssignedObjectID("ObjectId"),
 		UserAssignedResourceID("resourceid")} {
-		_, err := New(testCase, WithHTTPClient(mockClient))
-		if err == nil {
-			t.Fatal(`expected error: AzureArc not supported error"`)
-
+		if _, err := New(testCase, WithHTTPClient(mockClient)); err != nil {
+			t.Fatalf("expected user-assigned identity to be allowed on Azure Arc, got error: %q", err)
 		}
-		if err.Error() != "Azure Arc doesn't support user-assigned managed identities" {
-			t.Fatalf("expected error: AzureArc not supported error, got error: %q", err)
-		}
+	}
+}
 
+// getArcSuccessResponseWithEcho builds an Azure Arc token response that optionally echoes the
+// identity the agent used (client_id / object_id / mi_res_id), mirroring the new agent contract.
+func getArcSuccessResponseWithEcho(resource, echoField, echoValue string) ([]byte, error) {
+	return getArcSuccessResponseWithTokenAndEcho(resource, token, echoField, echoValue)
+}
+
+// getArcSuccessResponseWithTokenAndEcho is like getArcSuccessResponseWithEcho but lets the caller
+// set the access token, so tests can distinguish tokens issued for different identities.
+func getArcSuccessResponseWithTokenAndEcho(resource, accessToken, echoField, echoValue string) ([]byte, error) {
+	m := map[string]interface{}{
+		"access_token": accessToken,
+		"expires_in":   int64(600),
+		"resource":     resource,
+		"token_type":   "Bearer",
+	}
+	if echoField != "" {
+		m[echoField] = echoValue
+	}
+	return json.Marshal(m)
+}
+
+// setupArcSecretPath prepares the Azure Arc environment + secret key file used by the challenge
+// flow and returns the secret file path to advertise in the www-authenticate header.
+func setupArcSecretPath(t *testing.T) string {
+	t.Helper()
+	setEnvVars(t, AzureArc)
+	setCustomAzureArcFilePath(t, fakeAzureArcFilePath)
+	testCaseFilePath := filepath.Join(t.TempDir(), azureConnectedMachine)
+	setCustomAzureArcPlatformPath(t, testCaseFilePath)
+	secretPath := filepath.Join(testCaseFilePath, secretKey)
+	createMockFile(t, secretPath, 0)
+	return secretPath
+}
+
+func TestAzureArcUserAssignedHonored(t *testing.T) {
+	testCases := []struct {
+		name  string
+		id    ID
+		param string
+		value string
+	}{
+		{"ClientID", UserAssignedClientID("11111111-1111-1111-1111-111111111111"), miQueryParameterClientId, "11111111-1111-1111-1111-111111111111"},
+		{"ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterMsiResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"},
+		{"ObjectID", UserAssignedObjectID("22222222-2222-2222-2222-222222222222"), miQueryParameterObjectId, "22222222-2222-2222-2222-222222222222"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertArcUserAssignedHonored(t, tc.id, tc.param, tc.value)
+		})
+	}
+}
+
+// assertArcUserAssignedHonored runs the Azure Arc happy path for one selector: the agent echoes the
+// requested identity, MSAL returns the token, and the request carries the selector on the wire.
+func assertArcUserAssignedHonored(t *testing.T, id ID, param, value string) {
+	t.Helper()
+	// The happy path echoes the same selector it sends, so echo and request params match.
+	assertArcEchoHonored(t, id, param, value, param, value)
+}
+
+// newArcChallengeClient returns a mock client that first replies with the Azure Arc 401 challenge
+// (advertising secretPath) and then a 200 carrying body, mirroring the two-step Arc token flow.
+// When reqURL is non-nil, the authenticated request's URL is recorded into it.
+func newArcChallengeClient(secretPath string, body []byte, reqURL **url.URL) *mock.Client {
+	headers := http.Header{}
+	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusOK), mock.WithHTTPHeader(headers),
+		mock.WithBody(body), mock.WithCallback(func(r *http.Request) {
+			if reqURL != nil {
+				*reqURL = r.URL
+			}
+		}))
+	return mockClient
+}
+
+// assertArcEchoHonored runs the Azure Arc happy path where the agent echoes echoField=echoValue.
+// It asserts MSAL returns the token and, when requestParam is non-empty, that the request carried
+// requestParam=requestValue on the wire (which may use a different spelling than the echo).
+func assertArcEchoHonored(t *testing.T, id ID, echoField, echoValue, requestParam, requestValue string) {
+	t.Helper()
+	secretPath := setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	body, err := getArcSuccessResponseWithEcho(resource, echoField, echoValue)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	var reqURL *url.URL
+	mockClient := newArcChallengeClient(secretPath, body, &reqURL)
+
+	client, err := New(id, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("expected success, got error: %v", err)
+	}
+	if result.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+	}
+	if requestParam != "" && (reqURL == nil || reqURL.Query().Get(requestParam) != requestValue) {
+		t.Fatalf("expected request to carry %s=%s, got %v", requestParam, requestValue, reqURL)
+	}
+}
+
+func TestAzureArcUserAssignedNotHonoredFailsClosed(t *testing.T) {
+	testCases := []struct {
+		name      string
+		echoField string
+		echoValue string
+	}{
+		{"NoEcho", "", ""},
+		{"DifferentIdentityEchoed", miQueryParameterClientId, "99999999-9999-9999-9999-999999999999"},
+	}
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			assertArcUserAssignedFailsClosed(t, tc.echoField, tc.echoValue)
+		})
+	}
+}
+
+// assertArcUserAssignedFailsClosed drives the fail-closed path: the agent returns a token that does
+// not echo the requested user-assigned identity, so MSAL must return an error and no token.
+func assertArcUserAssignedFailsClosed(t *testing.T, echoField, echoValue string) {
+	t.Helper()
+	secretPath := setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	body, err := getArcSuccessResponseWithEcho(resource, echoField, echoValue)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient := newArcChallengeClient(secretPath, body, nil)
+
+	client, err := New(UserAssignedClientID("11111111-1111-1111-1111-111111111111"), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err == nil {
+		t.Fatal("expected fail-closed error, got nil")
+	}
+	if !strings.Contains(err.Error(), "did not confirm the requested user-assigned managed identity") {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.AccessToken != "" {
+		t.Fatalf("no token should be returned, got %q", result.AccessToken)
+	}
+}
+
+func TestAzureArcUserAssignedResourceIDAcceptsMiResIdEcho(t *testing.T) {
+	// The Arc request selector is msi_res_id; as a safety net MSAL also accepts the alternate
+	// mi_res_id spelling on the echo. The request still carries msi_res_id on the wire.
+	rid := "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"
+	assertArcEchoHonored(t, UserAssignedResourceID(rid), miQueryParameterResourceId, rid, miQueryParameterMsiResourceId, rid)
+}
+
+func TestAzureArcUserAssignedNotFoundSurfacesServiceError(t *testing.T) {
+	// A newer agent returns 404 for a UAMI that isn't assigned to the machine. That must surface
+	// as a request/service error, NOT the fail-closed "did not confirm" message (which is reserved
+	// for a legacy agent that returns the system-assigned identity without echoing it).
+	secretPath := setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	headers := http.Header{}
+	headers.Set(wwwAuthenticateHeaderName, basicRealm+secretPath)
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusUnauthorized), mock.WithHTTPHeader(headers))
+
+	errBody, err := makeResponseWithErrorData("identity_not_found", "the requested identity has not been assigned to this resource")
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusNotFound), mock.WithHTTPHeader(headers), mock.WithBody(errBody))
+
+	client, err := New(UserAssignedClientID("11111111-1111-1111-1111-111111111111"), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err == nil {
+		t.Fatal("expected an error for a non-existent user-assigned identity, got nil")
+	}
+	if strings.Contains(err.Error(), "did not confirm the requested user-assigned managed identity") {
+		t.Fatalf("a 404 must surface as a service error, not the fail-closed message: %v", err)
+	}
+	if !strings.Contains(err.Error(), "identity_not_found") {
+		t.Fatalf("expected identity_not_found in the surfaced error, got: %v", err)
+	}
+	if result.AccessToken != "" {
+		t.Fatalf("no token should be returned, got %q", result.AccessToken)
+	}
+}
+
+// TestAzureArcUserAssignedCacheIsPartitionedByIdentity verifies the token cache is partitioned by
+// the requested identity: the system-assigned identity and each user-assigned selector get their
+// own cache entry, so a cache lookup can never return a token for a different identity than the one
+// requested. Mirrors the .NET test AzureArcUserAssignedManagedIdentityCacheIsPartitionedByIdentity.
+func TestAzureArcUserAssignedCacheIsPartitionedByIdentity(t *testing.T) {
+	secretPath := setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	identities := []struct {
+		name      string
+		id        ID
+		echoField string
+		echoValue string
+		token     string
+		cacheID   string
+	}{
+		{"SAMI", SystemAssigned(), "", "", "token-sami", systemAssignedManagedIdentity},
+		{"UAMI-ClientID", UserAssignedClientID("11111111-1111-1111-1111-111111111111"), miQueryParameterClientId, "11111111-1111-1111-1111-111111111111", "token-uami-client", "11111111-1111-1111-1111-111111111111"},
+		{"UAMI-ResourceID", UserAssignedResourceID("/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"), miQueryParameterMsiResourceId, "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami", "token-uami-resource", "/subscriptions/s/resourcegroups/rg/providers/Microsoft.ManagedIdentity/userAssignedIdentities/uami"},
+		{"UAMI-ObjectID", UserAssignedObjectID("22222222-2222-2222-2222-222222222222"), miQueryParameterObjectId, "22222222-2222-2222-2222-222222222222", "token-uami-object", "22222222-2222-2222-2222-222222222222"},
+	}
+
+	// First acquisition per identity is a cache MISS that reaches the endpoint and caches the
+	// identity's own token. A shared (unpartitioned) cache would instead return an earlier
+	// identity's token from cache here.
+	for _, id := range identities {
+		assertArcAcquireFromIdP(t, id.name, secretPath, id.id, id.echoField, id.echoValue, id.token)
+	}
+
+	// Second acquisition per identity is a cache HIT that must return THAT identity's own token,
+	// proving each identity has a separate cache entry.
+	for _, id := range identities {
+		assertArcAcquireFromCache(t, id.name, id.id, id.token)
+	}
+
+	// Cache-key assertion (mirrors .NET's RecordAccess client-id check): each identity keys its own
+	// access-token cache entry, so there must be exactly len(identities) distinct entries and each
+	// identity's identifier must appear in exactly one key.
+	keys := arcCacheAccessTokenKeys(t)
+	if len(keys) != len(identities) {
+		t.Fatalf("expected %d cache entries (one per identity), got %d: %v", len(identities), len(keys), keys)
+	}
+	joined := strings.ToLower(strings.Join(keys, "\n"))
+	for _, id := range identities {
+		if strings.Count(joined, strings.ToLower(id.cacheID)) != 1 {
+			t.Fatalf("expected identity %q to key exactly one cache entry; keys=%v", id.cacheID, keys)
+		}
+	}
+}
+
+// arcCacheAccessTokenKeys returns the composite keys of the access-token entries in the managed
+// identity token cache. The client-id component of each key is the requested identity, so the set
+// of keys reflects the cache partitioning by identity.
+func arcCacheAccessTokenKeys(t *testing.T) []string {
+	t.Helper()
+	raw, err := cacheManager.Marshal()
+	if err != nil {
+		t.Fatalf("cache Marshal failed: %v", err)
+	}
+	var c struct {
+		AccessTokens map[string]json.RawMessage `json:"AccessToken"`
+	}
+	if err := json.Unmarshal(raw, &c); err != nil {
+		t.Fatalf("cache Unmarshal failed: %v", err)
+	}
+	keys := make([]string, 0, len(c.AccessTokens))
+	for k := range c.AccessTokens {
+		keys = append(keys, k)
+	}
+	return keys
+}
+
+// assertArcAcquireFromIdP acquires an Arc token that echoes the requested identity and asserts the
+// call reached the identity provider (a cache miss) and returned the identity's own token.
+func assertArcAcquireFromIdP(t *testing.T, name, secretPath string, id ID, echoField, echoValue, wantToken string) {
+	t.Helper()
+	body, err := getArcSuccessResponseWithTokenAndEcho(resource, wantToken, echoField, echoValue)
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient := newArcChallengeClient(secretPath, body, nil)
+
+	client, err := New(id, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatalf("%s: New failed: %v", name, err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("%s: first AcquireToken failed: %v", name, err)
+	}
+	if result.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatalf("%s: first call TokenSource = %v, want IdentityProvider (cache must be partitioned by identity)", name, result.Metadata.TokenSource)
+	}
+	if result.AccessToken != wantToken {
+		t.Fatalf("%s: first call token = %q, want %q", name, result.AccessToken, wantToken)
+	}
+}
+
+// assertArcAcquireFromCache acquires again for the same identity with no queued HTTP responses, so a
+// cache miss would reach the (empty) mock and panic. It asserts the cached token for that identity.
+func assertArcAcquireFromCache(t *testing.T, name string, id ID, wantToken string) {
+	t.Helper()
+	client, err := New(id, WithHTTPClient(mock.NewClient()))
+	if err != nil {
+		t.Fatalf("%s: New failed: %v", name, err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatalf("%s: cached AcquireToken failed: %v", name, err)
+	}
+	if result.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("%s: second call TokenSource = %v, want Cache", name, result.Metadata.TokenSource)
+	}
+	if result.AccessToken != wantToken {
+		t.Fatalf("%s: cached token = %q, want %q (cache must not return another identity's token)", name, result.AccessToken, wantToken)
 	}
 }
 
