@@ -195,6 +195,11 @@ Notes:
   req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
   resp, err := (&http.Client{Transport: transport}).Do(req)
   ```
+- **App-only**: mTLS PoP is a client-credentials-only mechanism — the binding certificate
+  authenticates the application, not a user, so `WithMtlsProofOfPossession()` is accepted by
+  `AcquireTokenByCredential` only (as in MSAL .NET, where it exists only on `AcquireTokenForClient`).
+  App tokens are cached automatically, so a repeat `AcquireTokenByCredential` call is a cache hit;
+  there is no need to call `AcquireTokenSilent`.
 - **Region is optional**: the global `mtlsauth.microsoft.com` endpoint is used when no region is
   configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
