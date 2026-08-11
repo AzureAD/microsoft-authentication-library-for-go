@@ -199,11 +199,12 @@ Notes:
   configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
   certificate thumbprint). A plain `WithHTTPClient` cannot carry the certificate; use
-  `WithMtlsHTTPClient` to override the transport for keys the built-in transport can't use.
-- **Sovereign clouds** are supported on `login.microsoftonline.us` (US Gov) and
-  `login.partner.microsoftonline.cn` (China), which rewrite to `mtlsauth.*` like the public cloud.
-  The legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are rejected with
-  guidance to use the supported host.
+  `WithMtlsHTTPClient` to override the transport when you need to own the TLS handshake yourself.
+- **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
+  `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. The
+  legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are aliases: they resolve
+  to their preferred-network host first, so they reach the same endpoint as the modern hostname
+  (`mtlsauth.microsoftonline.us` and `mtlsauth.partner.microsoftonline.cn`).
 
 ### Two-leg federated identity credential (FIC) over mTLS PoP
 
