@@ -393,7 +393,10 @@ func TestSignerOnlyCredentialMtlsPoP(t *testing.T) {
 	if got := gotBody.Get("token_type"); got != "mtls_pop" {
 		t.Errorf("token_type = %q, want mtls_pop", got)
 	}
-	if res.BindingCertificate == nil || !res.BindingCertificate.Equal(certs[0]) {
+	if res.BindingCertificate == nil || res.BindingCertificate.Leaf == nil || !res.BindingCertificate.Leaf.Equal(certs[0]) {
 		t.Error("BindingCertificate isn't the credential's leaf certificate")
+	}
+	if res.BindingCertificate.PrivateKey == nil {
+		t.Error("BindingCertificate.PrivateKey is nil; the non-exportable signer must survive to the caller")
 	}
 }

@@ -1139,8 +1139,9 @@ func WithAttribute(attrValue string) interface {
 // supported cloud.
 //
 // The binding certificate is inferred from a [NewCredFromCert] or [NewCredFromTLSCertificate]
-// credential. The result exposes the public binding certificate via [AuthResult.BindingCertificate]
-// and its thumbprint via [AuthResult.BindingCertificateThumbprint]; the private key is never surfaced.
+// credential. The result exposes it via [AuthResult.BindingCertificate] — a *tls.Certificate
+// carrying the parsed leaf and the private key, ready to drop into tls.Config.Certificates — and
+// its thumbprint via [AuthResult.BindingCertificateThumbprint].
 //
 // A non-exportable key (KeyGuard/CNG/HSM) works here without signing anything at the application
 // layer, because the key is used solely for the TLS handshake. Such a key can also sign client
