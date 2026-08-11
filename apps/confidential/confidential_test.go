@@ -22,7 +22,7 @@ import (
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
@@ -1467,7 +1467,7 @@ func (v claimsValidator) validate(values url.Values) {
 		v.t.Fatalf("failed to parse claims JSON: %v", err)
 	}
 
-	if diff := pretty.Compare(v.expected, actual); diff != "" {
+	if diff := cmp.Diff(v.expected, actual); diff != "" {
 		v.t.Fatalf("claims mismatch (-expected +actual):\n%s", diff)
 	}
 }

@@ -13,7 +13,7 @@ import (
 	internalTime "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json/types/time"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 var (
@@ -119,7 +119,7 @@ func TestAccessTokenUnmarshal(t *testing.T) {
 	if err != nil {
 		t.Errorf("Error is supposed to be nil, but it is %v", err)
 	}
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestAccessTokenUnmarshal(access tokens): -want/+got:\n %s", diff)
 	}
 }
@@ -143,7 +143,7 @@ func TestAccessTokenMarshal(t *testing.T) {
 		t.Fatalf("TestAccessTokenMarshal: unable to take JSON byte output and unmarshal: %s", err)
 	}
 
-	if diff := pretty.Compare(accessToken, got); diff != "" {
+	if diff := cmp.Diff(*accessToken, got); diff != "" {
 		t.Errorf("TestAccessTokenConvertToJSONMap(access token): -want/+got:\n%s", diff)
 	}
 }
@@ -192,7 +192,7 @@ func TestAppMetaDataUnmarshal(t *testing.T) {
 		t.Fatalf("TestAppMetaDataUnmarshal(unmarshal): got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Fatalf("TestAppMetaDataUnmarshal: -want/+got:\n%s", diff)
 	}
 }
@@ -223,7 +223,7 @@ func TestAppMetaDataMarshal(t *testing.T) {
 		t.Fatalf("TestAppMetaDataMarshal(unmarshal): err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestAppMetaDataConvertToJSONMap: -want/+got:\n%s", diff)
 	}
 }
@@ -306,7 +306,7 @@ func TestContractUnmarshalJSON(t *testing.T) {
 			),
 		},
 	}
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestContractUnmarshalJSON: -want/+got:\n%s", diff)
 		t.Errorf("%s", string(got.AdditionalFields["unknownEntity"].(stdJSON.RawMessage)))
 	}
@@ -389,7 +389,7 @@ func TestContractMarshalJSON(t *testing.T) {
 		t.Fatalf("TestContractMarshalJSON(unmarshal back): got err == %s, want err == nil", err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestContractMarshalJSON: -want/+got:\n%s", diff)
 	}
 }
@@ -443,7 +443,7 @@ func TestIDTokenUnmarshal(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestIDTokenUnmarshal: -want/+got:\n%s", diff)
 	}
 }
@@ -472,7 +472,7 @@ func TestIDTokenMarshal(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestIDTokenMarshal: -want/+got:\n%s", diff)
 	}
 }
@@ -534,7 +534,7 @@ func TestRefreshTokenUnmarshal(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestRefreshTokenUnmarshal: -want/+got:\n%s", diff)
 	}
 }
@@ -565,7 +565,7 @@ func TestRefreshTokenMarshal(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestRefreshTokenMarshal: -want/+got:\n%s", diff)
 	}
 }
@@ -608,7 +608,7 @@ func TestRegression196(t *testing.T) {
 		t.Fatalf("TestRegression196: Unmarshal had unexpected error: %v, json was:\n%s", err, string(b))
 	}
 
-	if diff := pretty.Compare(contract, got); diff != "" {
+	if diff := cmp.Diff(contract, got); diff != "" {
 		t.Fatalf("TestRegression196: -want/+got:\n%s", diff)
 	}
 }
