@@ -1136,9 +1136,10 @@ func WithAttribute(attrValue string) interface {
 // certificate. The authority must be tenanted (not /common, /organizations, or /consumers) and in a
 // supported cloud.
 //
-// The binding certificate is inferred from a [NewCredFromCert] credential. The result exposes the
-// public binding certificate via [AuthResult.BindingCertificate] and its thumbprint via
-// [AuthResult.BindingCertificateThumbprint]; the private key is never surfaced.
+// The binding certificate is inferred from a [NewCredFromCert] credential. The result exposes it via
+// [AuthResult.BindingCertificate] — a *tls.Certificate carrying the parsed leaf and the private key,
+// ready to drop into tls.Config.Certificates — and its thumbprint via
+// [AuthResult.BindingCertificateThumbprint].
 func WithMtlsProofOfPossession() interface {
 	AcquireByCredentialOption
 	AcquireSilentOption

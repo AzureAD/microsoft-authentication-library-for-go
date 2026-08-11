@@ -113,10 +113,16 @@ func TestAcquireTokenByCredentialMtlsPoP(t *testing.T) {
 		t.Errorf("Metadata.TokenType = %q, want mtls_pop", res.Metadata.TokenType)
 	}
 	if res.BindingCertificate == nil {
-		t.Fatal("BindingCertificate is nil, want the public leaf certificate")
+		t.Fatal("BindingCertificate is nil, want the bound client certificate")
 	}
-	if res.BindingCertificate.Raw == nil || res.BindingCertificate.PublicKey == nil {
+	if res.BindingCertificate.Leaf == nil {
+		t.Fatal("BindingCertificate.Leaf is nil, want the parsed leaf certificate")
+	}
+	if res.BindingCertificate.Leaf.Raw == nil || res.BindingCertificate.Leaf.PublicKey == nil {
 		t.Error("BindingCertificate is not a usable public certificate")
+	}
+	if res.BindingCertificate.PrivateKey == nil {
+		t.Error("BindingCertificate.PrivateKey is nil, so the caller cannot present it on the TLS handshake")
 	}
 	sum := sha256.Sum256(certs[0].Raw)
 	wantThumb := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -136,7 +142,18 @@ func TestAcquireTokenByCredentialMtlsPoP(t *testing.T) {
 		t.Errorf("cached AccessToken = %q, want mtls-access-token", res2.AccessToken)
 	}
 	if res2.BindingCertificate == nil {
-		t.Error("cached result BindingCertificate is nil, want the public leaf certificate")
+		t.Fatal("cached result BindingCertificate is nil, want the bound client certificate")
+	}
+	// base.go populates the binding certificate on the cache-hit path too; a caller that gets a cached
+	// token must still be able to present the certificate to the resource.
+	if res2.BindingCertificate.Leaf == nil {
+		t.Error("cached result BindingCertificate.Leaf is nil, want the parsed leaf certificate")
+	}
+	if res2.BindingCertificate.PrivateKey == nil {
+		t.Error("cached result BindingCertificate.PrivateKey is nil, so the caller cannot present it on the TLS handshake")
+	}
+	if got := res2.BindingCertificateThumbprint(); got != wantThumb {
+		t.Errorf("cached BindingCertificateThumbprint = %q, want %q", got, wantThumb)
 	}
 }
 

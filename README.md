@@ -150,7 +150,7 @@ if err != nil {
     // TODO: handle error
 }
 _ = result.Metadata.TokenType                  // "mtls_pop"
-_ = result.BindingCertificate                  // public binding certificate (never the private key)
+_ = result.BindingCertificate                  // *tls.Certificate bound to the token (leaf + private key)
 _ = result.BindingCertificateThumbprint()      // base64url SHA-256 (x5t#S256)
 ```
 
@@ -162,8 +162,22 @@ Notes:
   `WithMtlsProofOfPossession()`) still signs and sends a `client_assertion`. The endpoint is rewritten
   from `login.*` to `mtlsauth.*`.
 - **Using the token**: present it to the resource with the `mtls_pop` authorization scheme (not
-  `Bearer`) and the `BindingCertificate` as the client certificate on the TLS handshake, so the
-  connection matches the token binding.
+  `Bearer`) and `result.BindingCertificate` as the client certificate on the TLS handshake, so the
+  connection matches the token binding. `BindingCertificate` is a `*tls.Certificate` that carries both
+  the parsed leaf (`.Leaf`) and the private key MSAL used, so it goes straight into
+  `tls.Config.Certificates` — including when the key is non-exportable (KeyGuard/CNG/HSM), because
+  `crypto/tls` only needs a `crypto.Signer`:
+
+  ```go
+  transport := http.DefaultTransport.(*http.Transport).Clone()
+  transport.TLSClientConfig = &tls.Config{
+      Certificates: []tls.Certificate{*result.BindingCertificate},
+      MinVersion:   tls.VersionTLS12,
+  }
+  req, _ := http.NewRequest(http.MethodGet, resourceURL, nil)
+  req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
+  resp, err := (&http.Client{Transport: transport}).Do(req)
+  ```
 - **Region is optional**: the global `mtlsauth.microsoft.com` endpoint is used when no region is
   configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
