@@ -4,6 +4,7 @@
 package confidential
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -15,6 +16,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"log"
 	"math/big"
 	"net/http"
 	"net/url"
@@ -114,40 +116,61 @@ func TestCertFromPEMUnencryptedPrivateKeys(t *testing.T) {
 	}
 }
 
-func TestCertFromPEMRejectsEncryptedPrivateKeys(t *testing.T) {
-	legacyPEM := pem.EncodeToMemory(&pem.Block{
-		Type: "RSA PRIVATE KEY",
-		Headers: map[string]string{
-			"Proc-Type": "4,ENCRYPTED",
-			"DEK-Info":  "AES-256-CBC,00000000000000000000000000000000",
-		},
-		Bytes: []byte("legacy encrypted private key"),
+func TestCertFromPEMLegacyEncryptedPrivateKey(t *testing.T) {
+	const password = "password"
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := testCertificatePEM(t, key)
+	legacyPEM := legacyEncryptedPEM(t, x509.MarshalPKCS1PrivateKey(key), password)
+
+	var logs bytes.Buffer
+	previousLogWriter := log.Writer()
+	t.Cleanup(func() {
+		log.SetOutput(previousLogWriter)
 	})
-	legacyDEKInfoOnlyPEM := pem.EncodeToMemory(&pem.Block{
-		Type: "RSA PRIVATE KEY",
-		Headers: map[string]string{
-			"DEK-Info": "AES-256-CBC,00000000000000000000000000000000",
-		},
-		Bytes: []byte("legacy encrypted private key"),
-	})
+	log.SetOutput(&logs)
+
+	pemData := append(certPEM, legacyPEM...)
+	certs, parsedKey, err := CertFromPEM(pemData, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewCredFromCert(certs, parsedKey); err != nil {
+		t.Fatalf("matching certificate and key: %v", err)
+	}
+	if !strings.Contains(logs.String(), "WARNING: CertFromPEM loaded legacy RFC 1423 encrypted PEM") {
+		t.Fatalf("expected legacy PEM warning, got %q", logs.String())
+	}
+
+	if _, _, err := CertFromPEM(pemData, "wrong password"); err == nil || !strings.Contains(err.Error(), "could not decrypt encrypted PEM block") {
+		t.Fatalf("CertFromPEM() error = %v, want decryption error", err)
+	}
+}
+
+func TestCertFromPEMRejectsEncryptedPKCS8PrivateKey(t *testing.T) {
 	encryptedPKCS8PEM := pem.EncodeToMemory(&pem.Block{
 		Type:  "ENCRYPTED PRIVATE KEY",
 		Bytes: []byte("encrypted PKCS#8 private key"),
 	})
 
-	for _, test := range []struct {
-		name, want string
-		pemData    []byte
-	}{
-		{name: "legacy RFC 1423", pemData: legacyPEM, want: "legacy RFC 1423 encrypted PEM is not supported"},
-		{name: "legacy DEK-Info only", pemData: legacyDEKInfoOnlyPEM, want: "legacy RFC 1423 encrypted PEM is not supported"},
-		{name: "encrypted PKCS#8", pemData: encryptedPKCS8PEM, want: "encrypted PKCS#8 PEM is not supported"},
-	} {
-		t.Run(test.name, func(t *testing.T) {
-			if _, _, err := CertFromPEM(test.pemData, "password"); err == nil || !strings.Contains(err.Error(), test.want) {
-				t.Fatalf("CertFromPEM() error = %v, want error containing %q", err, test.want)
-			}
-		})
+	if _, _, err := CertFromPEM(encryptedPKCS8PEM, "password"); err == nil || !strings.Contains(err.Error(), "encrypted PKCS#8 PEM is not supported") {
+		t.Fatalf("CertFromPEM() error = %v, want encrypted PKCS#8 rejection", err)
+	}
+}
+
+func TestCertFromPEMRejectsMalformedLegacyEncryption(t *testing.T) {
+	legacyPEM := pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY",
+		Headers: map[string]string{
+			"DEK-Info": "INVALID-CIPHER,00000000000000000000000000000000",
+		},
+		Bytes: []byte("legacy encrypted private key"),
+	})
+
+	if _, _, err := CertFromPEM(legacyPEM, "password"); err == nil || !strings.Contains(err.Error(), "could not decrypt encrypted PEM block") {
+		t.Fatalf("CertFromPEM() error = %v, want decryption error", err)
 	}
 }
 
@@ -185,6 +208,16 @@ func mustMarshalPKCS8PrivateKey(t *testing.T, key *rsa.PrivateKey) []byte {
 		t.Fatal(err)
 	}
 	return der
+}
+
+func legacyEncryptedPEM(t *testing.T, keyDER []byte, password string) []byte {
+	t.Helper()
+	//nolint:staticcheck // Test fixture for legacy RFC 1423 backward compatibility.
+	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", keyDER, []byte(password), x509.PEMCipherAES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(block)
 }
 
 const (
@@ -339,6 +372,28 @@ func TestAcquireTokenByCredentialWithCache(t *testing.T) {
 		t.Fatal("silent auth should fail because it is a service principal call")
 	}
 
+}
+
+func TestInvalidMSALForceRegionIsRejectedBeforeHTTP(t *testing.T) {
+	t.Setenv("MSAL_FORCE_REGION", "hostile.example/x")
+
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(
+		fmt.Sprintf(authorityFmt, "login.microsoftonline.com", "tenant"),
+		fakeClientID,
+		cred,
+		WithHTTPClient(&errorClient{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope); err == nil || !strings.Contains(err.Error(), "invalid region") {
+		t.Fatalf("AcquireTokenByCredential() error = %v, want invalid region error", err)
+	}
 }
 
 func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {

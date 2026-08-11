@@ -18,6 +18,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -77,10 +78,11 @@ const (
 )
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with [NewCredFromCert]. The file
-// must contain the public certificate and an unencrypted PKCS#1 or PKCS#8 private key.
-// For security, encrypted PEM blocks are not supported; password is retained for API compatibility
-// and ignored.
-// Convert encrypted keys to an unencrypted PEM private key before calling this function.
+// must contain the public certificate and a PKCS#1 or PKCS#8 private key. Unencrypted keys are
+// supported. Legacy RFC 1423 encrypted PEM is supported for backward compatibility, but emits a
+// warning because its cryptography is weak and it will be removed in a future major version.
+// Encrypted PKCS#8 PEM is not supported. Migrate legacy encrypted keys to unencrypted PKCS#1 or
+// PKCS#8 private key material protected by filesystem permissions or a secret store.
 // Multiple certs are due to certificate chaining for use cases like TLS that sign from root to leaf.
 func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.PrivateKey, error) {
 	var certs []*x509.Certificate
@@ -91,8 +93,15 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			break
 		}
 
-		if _, ok := block.Headers["DEK-Info"]; ok {
-			return nil, nil, errors.New("legacy RFC 1423 encrypted PEM is not supported; convert it to an unencrypted PKCS#1 or PKCS#8 private key")
+		//nolint:staticcheck // RFC 1423 support is deprecated and emits a migration warning.
+		if x509.IsEncryptedPEMBlock(block) {
+			log.Print("WARNING: CertFromPEM loaded legacy RFC 1423 encrypted PEM. Its cryptography is weak; migrate to unencrypted PKCS#1 or PKCS#8 private key material.")
+			//nolint:staticcheck // RFC 1423 support is deprecated and emits a migration warning.
+			b, err := x509.DecryptPEMBlock(block, []byte(password))
+			if err != nil {
+				return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %v", err)
+			}
+			block = &pem.Block{Type: block.Type, Bytes: b}
 		}
 		if block.Type == "ENCRYPTED PRIVATE KEY" {
 			return nil, nil, errors.New("encrypted PKCS#8 PEM is not supported; convert it to an unencrypted PKCS#1 or PKCS#8 private key")
