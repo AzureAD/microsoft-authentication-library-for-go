@@ -26,11 +26,10 @@ func createAppWithCert() *confidential.Client {
 		log.Fatal(err)
 	}
 
-	// This extracts our public certificates and private key from the PEM file. If it is
-	// encrypted, the second argument must be password to decode.
-	// IMPORTANT SECURITY NOTICE: never store passwords in code. The recommended pattern is to keep the certificate in a vault (e.g. Azure KeyVault)
-	// and to download it when the application starts.
-	certs, privateKey, err := confidential.CertFromPEM(pemData, "")
+	// This extracts our public certificates and unencrypted private key from the PEM file.
+	// IMPORTANT SECURITY NOTICE: protect key material in a vault (e.g. Azure KeyVault) and download
+	// it when the application starts.
+	certs, privateKey, err := confidential.CertFromUnencryptedPEM(pemData)
 	if err != nil {
 		log.Fatal(err)
 	}

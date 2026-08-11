@@ -273,7 +273,7 @@ func getCertDataFromFile(filePath string) ([]*x509.Certificate, crypto.PrivateKe
 		return nil, nil, fmt.Errorf("error reading certificate file: %w", err)
 	}
 
-	cert, privateKey, err := confidential.CertFromPEM(data, "")
+	cert, privateKey, err := confidential.CertFromUnencryptedPEM(data)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error parsing certificate: %w", err)
 	}

@@ -46,9 +46,8 @@ func ExampleNewCredFromCert_pem() {
 		log.Fatal(err)
 	}
 
-	// This extracts our public certificates and private key from the PEM file. If it is
-	// encrypted, the second argument must be password to decode.
-	certs, priv, err := confidential.CertFromPEM(b, "")
+	// This extracts our public certificates and unencrypted private key from the PEM file.
+	certs, priv, err := confidential.CertFromUnencryptedPEM(b)
 	if err != nil {
 		log.Fatal(err)
 	}
