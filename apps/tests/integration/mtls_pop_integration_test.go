@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"io"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -38,6 +37,10 @@ const (
 	sniAllowlistedAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c"
 	sniAllowlistedRegion    = "westus3"
 )
+
+// tokenExchangeScope is the audience the first leg of a two-leg S2S FIC exchange requests: it yields a
+// federated assertion rather than a resource token. Mirrors MSAL .NET's TokenExchangeUrl.
+const tokenExchangeScope = "api://AzureADTokenExchange/.default"
 
 // requireTokenAcceptedByResource proves an mtls_pop token is actually usable end-to-end: it presents
 // the token's binding certificate as the client certificate on the TLS handshake to the Microsoft
@@ -87,23 +90,6 @@ func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert *tls
 			"binding certificate was not presented on the TLS handshake or the Authorization scheme was not "+
 			"\"mtls_pop\". Response: %s", resp.StatusCode, string(body))
 	}
-}
-
-// acquireMtlsPoPOrSkip treats an ESTS token_type downgrade (mtls_pop -> Bearer) on the FIC legs as
-// inconclusive rather than a failure. It is retained only for the skip-gated two-leg FIC E2E below;
-// the SNI tests deliberately fail closed on a downgrade (see TestCredential_X509_Output_Pop). This
-// escape hatch is slated for removal when the FIC E2E is hardened (PR #633 follow-up).
-func acquireMtlsPoPOrSkip(t *testing.T, fn func() (confidential.AuthResult, error)) confidential.AuthResult {
-	t.Helper()
-	res, err := fn()
-	if err != nil {
-		var mism errors.MtlsPoPTokenTypeMismatchError
-		if errors.As(err, &mism) {
-			t.Skipf("ESTS returned token_type %q instead of mtls_pop (server-side downgrade on this slice, not a MSAL regression); treating as inconclusive", mism.Actual)
-		}
-		t.Fatalf("AcquireTokenByCredential() with mTLS PoP failed: %s", errors.Verbose(err))
-	}
-	return res
 }
 
 // TestCredential_X509_Output_Pop is the SNI X509 -> mtls_pop end-to-end test on the global endpoint.
@@ -226,17 +212,17 @@ func TestCredential_X509_Output_Bearer(t *testing.T) {
 // TestTwoLegFICMtlsPoP_SNI is the Scope 2 (developer-orchestrated two-leg FIC over mTLS PoP) E2E
 // test. Both legs are mTLS PoP: leg 1 uses the SNI cert as the TLS client certificate to obtain a
 // certificate-bound federated assertion; leg 2 presents that assertion (client_assertion_type=
-// jwt-pop) together with the same binding certificate to obtain the final mtls_pop token.
+// jwt-pop) together with the same binding certificate to obtain the final mtls_pop token, which is
+// then presented to Microsoft Graph over mTLS to prove it is accepted by a real resource.
 //
-// It is skip-gated until ESTS confirms the FIC leg-2 contract and the resource audience is
-// allow-listed for mTLS PoP in the lab (plan §h open questions 1-2). Set MSAL_RUN_FIC_MTLS_E2E=1 to
-// enable it once the lab app + ESTS support are provisioned.
+// Both legs use the SN/I allow-listed app in the MSI team tenant and the global (non-regional)
+// endpoint, which is the only configuration ESTS enables for mTLS PoP. Like the SNI tests, both legs
+// fail closed on an ESTS token_type downgrade (mtls_pop -> Bearer) rather than treating it as
+// inconclusive. Mirrors MSAL .NET's Credential_Fic_Output_Pop_TestAsync /
+// RunTwoLegS2sFicBothLegsPopAsync.
 func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
-	}
-	if os.Getenv("MSAL_RUN_FIC_MTLS_E2E") == "" {
-		t.Skip("skipping two-leg FIC mTLS PoP E2E: pending ESTS leg-2 contract + allow-listed resource confirmation (plan §h). Set MSAL_RUN_FIC_MTLS_E2E=1 to enable.")
 	}
 
 	cert, privateKey, err := getCertDataFromFile(pemFile)
@@ -250,39 +236,44 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 	if err != nil {
 		t.Fatalf("leg 1 NewCredFromCert() failed: %s", errors.Verbose(err))
 	}
-	leg1App, err := confidential.New(authorityURL, testClientID, leg1Cred)
+	leg1App, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, leg1Cred)
 	if err != nil {
 		t.Fatalf("leg 1 confidential.New() failed: %s", errors.Verbose(err))
 	}
-	leg1 := acquireMtlsPoPOrSkip(t, func() (confidential.AuthResult, error) {
-		return leg1App.AcquireTokenByCredential(ctx, []string{fmiScope},
-			confidential.WithFMIPath(fmiPath),
-			confidential.WithMtlsProofOfPossession(),
-		)
-	})
+	leg1, err := leg1App.AcquireTokenByCredential(ctx, []string{tokenExchangeScope},
+		confidential.WithMtlsProofOfPossession(),
+	)
+	if err != nil {
+		t.Fatalf("leg 1 AcquireTokenByCredential() with mTLS PoP failed: %s", errors.Verbose(err))
+	}
 	if leg1.Metadata.TokenType != "mtls_pop" {
 		t.Fatalf("leg 1 token_type = %q, want mtls_pop", leg1.Metadata.TokenType)
+	}
+	if leg1.AccessToken == "" {
+		t.Fatal("leg 1 did not return a federated assertion")
 	}
 	if leg1.BindingCertificate == nil {
 		t.Fatal("leg 1 result missing binding certificate")
 	}
 
-	// Leg 2: federated assertion (jwt-pop) + binding cert -> final mtls_pop token.
+	// Leg 2: federated assertion (jwt-pop) + the SAME binding certificate -> final mtls_pop token.
+	// The certificate is carried forward exactly as leg 1 returned it, so a regression that strips
+	// the private key or swaps the certificate fails here rather than silently rebinding.
 	leg2Cred := confidential.NewCredFromAssertionCallback(
 		func(context.Context, confidential.AssertionRequestOptions) (string, error) {
 			return leg1.AccessToken, nil
 		},
 	)
-	leg2App, err := confidential.New(authorityURL, fmiClientID, leg2Cred)
+	leg2App, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, leg2Cred)
 	if err != nil {
 		t.Fatalf("leg 2 confidential.New() failed: %s", errors.Verbose(err))
 	}
-	final := acquireMtlsPoPOrSkip(t, func() (confidential.AuthResult, error) {
-		return leg2App.AcquireTokenByCredential(ctx, []string{testScope},
-			confidential.WithFMIPath(fmiPath),
-			confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingCertificate(cert, privateKey)),
-		)
-	})
+	final, err := leg2App.AcquireTokenByCredential(ctx, []string{graphMtlsScope},
+		confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingTLSCertificate(leg1.BindingCertificate)),
+	)
+	if err != nil {
+		t.Fatalf("leg 2 AcquireTokenByCredential() with mTLS PoP failed: %s", errors.Verbose(err))
+	}
 	if final.AccessToken == "" {
 		t.Fatal("leg 2 returned empty AccessToken")
 	}
@@ -293,6 +284,9 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 	if final.BindingCertificateThumbprint() != leg1.BindingCertificateThumbprint() {
 		t.Fatal("final token is not bound to the leg-1 certificate thumbprint")
 	}
+
+	// The final token must be accepted by a real resource over mTLS.
+	requireTokenAcceptedByResource(t, final.AccessToken, final.BindingCertificate)
 }
 
 // TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated mirrors MSAL Java's
