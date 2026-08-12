@@ -6,12 +6,16 @@ package confidential
 import (
 	"context"
 	"crypto"
+	"crypto/rand"
 	"crypto/rsa"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"encoding/pem"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
@@ -66,6 +70,172 @@ func TestCertFromPEM(t *testing.T) {
 	if key == nil {
 		t.Fatalf("TestCertFromPEM: got nil key, want key != nil")
 	}
+}
+
+func TestCertFromPEMUnencryptedPrivateKeys(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := testCertificatePEM(t, key)
+
+	for _, test := range []struct {
+		name    string
+		keyType string
+		keyDER  []byte
+	}{
+		{name: "PKCS#1", keyType: "RSA PRIVATE KEY", keyDER: x509.MarshalPKCS1PrivateKey(key)},
+		{name: "PKCS#8", keyType: "PRIVATE KEY", keyDER: mustMarshalPKCS8PrivateKey(t, key)},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			pemData := append(certPEM, pem.EncodeToMemory(&pem.Block{Type: test.keyType, Bytes: test.keyDER})...)
+			certs, parsedKey, err := CertFromUnencryptedPEM(pemData)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if len(certs) != 1 {
+				t.Fatalf("got %d certificates, want 1", len(certs))
+			}
+			if _, ok := parsedKey.(*rsa.PrivateKey); !ok {
+				t.Fatalf("got key type %T, want *rsa.PrivateKey", parsedKey)
+			}
+			if _, err := NewCredFromCert(certs, parsedKey); err != nil {
+				t.Fatalf("matching certificate and key: %v", err)
+			}
+
+			otherKey, err := rsa.GenerateKey(rand.Reader, 2048)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := NewCredFromCert(certs, otherKey); err == nil {
+				t.Fatal("expected mismatched certificate and key to be rejected")
+			}
+		})
+	}
+}
+
+func TestCertFromPEMLegacyEncryptedPrivateKey(t *testing.T) {
+	const password = "password"
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certPEM := testCertificatePEM(t, key)
+	legacyPEM := legacyEncryptedPEM(t, x509.MarshalPKCS1PrivateKey(key), password)
+
+	pemData := append(certPEM, legacyPEM...)
+	certs, parsedKey, err := CertFromPEM(pemData, password)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := NewCredFromCert(certs, parsedKey); err != nil {
+		t.Fatalf("matching certificate and key: %v", err)
+	}
+
+	if _, _, err := CertFromPEM(pemData, "wrong password"); err == nil || !strings.Contains(err.Error(), "could not decrypt encrypted PEM block") {
+		t.Fatalf("CertFromPEM() error = %v, want decryption error", err)
+	}
+}
+
+func TestCertFromUnencryptedPEMRejectsEncryptedPrivateKeys(t *testing.T) {
+	const password = "password"
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyPEM := legacyEncryptedPEM(t, x509.MarshalPKCS1PrivateKey(key), password)
+	encryptedPKCS8PEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "ENCRYPTED PRIVATE KEY",
+		Bytes: []byte("encrypted PKCS#8 private key"),
+	})
+
+	for _, test := range []struct {
+		name, want string
+		pemData    []byte
+	}{
+		{name: "legacy RFC 1423", pemData: legacyPEM, want: "legacy RFC 1423 encrypted PEM is not supported"},
+		{name: "encrypted PKCS#8", pemData: encryptedPKCS8PEM, want: "encrypted PKCS#8 PEM is not supported"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if _, _, err := CertFromUnencryptedPEM(test.pemData); err == nil || !strings.Contains(err.Error(), test.want) {
+				t.Fatalf("CertFromUnencryptedPEM() error = %v, want error containing %q", err, test.want)
+			}
+		})
+	}
+}
+
+func TestCertFromPEMRejectsEncryptedPKCS8PrivateKey(t *testing.T) {
+	encryptedPKCS8PEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "ENCRYPTED PRIVATE KEY",
+		Bytes: []byte("encrypted PKCS#8 private key"),
+	})
+
+	if _, _, err := CertFromPEM(encryptedPKCS8PEM, "password"); err == nil || !strings.Contains(err.Error(), "encrypted PKCS#8 PEM is not supported") {
+		t.Fatalf("CertFromPEM() error = %v, want encrypted PKCS#8 rejection", err)
+	}
+}
+
+func TestCertFromPEMRejectsMalformedLegacyEncryption(t *testing.T) {
+	legacyPEM := pem.EncodeToMemory(&pem.Block{
+		Type: "RSA PRIVATE KEY",
+		Headers: map[string]string{
+			"DEK-Info": "INVALID-CIPHER,00000000000000000000000000000000",
+		},
+		Bytes: []byte("legacy encrypted private key"),
+	})
+
+	if _, _, err := CertFromPEM(legacyPEM, "password"); err == nil || !strings.Contains(err.Error(), "could not decrypt encrypted PEM block") {
+		t.Fatalf("CertFromPEM() error = %v, want decryption error", err)
+	}
+}
+
+func TestCertFromPEMMalformedInput(t *testing.T) {
+	for _, pemData := range [][]byte{
+		[]byte("not PEM"),
+		pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: []byte("not a certificate")}),
+	} {
+		if _, _, err := CertFromUnencryptedPEM(pemData); err == nil {
+			t.Fatal("expected malformed PEM input to be rejected")
+		}
+		if _, _, err := CertFromPEM(pemData, ""); err == nil {
+			t.Fatal("expected malformed PEM input to be rejected")
+		}
+	}
+}
+
+func testCertificatePEM(t *testing.T, key *rsa.PrivateKey) []byte {
+	t.Helper()
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(&pem.Block{Type: "CERTIFICATE", Bytes: der})
+}
+
+func mustMarshalPKCS8PrivateKey(t *testing.T, key *rsa.PrivateKey) []byte {
+	t.Helper()
+	der, err := x509.MarshalPKCS8PrivateKey(key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return der
+}
+
+func legacyEncryptedPEM(t *testing.T, keyDER []byte, password string) []byte {
+	t.Helper()
+	//nolint:staticcheck // Test fixture for legacy RFC 1423 backward compatibility.
+	block, err := x509.EncryptPEMBlock(rand.Reader, "RSA PRIVATE KEY", keyDER, []byte(password), x509.PEMCipherAES256)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return pem.EncodeToMemory(block)
 }
 
 const (
@@ -744,7 +914,7 @@ func TestNewCredFromCert(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		certs, key, err := CertFromPEM(pemData, "")
+		certs, key, err := CertFromUnencryptedPEM(pemData)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -852,7 +1022,7 @@ func TestNewCredFromCertError(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	certs, key, err := CertFromPEM(data, "")
+	certs, key, err := CertFromUnencryptedPEM(data)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -880,7 +1050,7 @@ func TestNewCredFromCertError(t *testing.T) {
 	if data, err = os.ReadFile("../testdata/test-cert-chain.pem"); err != nil {
 		t.Fatal(err)
 	}
-	if _, key, err = CertFromPEM(data, ""); err != nil {
+	if _, key, err = CertFromUnencryptedPEM(data); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = NewCredFromCert(certs, key); err == nil {
