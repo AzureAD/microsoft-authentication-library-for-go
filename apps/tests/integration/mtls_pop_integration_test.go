@@ -5,9 +5,15 @@ package integration
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"crypto/x509"
+	"encoding/base64"
+	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -38,6 +44,39 @@ const (
 	sniAllowlistedRegion    = "westus3"
 )
 
+// checkTokenBoundToCertificate verifies that an mtls_pop access token actually names cert as its
+// binding certificate, via the cnf (confirmation) claim's x5t#S256 thumbprint. A successful call to a
+// resource proves the TLS handshake worked, but a lenient resource could still accept a token bound
+// to something else, so the claim is checked directly. It returns an error rather than failing the
+// test so the check itself can be unit-tested with a deliberately mismatched token.
+func checkTokenBoundToCertificate(token string, cert *x509.Certificate) error {
+	parts := strings.Split(token, ".")
+	if len(parts) != 3 {
+		return fmt.Errorf("access token is not a JWT: got %d segments, want 3", len(parts))
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		return fmt.Errorf("decoding the JWT payload failed: %w", err)
+	}
+	var claims struct {
+		Cnf map[string]string `json:"cnf"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		return fmt.Errorf("parsing the JWT payload failed: %w", err)
+	}
+	got := claims.Cnf["x5t#S256"]
+	if got == "" {
+		return fmt.Errorf(`the token carries no cnf["x5t#S256"] claim, so it is not certificate-bound`)
+	}
+	sum := sha256.Sum256(cert.Raw)
+	want := base64.RawURLEncoding.EncodeToString(sum[:])
+	if got != want {
+		return fmt.Errorf(`cnf["x5t#S256"] = %q, want %q: the token is bound to a different certificate `+
+			"than the one MSAL returned on the result", got, want)
+	}
+	return nil
+}
+
 // requireTokenAcceptedByResource proves an mtls_pop token is actually usable end-to-end: it presents
 // the token's binding certificate as the client certificate on the TLS handshake to the Microsoft
 // Graph mTLS host and sends "Authorization: mtls_pop <token>", then requires HTTP 200. The app and
@@ -55,6 +94,16 @@ func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert *tls
 	}
 	if bindingCert.PrivateKey == nil {
 		t.Fatal("binding certificate has no private key; it cannot be used for the mTLS handshake")
+	}
+	if bindingCert.Leaf == nil {
+		t.Fatal("binding certificate has no parsed leaf; cannot verify what the token is bound to")
+	}
+
+	// Check the binding before spending a network round trip on it: this distinguishes "the token
+	// is bound to the wrong certificate" from "the resource rejected the call", which the HTTP
+	// status alone cannot.
+	if err := checkTokenBoundToCertificate(token, bindingCert.Leaf); err != nil {
+		t.Fatalf("the mtls_pop token is not bound to the binding certificate MSAL returned: %s", err)
 	}
 
 	client := &http.Client{
@@ -181,9 +230,8 @@ func TestCredential_X509_Output_Bearer(t *testing.T) {
 
 	// WithX5C enables subject-name/issuer auth; without WithMtlsProofOfPossession the credential still
 	// signs and sends a client_assertion and ESTS returns a Bearer token.
-	// WithAzureRegion pins the regional mTLS endpoint. A region is forbidden for mtls_pop (it can cause a
-	// silent mtls_pop->Bearer downgrade), but it is correct and desirable on this deterministic Bearer
-	// cell to keep live regional-endpoint coverage. Do not remove it.
+	// WithAzureRegion pins the regional token endpoint, keeping live regional coverage on this
+	// deterministic Bearer cell. Do not remove it.
 	app, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, cred, confidential.WithX5C(), confidential.WithAzureRegion(sniAllowlistedRegion))
 	if err != nil {
 		t.Fatalf("confidential.New() failed: %s", errors.Verbose(err))
@@ -208,8 +256,10 @@ func TestCredential_X509_Output_Bearer(t *testing.T) {
 // TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated mirrors MSAL Java's
 // acquireTokenClientCredentials_BearerAndMtlsPop_AreCacheIsolated: it acquires a normal Bearer token
 // and an mTLS PoP token for the same app and scope on the same client, then verifies the two tokens
-// are distinct and carry the expected token types. Cache entries are keyed by token type + binding
-// certificate, so the PoP request must not return the cached Bearer token.
+// are distinct and carry the expected token types. The access token cache key includes the token
+// type, so the PoP request must not return the cached Bearer token. The binding certificate's
+// thumbprint is not part of the cache write key; it is applied as a read-side filter (KeyId,
+// x5t#S256) when a cached token is served.
 func TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -255,5 +305,139 @@ func TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated(t *testing.T) {
 
 	if bearer.AccessToken == pop.AccessToken {
 		t.Fatal("expected Bearer and mTLS PoP tokens to be cache-isolated, but AccessTokens matched")
+	}
+}
+
+// TestCredential_X509_Output_Pop_Regional is the regional counterpart to
+// TestCredential_X509_Output_Pop: the same SN/I certificate and app, but with WithAzureRegion, so the
+// token request goes to {region}.mtlsauth.microsoft.com instead of the global endpoint. Regional mTLS
+// PoP is supported and returns token_type=mtls_pop; it is not forbidden or degraded. Modeled on the
+// ESTS contract test SniMtlsCertificateTests (MISE.ContractTesting), which uses the same allow-listed
+// region and asserts on the token only, without calling a resource.
+//
+// This cell also covers the region write-back fix: an mTLS PoP request with a region configured must
+// reach the regionalized mtlsauth host rather than silently falling back to the global one.
+//
+// The Bearer regional cell (TestCredential_X509_Output_Bearer) is deliberately kept as-is; it is a
+// faithful port of MSAL .NET's Credential_X509_Output_Bearer and covers a different endpoint.
+func TestCredential_X509_Output_Pop_Regional(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	cert, privateKey, err := getCertDataFromFile(pemFile)
+	if err != nil {
+		t.Fatalf("getCertDataFromFile() failed: %s", errors.Verbose(err))
+	}
+	cred, err := confidential.NewCredFromCert(cert, privateKey)
+	if err != nil {
+		t.Fatalf("NewCredFromCert() failed: %s", errors.Verbose(err))
+	}
+
+	app, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, cred,
+		confidential.WithAzureRegion(sniAllowlistedRegion))
+	if err != nil {
+		t.Fatalf("confidential.New() failed: %s", errors.Verbose(err))
+	}
+
+	ctx := context.Background()
+	scopes := []string{mtlsPoPResourceScope}
+
+	result, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatalf("regional AcquireTokenByCredential() with mTLS PoP failed: %s", errors.Verbose(err))
+	}
+	if result.AccessToken == "" {
+		t.Fatal("regional AcquireTokenByCredential() returned empty AccessToken")
+	}
+	// Fail closed on a downgrade: a regional endpoint that answered with Bearer would mean the
+	// request was not actually proof-of-possession.
+	if result.Metadata.TokenType != "mtls_pop" {
+		t.Fatalf("regional token_type = %q, want mtls_pop", result.Metadata.TokenType)
+	}
+	if result.BindingCertificate == nil || result.BindingCertificate.Leaf == nil {
+		t.Fatal("regional mTLS PoP result carries no usable binding certificate")
+	}
+	if err := checkTokenBoundToCertificate(result.AccessToken, result.BindingCertificate.Leaf); err != nil {
+		t.Fatalf("regional mtls_pop token is not bound to the returned certificate: %s", err)
+	}
+
+	// Second call must be served from the cache.
+	cached, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatalf("second regional AcquireTokenByCredential() failed: %s", errors.Verbose(err))
+	}
+	if cached.Metadata.TokenSource != confidential.TokenSourceCache {
+		t.Fatal("second regional AcquireTokenByCredential() did not come from the cache")
+	}
+	if cached.AccessToken != result.AccessToken {
+		t.Fatal("regional cached token does not match the originally issued token")
+	}
+	if cached.Metadata.TokenType != "mtls_pop" {
+		t.Fatalf("regional cached token_type = %q, want mtls_pop", cached.Metadata.TokenType)
+	}
+}
+
+// TestConfidentialClientSNIMtlsPoPThenBearerCacheIsolated is the reverse of
+// TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated: it acquires the mTLS PoP token FIRST and
+// the Bearer token second. Acquisition order must not matter, and the order that runs second is the
+// interesting one - a cached mtls_pop token must never be handed to a caller who did not ask for
+// proof-of-possession, which is the more dangerous direction of the two (a caller who wanted a bound
+// token and got a bearer token can at least detect it from the token type; a caller who wanted a
+// plain bearer token and received a bound one will simply fail at the resource).
+func TestConfidentialClientSNIMtlsPoPThenBearerCacheIsolated(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	cert, privateKey, err := getCertDataFromFile(pemFile)
+	if err != nil {
+		t.Fatalf("getCertDataFromFile() failed: %s", errors.Verbose(err))
+	}
+	cred, err := confidential.NewCredFromCert(cert, privateKey)
+	if err != nil {
+		t.Fatalf("NewCredFromCert() failed: %s", errors.Verbose(err))
+	}
+
+	app, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, cred, confidential.WithX5C())
+	if err != nil {
+		t.Fatalf("confidential.New() failed: %s", errors.Verbose(err))
+	}
+
+	ctx := context.Background()
+	scopes := []string{mtlsPoPResourceScope}
+
+	pop, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatalf("mTLS PoP AcquireTokenByCredential() failed: %s", errors.Verbose(err))
+	}
+	if pop.Metadata.TokenType != "mtls_pop" {
+		t.Fatalf("expected mtls_pop token_type, got %q", pop.Metadata.TokenType)
+	}
+
+	bearer, err := app.AcquireTokenByCredential(ctx, scopes)
+	if err != nil {
+		t.Fatalf("AcquireTokenByCredential() (Bearer) failed: %s", errors.Verbose(err))
+	}
+	if bearer.Metadata.TokenType != "Bearer" {
+		t.Fatalf("expected token_type Bearer, got %q", bearer.Metadata.TokenType)
+	}
+	if bearer.BindingCertificate != nil {
+		t.Fatal("a Bearer token must not carry a binding certificate")
+	}
+	if bearer.AccessToken == pop.AccessToken {
+		t.Fatal("the Bearer request was served the cached mtls_pop token")
+	}
+
+	// The PoP token is still cached and still PoP, so the Bearer acquisition did not displace it.
+	popAgain, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatalf("second mTLS PoP AcquireTokenByCredential() failed: %s", errors.Verbose(err))
+	}
+	if popAgain.Metadata.TokenType != "mtls_pop" {
+		t.Fatalf("second PoP call token_type = %q, want mtls_pop", popAgain.Metadata.TokenType)
+	}
+	if popAgain.AccessToken != pop.AccessToken {
+		t.Fatal("the mTLS PoP token was displaced by the Bearer acquisition")
 	}
 }

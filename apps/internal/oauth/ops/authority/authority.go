@@ -18,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -732,12 +733,68 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	return resp, err
 }
 
+// detectedRegion memoizes IMDS auto-detection for the life of the process. Auto-detection is a
+// network probe whose answer is fixed for a given host, and the region is now resolved on every
+// acquisition (see Info.ResolveRegion), so without this a caller using WithAzureRegion with
+// AutoDetectRegion would re-probe the instance metadata endpoint on every token request that misses
+// the endpoint cache - up to two 2-second attempts each time when the probe can't be reached.
+// MSAL .NET caches auto-detection the same way, in RegionManager's static discovered-region field.
+var (
+	detectedRegionMu    sync.Mutex
+	detectedRegion      string
+	detectedRegionKnown bool
+)
+
+// ResolveRegion replaces the auto-detect sentinel with the region that was actually detected, so
+// that everything downstream reads a concrete value (or an empty string when detection found
+// nothing). Detection used to happen inside AADInstanceDiscovery against a by-value copy of Info,
+// which meant the result never reached the caller's AuthParams: MtlsTokenEndpoint still saw the
+// sentinel and fell back to the global mTLS host, throwing away a region that had been successfully
+// detected. MSAL .NET never has this problem because it resolves the region during parameter
+// initialization, before any host is built.
+//
+// Region resolution is deliberately idempotent: once the sentinel is replaced, calling this again is
+// a no-op, so an explicitly configured region is never overwritten.
+func (i *Info) ResolveRegion(ctx context.Context) {
+	if i == nil || i.Region != autoDetectRegion {
+		return
+	}
+	i.Region = detectRegion(ctx)
+}
+
 func detectRegion(ctx context.Context) string {
+	// The environment variable is authoritative and free to read, so it is never memoized.
 	region := os.Getenv(regionName)
 	if region != "" {
 		region = strings.ReplaceAll(region, " ", "")
 		return strings.ToLower(region)
 	}
+
+	detectedRegionMu.Lock()
+	defer detectedRegionMu.Unlock()
+	if detectedRegionKnown {
+		return detectedRegion
+	}
+	region = detectRegionFromIMDS(ctx)
+	// Don't memoize a failure that only reflects the caller's canceled context; a later request
+	// with a live context should still get the chance to detect.
+	if region != "" || ctx.Err() == nil {
+		detectedRegion = region
+		detectedRegionKnown = true
+	}
+	return region
+}
+
+// resetDetectedRegion clears the memoized auto-detection result so tests can exercise detection
+// more than once in a process.
+func resetDetectedRegion() {
+	detectedRegionMu.Lock()
+	defer detectedRegionMu.Unlock()
+	detectedRegion = ""
+	detectedRegionKnown = false
+}
+
+func detectRegionFromIMDS(ctx context.Context) string {
 	// HTTP call to IMDS endpoint to get region
 	// Refer : https://identitydivision.visualstudio.com/DevEx/_git/AuthLibrariesApiReview?path=%2FPinAuthToRegion%2FAAD%20SDK%20Proposal%20to%20Pin%20Auth%20to%20region.md&_a=preview&version=GBdev
 	// Set a 2 second timeout for this http client which only does calls to IMDS endpoint
