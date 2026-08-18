@@ -4,10 +4,12 @@
 package confidential
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
@@ -166,6 +168,159 @@ func TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion(t *testing.T) {
 	}
 	if reacquiredA.AccessToken != "token-for-cert-a-again" {
 		t.Fatalf("cert A re-acquired %q, want token-for-cert-a-again", reacquiredA.AccessToken)
+	}
+}
+
+// newSameKeyRenewedCerts issues two self-signed certificates from a SINGLE RSA key pair, differing
+// only in serial number and validity window. That is precisely what certificate renewal over a
+// non-exportable key produces: byte-identical public keys, different DER.
+func newSameKeyRenewedCerts(t *testing.T) (*x509.Certificate, *x509.Certificate, *rsa.PrivateKey) {
+	t.Helper()
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	issue := func(serial int64, notBefore time.Time) *x509.Certificate {
+		t.Helper()
+		tmpl := &x509.Certificate{
+			SerialNumber: big.NewInt(serial),
+			Subject:      pkix.Name{CommonName: "keyguard-binding-cert"},
+			NotBefore:    notBefore,
+			NotAfter:     notBefore.Add(2 * time.Hour),
+		}
+		der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		leaf, err := x509.ParseCertificate(der)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return leaf
+	}
+	now := time.Now()
+	return issue(1, now.Add(-time.Hour)), issue(2, now.Add(-30*time.Minute)), key
+}
+
+// TestMtlsPoPSameKeyCertificateRenewalMissesTheCache pins that the mtls_pop cache key is derived from
+// the certificate's DER and NOT from its public key.
+//
+// This is the one certificate-renewal shape that a different-key test structurally cannot cover.
+// TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion generates a fresh key per certificate, so it
+// passes whether the key ID hashes the DER or the public key - the two differ either way. Here the
+// two certificates share one key pair, so hashing the public key yields the SAME key ID for both and
+// the renewed certificate is served the old certificate's token.
+//
+// That is not hypothetical. MSAL .NET computed the mtls_pop cache KeyId by hashing the certificate's
+// public key, so a renewal was invisible to the cache: MSAL served a token bound to the old
+// certificate's DER while the new certificate was on the wire, and ESTS rejected it with
+// AADSTS500181 (CertificateValidationFailedTlsCertMismatch). The trigger is exactly what IMDS and
+// KeyGuard produce when they reissue a certificate over the same non-exportable key - the scenario
+// this stack exists to support. dotnet PR #6123 fixed it by keying on the DER, and its regression
+// test is MtlsPop_SameKeyCertRenewal_MustNotServeStaleCachedTokenAsync.
+//
+// Go is already correct: NewMtlsPoPAuthenticationScheme computes sha256.Sum256(cert.Raw), and
+// cert.Raw is the DER, which matches both the post-fix .NET behavior and the x5t#S256 thumbprint
+// defined by RFC 8705. Nothing here asks for an implementation change; this test keeps that property
+// from being regressed silently.
+func TestMtlsPoPSameKeyCertificateRenewalMissesTheCache(t *testing.T) {
+	oldCert, renewedCert, key := newSameKeyRenewedCerts(t)
+
+	// Preconditions, asserted so the test can never become vacuous. If the setup stops producing a
+	// same-key renewal, this must say so rather than pass for the wrong reason.
+	oldPub, err := x509.MarshalPKIXPublicKey(oldCert.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewedPub, err := x509.MarshalPKIXPublicKey(renewedCert.PublicKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(oldPub, renewedPub) {
+		t.Fatal("setup is invalid: the two certificates do not share a public key, so this is not a same-key renewal and the test proves nothing")
+	}
+	if bytes.Equal(oldCert.Raw, renewedCert.Raw) {
+		t.Fatal("setup is invalid: the two certificates have identical DER, so there is no renewal to detect")
+	}
+	if sha256.Sum256(oldCert.Raw) == sha256.Sum256(renewedCert.Raw) {
+		t.Fatal("setup is invalid: the two certificates have the same x5t#S256 thumbprint")
+	}
+
+	credOld, err := NewCredFromCert([]*x509.Certificate{oldCert}, crypto.PrivateKey(key))
+	if err != nil {
+		t.Fatal(err)
+	}
+	credRenewed, err := NewCredFromCert([]*x509.Certificate{renewedCert}, crypto.PrivateKey(key))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+	sharedCache := make(testCache)
+	mockClient := mock.NewClient()
+	ctx := context.Background()
+
+	newClient := func(cred Credential) Client {
+		t.Helper()
+		client, err := New(authority, fakeClientID, cred,
+			WithCache(&sharedCache),
+			WithHTTPClient(mockClient),
+			WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+			WithInstanceDiscovery(false),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		return client
+	}
+
+	clientOld := newClient(credOld)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mtlsPoPTokenBody("token-for-old-cert", 3600)))
+
+	resOld, err := clientOld.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resOld.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatal("first call should have gone to the identity provider")
+	}
+
+	// Same certificate: served from the cache. Nothing is queued, so a miss would panic the mock
+	// rather than quietly pass. This proves the cache is live before the renewal is introduced.
+	cachedOld, err := clientOld.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cachedOld.Metadata.TokenSource != TokenSourceCache || cachedOld.AccessToken != resOld.AccessToken {
+		t.Fatalf("same-certificate repeat call was not served from the cache: source=%v token=%q",
+			cachedOld.Metadata.TokenSource, cachedOld.AccessToken)
+	}
+
+	// The renewal. Same key, same client, tenant and scope, same cache - only the DER changed. The
+	// stale token must NOT be served, or the caller presents the renewed certificate on the wire
+	// while holding a token bound to the old one, which is AADSTS500181.
+	clientRenewed := newClient(credRenewed)
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mtlsPoPTokenBody("token-for-renewed-cert", 3600)))
+
+	resRenewed, err := clientRenewed.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if resRenewed.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatal("a renewed certificate over the same key must MISS the cache; serving the stale token is AADSTS500181")
+	}
+	if resRenewed.AccessToken == resOld.AccessToken {
+		t.Fatal("the renewed certificate was served the old certificate's token; the cache key is not derived from the certificate DER")
+	}
+	if resRenewed.AccessToken != "token-for-renewed-cert" {
+		t.Fatalf("renewed certificate returned %q, want token-for-renewed-cert", resRenewed.AccessToken)
+	}
+	if resOld.BindingCertificateThumbprint() == resRenewed.BindingCertificateThumbprint() {
+		t.Fatal("the two certificates reported the same x5t#S256 thumbprint; the thumbprint is not derived from the certificate DER")
 	}
 }
 
