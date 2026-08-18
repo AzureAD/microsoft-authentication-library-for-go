@@ -91,7 +91,7 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			gotClientCerts = 0
-			client := BuildMtlsClient(cert)
+			client := BuildMtlsClient(cert, nil)
 			transport, ok := client.Transport.(*http.Transport)
 			if !ok {
 				t.Fatalf("client.Transport = %T, want *http.Transport", client.Transport)
@@ -116,7 +116,7 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 
 func TestBuildMtlsClient(t *testing.T) {
 	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
-	client := BuildMtlsClient(cert)
+	client := BuildMtlsClient(cert, nil)
 	if client == nil {
 		t.Fatal("BuildMtlsClient returned nil")
 	}
@@ -139,7 +139,7 @@ func TestBuildMtlsClientCarriesSignerKey(t *testing.T) {
 	// A non-exportable key (KeyGuard/CNG/HSM) can only be a crypto.Signer, so the transport must pass
 	// tls.Certificate.PrivateKey through untouched rather than assert a concrete key type.
 	cert := signerOnlyTestCert(t)
-	client := BuildMtlsClient(cert)
+	client := BuildMtlsClient(cert, nil)
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("client.Transport = %T, want *http.Transport", client.Transport)

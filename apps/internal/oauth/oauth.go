@@ -363,6 +363,12 @@ func (t *Client) DeviceCode(ctx context.Context, authParams authority.AuthParams
 }
 
 func (t *Client) resolveEndpoint(ctx context.Context, authParams *authority.AuthParams, userPrincipalName string) error {
+	// Resolve WithAzureRegion(AutoDetectRegion()) to a concrete region before anything reads it.
+	// Detection used to happen only inside instance discovery, against a copy, so the result never
+	// reached these AuthParams and the mTLS endpoint fell back to the global host even when a region
+	// had been detected. Endpoint resolution is also cached, so doing it here keeps the region
+	// consistent across acquisitions instead of only the first one.
+	authParams.AuthorityInfo.ResolveRegion(ctx)
 	endpoints, err := t.Resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, userPrincipalName)
 	if err != nil {
 		return fmt.Errorf("unable to resolve an endpoint: %w", err)

@@ -20,6 +20,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -361,15 +362,27 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 
 // WithMtlsHTTPClient overrides how the mutual-TLS client is built for mTLS proof-of-possession
 // token requests (see [WithMtlsProofOfPossession]). The factory receives the binding certificate and
-// must return an HTTPClient whose transport presents that certificate during the TLS handshake.
+// must return an [http.Client] whose transport presents that certificate during the TLS handshake.
 //
 // This is an escape hatch for callers who must own the TLS handshake themselves. It isn't needed for
 // non-exportable keys: a [crypto.Signer] supplied through [NewCredFromTLSCertificate] is passed
 // straight to the built-in transport, which crypto/tls signs with on both TLS 1.2 and 1.3. When
 // unset, MSAL auto-builds and caches an mTLS client per certificate thumbprint.
-func WithMtlsHTTPClient(factory func(cert tls.Certificate) ops.HTTPClient) Option {
+func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) Option {
 	return func(o *clientOptions) {
-		o.mtlsHTTPClientFactory = factory
+		if factory == nil {
+			o.mtlsHTTPClientFactory = nil
+			return
+		}
+		o.mtlsHTTPClientFactory = func(cert tls.Certificate) ops.HTTPClient {
+			client := factory(cert)
+			if client == nil {
+				// Return an untyped nil rather than an interface wrapping a nil *http.Client, so
+				// the internal nil check sees it instead of caching a client that panics on Do.
+				return nil
+			}
+			return client
+		}
 	}
 }
 
@@ -672,6 +685,11 @@ func WithClaimsFromClient(claims string) interface {
 	}
 }
 
+// WithAuthenticationScheme is an extensibility mechanism designed to be used only by Azure SDK
+// clients.
+//
+// It cannot be combined with [WithMtlsProofOfPossession] on [Client.AcquireTokenByCredential];
+// supplying both returns an error rather than one option silently overriding the other.
 func WithAuthenticationScheme(authnScheme AuthenticationScheme) interface {
 	AcquireSilentOption
 	AcquireByCredentialOption
@@ -966,11 +984,31 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authnScheme := o.authnScheme
 	var mtlsBindingCert *tls.Certificate
 	if o.isMtlsPoP {
+		// Refuse the combination rather than silently discarding the caller's scheme. This is
+		// checked first because it depends on nothing but the options that were passed, so the
+		// caller gets told exactly which call is wrong.
+		if authnScheme != nil {
+			return AuthResult{}, errMtlsPoPWithAuthnScheme
+		}
+		// The credential is resolved before the authority is validated, on purpose: a credential
+		// that can't produce a binding certificate must report that, not an authority error, so the
+		// missing-certificate contract survives regardless of how the authority is configured. MSAL
+		// .NET orders these the same way in MtlsPopParametersInitializer, where
+		// ValidateAadAuthorityForPop runs after the credential provider.
 		if err := validateMtlsCredential(cca.cred); err != nil {
 			return AuthResult{}, err
 		}
 		mtlsBindingCert, err = cca.resolveMtlsBindingCert()
 		if err != nil {
+			return AuthResult{}, err
+		}
+		// Validate the authority here rather than leaving it to the token request. It used to be
+		// enforced only while deriving the mTLS endpoint, so an unsupported authority survived
+		// credential resolution, the silent cache lookup and endpoint discovery before being
+		// rejected on the network. MSAL .NET validates during parameter initialization, before any
+		// cache or discovery work. The check still runs on the network path too, so it can't be
+		// bypassed by another entry point.
+		if err := authParams.AuthorityInfo.ValidateMtlsPoP(); err != nil {
 			return AuthResult{}, err
 		}
 		authnScheme = authority.NewMtlsPoPAuthenticationScheme(mtlsBindingCert.Leaf)
@@ -1135,6 +1173,19 @@ func WithAttribute(attrValue string) interface {
 // A non-exportable key (KeyGuard/CNG/HSM) works here without signing anything at the application
 // layer, because the key is used solely for the TLS handshake. Such a key can also sign client
 // assertions for the other flows; see [NewCredFromTLSCertificate].
+//
+// The credential and the authority are both validated up front, before any cache lookup or network
+// call. A credential that cannot present a client certificate is reported first, so that error is
+// what a caller sees even when the authority is also unsupported.
+//
+// This option cannot be combined with [WithAuthenticationScheme]; supplying both returns an error.
+// mTLS PoP installs its own authentication scheme, so accepting both would mean silently discarding
+// the caller's scheme along with its request parameters, cache key contribution and result
+// formatting. This deliberately diverges from MSAL .NET, which composes with schemes that implement
+// its IAuthenticationOperation3 capability interface and silently replaces the scheme otherwise. Go
+// has no equivalent capability interface and no composable scheme to compose with — the only
+// AccessTokenType implementations are the bearer scheme, the mTLS PoP scheme itself and a test mock
+// — so a loud failure is more useful than a silent one.
 func WithMtlsProofOfPossession() interface {
 	AcquireByCredentialOption
 	options.CallOption
@@ -1178,6 +1229,16 @@ func (cca Client) resolveMtlsBindingCert() (*tls.Certificate, error) {
 	}
 	return nil, errors.New("mTLS proof-of-possession requires a certificate credential (NewCredFromCert or NewCredFromTLSCertificate)")
 }
+
+// errMtlsPoPWithAuthnScheme is returned when a caller combines WithAuthenticationScheme with
+// WithMtlsProofOfPossession. See the WithMtlsProofOfPossession doc comment for why this is an error
+// in Go where MSAL .NET silently replaces the scheme.
+var errMtlsPoPWithAuthnScheme = errors.New(
+	"WithAuthenticationScheme and WithMtlsProofOfPossession cannot be combined: " +
+		"mTLS proof-of-possession installs its own authentication scheme, which would discard the one " +
+		"passed to WithAuthenticationScheme along with its request parameters, cache key contribution " +
+		"and result formatting; pass only one of the two",
+)
 
 // validateMtlsCredential rejects credential kinds that can't perform mTLS proof-of-possession.
 func validateMtlsCredential(cred *accesstokens.Credential) error {
