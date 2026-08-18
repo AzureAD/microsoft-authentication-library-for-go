@@ -379,12 +379,15 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 // token requests (see [WithMtlsProofOfPossession]). The factory receives the binding certificate and
 // must return an [http.Client] whose transport presents that certificate during the TLS handshake.
 //
-// This is an escape hatch for callers who must own the TLS handshake themselves. When unset, MSAL
-// auto-builds and caches an mTLS client per certificate thumbprint.
+// This is an escape hatch for callers who must own the TLS handshake themselves. It isn't needed for
+// non-exportable keys: the binding certificate arrives here as a [tls.Certificate] whose PrivateKey
+// only has to implement [crypto.Signer], so a KeyGuard, CNG or HSM-backed key is presented on the
+// handshake like any other. When unset, MSAL auto-builds and caches an mTLS client per certificate
+// thumbprint.
 //
-// The binding certificate is currently derived from a [NewCredFromCert] credential, which requires an
-// exportable *rsa.PrivateKey. Binding to a non-exportable key held behind a [crypto.Signer] (for
-// example a KeyGuard, CNG or HSM-backed key) is not supported yet; it arrives in a follow-up change.
+// The binding certificate comes from whichever route supplied it: a [NewCredFromCert] credential, an
+// explicit [WithMtlsBindingTLSCertificate], or the BindingCertificate field of the [SignedAssertion]
+// returned by a [NewCredFromSignedAssertionCallback] credential.
 func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) Option {
 	return func(o *clientOptions) {
 		if factory == nil {
