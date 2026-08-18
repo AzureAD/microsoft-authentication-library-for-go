@@ -82,6 +82,41 @@ func TestDetectRegionEnvironmentIsNotMemoized(t *testing.T) {
 	}
 }
 
+// TestDetectRegionBlankEnvironmentResolvesToNothing pins the seam that lets higher layers exercise
+// "a region was asked for and none was found" deterministically. REGION_NAME is consulted before
+// IMDS and has its spaces stripped, so a value that is set but blank resolves to no region without a
+// network probe - and without memoizing anything, since the environment is deliberately re-read
+// every time. confidential.TestRegionAutoDetectFailureFollowsTheNoRegionPath relies on both halves
+// of that.
+func TestDetectRegionBlankEnvironmentResolvesToNothing(t *testing.T) {
+	resetDetectedRegion()
+	defer resetDetectedRegion()
+
+	if err := os.Setenv(regionName, "   "); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Unsetenv(regionName)
+
+	if got := detectRegion(context.Background()); got != "" {
+		t.Fatalf("detectRegion with a blank REGION_NAME = %q, want empty", got)
+	}
+	// Nothing was memoized, which is only possible if the environment short-circuited before the
+	// IMDS probe. If this ever starts failing, the blank value is reaching the network and the
+	// higher-level test that depends on this seam is no longer deterministic.
+	detectedRegionMu.Lock()
+	known := detectedRegionKnown
+	detectedRegionMu.Unlock()
+	if known {
+		t.Error("a blank REGION_NAME reached the IMDS probe instead of short-circuiting")
+	}
+
+	info := Info{Host: "login.microsoftonline.com", Tenant: "contoso", Region: autoDetectRegion}
+	info.ResolveRegion(context.Background())
+	if info.Region != "" {
+		t.Fatalf("Region = %q, want empty so the flow takes the no-region path", info.Region)
+	}
+}
+
 // TestDetectRegionMemoizesDetection pins the memoization itself: a failed probe is remembered so
 // repeated acquisitions don't pay for it again, but a failure caused only by the caller's canceled
 // context is not, since a later request with a live context should still get a chance.
