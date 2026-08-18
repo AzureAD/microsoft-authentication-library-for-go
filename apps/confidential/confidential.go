@@ -291,6 +291,14 @@ func WithClientCapabilities(capabilities []string) Option {
 //
 // A plain HTTP client cannot carry the client certificate required for mTLS proof-of-possession
 // (see [WithMtlsProofOfPossession]); use [WithMtlsHTTPClient] to override the mTLS transport.
+//
+// On that mutual-TLS leg MSAL installs the binding certificate on a copy of this client's transport,
+// which carries the caller's configuration across only when Transport is an [*http.Transport] - the
+// type that holds Proxy, DialContext and TLSClientConfig (including RootCAs). A custom
+// [http.RoundTripper], such as a tracing or retry wrapper, cannot be carried across, because a TLS
+// client certificate can only be installed through [*http.Transport]. The mutual-TLS leg then builds
+// on a clone of [http.DefaultTransport] instead, and the wrapper does not run for it. Use
+// [WithMtlsHTTPClient] to own that leg.
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	return func(o *clientOptions) {
 		o.httpClient = httpClient

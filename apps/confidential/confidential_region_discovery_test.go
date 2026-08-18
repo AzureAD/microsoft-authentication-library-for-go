@@ -131,10 +131,11 @@ func TestRegionAutoDetectFailureFollowsTheNoRegionPath(t *testing.T) {
 func acquireForRegionDiscovery(t *testing.T, host, tenant string, mtlsPoP, autoDetect bool) []string {
 	t.Helper()
 
-	// REGION_NAME is consulted before IMDS and has its spaces stripped, so a blank-but-set value
-	// makes detection resolve to nothing without a network probe - deterministic even on a machine
-	// where IMDS would answer. It also sidesteps the detection memo entirely, since the environment
-	// variable is deliberately never memoized, so nothing leaks into or out of this test.
+	// REGION_NAME is consulted before IMDS, and a value that is set but is not a valid Azure region
+	// name is rejected outright rather than normalized, so a blank-but-set value makes detection
+	// resolve to nothing without a network probe - deterministic even on a machine where IMDS would
+	// answer. It also sidesteps the detection memo entirely, since the environment variable is
+	// deliberately never memoized, so nothing leaks into or out of this test.
 	// TestDetectRegionBlankEnvironmentResolvesToNothing pins that seam.
 	if err := os.Unsetenv("REGION_NAME"); err != nil {
 		t.Fatal(err)

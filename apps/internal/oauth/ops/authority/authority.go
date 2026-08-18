@@ -49,8 +49,8 @@ const (
 	loginMicrosoftOnline = defaultHost
 )
 
-// validRegion matches Azure region names: lowercase alphanumeric and hyphens only.
-var validRegion = regexp.MustCompile(`^[a-z][a-z0-9-]*$`)
+// validRegion matches Azure region names that are valid lowercase ASCII DNS labels.
+var validRegion = regexp.MustCompile(`^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 
 // jsonCaller is an interface that allows us to mock the JSONCall method.
 type jsonCaller interface {
@@ -688,14 +688,14 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	var err error
 	resp := InstanceDiscoveryResponse{}
 	if authorityInfo.Region != "" && authorityInfo.Region != autoDetectRegion {
+		if !validRegion.MatchString(authorityInfo.Region) {
+			return resp, fmt.Errorf("invalid region %q: region must be a lowercase ASCII DNS label of at most 63 characters", authorityInfo.Region)
+		}
 		region = authorityInfo.Region
 	} else if authorityInfo.Region == autoDetectRegion {
 		region = detectRegion(ctx)
 	}
 	if region != "" {
-		if !validRegion.MatchString(region) {
-			return resp, fmt.Errorf("invalid region %q: region must contain only lowercase alphanumeric characters and hyphens", region)
-		}
 		environment := authorityInfo.Host
 		switch environment {
 		case loginMicrosoft, loginWindows, loginSTSWindows, defaultHost:
@@ -766,8 +766,10 @@ func detectRegion(ctx context.Context) string {
 	// The environment variable is authoritative and free to read, so it is never memoized.
 	region := os.Getenv(regionName)
 	if region != "" {
-		region = strings.ReplaceAll(region, " ", "")
-		return strings.ToLower(region)
+		if validRegion.MatchString(region) {
+			return region
+		}
+		return ""
 	}
 
 	detectedRegionMu.Lock()
@@ -833,6 +835,9 @@ type imdsComputeResponse struct {
 func parseRegionFromIMDSResponse(body []byte) string {
 	var parsed imdsComputeResponse
 	if err := json.Unmarshal(body, &parsed); err != nil {
+		return ""
+	}
+	if !validRegion.MatchString(parsed.Location) {
 		return ""
 	}
 	return parsed.Location
