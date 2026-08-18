@@ -19,6 +19,7 @@ import (
 	"encoding/pem"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
@@ -297,7 +298,7 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 
 // WithMtlsHTTPClient overrides how the mutual-TLS client is built for mTLS proof-of-possession
 // token requests (see [WithMtlsProofOfPossession]). The factory receives the binding certificate and
-// must return an HTTPClient whose transport presents that certificate during the TLS handshake.
+// must return an [http.Client] whose transport presents that certificate during the TLS handshake.
 //
 // This is an escape hatch for callers who must own the TLS handshake themselves. When unset, MSAL
 // auto-builds and caches an mTLS client per certificate thumbprint.
@@ -305,9 +306,21 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 // The binding certificate is currently derived from a [NewCredFromCert] credential, which requires an
 // exportable *rsa.PrivateKey. Binding to a non-exportable key held behind a [crypto.Signer] (for
 // example a KeyGuard, CNG or HSM-backed key) is not supported yet; it arrives in a follow-up change.
-func WithMtlsHTTPClient(factory func(cert tls.Certificate) ops.HTTPClient) Option {
+func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) Option {
 	return func(o *clientOptions) {
-		o.mtlsHTTPClientFactory = factory
+		if factory == nil {
+			o.mtlsHTTPClientFactory = nil
+			return
+		}
+		o.mtlsHTTPClientFactory = func(cert tls.Certificate) ops.HTTPClient {
+			client := factory(cert)
+			if client == nil {
+				// Return an untyped nil rather than an interface wrapping a nil *http.Client, so
+				// the internal nil check sees it instead of caching a client that panics on Do.
+				return nil
+			}
+			return client
+		}
 	}
 }
 
