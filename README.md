@@ -205,6 +205,11 @@ Notes:
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
   certificate thumbprint). A plain `WithHTTPClient` cannot carry the certificate; use
   `WithMtlsHTTPClient` to override the transport when you need to own the TLS handshake yourself.
+  A `WithHTTPClient` client's settings reach the mTLS leg only when its `Transport` is an
+  `*http.Transport` — that is where proxy, dialer and root CAs live. A custom `http.RoundTripper`,
+  such as a tracing or retry wrapper, cannot be carried across, because a TLS client certificate can
+  only be installed through `*http.Transport`; that leg builds on `http.DefaultTransport` instead and
+  the wrapper does not run for it.
 - **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. The
   legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are aliases: they resolve
