@@ -67,10 +67,16 @@ func (m *MtlsPoPAuthenticationScheme) AccessTokenType() string {
 }
 
 // isPublicMtlsEnvironment reports whether host is a well-known worldwide public-cloud login host.
-// These all normalize to the shared mtlsauth.microsoft.com endpoint family.
+// These all normalize to the shared mtlsauth.microsoft.com endpoint family. host must already have
+// any port stripped and be lowercased.
+//
+// sts.windows.net is deliberately absent even though it is a public-cloud alias: it has no login.
+// prefix, so MtlsTokenEndpoint rejects it before reaching this function. Listing it here would
+// suggest mTLS PoP is supported for it. MSAL .NET rejects it the same way, through the login.-prefix
+// check in RegionAndMtlsDiscoveryProvider.
 func isPublicMtlsEnvironment(host string) bool {
-	switch strings.ToLower(host) {
-	case defaultHost, loginMicrosoft, loginWindows, loginSTSWindows:
+	switch host {
+	case defaultHost, loginMicrosoft, loginWindows:
 		return true
 	}
 	return false
@@ -91,12 +97,30 @@ func isPublicMtlsEnvironment(host string) bool {
 //
 // When a concrete region is configured the endpoint is regionalized ({region}.mtlsauth...);
 // otherwise the global endpoint is used (region is optional — global mtlsauth.microsoft.com is
-// production-ready).
+// production-ready). Callers who asked for auto-detection get a concrete region here because
+// Info.ResolveRegion replaces the sentinel earlier in the request, during endpoint resolution.
+//
+// ADFS and dSTS are out of scope for mTLS PoP. Neither serves a login.* host, so both are rejected
+// by the host check with the same message any other unsupported authority gets. MSAL .NET behaves
+// identically: its dedicated dSTS rejection message is dead code, and dSTS is in practice refused by
+// the same login.-prefix guard.
 func (p AuthParams) MtlsTokenEndpoint() (string, error) {
-	host := strings.ToLower(p.AuthorityInfo.Host)
+	// AuthorityInfo.Host can carry an explicit port (it comes from url.URL.Host, and private cloud
+	// deployments rely on that), so split it off before matching against known hosts. Otherwise
+	// "login.microsoftonline.com:443" misses every lookup and falls through to a literal swap that
+	// produces "mtlsauth.microsoftonline.com:443" instead of the normalized public host. MSAL .NET
+	// can't hit this because it reads Uri.Host, which excludes the port by construction.
+	host, port := splitHostPort(strings.ToLower(p.AuthorityInfo.Host))
 	tenant := p.AuthorityInfo.Tenant
 
-	if tenant == "" || tenant == "common" || tenant == "organizations" || tenant == "consumers" {
+	// Go rejects a wider set of non-tenanted authorities than MSAL .NET's
+	// AadAuthority.IsCommonOrOrganizationsTenant does. That superset is intentional: none of these
+	// can produce a tenant-bound mTLS PoP token, so catching them all here is better than letting
+	// ESTS reject the request on the network.
+	if tenant == "" ||
+		strings.EqualFold(tenant, "common") ||
+		strings.EqualFold(tenant, "organizations") ||
+		strings.EqualFold(tenant, "consumers") {
 		return "", fmt.Errorf("mTLS proof-of-possession requires a tenanted authority; %q is not a specific tenant", tenant)
 	}
 	if !strings.HasPrefix(host, loginPrefix+".") {
@@ -120,6 +144,9 @@ func (p AuthParams) MtlsTokenEndpoint() (string, error) {
 	if region := p.AuthorityInfo.Region; region != "" && region != autoDetectRegion {
 		mtlsHost = region + "." + mtlsHost
 	}
+	if port != "" {
+		mtlsHost += ":" + port
+	}
 
 	// Preserve the resolved token endpoint's path/query, swapping only the host.
 	if p.Endpoints.TokenEndpoint != "" {
@@ -129,4 +156,15 @@ func (p AuthParams) MtlsTokenEndpoint() (string, error) {
 		}
 	}
 	return fmt.Sprintf("https://%s/%s/oauth2/v2.0/token", mtlsHost, tenant), nil
+}
+
+// splitHostPort separates an "host:port" authority host into its parts. Unlike net.SplitHostPort it
+// tolerates a bare hostname, returning an empty port, and leaves an IPv6 literal's brackets in place
+// so the value can be reassembled verbatim.
+func splitHostPort(hostport string) (host, port string) {
+	i := strings.LastIndex(hostport, ":")
+	if i < 0 || i < strings.LastIndex(hostport, "]") {
+		return hostport, ""
+	}
+	return hostport[:i], hostport[i+1:]
 }

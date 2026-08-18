@@ -4,6 +4,7 @@
 package authority
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -11,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"math/big"
+	"os"
 	"strings"
 	"testing"
 	"time"
@@ -83,11 +85,22 @@ func mtlsParams(host, tenant, region, tokenEndpoint string) AuthParams {
 }
 
 func TestMtlsTokenEndpoint(t *testing.T) {
+	// Auto-detection reads REGION_NAME before probing IMDS, which lets the auto-detect case below
+	// exercise the real resolution path without a network call.
+	const detectedRegion = "centralus"
+	if err := os.Setenv(regionName, detectedRegion); err != nil {
+		t.Fatal(err)
+	}
+	defer os.Unsetenv(regionName)
+
 	tests := []struct {
-		name    string
-		params  AuthParams
-		want    string
-		wantErr bool
+		name string
+		// resolveRegion runs Info.ResolveRegion first, exactly as the token path does before
+		// deriving the endpoint.
+		resolveRegion bool
+		params        AuthParams
+		want          string
+		wantErr       bool
 	}{
 		{
 			name:   "public cloud, no region -> global mtlsauth.microsoft.com",
@@ -100,7 +113,17 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 			want:   "https://westus.mtlsauth.microsoft.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
 		},
 		{
-			name:   "public cloud, autoDetect region -> global (region optional)",
+			// A successfully auto-detected region must reach the endpoint. This used to yield the
+			// global host because the sentinel was never replaced with the detected value.
+			name:          "public cloud, autoDetect region resolves to the detected region",
+			resolveRegion: true,
+			params:        mtlsParams("login.microsoftonline.com", "contoso.onmicrosoft.com", autoDetectRegion, "https://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token"),
+			want:          "https://" + detectedRegion + ".mtlsauth.microsoft.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			// Detection that finds nothing leaves the region empty, and the global endpoint is the
+			// documented, production-ready fallback.
+			name:   "public cloud, unresolved autoDetect sentinel -> global",
 			params: mtlsParams("login.microsoftonline.com", "contoso.onmicrosoft.com", autoDetectRegion, "https://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token"),
 			want:   "https://mtlsauth.microsoft.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
 		},
@@ -120,6 +143,29 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 			want:   "https://eastus.mtlsauth.example.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
 		},
 		{
+			// Info.Host comes from url.URL.Host, which keeps an explicit port. Without splitting it
+			// off, the known-host lookup misses and the fallback swap yields
+			// mtlsauth.microsoftonline.com:443 instead of the normalized public host.
+			name:   "public cloud host with explicit port -> normalized host, port preserved",
+			params: mtlsParams("login.microsoftonline.com:443", "contoso.onmicrosoft.com", "", "https://login.microsoftonline.com:443/contoso.onmicrosoft.com/oauth2/v2.0/token"),
+			want:   "https://mtlsauth.microsoft.com:443/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			name:   "public cloud host with explicit port and region",
+			params: mtlsParams("login.microsoftonline.com:8443", "contoso.onmicrosoft.com", "westus", "https://login.microsoftonline.com:8443/contoso.onmicrosoft.com/oauth2/v2.0/token"),
+			want:   "https://westus.mtlsauth.microsoft.com:8443/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			name:   "sovereign alias with explicit port normalizes then keeps the port",
+			params: mtlsParams("login.usgovcloudapi.net:443", "contoso.onmicrosoft.com", "", "https://login.usgovcloudapi.net:443/contoso.onmicrosoft.com/oauth2/v2.0/token"),
+			want:   "https://mtlsauth.microsoftonline.us:443/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			name:   "private cloud login host with port",
+			params: mtlsParams("login.contoso.internal:9443", "contoso.onmicrosoft.com", "", ""),
+			want:   "https://mtlsauth.contoso.internal:9443/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
 			name:   "no resolved token endpoint -> synthesized path",
 			params: mtlsParams("login.microsoftonline.com", "mytenant", "", ""),
 			want:   "https://mtlsauth.microsoft.com/mytenant/oauth2/v2.0/token",
@@ -135,8 +181,20 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			// The tenant is compared case-insensitively so the guard stands on its own rather than
+			// relying on the authority URL having been lowercased at parse time.
+			name:    "COMMON authority rejected regardless of case",
+			params:  mtlsParams("login.microsoftonline.com", "COMMON", "", ""),
+			wantErr: true,
+		},
+		{
 			name:    "organizations authority rejected",
 			params:  mtlsParams("login.microsoftonline.com", "organizations", "", ""),
+			wantErr: true,
+		},
+		{
+			name:    "Organizations authority rejected regardless of case",
+			params:  mtlsParams("login.microsoftonline.com", "Organizations", "", ""),
 			wantErr: true,
 		},
 		{
@@ -145,8 +203,20 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 			wantErr: true,
 		},
 		{
+			name:    "CONSUMERS authority rejected regardless of case",
+			params:  mtlsParams("login.microsoftonline.com", "CONSUMERS", "", ""),
+			wantErr: true,
+		},
+		{
 			name:    "non-login host rejected",
 			params:  mtlsParams("example.com", "contoso.onmicrosoft.com", "", ""),
+			wantErr: true,
+		},
+		{
+			// sts.windows.net is a public-cloud alias but has no login. prefix, so it is rejected
+			// by the host guard. MSAL .NET rejects it the same way.
+			name:    "sts.windows.net rejected",
+			params:  mtlsParams("sts.windows.net", "contoso.onmicrosoft.com", "", ""),
 			wantErr: true,
 		},
 		{
@@ -203,7 +273,11 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			got, err := tc.params.MtlsTokenEndpoint()
+			params := tc.params
+			if tc.resolveRegion {
+				params.AuthorityInfo.ResolveRegion(context.Background())
+			}
+			got, err := params.MtlsTokenEndpoint()
 			if tc.wantErr {
 				if err == nil {
 					t.Fatalf("MtlsTokenEndpoint() = %q, want error", got)
@@ -217,6 +291,62 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 				t.Errorf("MtlsTokenEndpoint() = %q, want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+// TestMtlsTokenEndpointRejectsNonAADAuthorities documents that ADFS and dSTS are out of scope for
+// mTLS proof-of-possession, and pins that the rejection is clear and actionable rather than a
+// confusing network failure. MSAL .NET is the same: dSTS never reaches its dedicated rejection
+// message (that message has no call sites), it is refused by the login.-prefix host check.
+func TestMtlsTokenEndpointRejectsNonAADAuthorities(t *testing.T) {
+	for _, test := range []struct {
+		desc      string
+		authority string
+	}{
+		{desc: "dSTS", authority: "https://dsts.core.windows.net/dstsv2/" + DSTSTenant},
+		{desc: "ADFS", authority: "https://fs.contoso.com/adfs"},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			info, err := NewInfoFromAuthorityURI(test.authority, true, false)
+			if err != nil {
+				t.Fatalf("NewInfoFromAuthorityURI(%q): %v", test.authority, err)
+			}
+			params := AuthParams{AuthorityInfo: info}
+			got, err := params.MtlsTokenEndpoint()
+			if err == nil {
+				t.Fatalf("MtlsTokenEndpoint() = %q, want an error for a %s authority", got, test.desc)
+			}
+			// The message has to name the offending host and say what is required, otherwise the
+			// caller has no way to tell why an ordinary-looking authority was refused.
+			msg := err.Error()
+			if !strings.Contains(msg, info.Host) {
+				t.Errorf("error %q does not name the authority host %q", msg, info.Host)
+			}
+			if !strings.Contains(msg, "mTLS proof-of-possession") || !strings.Contains(msg, "login.") {
+				t.Errorf("error %q does not explain that mTLS proof-of-possession requires a login.* host", msg)
+			}
+		})
+	}
+}
+
+// TestSplitHostPort covers the host/port split used before the known-host lookup, including the
+// bare-hostname and IPv6-literal shapes that must not be mangled.
+func TestSplitHostPort(t *testing.T) {
+	for _, test := range []struct {
+		in       string
+		wantHost string
+		wantPort string
+	}{
+		{in: "login.microsoftonline.com", wantHost: "login.microsoftonline.com"},
+		{in: "login.microsoftonline.com:443", wantHost: "login.microsoftonline.com", wantPort: "443"},
+		{in: "[::1]", wantHost: "[::1]"},
+		{in: "[::1]:8443", wantHost: "[::1]", wantPort: "8443"},
+		{in: "", wantHost: ""},
+	} {
+		host, port := splitHostPort(test.in)
+		if host != test.wantHost || port != test.wantPort {
+			t.Errorf("splitHostPort(%q) = (%q, %q), want (%q, %q)", test.in, host, port, test.wantHost, test.wantPort)
+		}
 	}
 }
 
