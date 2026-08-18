@@ -5,7 +5,6 @@ package confidential
 
 import (
 	"context"
-	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
@@ -17,7 +16,6 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 )
 
 // assertClientAssertionHasX5C decodes a private_key_jwt client_assertion header and fails unless it
@@ -141,7 +139,7 @@ func TestSendCertificateOverMtls_ClientCredential_Global(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 	)
 	if err != nil {
@@ -226,7 +224,7 @@ func TestSendCertificateOverMtls_MtlsPoPTakesPrecedence(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 	)
 	if err != nil {
@@ -275,7 +273,7 @@ func TestSendCertificateOverMtls_ClientCredential_Regional(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 		WithAzureRegion(region),
 	)
@@ -333,7 +331,7 @@ func TestSendCertificateOverMtls_OnBehalfOf_Global(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 	)
 	if err != nil {
@@ -415,7 +413,7 @@ func TestSendCertificateOverMtls_OnBehalfOf_Regional(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 		WithAzureRegion(region),
 	)
@@ -469,7 +467,7 @@ func TestSendCertificateOverMtls_AuthCode_Global(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 	)
 	if err != nil {
@@ -544,7 +542,7 @@ func TestSendCertificateOverMtls_RefreshViaSilent(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 		WithInstanceDiscovery(false),
 	)
@@ -667,7 +665,7 @@ func TestSendCertificateOverMtls_ClientCredential_CachesUnderLoginHost(t *testin
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 		WithCache(&tc),
 	)
