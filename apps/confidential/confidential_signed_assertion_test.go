@@ -27,7 +27,6 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 )
 
 // newSelfSignedCert mints a throwaway RSA certificate. key is returned separately so tests can wrap
@@ -101,13 +100,13 @@ func newMtlsHandshakeServer(t *testing.T, body []byte) *mtlsHandshakeServer {
 	return s
 }
 
-// clientFactory returns an MtlsClientFactory that builds a real mTLS client from the certificate
-// MSAL hands it and routes every request to the test server regardless of the URL's host. The
-// certificate is taken from the factory argument (never captured from the test) so the handshake
+// clientFactory returns a WithMtlsHTTPClient factory that builds a real mTLS client from the
+// certificate MSAL hands it and routes every request to the test server regardless of the URL's host.
+// The certificate is taken from the factory argument (never captured from the test) so the handshake
 // proves which certificate MSAL selected.
-func (s *mtlsHandshakeServer) clientFactory() func(tls.Certificate) ops.HTTPClient {
+func (s *mtlsHandshakeServer) clientFactory() func(tls.Certificate) *http.Client {
 	addr := s.srv.Listener.Addr().String()
-	return func(cert tls.Certificate) ops.HTTPClient {
+	return func(cert tls.Certificate) *http.Client {
 		return &http.Client{
 			Transport: &http.Transport{
 				DialContext: func(ctx context.Context, network, _ string) (net.Conn, error) {
@@ -486,7 +485,7 @@ func TestSignedAssertionCallbackCertificatePartitionsCache(t *testing.T) {
 	factoryA, factoryB := srvA.clientFactory(), srvB.clientFactory()
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
-		WithMtlsHTTPClient(func(cert tls.Certificate) ops.HTTPClient {
+		WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
 			if cert.Leaf != nil && cert.Leaf.Equal(second) {
 				return factoryB(cert)
 			}

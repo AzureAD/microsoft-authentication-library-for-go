@@ -311,7 +311,9 @@ func (c Client) FromClientSecret(ctx context.Context, authParameters authority.A
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -335,7 +337,9 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -354,7 +358,9 @@ func (c Client) FromClientCertificate(ctx context.Context, authParameters author
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -390,7 +396,9 @@ func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authPara
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
@@ -417,7 +425,9 @@ func (c Client) FromUserFederatedIdentityCredential(ctx context.Context, authPar
 	}
 
 	addScopeQueryParam(qv, authParameters)
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	credParams, err := prepURLVals(ctx, cred, authParameters)
 	if err != nil {
@@ -593,11 +603,38 @@ func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthPar
 	queryParams.Set("scope", strings.Join(scopes, " "))
 }
 
-// addExtraBodyParameters evaluates and adds extra body parameters to the request
-func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.AuthParams) {
+// reservedBodyParameters are token-request body parameters that MSAL owns. addExtraBodyParameters
+// uses url.Values.Set, which overwrites, and runs last in every request builder, so an extra body
+// parameter under one of these keys would silently replace a value MSAL computed - the client
+// assertion, the grant type, the client identity, or the requested token type - and change what is
+// actually being requested or how the client is authenticated.
+//
+// Nothing in this module can currently populate these keys: the only writers of ExtraBodyParameters
+// are WithFMIPath and WithAttribute, and both hardcode their key. This is a guard placed ahead of
+// any future caller-supplied extra-parameters API rather than a fix for a reachable hole. It lives
+// inside addExtraBodyParameters, not at one call site, so it covers all five request builders and
+// any that are added later.
+var reservedBodyParameters = map[string]struct{}{
+	"client_assertion":      {},
+	"client_assertion_type": {},
+	"req_cnf":               {},
+	grantType:               {},
+	clientID:                {},
+	"token_type":            {},
+}
+
+// addExtraBodyParameters evaluates and adds extra body parameters to the request. It reports an
+// error rather than letting an extra parameter overwrite a value MSAL owns; see
+// reservedBodyParameters.
+func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.AuthParams) error {
 	for key, value := range ap.ExtraBodyParameters {
-		if value != "" {
-			v.Set(key, value)
+		if value == "" {
+			continue
 		}
+		if _, reserved := reservedBodyParameters[key]; reserved {
+			return fmt.Errorf("%q is reserved by MSAL and cannot be set as an extra body parameter", key)
+		}
+		v.Set(key, value)
 	}
+	return nil
 }

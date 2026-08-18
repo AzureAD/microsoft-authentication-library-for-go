@@ -29,8 +29,10 @@ import (
 type HTTPClient = comm.HTTPClient
 
 // MtlsClientFactory builds an HTTPClient whose transport presents the given certificate as the
-// client certificate during a mutual-TLS handshake. It is the type used by the documented
-// mTLS override hook (confidential.WithMtlsHTTPClient).
+// client certificate during a mutual-TLS handshake. It is the internal type behind the documented
+// mTLS override hook (confidential.WithMtlsHTTPClient); that hook takes a concrete *http.Client,
+// because this type names an interface declared under apps/internal and Go function types are
+// invariant in their result type, so no external module could construct a value of this type.
 type MtlsClientFactory = comm.MtlsClientFactory
 
 // REST provides REST clients for communicating with various backends used by MSAL.

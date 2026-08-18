@@ -20,7 +20,6 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 )
 
@@ -49,6 +48,24 @@ func mtlsPoPTokenBody(accessToken string, expiresIn int) []byte {
 	))
 }
 
+// mockRoundTripper adapts a mock HTTP client to http.RoundTripper so tests can install it through the
+// public WithMtlsHTTPClient option, which takes a concrete *http.Client rather than an internal
+// interface. Going through the public option keeps these tests on exactly the code path an external
+// consumer uses.
+type mockRoundTripper struct{ client *mock.Client }
+
+func (rt mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	return rt.client.Do(req)
+}
+
+// mockMtlsFactory returns a factory in the public WithMtlsHTTPClient shape that routes every mTLS
+// token request to the supplied mock.
+func mockMtlsFactory(c *mock.Client) func(tls.Certificate) *http.Client {
+	return func(tls.Certificate) *http.Client {
+		return &http.Client{Transport: mockRoundTripper{client: c}}
+	}
+}
+
 // TestAcquireTokenByCredentialMtlsPoP covers Scope 1 (vanilla SNI -> mTLS PoP): the request is
 // routed to the rewritten mtlsauth endpoint, carries token_type=mtls_pop with no client_assertion
 // and no req_cnf, the result reports the mtls_pop token type and public binding certificate, and a
@@ -66,7 +83,7 @@ func TestAcquireTokenByCredentialMtlsPoP(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -174,7 +191,7 @@ func TestAcquireTokenByCredentialFICMtlsPoP(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 	)
 	if err != nil {
 		t.Fatal(err)
