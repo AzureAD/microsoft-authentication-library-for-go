@@ -917,11 +917,25 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authnScheme := o.authnScheme
 	var mtlsBindingCert *tls.Certificate
 	if o.isMtlsPoP {
+		// The credential is resolved before the authority is validated, on purpose: a credential
+		// that can't produce a binding certificate must report that, not an authority error, so the
+		// missing-certificate contract survives regardless of how the authority is configured. MSAL
+		// .NET orders these the same way in MtlsPopParametersInitializer, where
+		// ValidateAadAuthorityForPop runs after the credential provider.
 		if err := validateMtlsCredential(cca.cred); err != nil {
 			return AuthResult{}, err
 		}
 		mtlsBindingCert, err = cca.resolveMtlsBindingCert()
 		if err != nil {
+			return AuthResult{}, err
+		}
+		// Validate the authority here rather than leaving it to the token request. It used to be
+		// enforced only while deriving the mTLS endpoint, so an unsupported authority survived
+		// credential resolution, the silent cache lookup and endpoint discovery before being
+		// rejected on the network. MSAL .NET validates during parameter initialization, before any
+		// cache or discovery work. The check still runs on the network path too, so it can't be
+		// bypassed by another entry point.
+		if err := authParams.AuthorityInfo.ValidateMtlsPoP(); err != nil {
 			return AuthResult{}, err
 		}
 		authnScheme = authority.NewMtlsPoPAuthenticationScheme(mtlsBindingCert.Leaf)
@@ -1082,6 +1096,10 @@ func WithAttribute(attrValue string) interface {
 // flow) only, because the binding certificate authenticates the application, not a user, so a
 // user-delegated token can never be bound to it. This matches MSAL .NET, where the option exists only
 // on AcquireTokenForClient.
+//
+// The credential and the authority are both validated up front, before any cache lookup or network
+// call. A credential that cannot present a client certificate is reported first, so that error is
+// what a caller sees even when the authority is also unsupported.
 func WithMtlsProofOfPossession() interface {
 	AcquireByCredentialOption
 	options.CallOption
