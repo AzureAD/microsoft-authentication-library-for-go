@@ -121,12 +121,12 @@ type AuthResult struct {
 	Metadata       AuthResultMetadata
 	// BindingCertificate is the certificate bound to an mTLS proof-of-possession token
 	// (Metadata.TokenType == "mtls_pop"); it is nil for Bearer tokens. Leaf is always populated with
-	// the parsed public leaf certificate. PrivateKey is the key MSAL used for the token request;
-	// today that is the exportable *rsa.PrivateKey supplied to the certificate credential. Binding to
-	// a non-exportable key held behind a crypto.Signer (for example a KeyGuard, CNG or HSM-backed key)
-	// is not supported yet; it arrives in a follow-up change. The value drops directly into
-	// tls.Config.Certificates, so present it as the client certificate when calling the resource and
-	// the connection will match the token binding.
+	// the parsed public leaf certificate. PrivateKey is the key MSAL used for the token request: it
+	// holds whatever the credential supplied, either an exportable *rsa.PrivateKey or a
+	// non-exportable crypto.Signer backed by KeyGuard, CNG or an HSM, so callers must not assume the
+	// key material can be exported. The value drops directly into tls.Config.Certificates, so present
+	// it as the client certificate when calling the resource and the connection will match the token
+	// binding.
 	//
 	// It is excluded from JSON: encoding/json walks into an *rsa.PrivateKey's exported fields, so
 	// marshalling an AuthResult would otherwise emit the private exponent and primes into whatever
