@@ -19,7 +19,6 @@ import (
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 )
 
 // testCertThumbprint is the x5t#S256 that BindingCertificateThumbprint() emits for
@@ -39,7 +38,7 @@ func mtlsPoPTestClient(t *testing.T, cred Credential) (Client, *mock.Client) {
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) ops.HTTPClient { return mockClient }),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
 	)
 	if err != nil {
 		t.Fatal(err)

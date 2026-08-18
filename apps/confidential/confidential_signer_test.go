@@ -24,7 +24,6 @@ import (
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 )
 
@@ -296,9 +295,9 @@ func TestSignerOnlyCredentialMtlsPoP(t *testing.T) {
 	var gotCert tls.Certificate
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(c tls.Certificate) ops.HTTPClient {
+		WithMtlsHTTPClient(func(c tls.Certificate) *http.Client {
 			gotCert = c
-			return mockClient
+			return &http.Client{Transport: mockRoundTripper{client: mockClient}}
 		}),
 	)
 	if err != nil {
