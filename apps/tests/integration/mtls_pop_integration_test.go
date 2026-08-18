@@ -181,9 +181,8 @@ func TestCredential_X509_Output_Bearer(t *testing.T) {
 
 	// WithX5C enables subject-name/issuer auth; without WithMtlsProofOfPossession the credential still
 	// signs and sends a client_assertion and ESTS returns a Bearer token.
-	// WithAzureRegion pins the regional mTLS endpoint. A region is forbidden for mtls_pop (it can cause a
-	// silent mtls_pop->Bearer downgrade), but it is correct and desirable on this deterministic Bearer
-	// cell to keep live regional-endpoint coverage. Do not remove it.
+	// WithAzureRegion pins the regional token endpoint, keeping live regional coverage on this
+	// deterministic Bearer cell. Do not remove it.
 	app, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, cred, confidential.WithX5C(), confidential.WithAzureRegion(sniAllowlistedRegion))
 	if err != nil {
 		t.Fatalf("confidential.New() failed: %s", errors.Verbose(err))
@@ -208,8 +207,10 @@ func TestCredential_X509_Output_Bearer(t *testing.T) {
 // TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated mirrors MSAL Java's
 // acquireTokenClientCredentials_BearerAndMtlsPop_AreCacheIsolated: it acquires a normal Bearer token
 // and an mTLS PoP token for the same app and scope on the same client, then verifies the two tokens
-// are distinct and carry the expected token types. Cache entries are keyed by token type + binding
-// certificate, so the PoP request must not return the cached Bearer token.
+// are distinct and carry the expected token types. The access token cache key includes the token
+// type, so the PoP request must not return the cached Bearer token. The binding certificate's
+// thumbprint is not part of the cache write key; it is applied as a read-side filter (KeyId,
+// x5t#S256) when a cached token is served.
 func TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")

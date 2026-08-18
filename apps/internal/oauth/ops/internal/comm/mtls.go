@@ -13,9 +13,8 @@ import (
 
 // MtlsClientFactory optionally builds an HTTPClient whose transport presents cert as the client
 // certificate during the mutual-TLS handshake. It is the documented override hook
-// (confidential.WithMtlsHTTPClient) for callers who must own the TLS handshake themselves. It isn't
-// needed for non-exportable keys: cert.PrivateKey may be any crypto.Signer, which crypto/tls can sign
-// handshakes with directly. When unset, MSAL auto-builds and caches a client per certificate.
+// (confidential.WithMtlsHTTPClient) for callers who must own the TLS handshake themselves. When
+// unset, MSAL auto-builds and caches a client per certificate.
 type MtlsClientFactory func(cert tls.Certificate) HTTPClient
 
 // SetMtlsClientFactory installs a custom factory for building mTLS clients. It is intended to be

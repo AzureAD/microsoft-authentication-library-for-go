@@ -12,7 +12,6 @@ import (
 // testKey is a non-nil placeholder private key for fixtures that never perform a real TLS handshake.
 var testKey = struct{}{}
 
-
 func TestBuildMtlsClient(t *testing.T) {
 	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
 	client := BuildMtlsClient(cert)
