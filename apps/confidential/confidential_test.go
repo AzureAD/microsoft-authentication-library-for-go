@@ -222,6 +222,28 @@ func TestAcquireTokenByCredentialWithCache(t *testing.T) {
 
 }
 
+func TestInvalidMSALForceRegionIsRejectedBeforeHTTP(t *testing.T) {
+	t.Setenv("MSAL_FORCE_REGION", "hostile.example/x")
+
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	client, err := New(
+		fmt.Sprintf(authorityFmt, "login.microsoftonline.com", "tenant"),
+		fakeClientID,
+		cred,
+		WithHTTPClient(&errorClient{}),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope); err == nil || !strings.Contains(err.Error(), "invalid region") {
+		t.Fatalf("AcquireTokenByCredential() error = %v, want invalid region error", err)
+	}
+}
+
 func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
