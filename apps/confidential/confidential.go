@@ -1010,9 +1010,9 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		// produce a binding certificate must report that, not an authority error, so the
 		// missing-certificate contract survives regardless of how the authority is configured. MSAL
 		// .NET orders these the same way in MtlsPopParametersInitializer, where
-		// ValidateAadAuthorityForPop runs after the credential provider. prepareMtlsPoP repeats this
-		// check, but it can resolve endpoints and invoke a signed-assertion callback, so the cheap
-		// option-only validation is pulled ahead of it and of the authority check below.
+		// ValidateAadAuthorityForPop runs after the credential provider. prepareMtlsPoP runs this
+		// same check again; it is pure, so the repetition is free, and keeping it there leaves
+		// prepareMtlsPoP correct for any future caller that doesn't validate first.
 		if err := validateMtlsCredential(cca.cred, o.mtlsBindingCert); err != nil {
 			return AuthResult{}, err
 		}
@@ -1022,6 +1022,18 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		// rejected on the network. MSAL .NET validates during parameter initialization, before any
 		// cache or discovery work. The check still runs on the network path too, so it can't be
 		// bypassed by another entry point.
+		//
+		// This deliberately runs before binding-certificate resolution, which is where this branch
+		// diverges from the parent (#632). There the certificate is resolved first, because
+		// resolving it is network-free; here it happens inside prepareMtlsPoP, which for a
+		// signed-assertion credential (FIC leg 2) resolves endpoints and invokes the application's
+		// callback — both network. Validating the authority first is what keeps "an invalid
+		// authority is rejected before any network work" true on this branch, and that outranks the
+		// error-message preference it costs. The cost, named so nobody quietly reverts this: when
+		// the authority is unsupported AND the certificate cannot be resolved, this reports the
+		// authority error where #632 reports the certificate error. The cheap credential check above
+		// still runs first, so the missing-certificate contract #632 pinned is unaffected.
+		// TestMtlsPoPAuthorityErrorWinsOverBindingCertError pins this ordering.
 		if err := authParams.AuthorityInfo.ValidateMtlsPoP(); err != nil {
 			return AuthResult{}, err
 		}
