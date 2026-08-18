@@ -127,7 +127,11 @@ type AuthResult struct {
 	// is not supported yet; it arrives in a follow-up change. The value drops directly into
 	// tls.Config.Certificates, so present it as the client certificate when calling the resource and
 	// the connection will match the token binding.
-	BindingCertificate *tls.Certificate
+	//
+	// It is excluded from JSON: encoding/json walks into an *rsa.PrivateKey's exported fields, so
+	// marshalling an AuthResult would otherwise emit the private exponent and primes into whatever
+	// consumes the output (a log, a trace, a cache file).
+	BindingCertificate *tls.Certificate `json:"-"`
 }
 
 // AuthResultMetadata which contains meta data for the AuthResult
@@ -149,26 +153,54 @@ func (ar AuthResult) BindingCertificateThumbprint() string {
 }
 
 // bindingCertWithLeaf returns a binding certificate whose Leaf is guaranteed to be populated, or nil
-// when cert is nil or carries no parsable leaf. It returns a shallow copy and never writes to cert:
-// the same *tls.Certificate is retained by the per-thumbprint mTLS client cache, so populating Leaf
-// in place would race with concurrent token acquisitions. The copy keeps PrivateKey, which callers
-// need to present the certificate on the TLS handshake to the resource.
+// when cert is nil or carries no parsable leaf. It never writes to cert: the same *tls.Certificate is
+// retained by the per-thumbprint mTLS client cache, so populating Leaf in place would race with
+// concurrent token acquisitions.
+//
+// The DER chain is deep-copied for the same reason. A shallow copy would share the backing arrays of
+// Certificate with the cached certificate, so a caller mutating
+// result.BindingCertificate.Certificate[i] could corrupt a future TLS handshake or race an in-flight
+// one.
+//
+// PrivateKey is deliberately shared rather than copied: callers need the live signer to present the
+// certificate on the handshake to the resource, and a non-exportable key cannot be copied at all.
 func bindingCertWithLeaf(cert *tls.Certificate) *tls.Certificate {
 	if cert == nil {
 		return nil
 	}
-	if cert.Leaf != nil {
-		out := *cert
-		return &out
-	}
-	if len(cert.Certificate) > 0 {
-		if leaf, err := x509.ParseCertificate(cert.Certificate[0]); err == nil {
-			out := *cert
-			out.Leaf = leaf
-			return &out
+	leaf := cert.Leaf
+	if leaf == nil {
+		if len(cert.Certificate) == 0 {
+			return nil
 		}
+		parsed, err := x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return nil
+		}
+		leaf = parsed
 	}
-	return nil
+	out := *cert
+	out.Leaf = leaf
+	out.Certificate = copyDERChain(cert.Certificate)
+	return &out
+}
+
+// copyDERChain deep-copies a DER chain so the returned certificate shares no backing array with the
+// cached *tls.Certificate it was derived from.
+func copyDERChain(chain [][]byte) [][]byte {
+	if chain == nil {
+		return nil
+	}
+	out := make([][]byte, len(chain))
+	for i, der := range chain {
+		if der == nil {
+			continue
+		}
+		cp := make([]byte, len(der))
+		copy(cp, der)
+		out[i] = cp
+	}
+	return out
 }
 
 type TokenSource int
