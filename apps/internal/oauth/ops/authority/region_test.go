@@ -73,10 +73,11 @@ func TestDetectRegionEnvironmentIsNotMemoized(t *testing.T) {
 	if got := detectRegion(context.Background()); got != "eastus" {
 		t.Fatalf("detectRegion = %q, want eastus", got)
 	}
-	if err := os.Setenv(regionName, "WEST US 2"); err != nil {
+	// A second, equally valid region. The change has to be visible on the very next call, which is
+	// only possible if the environment is re-read rather than remembered from the first one.
+	if err := os.Setenv(regionName, "westus2"); err != nil {
 		t.Fatal(err)
 	}
-	// Spaces are stripped and the value is lowercased, as region names are short-form.
 	if got := detectRegion(context.Background()); got != "westus2" {
 		t.Fatalf("detectRegion after the environment changed = %q, want westus2", got)
 	}
@@ -84,10 +85,10 @@ func TestDetectRegionEnvironmentIsNotMemoized(t *testing.T) {
 
 // TestDetectRegionBlankEnvironmentResolvesToNothing pins the seam that lets higher layers exercise
 // "a region was asked for and none was found" deterministically. REGION_NAME is consulted before
-// IMDS and has its spaces stripped, so a value that is set but blank resolves to no region without a
-// network probe - and without memoizing anything, since the environment is deliberately re-read
-// every time. confidential.TestRegionAutoDetectFailureFollowsTheNoRegionPath relies on both halves
-// of that.
+// IMDS, and a value that is set but is not a valid Azure region name is rejected outright rather
+// than normalized, so a blank value resolves to no region without a network probe - and without
+// memoizing anything, since the environment is deliberately re-read every time.
+// confidential.TestRegionAutoDetectFailureFollowsTheNoRegionPath relies on both halves of that.
 func TestDetectRegionBlankEnvironmentResolvesToNothing(t *testing.T) {
 	resetDetectedRegion()
 	defer resetDetectedRegion()
