@@ -49,10 +49,12 @@ func (c *Client) SetMtlsClientFactory(factory MtlsClientFactory) {
 //
 // base is the HTTP client the application configured (confidential.WithHTTPClient). When it is an
 // *http.Client whose Transport is an *http.Transport, that transport is what gets cloned, so the
-// caller's proxy, dialer, root CAs and tracing survive on mTLS token requests. Cloning
-// http.DefaultTransport is only the fallback for a transport that can't be identified. Dropping the
-// caller's transport unconditionally was a real parity gap: MSAL .NET's HttpManager routes through
-// the configured IMsalHttpClientFactory on every branch and never builds from a hidden default.
+// caller's proxy, dialer and root CAs survive on mTLS token requests. A Transport that is some other
+// http.RoundTripper - a tracing or retry wrapper, typically - cannot be carried across at all, and
+// does not run on this leg; see cloneBaseTransport for why. Cloning http.DefaultTransport is the
+// fallback for a transport that can't be identified. Dropping the caller's transport
+// unconditionally was a real parity gap: MSAL .NET's HttpManager routes through the configured
+// IMsalHttpClientFactory on every branch and never builds from a hidden default.
 //
 // Nothing the caller owns is mutated. http.Transport.Clone deep-copies the transport including its
 // TLSClientConfig, and the copy is what the client certificate is installed on, so the caller's
@@ -78,6 +80,15 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) *http.Client {
 
 // cloneBaseTransport returns a private copy of the transport mTLS requests should build on: the
 // application's own transport when it can be identified, otherwise the process default.
+//
+// The type assertion is deliberately narrow, and the fallback is deliberately silent about the
+// caller's transport. A client certificate can only be installed through TLSClientConfig, which is a
+// field on *http.Transport; an opaque http.RoundTripper exposes nothing that reaches it, so a
+// caller's tracing or retry wrapper genuinely cannot be preserved on this leg. Falling back is the
+// only correct behavior - the alternative is a token request that presents no binding certificate,
+// which the endpoint rejects. Don't "fix" this by unwrapping or delegating to the RoundTripper.
+// TestBuildMtlsClientFallsBackToDefaultTransport pins the fallback, and confidential.WithHTTPClient
+// documents the limitation for callers.
 func cloneBaseTransport(base HTTPClient) *http.Transport {
 	if hc, ok := base.(*http.Client); ok && hc != nil {
 		if t, ok := hc.Transport.(*http.Transport); ok && t != nil {
