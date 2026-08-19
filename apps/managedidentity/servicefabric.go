@@ -19,10 +19,10 @@ import (
 	"unicode"
 )
 
-// serviceFabricHTTPClient derives a client with Service Fabric's required certificate pinning.
+// serviceFabricCertificateVerifiedHTTPClient derives a client with Service Fabric's required certificate pinning.
 // Only standard clients and transports can be safely cloned and augmented without changing the
 // caller's behavior for other requests.
-func serviceFabricHTTPClient(httpClient interface {
+func serviceFabricCertificateVerifiedHTTPClient(httpClient interface {
 	Do(*http.Request) (*http.Response, error)
 	CloseIdleConnections()
 }) (*http.Client, string, error) {
@@ -120,7 +120,7 @@ func serviceFabricThumbprint(value string) ([]byte, error) {
 
 func serviceFabricCertificateThumbprint(certificate *x509.Certificate) []byte {
 	// Service Fabric exposes SHA-1 certificate thumbprints through IDENTITY_SERVER_THUMBPRINT.
-	thumbprint := sha1.Sum(certificate.Raw) // #nosec G401 -- Service Fabric publishes SHA-1 thumbprints.
+	thumbprint := sha1.Sum(certificate.Raw) /* #nosec G401 -- Service Fabric publishes SHA-1 thumbprints. */ // NOSONAR -- Service Fabric defines IDENTITY_SERVER_THUMBPRINT as the SHA-1 hash of its self-signed endpoint certificate; this compares that platform-defined identifier, not a security digest.
 	return thumbprint[:]
 }
 

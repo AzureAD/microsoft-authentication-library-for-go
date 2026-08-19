@@ -273,7 +273,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		option(&client)
 	}
 	if source == ServiceFabric {
-		serviceFabricClient, serviceFabricURL, err := serviceFabricHTTPClient(client.httpClient)
+		serviceFabricClient, serviceFabricURL, err := serviceFabricCertificateVerifiedHTTPClient(client.httpClient)
 		if err != nil {
 			return Client{}, err
 		}
