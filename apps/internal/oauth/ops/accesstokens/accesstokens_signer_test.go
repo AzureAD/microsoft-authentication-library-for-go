@@ -18,6 +18,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
@@ -59,6 +60,39 @@ type signerOnlyECKey struct {
 func (s signerOnlyECKey) Public() crypto.PublicKey { return &s.key.PublicKey }
 
 func (s signerOnlyECKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	return s.key.Sign(r, digest, opts)
+}
+
+var (
+	errNoPSS   = errors.New("this key store can't do RSA-PSS")
+	errNoPKCS1 = errors.New("this key store is unplugged")
+)
+
+// pssRejectingSigner stands in for a key provider that can't perform RSA-PSS, which is common for
+// the CNG, KeyGuard, HSM and smart card providers a non-exportable key lives in: it fails every PSS
+// request and signs PKCS #1 v1.5 normally. Setting failPKCS1 makes it fail those too, for the case
+// where there's nothing left to fall back to. It counts each kind of request separately so tests can
+// pin how many attempts JWT() makes.
+type pssRejectingSigner struct {
+	key        *rsa.PrivateKey
+	failPKCS1  bool
+	pssCalls   int
+	pkcs1Calls int
+	opts       []crypto.SignerOpts
+}
+
+func (s *pssRejectingSigner) Public() crypto.PublicKey { return &s.key.PublicKey }
+
+func (s *pssRejectingSigner) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	s.opts = append(s.opts, opts)
+	if _, ok := opts.(*rsa.PSSOptions); ok {
+		s.pssCalls++
+		return nil, errNoPSS
+	}
+	s.pkcs1Calls++
+	if s.failPKCS1 {
+		return nil, errNoPKCS1
+	}
 	return s.key.Sign(r, digest, opts)
 }
 
@@ -363,5 +397,225 @@ func TestJWTSignerOnlyNonRSA(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// TestJWTSignerOnlyPS256Fallback covers the key providers this whole path exists for: many CNG,
+// KeyGuard, HSM and smart card keys can't perform RSA-PSS at all, so PS256 signing fails outright.
+// MSAL .NET retries such a certificate with PKCS #1 v1.5, and so must this. The retry has to rebuild
+// the header, because RS256 changes the "alg" value, which header carries the thumbprint, and the
+// hash that thumbprint uses.
+func TestJWTSignerOnlyPS256Fallback(t *testing.T) {
+	for _, sendX5C := range []bool{false, true} {
+		t.Run(fmt.Sprintf("x5c=%v", sendX5C), func(t *testing.T) {
+			leaf, key, x5c := assertionFixture(t)
+			signer := &pssRejectingSigner{key: key}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+
+			assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, sendX5C))
+			if err != nil {
+				t.Fatalf("expected a fallback to RS256 instead of an error: %v", err)
+			}
+
+			header, _, signingString, sig := decodeAssertion(t, assertion)
+			if header["alg"] != "RS256" {
+				t.Errorf(`alg = %v, want "RS256"`, header["alg"])
+			}
+			if header["typ"] != "JWT" {
+				t.Errorf(`typ = %v, want "JWT"`, header["typ"])
+			}
+			wantThumbprint := sha1.Sum(leaf.Raw) /* #nosec */
+			if got := header["x5t"]; got != base64.StdEncoding.EncodeToString(wantThumbprint[:]) {
+				t.Errorf("x5t = %v, want the SHA-1 thumbprint of the certificate", got)
+			}
+			if _, ok := header["x5t#S256"]; ok {
+				t.Error("the fallback assertion must carry x5t, not the PS256 header's x5t#S256")
+			}
+
+			// the signature must be a real PKCS #1 v1.5 signature over the rebuilt header
+			digest := sha256.Sum256([]byte(signingString))
+			if err := rsa.VerifyPKCS1v15(&key.PublicKey, crypto.SHA256, digest[:], sig); err != nil {
+				t.Fatalf("the fallback assertion doesn't verify against the certificate's public key: %v", err)
+			}
+			if err := jwt.SigningMethodRS256.Verify(signingString, sig, &key.PublicKey); err != nil {
+				t.Fatalf("jwt.SigningMethodRS256 rejects the fallback assertion: %v", err)
+			}
+
+			// PS256 first, RS256 once after it fails, and no retry loop
+			if signer.pssCalls != 1 {
+				t.Errorf("the signer got %d PSS requests, want 1", signer.pssCalls)
+			}
+			if signer.pkcs1Calls != 1 {
+				t.Errorf("the signer got %d PKCS #1 requests, want 1", signer.pkcs1Calls)
+			}
+			if len(signer.opts) != 2 {
+				t.Fatalf("the signer was called %d times, want 2", len(signer.opts))
+			}
+			pssOpts, ok := signer.opts[0].(*rsa.PSSOptions)
+			if !ok {
+				t.Fatalf("the first attempt passed %T, want *rsa.PSSOptions", signer.opts[0])
+			}
+			if pssOpts.SaltLength != rsa.PSSSaltLengthEqualsHash || pssOpts.Hash != crypto.SHA256 {
+				t.Errorf("the first attempt passed %+v, want jwt.SigningMethodPS256's options", pssOpts)
+			}
+			if signer.opts[1] != crypto.SignerOpts(crypto.SHA256) {
+				t.Errorf("the fallback passed %v (%T), want crypto.SHA256", signer.opts[1], signer.opts[1])
+			}
+
+			// SendX5C must survive the rebuild, otherwise SN/I authentication breaks on this path
+			if sendX5C {
+				entries, ok := header["x5c"].([]interface{})
+				if !ok {
+					t.Fatalf("x5c is %T, want a list", header["x5c"])
+				}
+				if len(entries) != len(x5c) {
+					t.Fatalf("x5c has %d entries, want %d", len(entries), len(x5c))
+				}
+				for i, want := range x5c {
+					if entries[i] != want {
+						t.Errorf("x5c[%d] isn't the credential's certificate at that position", i)
+					}
+				}
+			} else if _, ok := header["x5c"]; ok {
+				t.Error("x5c must be omitted when SendX5C is false")
+			}
+		})
+	}
+}
+
+// TestJWTSignerOnlyNoFallbackForADFSOrDSTS verifies the fallback is limited to the PS256 path. ADFS
+// and dSTS already sign RS256, so a second RS256 attempt would only ask a failing key store the same
+// question twice and report the failure as a PS256 one.
+func TestJWTSignerOnlyNoFallbackForADFSOrDSTS(t *testing.T) {
+	for _, authorityType := range []string{authority.ADFS, authority.DSTS} {
+		t.Run(authorityType, func(t *testing.T) {
+			leaf, key, x5c := assertionFixture(t)
+			signer := &pssRejectingSigner{key: key}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+
+			assertion, err := cred.JWT(context.Background(), assertionAuthParams(authorityType, false))
+			if err != nil {
+				t.Fatal(err)
+			}
+			header, _, signingString, sig := decodeAssertion(t, assertion)
+			if header["alg"] != "RS256" {
+				t.Errorf(`alg = %v, want "RS256"`, header["alg"])
+			}
+			if err := jwt.SigningMethodRS256.Verify(signingString, sig, &key.PublicKey); err != nil {
+				t.Fatalf("jwt.SigningMethodRS256 rejects the assertion: %v", err)
+			}
+			if signer.pssCalls != 0 {
+				t.Errorf("the signer got %d PSS requests, want 0: %s never signs PS256", signer.pssCalls, authorityType)
+			}
+			if signer.pkcs1Calls != 1 {
+				t.Errorf("the signer got %d PKCS #1 requests, want 1", signer.pkcs1Calls)
+			}
+		})
+
+		t.Run(authorityType+"/signing fails", func(t *testing.T) {
+			leaf, key, x5c := assertionFixture(t)
+			signer := &pssRejectingSigner{key: key, failPKCS1: true}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+
+			assertion, err := cred.JWT(context.Background(), assertionAuthParams(authorityType, false))
+			if err == nil {
+				t.Fatal("expected the signer's failure to be surfaced")
+			}
+			if assertion != "" {
+				t.Errorf("assertion = %q, want no token", assertion)
+			}
+			// one attempt, and the error must read as the RS256 failure it is
+			if signer.pkcs1Calls != 1 {
+				t.Errorf("the signer got %d PKCS #1 requests, want 1: there's nothing to fall back to", signer.pkcs1Calls)
+			}
+			if !strings.HasPrefix(err.Error(), "unable to sign JWT token: ") {
+				t.Errorf("error %q should keep the plain signing failure wording", err)
+			}
+			if strings.Contains(err.Error(), "PS256") {
+				t.Errorf("error %q must not blame PS256: %s never tries it", err, authorityType)
+			}
+			if !errors.Is(err, errNoPKCS1) {
+				t.Errorf("error %q should wrap the signer's error", err)
+			}
+		})
+	}
+}
+
+// TestJWTNoFallbackForExportableKey verifies the fallback can't fire for an exportable key. Go's
+// software RSA always supports PSS, so falling back there would only paper over a real problem, such
+// as a credential holding a key the JWT library can't use.
+func TestJWTNoFallbackForExportableKey(t *testing.T) {
+	leaf, key, x5c := assertionFixture(t)
+
+	t.Run("an *rsa.PrivateKey still signs PS256", func(t *testing.T) {
+		cred := &Credential{Cert: leaf, Key: key, X5c: x5c}
+		assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, false))
+		if err != nil {
+			t.Fatal(err)
+		}
+		header, _, signingString, sig := decodeAssertion(t, assertion)
+		if header["alg"] != "PS256" {
+			t.Errorf(`alg = %v, want "PS256"`, header["alg"])
+		}
+		wantThumbprint := sha256.Sum256(leaf.Raw)
+		if got := header["x5t#S256"]; got != base64.StdEncoding.EncodeToString(wantThumbprint[:]) {
+			t.Errorf("x5t#S256 = %v, want the SHA-256 thumbprint of the certificate", got)
+		}
+		if _, ok := header["x5t"]; ok {
+			t.Error("the PS256 assertion must carry x5t#S256, not x5t")
+		}
+		// verify strictly: jwt's PS256 VerifyOptions use PSSSaltLengthAuto, which accepts any salt
+		digest := sha256.Sum256([]byte(signingString))
+		opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256}
+		if err := rsa.VerifyPSS(&key.PublicKey, crypto.SHA256, digest[:], sig, opts); err != nil {
+			t.Fatalf("the assertion doesn't verify with jwt.SigningMethodPS256's salt length: %v", err)
+		}
+	})
+
+	t.Run("a signer without SignerOnly still fails", func(t *testing.T) {
+		// jwt's built-in PS256 rejects this key before any signing happens. The fallback must not
+		// rescue it by wrapping the key in a signer method the credential never asked for.
+		signer := &pssRejectingSigner{key: key}
+		cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
+		assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, false))
+		if err == nil {
+			t.Fatal("expected jwt's built-in method to reject a key that isn't an *rsa.PrivateKey")
+		}
+		if assertion != "" {
+			t.Errorf("assertion = %q, want no token", assertion)
+		}
+		if signer.pssCalls != 0 || signer.pkcs1Calls != 0 {
+			t.Errorf("the signer was used %d times, want 0: SignerOnly isn't set", signer.pssCalls+signer.pkcs1Calls)
+		}
+	})
+}
+
+// TestJWTSignerOnlyFallbackAlsoFails verifies a key store that can't do either algorithm reports both
+// failures, so the cause isn't hidden behind the fallback's.
+func TestJWTSignerOnlyFallbackAlsoFails(t *testing.T) {
+	leaf, key, x5c := assertionFixture(t)
+	signer := &pssRejectingSigner{key: key, failPKCS1: true}
+	cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+
+	assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, false))
+	if err == nil {
+		t.Fatal("expected an error when the signer can't perform either algorithm")
+	}
+	if assertion != "" {
+		t.Errorf("assertion = %q, want no token", assertion)
+	}
+	for _, want := range []string{"unable to sign JWT token", "PS256", "RS256", errNoPSS.Error(), errNoPKCS1.Error()} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+	if !errors.Is(err, errNoPKCS1) {
+		t.Errorf("error %q should wrap the fallback's error", err)
+	}
+	if signer.pssCalls != 1 {
+		t.Errorf("the signer got %d PSS requests, want 1", signer.pssCalls)
+	}
+	if signer.pkcs1Calls != 1 {
+		t.Errorf("the signer got %d PKCS #1 requests, want 1", signer.pkcs1Calls)
 	}
 }

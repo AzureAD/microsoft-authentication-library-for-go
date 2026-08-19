@@ -165,23 +165,47 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		signingMethod = method
 	}
 
-	token := jwt.NewWithClaims(signingMethod, claims)
-	token.Header = map[string]interface{}{
-		"alg":         signingMethod.Alg(),
-		"typ":         "JWT",
-		thumbprintKey: base64.StdEncoding.EncodeToString(thumbprint(c.Cert, signingMethod.Alg())),
+	// build assembles and signs the assertion. It's a function because the fallback below has to
+	// rebuild the whole thing rather than only re-sign: the algorithm determines the "alg" header,
+	// which header carries the thumbprint, and which hash that thumbprint uses.
+	build := func(method jwt.SigningMethod, thumbprintKey string) (string, error) {
+		token := jwt.NewWithClaims(method, claims)
+		token.Header = map[string]interface{}{
+			"alg":         method.Alg(),
+			"typ":         "JWT",
+			thumbprintKey: base64.StdEncoding.EncodeToString(thumbprint(c.Cert, method.Alg())),
+		}
+
+		if authParams.SendX5C {
+			token.Header["x5c"] = c.X5c
+		}
+
+		return token.SignedString(c.Key)
 	}
 
-	if authParams.SendX5C {
-		token.Header["x5c"] = c.X5c
+	assertion, err := build(signingMethod, thumbprintKey)
+	if err == nil {
+		return assertion, nil
 	}
-
-	assertion, err := token.SignedString(c.Key)
-	if err != nil {
+	if !c.SignerOnly || isADFSorDSTS {
+		// an exportable key is an *rsa.PrivateKey, and Go's software RSA always supports PSS, so
+		// there's nothing to fall back from. ADFS and dSTS already signed with RS256.
 		return "", fmt.Errorf("unable to sign JWT token: %w", err)
 	}
 
-	return assertion, nil
+	// The signer couldn't produce the PS256 signature. Some key providers (CNG, KeyGuard, HSMs,
+	// smart cards) can't do RSA-PSS at all, so try once more with PKCS #1 v1.5, as MSAL .NET does.
+	// Nothing else can realistically have failed above: the key is a crypto.Signer holding an RSA
+	// key, SHA-256 is always available, and the header and claims always marshal.
+	fallbackMethod, fallbackErr := newSignerMethod(jwt.SigningMethodRS256)
+	if fallbackErr == nil {
+		assertion, fallbackErr = build(fallbackMethod, "x5t")
+		if fallbackErr == nil {
+			return assertion, nil
+		}
+	}
+
+	return "", fmt.Errorf("unable to sign JWT token: signing with PS256 failed (%v) and so did falling back to RS256: %w", err, fallbackErr)
 }
 
 // thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.
