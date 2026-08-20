@@ -167,3 +167,57 @@ func TestFromAssertionBearerUnchanged(t *testing.T) {
 		t.Error("Bearer assertion request must not present a binding certificate")
 	}
 }
+
+// TestFromAssertionBindingCertSelectsJwtPoP pins that the client-assertion type follows the binding
+// certificate rather than the requested access-token type. An assertion bound to a certificate is a
+// jwt-pop assertion whether the token it buys is token_type=mtls_pop or an ordinary bearer token.
+//
+// This mirrors MSAL .NET's ClientAssertionDelegateCredential, which selects JwtPop when the
+// transport is mTLS *or* the ClientSignedAssertion carried a token-binding certificate. Keying it on
+// IsMtlsPoP alone left a functional gap against .NET: a certificate-bound FIC assertion could not be
+// exchanged for a plain access token.
+//
+// Transport routing is deliberately excluded: the endpoint stays the ordinary token endpoint and no
+// certificate is presented, because which transport to use is modelled separately from the
+// client-authentication mode. Deciding both here would create two competing mechanisms for one
+// decision.
+func TestFromAssertionBindingCertSelectsJwtPoP(t *testing.T) {
+	cert := selfSignedTLSCert(t)
+	authParams := authority.AuthParams{
+		Endpoints:       testAuthorityEndpoints,
+		ClientID:        "clientID",
+		Scopes:          []string{"scope"},
+		IsMtlsPoP:       false,
+		MtlsBindingCert: cert,
+	}
+	const assertion = "cert-bound-fic-assertion"
+
+	wantQV := url.Values{
+		grantType:               []string{grant.ClientCredential},
+		"client_assertion_type": []string{grant.ClientAssertionPoP},
+		"client_assertion":      []string{assertion},
+		clientID:                []string{"clientID"},
+		clientInfo:              []string{clientInfoVal},
+	}
+	addScopeQueryParam(wantQV, authParams)
+
+	fake := &fakeURLCaller{}
+	client := Client{Comm: fake, testing: true}
+
+	if _, err := client.FromAssertion(context.Background(), authParams, assertion); err != nil {
+		t.Fatalf("FromAssertion() error: %v", err)
+	}
+	if err := fake.compare(authParams.Endpoints.TokenEndpoint, wantQV); err != nil {
+		t.Errorf("FromAssertion() request mismatch: %v", err)
+	}
+	if got := fake.gotQV.Get("client_assertion_type"); got != grant.ClientAssertionPoP {
+		t.Errorf("client_assertion_type = %q, want %q (jwt-pop): a certificate-bound assertion stays jwt-pop even when the requested token is not certificate-bound",
+			got, grant.ClientAssertionPoP)
+	}
+	if _, ok := fake.gotQV["token_type"]; ok {
+		t.Error("this request did not ask for a certificate-bound token, so it must not send token_type")
+	}
+	if fake.gotCert != nil {
+		t.Error("the assertion type must not drag transport routing with it; that is modelled separately")
+	}
+}

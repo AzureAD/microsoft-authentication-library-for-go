@@ -153,9 +153,10 @@ type AssertionRequestOptions = exported.AssertionRequestOptions
 // paired: nothing can mismatch an assertion with a certificate it isn't bound to.
 //
 // BindingCertificate may be nil, in which case the binding certificate for an mTLS
-// proof-of-possession request is resolved exactly as it is for a plain assertion credential
-// ([WithMtlsBindingCertificate] / [WithMtlsBindingTLSCertificate], then the client's own
-// certificate credential).
+// proof-of-possession request is resolved from the client's own certificate credential, if it has
+// one. [WithMtlsBindingCertificate] and [WithMtlsBindingTLSCertificate] cannot be used to supply it:
+// combining an explicit certificate with this credential is an error, because it would leave the
+// assertion and the certificate free to disagree.
 type SignedAssertion = exported.SignedAssertion
 
 // Credential represents the credential used in confidential client flows.
@@ -260,14 +261,19 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 // MSAL invokes the callback at most once per token request, and never when the request is served
 // from the cache without it. Because the binding certificate partitions the token cache and selects
 // the mutual-TLS connection, an mTLS proof-of-possession request resolves the callback before the
-// cache is consulted; requests that don't need the certificate (bearer client credentials,
-// on-behalf-of, or an mTLS request given an explicit binding certificate) invoke it only when a
-// token request is actually sent, exactly like [NewCredFromAssertionCallback].
+// cache is consulted; requests that don't need the certificate (bearer client credentials or
+// on-behalf-of) invoke it only when a token request is actually sent, exactly like
+// [NewCredFromAssertionCallback].
 //
-// A SignedAssertion whose BindingCertificate is nil is treated like a plain assertion: the binding
-// certificate, if one is needed, is resolved from [WithMtlsBindingCertificate],
-// [WithMtlsBindingTLSCertificate], or the client's own certificate credential. An explicitly
-// supplied binding certificate always takes precedence over the callback's.
+// The callback must return a non-empty assertion; an empty or whitespace-only one is rejected
+// locally rather than sent as a malformed token request.
+//
+// This credential cannot be combined with [WithMtlsBindingCertificate] or
+// [WithMtlsBindingTLSCertificate]; supplying both returns an error. An explicit certificate would
+// replace the callback's while the assertion still came from the callback, which is precisely the
+// assertion/certificate mismatch this credential exists to prevent. A SignedAssertion whose
+// BindingCertificate is nil falls back to the client's own certificate credential, if it has one,
+// and otherwise fails with guidance.
 func NewCredFromSignedAssertionCallback(callback func(context.Context, AssertionRequestOptions) (SignedAssertion, error)) Credential {
 	return Credential{signedAssertionCallback: callback}
 }
@@ -1222,7 +1228,8 @@ func (mtlsBindingTLSCertOption) mtlsPoPOption() {}
 // the assertion with client_assertion_type set to the jwt-pop (certificate-bound) value.
 //
 // For a client created with [NewCredFromCert] the binding certificate is inferred from the credential
-// and this option is unnecessary. The certificate is surfaced on the result as
+// and this option is unnecessary. It cannot be used with a [NewCredFromSignedAssertionCallback]
+// client, which supplies its own paired certificate. The certificate is surfaced on the result as
 // [AuthResult.BindingCertificate], a *tls.Certificate carrying the parsed leaf and the private key, so
 // the caller can present the same certificate to the resource. To pass that value straight back in,
 // use [WithMtlsBindingTLSCertificate] rather than taking it apart.
@@ -1240,12 +1247,15 @@ func WithMtlsBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey
 //	    confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingTLSCertificate(leg1.BindingCertificate)))
 //
 // cert must be non-nil, carry at least one DER certificate in Certificate, and carry a PrivateKey
-// implementing crypto.Signer — the key may be non-exportable (KeyGuard, CNG, an HSM), because
-// crypto/tls only ever asks it to sign. cert is not retained: MSAL copies what it needs, so later
-// mutation of the caller's value can't race with an in-flight or concurrent acquisition.
+// implementing crypto.Signer whose public key matches the certificate in Certificate[0] — the key
+// may be non-exportable (KeyGuard, CNG, an HSM), because crypto/tls only ever asks it to sign. If
+// Leaf is set it must be that same certificate. cert is not retained: MSAL deep-copies what it
+// needs, so later mutation of the caller's value (including of the DER bytes themselves) can't race
+// with an in-flight or concurrent acquisition.
 //
 // Prefer [NewCredFromSignedAssertionCallback] when the assertion and the certificate come from the
-// same place; it keeps them paired instead of routing them through two separate options.
+// same place; it keeps them paired instead of routing them through two separate options. The two are
+// mutually exclusive: this option cannot be passed on a client built with that credential.
 func WithMtlsBindingTLSCertificate(cert *tls.Certificate) MtlsPoPOption {
 	return mtlsBindingTLSCertOption{cert: cert}
 }
@@ -1259,10 +1269,13 @@ func WithMtlsBindingTLSCertificate(cert *tls.Certificate) MtlsPoPOption {
 // For a [NewCredFromCert] client the binding certificate is inferred from the credential. For an
 // assertion credential (for example FIC leg 2) pass [WithMtlsBindingCertificate] or
 // [WithMtlsBindingTLSCertificate] to supply it, or use [NewCredFromSignedAssertionCallback] to have
-// the credential's callback supply it alongside the assertion. An explicitly passed certificate wins
-// over one from the callback. The result exposes the certificate via [AuthResult.BindingCertificate]
-// — a *tls.Certificate carrying the parsed leaf and the private key, ready to drop into
-// tls.Config.Certificates — and its thumbprint via [AuthResult.BindingCertificateThumbprint].
+// the credential's callback supply it alongside the assertion. Those are alternatives, not a
+// precedence: passing an explicit certificate to a [NewCredFromSignedAssertionCallback] client is an
+// error, because the callback's assertion is bound to the callback's certificate and substituting
+// another one silently breaks that pairing. The result exposes the certificate via
+// [AuthResult.BindingCertificate] — a *tls.Certificate carrying the parsed leaf and the private key,
+// ready to drop into tls.Config.Certificates — and its thumbprint via
+// [AuthResult.BindingCertificateThumbprint].
 //
 // mTLS PoP is app-only: it is available on [Client.AcquireTokenByCredential] (the client credentials
 // flow) only, because the binding certificate authenticates the application, not a user, so a
@@ -1327,16 +1340,39 @@ func WithMtlsProofOfPossession(opts ...MtlsPoPOption) interface {
 	}
 }
 
+// publicKeyEqual is the Equal method that every standard-library public key type has implemented
+// since Go 1.15: *rsa.PublicKey, *ecdsa.PublicKey and ed25519.PublicKey all satisfy it. Comparing
+// through it rather than type-asserting to *rsa.PublicKey (as newTLSBindingCertificate does) keeps
+// the check agnostic to the key algorithm, which matters because a binding certificate's private
+// key may be an opaque crypto.Signer — KeyGuard, CNG, an HSM — whose concrete type MSAL never sees.
+type publicKeyEqual interface {
+	Equal(crypto.PublicKey) bool
+}
+
 // validBindingCertificate checks that cert can actually perform a mutual-TLS handshake and returns a
 // copy of it with Leaf populated. Everything downstream — the x5t#S256 that partitions the cache,
 // the per-thumbprint mTLS client, crypto/tls itself — assumes those invariants, so a certificate
 // that violates them must be rejected here rather than becoming a nil dereference or a handshake
 // that fails with an opaque error.
 //
+// The private key is required to match the leaf's public key, the same invariant
+// newTLSBindingCertificate enforces when it assembles a certificate from a chain and a key.
+// Without it a mismatched *tls.Certificate passes local validation and fails much later as an
+// opaque TLS handshake error from the server.
+//
+// Both the match and the returned Leaf are derived from Certificate[0] — the entry crypto/tls
+// actually presents on the wire — rather than from the caller's Leaf field, which may name a
+// different certificate. A caller-supplied Leaf that disagrees with Certificate[0] is rejected
+// outright: MSAL takes the cache-partitioning x5t#S256 and the authentication scheme's key ID from
+// Leaf, so tolerating the disagreement would bind the token to one certificate while keying it
+// under another.
+//
 // The returned value is a copy for the same reason bindingCertWithLeaf copies in
 // apps/internal/base: MSAL retains the binding certificate in a per-thumbprint mTLS client cache and
 // hands it back on AuthResult, so writing to the caller's struct (or reading it later) races with
-// concurrent acquisitions.
+// concurrent acquisitions. The copy is deep — every DER entry is copied, not just the outer slice —
+// because a caller that reuses its buffers would otherwise be able to rewrite the bytes of the
+// certificate MSAL has retained.
 func validBindingCertificate(cert *tls.Certificate) (*tls.Certificate, error) {
 	if cert == nil {
 		return nil, errors.New("binding certificate is nil")
@@ -1347,18 +1383,30 @@ func validBindingCertificate(cert *tls.Certificate) (*tls.Certificate, error) {
 	if cert.PrivateKey == nil {
 		return nil, errors.New("binding certificate has no private key, so it cannot be presented on a TLS handshake")
 	}
-	if _, ok := cert.PrivateKey.(crypto.Signer); !ok {
+	signer, ok := cert.PrivateKey.(crypto.Signer)
+	if !ok {
 		return nil, fmt.Errorf("binding certificate private key of type %T does not implement crypto.Signer", cert.PrivateKey)
 	}
 	out := *cert
-	out.Certificate = append([][]byte(nil), cert.Certificate...)
-	if out.Leaf == nil {
-		leaf, err := x509.ParseCertificate(out.Certificate[0])
-		if err != nil {
-			return nil, fmt.Errorf("binding certificate leaf could not be parsed: %w", err)
-		}
-		out.Leaf = leaf
+	out.Certificate = make([][]byte, len(cert.Certificate))
+	for i, der := range cert.Certificate {
+		out.Certificate[i] = append([]byte(nil), der...)
 	}
+	leaf, err := x509.ParseCertificate(out.Certificate[0])
+	if err != nil {
+		return nil, fmt.Errorf("binding certificate leaf could not be parsed: %w", err)
+	}
+	if cert.Leaf != nil && !cert.Leaf.Equal(leaf) {
+		return nil, errors.New("binding certificate Leaf is not the certificate in Certificate[0]: the handshake would present one certificate while the token was bound and cached under the other")
+	}
+	certKey, ok := leaf.PublicKey.(publicKeyEqual)
+	if !ok {
+		return nil, fmt.Errorf("binding certificate public key of type %T cannot be compared with the private key", leaf.PublicKey)
+	}
+	if !certKey.Equal(signer.Public()) {
+		return nil, errors.New("binding certificate private key does not match the public key of the certificate it would present")
+	}
+	out.Leaf = leaf
 	return &out, nil
 }
 
@@ -1398,10 +1446,10 @@ func newTLSBindingCertificate(certs []*x509.Certificate, key crypto.PrivateKey) 
 	return &tlsCert, nil
 }
 
-// resolveMtlsBindingCert returns the binding certificate for an mTLS PoP request: the explicit one
-// from WithMtlsBindingCertificate/WithMtlsBindingTLSCertificate (or, having taken precedence over
-// it, one supplied by a signed-assertion callback) if there is one, otherwise one derived from a
-// certificate credential (NewCredFromCert).
+// resolveMtlsBindingCert returns the binding certificate for an mTLS PoP request: the one supplied
+// explicitly by WithMtlsBindingCertificate/WithMtlsBindingTLSCertificate or by a signed-assertion
+// callback (never both — see errMtlsPoPSignedAssertionWithExplicitCert) if there is one, otherwise
+// one derived from a certificate credential (NewCredFromCert).
 func (cca Client) resolveMtlsBindingCert(explicit *tls.Certificate) (*tls.Certificate, error) {
 	if explicit != nil {
 		return explicit, nil
@@ -1439,16 +1487,20 @@ func (cca Client) resolveMtlsBindingCert(explicit *tls.Certificate) (*tls.Certif
 // receives the same AssertionRequestOptions.TokenEndpoint it would see at body-build time; the
 // endpoints are cached by oauth.Client, so nothing is fetched twice.
 //
-// The callback is not pulled forward when it isn't needed: with an explicit binding certificate, or
-// on any non-mTLS request, the certificate is already known, so the callback stays lazy and runs
-// only if a token request is actually sent (never on a cache hit), exactly as a plain assertion
-// callback does.
+// The callback is not pulled forward on a non-mTLS request: nothing there needs a certificate ahead
+// of the request body, so the callback stays lazy and runs only if a token request is actually sent
+// (never on a cache hit), exactly as a plain assertion callback does. There is no
+// explicit-certificate exception to this, because a signed-assertion credential combined with an
+// explicit binding certificate is rejected outright; see errMtlsPoPSignedAssertionWithExplicitCert.
 func (cca Client) prepareMtlsPoP(ctx context.Context, authParams authority.AuthParams, explicit *tls.Certificate) (*accesstokens.Credential, *tls.Certificate, error) {
 	cred := cca.cred
 	if err := validateMtlsCredential(cred, explicit); err != nil {
 		return nil, nil, err
 	}
-	if explicit == nil && cred != nil && cred.SignedAssertionCallback != nil {
+	// validateMtlsCredential has already rejected a signed-assertion credential combined with an
+	// explicit certificate, so reaching this branch means explicit is nil and the callback is the
+	// only source of a binding certificate.
+	if cred != nil && cred.SignedAssertionCallback != nil {
 		if authParams.Endpoints.TokenEndpoint == "" {
 			endpoints, err := cca.base.Token.ResolveEndpoints(ctx, authParams.AuthorityInfo, "")
 			if err != nil {
@@ -1459,6 +1511,13 @@ func (cca Client) prepareMtlsPoP(ctx context.Context, authParams authority.AuthP
 		signed, err := cred.SignedAssertion(ctx, authParams)
 		if err != nil {
 			return nil, nil, err
+		}
+		// Reject an empty assertion here rather than sending it: an empty client_assertion is
+		// rejected remotely as a malformed token request, which tells the caller nothing about
+		// which of their callbacks misbehaved. MSAL .NET validates the same credential result
+		// locally and returns InvalidClientAssertion.
+		if strings.TrimSpace(signed.Assertion) == "" {
+			return nil, nil, errors.New("the signed-assertion callback returned an empty client assertion")
 		}
 		assertion := signed.Assertion
 		perRequest := *cred
@@ -1493,6 +1552,28 @@ var errMtlsPoPWithAuthnScheme = errors.New(
 		"and result formatting; pass only one of the two",
 )
 
+// errMtlsPoPSignedAssertionWithExplicitCert is returned when a caller combines an explicit binding
+// certificate with a signed-assertion credential.
+//
+// The point of [NewCredFromSignedAssertionCallback] is that the assertion and the certificate it is
+// bound to come out of one callback as one atomic pair. An explicit certificate breaks that: the
+// callback stays lazy and its certificate is discarded, so a rotation between the two can leave an
+// assertion bound to certificate A being presented on a handshake using certificate B — the exact
+// mismatch this credential exists to prevent, silently.
+//
+// MSAL .NET has no explicit-binding-certificate option to defer to: the certificate comes solely
+// from ClientSignedAssertion.TokenBindingCertificate, and a signed-assertion credential that returns
+// none throws MtlsCertificateNotProvided. There is therefore no precedence rule to match, and
+// rejecting the combination is what keeps the pairing atomic.
+var errMtlsPoPSignedAssertionWithExplicitCert = errors.New(
+	"WithMtlsBindingCertificate/WithMtlsBindingTLSCertificate cannot be combined with a " +
+		"NewCredFromSignedAssertionCallback credential: that credential supplies the binding certificate " +
+		"together with the assertion bound to it, and an explicitly supplied certificate would replace it " +
+		"while the assertion still came from the callback, breaking the pairing; return the certificate " +
+		"from the callback's SignedAssertion instead, or use NewCredFromAssertionCallback with the " +
+		"explicit certificate",
+)
+
 // validateMtlsCredential rejects credential kinds that can't perform mTLS proof-of-possession.
 func validateMtlsCredential(cred *accesstokens.Credential, explicitBindingCert *tls.Certificate) error {
 	if cred == nil {
@@ -1503,6 +1584,9 @@ func validateMtlsCredential(cred *accesstokens.Credential, explicitBindingCert *
 	}
 	if cred.TokenProvider != nil {
 		return errors.New("mTLS proof-of-possession is not supported with a token-provider credential")
+	}
+	if cred.SignedAssertionCallback != nil && explicitBindingCert != nil {
+		return errMtlsPoPSignedAssertionWithExplicitCert
 	}
 	// A signed-assertion credential carries its own binding certificate, so it needs no explicit one.
 	if cred.AssertionCallback != nil && cred.SignedAssertionCallback == nil && explicitBindingCert == nil {

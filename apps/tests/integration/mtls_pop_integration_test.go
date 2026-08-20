@@ -263,6 +263,10 @@ func TestCredential_X509_Output_Bearer(t *testing.T) {
 // jwt-pop) together with the same binding certificate to obtain the final mtls_pop token, which is
 // then presented to Microsoft Graph over mTLS to prove it is accepted by a real resource.
 //
+// Leg 2 uses NewCredFromSignedAssertionCallback, the paired handoff API, so this test covers the
+// exact path applications are meant to use to carry leg 1's assertion and certificate forward
+// together rather than through two independent options.
+//
 // Both legs use the SN/I allow-listed app in the MSI team tenant and the global (non-regional)
 // endpoint, which is the only configuration ESTS enables for mTLS PoP. Like the SNI tests, both legs
 // fail closed on an ESTS token_type downgrade (mtls_pop -> Bearer) rather than treating it as
@@ -305,11 +309,16 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 	}
 
 	// Leg 2: federated assertion (jwt-pop) + the SAME binding certificate -> final mtls_pop token.
-	// The certificate is carried forward exactly as leg 1 returned it, so a regression that strips
-	// the private key or swaps the certificate fails here rather than silently rebinding.
-	leg2Cred := confidential.NewCredFromAssertionCallback(
-		func(context.Context, confidential.AssertionRequestOptions) (string, error) {
-			return leg1.AccessToken, nil
+	// The assertion and the certificate are handed over as one SignedAssertion, which is the API
+	// that makes the pairing atomic: a rotation between the two legs can't pair one leg's assertion
+	// with another leg's certificate, and a regression that strips the private key or swaps the
+	// certificate fails here rather than silently rebinding.
+	leg2Cred := confidential.NewCredFromSignedAssertionCallback(
+		func(context.Context, confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+			return confidential.SignedAssertion{
+				Assertion:          leg1.AccessToken,
+				BindingCertificate: leg1.BindingCertificate,
+			}, nil
 		},
 	)
 	leg2App, err := confidential.New(sniAllowlistedAuthority, sniAllowlistedAppID, leg2Cred)
@@ -317,7 +326,7 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 		t.Fatalf("leg 2 confidential.New() failed: %s", errors.Verbose(err))
 	}
 	final, err := leg2App.AcquireTokenByCredential(ctx, []string{graphMtlsScope},
-		confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingTLSCertificate(leg1.BindingCertificate)),
+		confidential.WithMtlsProofOfPossession(),
 	)
 	if err != nil {
 		t.Fatalf("leg 2 AcquireTokenByCredential() with mTLS PoP failed: %s", errors.Verbose(err))

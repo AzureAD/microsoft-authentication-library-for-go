@@ -324,10 +324,19 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 		return TokenResponse{}, err
 	}
 	qv.Set(grantType, grant.ClientCredential)
-	// For mTLS proof-of-possession the client assertion is certificate-bound: signal it with the
-	// jwt-pop assertion type and present the binding certificate on the TLS handshake (see doTokenResp).
+	// A certificate-bound client assertion is signalled with the jwt-pop assertion type and the
+	// binding certificate is presented on the TLS handshake (see doTokenResp).
+	//
+	// The assertion type follows the binding certificate, not the requested access-token type: an
+	// assertion bound to a certificate is a jwt-pop assertion whether the token it buys is
+	// token_type=mtls_pop or an ordinary Bearer token. This mirrors MSAL .NET
+	// (ClientAssertionDelegateCredential.cs), which selects JwtPop when the transport is mTLS *or*
+	// the ClientSignedAssertion carried a token-binding certificate, and JwtBearer otherwise. The
+	// second arm is unreachable through today's public API — every caller that sets MtlsBindingCert
+	// also sets IsMtlsPoP — and becomes reachable end-to-end once Bearer-over-mTLS lands and sets a
+	// binding certificate without requesting an mtls_pop token.
 	assertionType := grant.ClientAssertion
-	if authParameters.IsMtlsPoP {
+	if authParameters.IsMtlsPoP || authParameters.MtlsBindingCert != nil {
 		assertionType = grant.ClientAssertionPoP
 	}
 	qv.Set("client_assertion_type", assertionType)

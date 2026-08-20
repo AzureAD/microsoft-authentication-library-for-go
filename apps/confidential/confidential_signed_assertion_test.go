@@ -7,6 +7,8 @@ import (
 	"bytes"
 	"context"
 	"crypto"
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/rsa"
 	"crypto/tls"
@@ -286,6 +288,7 @@ func TestWithMtlsBindingTLSCertificateCopiesInput(t *testing.T) {
 // produce a broken handshake.
 func TestWithMtlsBindingTLSCertificateRejectsUnusableCerts(t *testing.T) {
 	leaf, key := newSelfSignedCert(t, "binding-cert")
+	other, otherKey := newSelfSignedCert(t, "unrelated-cert")
 	for _, test := range []struct {
 		name string
 		cert *tls.Certificate
@@ -298,6 +301,15 @@ func TestWithMtlsBindingTLSCertificateRejectsUnusableCerts(t *testing.T) {
 		{"nil private key", &tls.Certificate{Certificate: [][]byte{leaf.Raw}, Leaf: leaf}, "no private key"},
 		{"key is not a signer", &tls.Certificate{Certificate: [][]byte{leaf.Raw}, Leaf: leaf, PrivateKey: "not-a-key"}, "crypto.Signer"},
 		{"unparsable leaf", &tls.Certificate{Certificate: [][]byte{[]byte("not DER")}, PrivateKey: key}, "could not be parsed"},
+		// The key belongs to a different certificate. Without a public-key comparison this passes
+		// local validation and fails much later as an opaque TLS handshake error from the server.
+		{"key does not match the certificate", &tls.Certificate{Certificate: [][]byte{leaf.Raw}, Leaf: leaf, PrivateKey: otherKey}, "does not match the public key"},
+		// Leaf names a different certificate than the one that would be presented. MSAL takes the
+		// cache-partitioning x5t#S256 from Leaf and the wire certificate from Certificate[0], so
+		// tolerating this binds the token to one certificate and keys it under another. It also
+		// makes Leaf useless as the source of truth for the key comparison above: here the key
+		// matches Leaf but not Certificate[0].
+		{"Leaf disagrees with Certificate[0]", &tls.Certificate{Certificate: [][]byte{leaf.Raw}, Leaf: other, PrivateKey: otherKey}, "Leaf is not the certificate in Certificate[0]"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			certs, credKey := loadTestCert(t)
@@ -350,6 +362,141 @@ func TestWithMtlsBindingTLSCertificateAcceptsUnparsedLeaf(t *testing.T) {
 	}
 	if !res.BindingCertificate.Leaf.Equal(leaf) {
 		t.Error("AuthResult.BindingCertificate.Leaf is not the supplied certificate")
+	}
+}
+
+// TestValidBindingCertificateDeepCopiesDER pins the copy depth. Copying only the outer [][]byte
+// leaves every DER entry's backing array shared with the caller, so an application that reuses its
+// buffers can rewrite the certificate MSAL has retained — and race with an in-flight acquisition on
+// it, since the same value is held in the per-thumbprint mTLS client cache and handed back on
+// AuthResult.
+//
+// The mutation is deliberately made *inside* existing entries rather than by replacing an entry: the
+// outer copy alone already defends against replacement, so a replacement test would pass without a
+// deep copy and prove nothing.
+func TestValidBindingCertificateDeepCopiesDER(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "deep-copy-binding-cert")
+	intermediate, _ := newSelfSignedCert(t, "deep-copy-intermediate")
+	wantLeafDER := append([]byte(nil), leaf.Raw...)
+	wantIntermediateDER := append([]byte(nil), intermediate.Raw...)
+	caller := &tls.Certificate{
+		Certificate: [][]byte{append([]byte(nil), leaf.Raw...), append([]byte(nil), intermediate.Raw...)},
+		PrivateKey:  key,
+	}
+
+	retained, err := validBindingCertificate(caller)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	caller.Certificate[0][0] ^= 0xFF
+	caller.Certificate[1][0] ^= 0xFF
+
+	// Guard against a vacuous pass: if the writes above didn't change anything, the comparisons
+	// below succeed no matter how shallow the copy is.
+	if bytes.Equal(caller.Certificate[0], wantLeafDER) || bytes.Equal(caller.Certificate[1], wantIntermediateDER) {
+		t.Fatal("the test did not actually mutate the caller's DER bytes, so it proves nothing")
+	}
+	if !bytes.Equal(retained.Certificate[0], wantLeafDER) {
+		t.Error("mutating bytes in the caller's leaf entry changed the certificate MSAL retained")
+	}
+	if !bytes.Equal(retained.Certificate[1], wantIntermediateDER) {
+		t.Error("mutating bytes in the caller's intermediate entry changed the certificate MSAL retained: entries beyond the leaf are still shared")
+	}
+}
+
+// TestWithMtlsBindingTLSCertificateDeepCopiesDER is the end-to-end half of the property above: the
+// deep copy is what actually reaches the TLS handshake. If the DER were shared, corrupting it after
+// the option is built either presents a different certificate or fails the handshake outright.
+func TestWithMtlsBindingTLSCertificateDeepCopiesDER(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "in-place-mutated-binding-cert")
+	// tlsCertFor aliases leaf.Raw; copy it so the mutation below can't corrupt the certificate the
+	// assertion compares against.
+	caller := &tls.Certificate{Certificate: [][]byte{append([]byte(nil), leaf.Raw...)}, PrivateKey: key, Leaf: leaf}
+
+	srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
+	cred := NewCredFromAssertionCallback(func(context.Context, AssertionRequestOptions) (string, error) {
+		return "assertion", nil
+	})
+	client := handshakeTestClient(t, cred, srv)
+
+	opt := WithMtlsProofOfPossession(WithMtlsBindingTLSCertificate(caller))
+	caller.Certificate[0][0] ^= 0xFF
+
+	if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope, opt); err != nil {
+		t.Fatalf("MSAL presented DER the caller mutated after the option was built: %v", err)
+	}
+	if got := srv.presented(t); !got.Equal(leaf) {
+		t.Errorf("handshake presented %q, want the original certificate", got.Subject.CommonName)
+	}
+}
+
+// TestSignedAssertionCallbackMismatchedKeyRejected is the callback-path counterpart of the
+// "key does not match the certificate" case in TestWithMtlsBindingTLSCertificateRejectsUnusableCerts.
+// A callback that pairs a certificate with the wrong key must be rejected with an error naming the
+// callback, before any handshake, rather than surfacing as an opaque TLS error from the server.
+func TestSignedAssertionCallbackMismatchedKeyRejected(t *testing.T) {
+	leaf, _ := newSelfSignedCert(t, "mismatched-binding-cert")
+	_, otherKey := newSelfSignedCert(t, "unrelated-key-holder")
+	srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("unused", 3600))
+	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+		return SignedAssertion{
+			Assertion:          "assertion",
+			BindingCertificate: &tls.Certificate{Certificate: [][]byte{leaf.Raw}, Leaf: leaf, PrivateKey: otherKey},
+		}, nil
+	})
+	client := handshakeTestClient(t, cred, srv)
+
+	_, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithMtlsProofOfPossession())
+	if err == nil {
+		t.Fatal("a binding certificate whose key doesn't match it must be rejected")
+	}
+	if !strings.Contains(err.Error(), "signed-assertion callback") || !strings.Contains(err.Error(), "does not match the public key") {
+		t.Errorf("error %q does not identify the callback's mismatched key as the problem", err)
+	}
+	if got := srv.tokenCalls(); got != 0 {
+		t.Errorf("token endpoint called %d times, want 0: the mismatch must be caught before the handshake", got)
+	}
+}
+
+// TestWithMtlsBindingTLSCertificateAcceptsECDSAKey is the control for the key/certificate comparison:
+// it must not have narrowed the accepted key types. newTLSBindingCertificate compares RSA moduli
+// directly, which would reject every non-RSA key; validBindingCertificate compares through the Equal
+// method that all standard-library public key types implement, so an ECDSA binding certificate
+// completes a real handshake. This matters beyond ECDSA — the same code path carries opaque
+// KeyGuard/CNG/HSM signers, whose concrete key type MSAL never sees.
+func TestWithMtlsBindingTLSCertificateAcceptsECDSAKey(t *testing.T) {
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	tmpl := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: "ecdsa-binding-cert"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
+	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, key.Public(), key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
+	cred := NewCredFromAssertionCallback(func(context.Context, AssertionRequestOptions) (string, error) {
+		return "assertion", nil
+	})
+	client := handshakeTestClient(t, cred, srv)
+
+	if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope,
+		WithMtlsProofOfPossession(WithMtlsBindingTLSCertificate(tlsCertFor(leaf, key)))); err != nil {
+		t.Fatalf("an ECDSA binding certificate was rejected: %v", err)
+	}
+	if got := srv.presented(t); !got.Equal(leaf) {
+		t.Error("handshake did not present the ECDSA binding certificate")
 	}
 }
 
@@ -419,32 +566,49 @@ func TestSignedAssertionCallbackInvokedExactlyOnce(t *testing.T) {
 }
 
 // TestSignedAssertionCallbackNotInvokedOnCacheHit pins the other half of the invocation contract: a
-// token served from the cache must not pay for leg 1 again. Eager resolution buys a usable cache
-// key; it must not cost an invocation per call forever.
+// token served from the cache must not pay for leg 1 again.
+//
+// The demonstration is a bearer request, because that is the only request that doesn't need the
+// certificate: there the callback stays lazy exactly as NewCredFromAssertionCallback's does, so the
+// cached second acquisition never reaches it. An mTLS proof-of-possession request cannot show this —
+// the binding certificate partitions the cache, so it must be resolved, and the callback invoked,
+// before the cache can be read (see TestSignedAssertionCallbackCertificateKeysTheCache). Supplying
+// the certificate explicitly to skip that is no longer possible; it is rejected outright, see
+// TestSignedAssertionExplicitCertificateRejected.
 func TestSignedAssertionCallbackNotInvokedOnCacheHit(t *testing.T) {
 	leaf, key := newSelfSignedCert(t, "cached-binding-cert")
 	var calls int32
-	srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
 
+	tenant := "tenant"
+	lmo := "login.microsoftonline.com"
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
 		atomic.AddInt32(&calls, 1)
 		return SignedAssertion{Assertion: "assertion", BindingCertificate: tlsCertFor(leaf, key)}, nil
 	})
-	client := handshakeTestClient(t, cred, srv)
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("cached-token", "", "", "", 3600, 0)))
 	ctx := context.Background()
 
-	first, err := client.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
+	first, err := client.AcquireTokenByCredential(ctx, tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if first.Metadata.TokenSource != TokenSourceIdentityProvider {
 		t.Fatalf("first call TokenSource = %d, want the identity provider", first.Metadata.TokenSource)
 	}
+	if got := atomic.LoadInt32(&calls); got != 1 {
+		t.Fatalf("callback invoked %d times for the first acquisition, want 1", got)
+	}
 
-	// The binding certificate is supplied explicitly this time, so nothing needs the callback and
-	// the token cached under that certificate's thumbprint must come back without invoking it.
-	cached, err := client.AcquireTokenByCredential(ctx, tokenScope,
-		WithMtlsProofOfPossession(WithMtlsBindingTLSCertificate(tlsCertFor(leaf, key))))
+	// The mock has no responses queued, so a second token request would fail: the hit below is a
+	// real cache hit rather than a silently repeated network call.
+	cached, err := client.AcquireTokenByCredential(ctx, tokenScope)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -455,7 +619,7 @@ func TestSignedAssertionCallbackNotInvokedOnCacheHit(t *testing.T) {
 		t.Errorf("callback invoked %d times across two acquisitions, want 1: a cache hit must not re-run leg 1", got)
 	}
 	if cached.AccessToken != first.AccessToken {
-		t.Error("the cached token is not the one the callback's certificate was bound to")
+		t.Error("the cached token is not the one the first acquisition returned")
 	}
 }
 
@@ -524,10 +688,17 @@ func TestSignedAssertionCallbackCertificatePartitionsCache(t *testing.T) {
 	}
 }
 
-// TestSignedAssertionExplicitCertificateTakesPrecedence documents and pins the precedence rule: an
-// explicitly supplied binding certificate wins over the callback's, matching resolveMtlsBindingCert,
-// which has always preferred the explicit one.
-func TestSignedAssertionExplicitCertificateTakesPrecedence(t *testing.T) {
+// TestSignedAssertionExplicitCertificateRejected replaces the precedence rule this test used to pin.
+//
+// The old rule — an explicitly supplied binding certificate wins over the callback's — was unsafe.
+// The callback stayed lazy under it, so it could return an assertion bound to certificate A while
+// the handshake presented explicit certificate B, and its certificate was silently discarded: the
+// exact assertion/certificate mismatch NewCredFromSignedAssertionCallback exists to prevent. MSAL
+// .NET has no explicit-binding-certificate option to defer to (the certificate comes only from
+// ClientSignedAssertion.TokenBindingCertificate, and a signed-assertion credential that returns none
+// throws MtlsCertificateNotProvided), so there was no precedence to match. The combination is now
+// rejected, which keeps the pairing atomic.
+func TestSignedAssertionExplicitCertificateRejected(t *testing.T) {
 	callbackCert, callbackKey := newSelfSignedCert(t, "callback-cert")
 	explicitCert, explicitKey := newSelfSignedCert(t, "explicit-cert")
 
@@ -539,8 +710,10 @@ func TestSignedAssertionExplicitCertificateTakesPrecedence(t *testing.T) {
 		{"WithMtlsBindingCertificate", WithMtlsBindingCertificate([]*x509.Certificate{explicitCert}, explicitKey)},
 	} {
 		t.Run(test.name, func(t *testing.T) {
+			var calls int32
 			srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
 			cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+				atomic.AddInt32(&calls, 1)
 				return SignedAssertion{
 					Assertion:          "callback-assertion",
 					BindingCertificate: tlsCertFor(callbackCert, callbackKey),
@@ -548,65 +721,109 @@ func TestSignedAssertionExplicitCertificateTakesPrecedence(t *testing.T) {
 			})
 			client := handshakeTestClient(t, cred, srv)
 
-			res, err := client.AcquireTokenByCredential(context.Background(), tokenScope,
+			_, err := client.AcquireTokenByCredential(context.Background(), tokenScope,
 				WithMtlsProofOfPossession(test.opt))
-			if err != nil {
-				t.Fatal(err)
+			if err == nil {
+				t.Fatal("an explicit binding certificate combined with a signed-assertion credential must be rejected")
 			}
-			got := srv.presented(t)
-			if got.Equal(callbackCert) {
-				t.Fatal("the callback's certificate won; an explicitly supplied certificate must take precedence")
+			if !errors.Is(err, errMtlsPoPSignedAssertionWithExplicitCert) {
+				t.Fatalf("error = %v, want errMtlsPoPSignedAssertionWithExplicitCert", err)
 			}
-			if !got.Equal(explicitCert) {
-				t.Fatalf("handshake presented %q, want the explicit certificate", got.Subject.CommonName)
+			// The error has to name both halves of the combination, or the caller can't tell which
+			// of the two APIs to drop.
+			for _, want := range []string{test.name, "NewCredFromSignedAssertionCallback"} {
+				if !strings.Contains(err.Error(), want) {
+					t.Errorf("error %q does not name %s", err, want)
+				}
 			}
-			// The assertion still comes from the callback even though its certificate was ignored.
-			if body := srv.form(t); body.Get("client_assertion") != "callback-assertion" {
-				t.Errorf("client_assertion = %q, want the callback's assertion", body.Get("client_assertion"))
+			if got := atomic.LoadInt32(&calls); got != 0 {
+				t.Errorf("signed-assertion callback invoked %d times, want 0: the combination must be rejected before leg 1 runs", got)
 			}
-			if res.BindingCertificate == nil || !res.BindingCertificate.Leaf.Equal(explicitCert) {
-				t.Error("AuthResult.BindingCertificate is not the explicitly supplied certificate")
+			if got := srv.tokenCalls(); got != 0 {
+				t.Errorf("token endpoint called %d times, want 0", got)
 			}
 		})
 	}
 }
 
-// TestSignedAssertionNilBindingCertificateFallsBack covers a SignedAssertion that carries no
-// certificate: it must degrade to the ordinary resolution path rather than crash. With a certificate
-// credential the credential's own certificate is used; with nothing to fall back to the caller gets
-// an actionable error.
-func TestSignedAssertionNilBindingCertificateFallsBack(t *testing.T) {
-	t.Run("falls back to the credential certificate", func(t *testing.T) {
-		certs, key := loadTestCert(t)
-		// A credential that has both a certificate and a signed-assertion callback can only be built
-		// internally; toInternal reports the certificate first, so exercise the fallback through the
-		// resolution helper the acquisition uses.
-		srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
-		cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
-			return SignedAssertion{Assertion: "assertion"}, nil
-		})
-		client := handshakeTestClient(t, cred, srv)
-		// The client's credential has no certificate, so the nil binding certificate must surface as
-		// the ordinary "no certificate available" error, not a panic.
-		_, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithMtlsProofOfPossession())
-		if err == nil {
-			t.Fatal("expected an error when neither the callback nor the client supplies a certificate")
-		}
-		if !strings.Contains(err.Error(), "mTLS proof-of-possession requires") {
-			t.Errorf("error %q does not explain how to supply a binding certificate", err)
-		}
-
-		// The same nil certificate must fall back to an explicitly supplied one without complaint.
-		srv2 := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
-		client2 := handshakeTestClient(t, cred, srv2)
-		if _, err := client2.AcquireTokenByCredential(context.Background(), tokenScope,
-			WithMtlsProofOfPossession(WithMtlsBindingCertificate(certs, key))); err != nil {
-			t.Fatalf("a nil BindingCertificate must fall back to the explicit option: %v", err)
-		}
-		if got := srv2.presented(t); !got.Equal(certs[0]) {
-			t.Error("the fallback did not present the explicitly supplied certificate")
-		}
+// TestExplicitCertificateStillAllowedWithAssertionCallback is the control for the rejection above: it
+// applies only to NewCredFromSignedAssertionCallback. A plain assertion credential has no certificate
+// of its own, so an explicit one is the only way it can do mTLS proof-of-possession at all — the
+// legacy FIC leg-2 path — and must keep working.
+func TestExplicitCertificateStillAllowedWithAssertionCallback(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "legacy-leg2-cert")
+	srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
+	cred := NewCredFromAssertionCallback(func(context.Context, AssertionRequestOptions) (string, error) {
+		return "leg1-assertion", nil
 	})
+	client := handshakeTestClient(t, cred, srv)
+
+	if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope,
+		WithMtlsProofOfPossession(WithMtlsBindingTLSCertificate(tlsCertFor(leaf, key)))); err != nil {
+		t.Fatalf("a plain assertion credential with an explicit binding certificate must still work: %v", err)
+	}
+	if got := srv.presented(t); !got.Equal(leaf) {
+		t.Errorf("handshake presented %q, want the explicitly supplied certificate", got.Subject.CommonName)
+	}
+}
+
+// TestSignedAssertionEmptyAssertionRejected covers a callback that returns no assertion. MSAL must
+// reject it locally instead of memoizing it and sending an empty client_assertion, which the
+// identity provider rejects as a malformed token request — an error that says nothing about which
+// callback misbehaved. MSAL .NET validates the same credential result locally and returns
+// InvalidClientAssertion.
+func TestSignedAssertionEmptyAssertionRejected(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "empty-assertion-binding-cert")
+	for _, test := range []struct {
+		name, assertion string
+	}{
+		{"empty", ""},
+		{"whitespace only", " \t\r\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
+			cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+				return SignedAssertion{Assertion: test.assertion, BindingCertificate: tlsCertFor(leaf, key)}, nil
+			})
+			client := handshakeTestClient(t, cred, srv)
+
+			_, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithMtlsProofOfPossession())
+			if err == nil {
+				t.Fatal("an empty client assertion must be rejected before the request is sent")
+			}
+			if !strings.Contains(err.Error(), "empty client assertion") {
+				t.Errorf("error %q does not identify the empty assertion", err)
+			}
+			if got := srv.tokenCalls(); got != 0 {
+				t.Errorf("token endpoint called %d times, want 0: an empty assertion must not reach the network", got)
+			}
+		})
+	}
+}
+
+// TestSignedAssertionNilBindingCertificateErrors covers a SignedAssertion that carries no
+// certificate on a client that has none of its own: it must degrade to an actionable error rather
+// than crash. Supplying the missing certificate through WithMtlsBindingCertificate is not the
+// remedy — that combination is rejected, see TestSignedAssertionExplicitCertificateRejected — so the
+// callback has to return one.
+func TestSignedAssertionNilBindingCertificateErrors(t *testing.T) {
+	srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
+	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+		return SignedAssertion{Assertion: "assertion"}, nil
+	})
+	client := handshakeTestClient(t, cred, srv)
+	// The client's credential has no certificate, so the nil binding certificate must surface as
+	// the ordinary "no certificate available" error, not a panic.
+	_, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithMtlsProofOfPossession())
+	if err == nil {
+		t.Fatal("expected an error when neither the callback nor the client supplies a certificate")
+	}
+	if !strings.Contains(err.Error(), "mTLS proof-of-possession requires") {
+		t.Errorf("error %q does not explain how to supply a binding certificate", err)
+	}
+	if got := srv.tokenCalls(); got != 0 {
+		t.Errorf("token endpoint called %d times, want 0", got)
+	}
 }
 
 // TestSignedAssertionOpaqueSignerHandshake is the KeyGuard case: the binding certificate's key is a
