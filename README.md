@@ -229,21 +229,25 @@ leg1, _ := rmaApp.AcquireTokenByCredential(ctx,
     []string{"api://AzureADTokenExchange/.default"},
     confidential.WithMtlsProofOfPossession())
 
-// Leg 2: assertion (jwt-pop) + binding cert -> final mtls_pop token. leg1.BindingCertificate is a
-// *tls.Certificate carrying the private key, so it can be handed over without taking it apart.
-assertionCred := confidential.NewCredFromAssertionCallback(
-    func(context.Context, confidential.AssertionRequestOptions) (string, error) {
-        return leg1.AccessToken, nil
+// Leg 2: assertion (jwt-pop) + binding cert -> final mtls_pop token. One callback returns both, so
+// they stay paired: leg1.BindingCertificate is a *tls.Certificate carrying the private key, handed
+// over without taking it apart.
+assertionCred := confidential.NewCredFromSignedAssertionCallback(
+    func(context.Context, confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        return confidential.SignedAssertion{
+            Assertion:          leg1.AccessToken,
+            BindingCertificate: leg1.BindingCertificate,
+        }, nil
     })
 ficApp, _ := confidential.New(authority, ficClientID, assertionCred)
-final, _ := ficApp.AcquireTokenByCredential(ctx, scopes,
-    confidential.WithMtlsProofOfPossession(
-        confidential.WithMtlsBindingTLSCertificate(leg1.BindingCertificate)))
+final, _ := ficApp.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
 ```
 
-Routing the assertion through the credential and the certificate through an option lets the two drift
-apart across a certificate rotation. `NewCredFromSignedAssertionCallback` returns both from one
-callback, so they stay paired and leg 2 needs no binding-certificate option at all:
+`NewCredFromSignedAssertionCallback` is the only way to supply leg 2's binding certificate, and that
+is deliberate: routing the assertion through the credential and the certificate through a separate
+call-site option would let the two drift apart across a certificate rotation. MSAL .NET takes the
+same position, sourcing the certificate solely from `ClientSignedAssertion.TokenBindingCertificate`.
+Running leg 1 inside the callback keeps the pair fresh rather than capturing a single leg-1 result:
 
 ```go
 cred := confidential.NewCredFromSignedAssertionCallback(

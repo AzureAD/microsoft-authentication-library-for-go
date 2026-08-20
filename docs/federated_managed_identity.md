@@ -140,25 +140,38 @@ leg1, err := rmaClient.AcquireTokenByCredential(
 // parsed leaf and the private key (which may be a non-exportable crypto.Signer).
 
 // Leg 2: the federated assertion is presented as a jwt-pop client assertion, and the same binding
-// certificate is presented on the TLS handshake. Supply it with WithMtlsBindingTLSCertificate,
-// which takes leg 1's result as-is, because the leg-2 credential is an assertion callback that has
-// no certificate of its own.
+// certificate is presented on the TLS handshake. Because the leg-2 credential is an assertion that
+// has no certificate of its own, use NewCredFromSignedAssertionCallback: one callback returns leg 1's
+// assertion and the certificate it is bound to, so the two can never drift apart. There is no
+// call-site option for the certificate — see below.
+cred := confidential.NewCredFromSignedAssertionCallback(
+    func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        return confidential.SignedAssertion{
+            Assertion:          leg1.AccessToken,
+            BindingCertificate: leg1.BindingCertificate,
+        }, nil
+    })
+
+app, err := confidential.New(authority, clientID, cred)
 result, err := app.AcquireTokenByCredential(
     ctx,
     []string{"your-resource/.default"},
     confidential.WithFMIPath("YourFmiPath/CredentialPath"),
-    confidential.WithMtlsProofOfPossession(
-        confidential.WithMtlsBindingTLSCertificate(leg1.BindingCertificate)),
+    confidential.WithMtlsProofOfPossession(),
 )
 // result.Metadata.TokenType == "mtls_pop", bound to the leg-1 certificate thumbprint.
 ```
 
 ### Keeping the assertion and its binding certificate together
 
-Passing the assertion through the credential and the certificate through an option lets the two drift
-apart — a certificate rotation between leg 1 and leg 2 can pair one leg's assertion with another
-leg's certificate. `NewCredFromSignedAssertionCallback` closes that gap: one callback returns both,
-so they are always the pair leg 1 produced.
+Pairing the assertion and the certificate in one callback is the only supported form, and that is
+deliberate. Passing the assertion through the credential and the certificate through a separate
+call-site option would let the two drift apart — a certificate rotation between leg 1 and leg 2 could
+pair one leg's assertion with another leg's certificate. MSAL .NET takes the same position: the
+certificate comes solely from `ClientSignedAssertion.TokenBindingCertificate`, returned by the
+`WithClientAssertion` callback.
+
+Running leg 1 inside the callback keeps the pair fresh, rather than capturing a single leg-1 result:
 
 ```go
 cred := confidential.NewCredFromSignedAssertionCallback(
@@ -199,10 +212,10 @@ Notes:
 - The token endpoint is rewritten from `login.*` to `mtlsauth.*`; region is optional (global
   `mtlsauth.microsoft.com` is used when no region is configured).
 - A binding certificate is only needed on the assertion-authenticated leg (leg 2). For a leg
-  created with `NewCredFromCert` (leg 1) it is inferred from the credential. Supply it with
-  `WithMtlsBindingTLSCertificate` (a `*tls.Certificate`, what leg 1 returns),
-  `WithMtlsBindingCertificate` (a chain plus a private key), or `NewCredFromSignedAssertionCallback`.
-  An explicitly passed certificate takes precedence over one from the callback.
+  created with `NewCredFromCert` (leg 1) it is inferred from the credential. For leg 2 it comes from
+  the `SignedAssertion.BindingCertificate` returned by `NewCredFromSignedAssertionCallback`, which is
+  the only way to supply it: MSAL exposes no call-site option that would let the assertion and the
+  certificate be sourced separately.
 - Results expose the binding certificate as `BindingCertificate` (a `*tls.Certificate` carrying the
   parsed leaf and the private key, ready for `tls.Config.Certificates`) and its thumbprint as
   `BindingCertificateThumbprint()`.

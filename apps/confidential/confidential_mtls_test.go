@@ -176,22 +176,27 @@ func TestAcquireTokenByCredentialMtlsPoP(t *testing.T) {
 
 // TestAcquireTokenByCredentialFICMtlsPoP covers Scope 2 leg 2 (federated assertion -> final token
 // over mTLS PoP): the assertion is preserved but marked certificate-bound via
-// client_assertion_type=jwt-pop, the binding certificate is supplied by WithMtlsBindingCertificate,
-// and the result is mtls_pop.
+// client_assertion_type=jwt-pop, the binding certificate is supplied by the signed-assertion
+// callback alongside the assertion it is bound to, and the result is mtls_pop.
 func TestAcquireTokenByCredentialFICMtlsPoP(t *testing.T) {
 	certs, key := loadTestCert(t)
 	const leg1Token = "leg1-cert-bound-assertion"
-	cred := NewCredFromAssertionCallback(func(context.Context, AssertionRequestOptions) (string, error) {
-		return leg1Token, nil
+	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+		return SignedAssertion{
+			Assertion:          leg1Token,
+			BindingCertificate: &tls.Certificate{Certificate: [][]byte{certs[0].Raw}, PrivateKey: key, Leaf: certs[0]},
+		}, nil
 	})
 	tenant := "tenant"
 	lmo := "login.microsoftonline.com"
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	mtlsMock := mock.NewClient()
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
-		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		// Discovery is answered by URL rather than in a fixed order: resolving the signed-assertion
+		// callback moves endpoint resolution ahead of the cache read, which reverses the order of
+		// the two discovery calls.
+		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
+		WithMtlsHTTPClient(mockMtlsFactory(mtlsMock)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -200,8 +205,7 @@ func TestAcquireTokenByCredentialFICMtlsPoP(t *testing.T) {
 
 	var gotURL *url.URL
 	var gotBody url.Values
-	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-	mockClient.AppendResponse(
+	mtlsMock.AppendResponse(
 		mock.WithBody(mtlsPoPTokenBody("final-mtls-token", 3600)),
 		mock.WithCallback(func(r *http.Request) {
 			gotURL = r.URL
@@ -210,8 +214,7 @@ func TestAcquireTokenByCredentialFICMtlsPoP(t *testing.T) {
 		}),
 	)
 
-	res, err := client.AcquireTokenByCredential(ctx, tokenScope,
-		WithMtlsProofOfPossession(WithMtlsBindingCertificate(certs, key)))
+	res, err := client.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -271,7 +274,7 @@ func TestMtlsPoPCredentialValidation(t *testing.T) {
 		}
 	})
 
-	t.Run("assertion without binding cert rejected", func(t *testing.T) {
+	t.Run("plain assertion credential rejected", func(t *testing.T) {
 		cred := NewCredFromAssertionCallback(func(context.Context, AssertionRequestOptions) (string, error) {
 			return "assertion", nil
 		})
@@ -280,7 +283,7 @@ func TestMtlsPoPCredentialValidation(t *testing.T) {
 			t.Fatal(err)
 		}
 		if _, err := client.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession()); err == nil {
-			t.Error("expected error for assertion credential without WithMtlsBindingCertificate")
+			t.Error("expected error for an assertion credential that cannot supply a binding certificate")
 		}
 	})
 }

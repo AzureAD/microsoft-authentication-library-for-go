@@ -153,17 +153,21 @@ func ExampleClient_AcquireTokenByCredential_ficMtlsProofOfPossession() {
 		// TODO: handle error
 	}
 
-	// Leg 2: federated assertion (jwt-pop) + binding cert -> final mtls_pop token.
-	assertionCred := confidential.NewCredFromAssertionCallback(
-		func(context.Context, confidential.AssertionRequestOptions) (string, error) {
-			return leg1.AccessToken, nil
+	// Leg 2: federated assertion (jwt-pop) + binding cert -> final mtls_pop token. One callback
+	// returns both, so the assertion and the certificate it is bound to can never drift apart.
+	assertionCred := confidential.NewCredFromSignedAssertionCallback(
+		func(context.Context, confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+			return confidential.SignedAssertion{
+				Assertion:          leg1.AccessToken,
+				BindingCertificate: leg1.BindingCertificate,
+			}, nil
 		})
 	leg2App, err := confidential.New("https://login.microsoftonline.com/your_tenant", "final_client_id", assertionCred)
 	if err != nil {
 		// TODO: handle error
 	}
 	final, err := leg2App.AcquireTokenByCredential(context.TODO(), []string{"https://vault.azure.net/.default"},
-		confidential.WithMtlsProofOfPossession(confidential.WithMtlsBindingCertificate(certs, priv)))
+		confidential.WithMtlsProofOfPossession())
 	if err != nil {
 		// TODO: handle error
 	}
