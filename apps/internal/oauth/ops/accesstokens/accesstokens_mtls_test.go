@@ -172,10 +172,15 @@ func TestFromAssertionBearerUnchanged(t *testing.T) {
 // certificate rather than the requested access-token type. An assertion bound to a certificate is a
 // jwt-pop assertion whether the token it buys is token_type=mtls_pop or an ordinary bearer token.
 //
-// This mirrors MSAL .NET's ClientAssertionDelegateCredential, which selects JwtPop when the
-// transport is mTLS *or* the ClientSignedAssertion carried a token-binding certificate. Keying it on
-// IsMtlsPoP alone left a functional gap against .NET: a certificate-bound FIC assertion could not be
-// exchanged for a plain access token.
+// This mirrors MSAL .NET, which draws the same line across its two client credentials:
+//   - ClientAssertionDelegateCredential.cs:63-66 (the FIC/callback credential) selects JwtPop when
+//     the transport is mTLS *or* the ClientSignedAssertion carried a token-binding certificate.
+//   - CertificateAndClaimsClientCredential.cs:117 (the plain certificate credential) sets JwtBearer
+//     unconditionally even though it supplies a binding certificate.
+//
+// Keying it on IsMtlsPoP alone left a functional gap against .NET: a certificate-bound FIC assertion
+// could not be exchanged for a plain access token. The trigger is AssertionBoundToCallbackCert (the
+// callback-supplied binding cert), deliberately narrower than "a binding certificate is present".
 //
 // Transport routing is deliberately excluded: the endpoint stays the ordinary token endpoint and no
 // certificate is presented, because which transport to use is modelled separately from the
@@ -184,11 +189,12 @@ func TestFromAssertionBearerUnchanged(t *testing.T) {
 func TestFromAssertionBindingCertSelectsJwtPoP(t *testing.T) {
 	cert := selfSignedTLSCert(t)
 	authParams := authority.AuthParams{
-		Endpoints:       testAuthorityEndpoints,
-		ClientID:        "clientID",
-		Scopes:          []string{"scope"},
-		IsMtlsPoP:       false,
-		MtlsBindingCert: cert,
+		Endpoints:                    testAuthorityEndpoints,
+		ClientID:                     "clientID",
+		Scopes:                       []string{"scope"},
+		IsMtlsPoP:                    false,
+		MtlsBindingCert:              cert,
+		AssertionBoundToCallbackCert: true,
 	}
 	const assertion = "cert-bound-fic-assertion"
 

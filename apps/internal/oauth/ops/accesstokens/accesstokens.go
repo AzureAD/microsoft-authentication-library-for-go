@@ -327,16 +327,24 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	// A certificate-bound client assertion is signalled with the jwt-pop assertion type and the
 	// binding certificate is presented on the TLS handshake (see doTokenResp).
 	//
-	// The assertion type follows the binding certificate, not the requested access-token type: an
-	// assertion bound to a certificate is a jwt-pop assertion whether the token it buys is
-	// token_type=mtls_pop or an ordinary Bearer token. This mirrors MSAL .NET
-	// (ClientAssertionDelegateCredential.cs), which selects JwtPop when the transport is mTLS *or*
-	// the ClientSignedAssertion carried a token-binding certificate, and JwtBearer otherwise. The
-	// second arm is unreachable through today's public API — every caller that sets MtlsBindingCert
-	// also sets IsMtlsPoP — and becomes reachable end-to-end once Bearer-over-mTLS lands and sets a
-	// binding certificate without requesting an mtls_pop token.
+	// The trigger is the assertion being bound to a certificate the application handed over together
+	// with it (via the signed-assertion callback), not merely the presence of a binding certificate
+	// on the request. MSAL .NET draws the same line across its two client credentials:
+	//
+	//   - ClientAssertionDelegateCredential.cs:63-66 (the FIC/callback credential, equivalent to
+	//     confidential.NewCredFromSignedAssertionCallback) selects JwtPop when the transport is mTLS
+	//     *or* the ClientSignedAssertion carried a token-binding certificate, and JwtBearer otherwise.
+	//   - CertificateAndClaimsClientCredential.cs:117 (the plain certificate credential, equivalent
+	//     to NewCredFromCert/NewCredFromTLSCertificate) sets JwtBearer *unconditionally*, and still
+	//     returns CredentialMaterial carrying the certificate: it hands a binding certificate to the
+	//     transport while keeping the assertion jwt-bearer.
+	//
+	// FromAssertion is shared by both credential kinds, so keying this on MtlsBindingCert != nil would
+	// wrongly catch the second one: a Bearer-over-mTLS request from a certificate credential sets a
+	// binding certificate without requesting an mtls_pop token, and must stay jwt-bearer. That is why
+	// this keys on AssertionBoundToCallbackCert, which only the callback path sets.
 	assertionType := grant.ClientAssertion
-	if authParameters.IsMtlsPoP || authParameters.MtlsBindingCert != nil {
+	if authParameters.IsMtlsPoP || authParameters.AssertionBoundToCallbackCert {
 		assertionType = grant.ClientAssertionPoP
 	}
 	qv.Set("client_assertion_type", assertionType)
