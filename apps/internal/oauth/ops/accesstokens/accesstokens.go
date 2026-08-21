@@ -14,6 +14,7 @@ package accesstokens
 import (
 	"context"
 	"crypto"
+	"crypto/rsa"
 
 	/* #nosec */
 	"crypto/sha1"
@@ -22,6 +23,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -100,6 +102,10 @@ type Credential struct {
 	Key crypto.PrivateKey
 	// X5c is the JWT assertion's x5c header value, required for SN/I authentication.
 	X5c []string
+	// SignerOnly indicates Key is a crypto.Signer whose private material can't be exported (for
+	// example a Windows KeyGuard or other CNG/HSM-backed key). Such a key must be used through its
+	// Sign method, so JWT wraps the signing method rather than handing Key to the JWT library.
+	SignerOnly bool
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
 	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
@@ -139,23 +145,67 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		thumbprintKey = "x5t"
 	}
 
-	token := jwt.NewWithClaims(signingMethod, claims)
-	token.Header = map[string]interface{}{
-		"alg":         signingMethod.Alg(),
-		"typ":         "JWT",
-		thumbprintKey: base64.StdEncoding.EncodeToString(thumbprint(c.Cert, signingMethod.Alg())),
+	// A non-exportable key (Windows KeyGuard/CNG/HSM) can only ever be a crypto.Signer, which jwt's
+	// built-in RSA methods reject because they need an *rsa.PrivateKey. Wrap the method selected above
+	// in one that delegates to the signer. Alg() is unchanged, so the assertion's wire format is too.
+	if c.SignerOnly {
+		signer, ok := c.Key.(crypto.Signer)
+		if !ok {
+			return "", errors.New("this credential's private key must implement crypto.Signer to sign a client assertion")
+		}
+		if _, ok := signer.Public().(*rsa.PublicKey); !ok {
+			// a credential can hold a signer for another key type because its certificate validates
+			// against it, but the service only accepts RSA client assertions
+			return "", errors.New("this credential's private key must be RSA to sign a client assertion")
+		}
+		method, err := newSignerMethod(signingMethod)
+		if err != nil {
+			return "", err
+		}
+		signingMethod = method
 	}
 
-	if authParams.SendX5C {
-		token.Header["x5c"] = c.X5c
+	// build assembles and signs the assertion. It's a function because the fallback below has to
+	// rebuild the whole thing rather than only re-sign: the algorithm determines the "alg" header,
+	// which header carries the thumbprint, and which hash that thumbprint uses.
+	build := func(method jwt.SigningMethod, thumbprintKey string) (string, error) {
+		token := jwt.NewWithClaims(method, claims)
+		token.Header = map[string]interface{}{
+			"alg":         method.Alg(),
+			"typ":         "JWT",
+			thumbprintKey: base64.StdEncoding.EncodeToString(thumbprint(c.Cert, method.Alg())),
+		}
+
+		if authParams.SendX5C {
+			token.Header["x5c"] = c.X5c
+		}
+
+		return token.SignedString(c.Key)
 	}
 
-	assertion, err := token.SignedString(c.Key)
-	if err != nil {
+	assertion, err := build(signingMethod, thumbprintKey)
+	if err == nil {
+		return assertion, nil
+	}
+	if !c.SignerOnly || isADFSorDSTS {
+		// an exportable key is an *rsa.PrivateKey, and Go's software RSA always supports PSS, so
+		// there's nothing to fall back from. ADFS and dSTS already signed with RS256.
 		return "", fmt.Errorf("unable to sign JWT token: %w", err)
 	}
 
-	return assertion, nil
+	// The signer couldn't produce the PS256 signature. Some key providers (CNG, KeyGuard, HSMs,
+	// smart cards) can't do RSA-PSS at all, so try once more with PKCS #1 v1.5, as MSAL .NET does.
+	// Nothing else can realistically have failed above: the key is a crypto.Signer holding an RSA
+	// key, SHA-256 is always available, and the header and claims always marshal.
+	fallbackMethod, fallbackErr := newSignerMethod(jwt.SigningMethodRS256)
+	if fallbackErr == nil {
+		assertion, fallbackErr = build(fallbackMethod, "x5t")
+		if fallbackErr == nil {
+			return assertion, nil
+		}
+	}
+
+	return "", fmt.Errorf("unable to sign JWT token: signing with PS256 failed (%v) and so did falling back to RS256: %w", err, fallbackErr)
 }
 
 // thumbprint runs the asn1.Der bytes through sha1 for use in the x5t parameter of JWT.

@@ -216,6 +216,51 @@ Notes:
   to their preferred-network host first, so they reach the same endpoint as the modern hostname
   (`mtlsauth.microsoftonline.us` and `mtlsauth.partner.microsoftonline.cn`).
 
+### Non-exportable keys (KeyGuard, CNG, HSM)
+
+A key that can't leave its protected store — a Windows KeyGuard (VBS-isolated) key imported with
+`PKCS12_VIRTUAL_ISOLATION_KEY`, a CNG key handle, or an HSM-backed key — can only ever be surfaced in
+Go as a [`crypto.Signer`](https://pkg.go.dev/crypto#Signer), never as an `*rsa.PrivateKey`. Build the
+credential from a `tls.Certificate` holding that signer:
+
+```go
+// signer is your crypto.Signer over the non-exportable key (for example one backed by an NCrypt
+// key handle); MSAL never sees the private material.
+cred, err := confidential.NewCredFromTLSCertificate(tls.Certificate{
+    Certificate: chainDER, // DER chain, leaf first
+    PrivateKey:  signer,
+})
+if err != nil {
+    // TODO: handle error
+}
+
+app, _ := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+
+// works in every flow, e.g. a plain client-credentials call signing a private_key_jwt assertion
+result, err := app.AcquireTokenByCredential(context.TODO(),
+    []string{"https://vault.azure.net/.default"})
+
+// or bind the token to the certificate with mTLS proof-of-possession
+result, err = app.AcquireTokenByCredential(context.TODO(),
+    []string{"https://vault.azure.net/.default"},
+    confidential.WithMtlsProofOfPossession())
+```
+
+Notes:
+
+- **Every flow is supported**: MSAL signs the `client_assertion` through the signer, so
+  `private_key_jwt`/SN/I works for client credentials, on-behalf-of, authorization code, refresh
+  token, and ADFS/dSTS. `WithMtlsProofOfPossession()` is the one flow that sends no
+  `client_assertion` at all — the key is used solely for the TLS handshake and the token is bound to
+  the certificate. The signer's public key must be an `*rsa.PublicKey` to sign an assertion, because
+  the service accepts only RSA assertions; a non-RSA signer is limited to mTLS PoP.
+- **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
+  TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
+  `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
+- **The signer lives in your code**: MSAL adds no platform-specific dependencies. Implement
+  `crypto.Signer` over your key provider (NCrypt, PKCS#11, KMS, ...) and hand it to MSAL.
+- `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`.
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.
