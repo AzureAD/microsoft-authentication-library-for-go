@@ -320,6 +320,17 @@ type AuthParams struct {
 	// token stays a plain Bearer token (no token_type=mtls_pop, no binding, no thumbprint fencing).
 	// It is independent of IsMtlsPoP; either flag routes the request over the mutual-TLS transport.
 	MtlsTransport bool
+	// AssertionBoundToCallbackCert indicates the client assertion is itself bound to a certificate
+	// the application supplied alongside it, via a signed-assertion callback
+	// (confidential.NewCredFromSignedAssertionCallback). Such an assertion is sent with the jwt-pop
+	// client_assertion_type.
+	//
+	// This is deliberately narrower than "MtlsBindingCert != nil". A plain certificate credential
+	// also supplies a binding certificate, but its assertion is an ordinary private_key_jwt and stays
+	// jwt-bearer even when the request travels over the mutual-TLS transport (a Bearer-over-mTLS
+	// request from a certificate credential sets a binding cert but must stay jwt-bearer). See the
+	// assertion-type selection in FromAssertion for the MSAL .NET references on both credential kinds.
+	AssertionBoundToCallbackCert bool
 }
 
 // NewAuthParams creates an authorization parameters object.

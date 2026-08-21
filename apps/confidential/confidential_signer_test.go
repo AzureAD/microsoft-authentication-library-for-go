@@ -151,7 +151,7 @@ func TestNewCredFromTLSCertificateBindingCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bindingCert, err := client.resolveMtlsBindingCert()
+	bindingCert, err := client.resolveMtlsBindingCert(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
