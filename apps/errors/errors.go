@@ -96,3 +96,34 @@ func Is(err, target error) bool {
 func As(err error, target interface{}) bool {
 	return errors.As(err, target)
 }
+
+// MtlsPoPTokenTypeMismatchError indicates the caller requested a mutual-TLS proof-of-possession
+// (mtls_pop) token but the identity provider returned a different token_type (for example
+// "Bearer"). mTLS PoP is a security primitive, so rather than surface a token that is not actually
+// certificate-bound, MSAL fails closed with this error.
+//
+// It normally means the identity provider or the tenant is not configured to issue the requested
+// token type, so it is a configuration problem to diagnose. Retrying without the mTLS PoP option
+// produces an unbound token and is a separate, deliberately adopted application policy of accepting a
+// weaker credential; it is not a sanctioned reaction to this error.
+//
+// Detect it with errors.As. Mirrors MSAL .NET's "token_type_mismatch" (MsalClientException).
+type MtlsPoPTokenTypeMismatchError struct {
+	// Expected is the token_type the request required (always "mtls_pop").
+	Expected string
+	// Actual is the token_type the identity provider returned. It may be empty if the response
+	// omitted token_type.
+	Actual string
+}
+
+// Error implements error.
+func (e MtlsPoPTokenTypeMismatchError) Error() string {
+	actual := e.Actual
+	if actual == "" {
+		actual = "<missing>"
+	}
+	return fmt.Sprintf(
+		"requested token_type %q but the identity provider returned %q; the access token is not certificate-bound",
+		e.Expected, actual,
+	)
+}

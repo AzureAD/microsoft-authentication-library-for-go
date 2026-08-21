@@ -347,39 +347,39 @@ func TestAccountCachePartitionKey(t *testing.T) {
 	ctx := context.Background()
 
 	tests := []struct {
-		desc             string
-		homeAccountID    string
+		desc              string
+		homeAccountID     string
 		withCacheAccessor bool
-		wantReplaceCount int
-		wantPartitionKey string
+		wantReplaceCount  int
+		wantPartitionKey  string
 	}{
 		{
-			desc:             "typical homeAccountID produces correct partition key",
-			homeAccountID:    "uid.utid",
+			desc:              "typical homeAccountID produces correct partition key",
+			homeAccountID:     "uid.utid",
 			withCacheAccessor: true,
-			wantReplaceCount: 1,
-			wantPartitionKey: "uid.utid",
+			wantReplaceCount:  1,
+			wantPartitionKey:  "uid.utid",
 		},
 		{
-			desc:             "different homeAccountID produces its own partition key",
-			homeAccountID:    "other-uid.other-utid",
+			desc:              "different homeAccountID produces its own partition key",
+			homeAccountID:     "other-uid.other-utid",
 			withCacheAccessor: true,
-			wantReplaceCount: 1,
-			wantPartitionKey: "other-uid.other-utid",
+			wantReplaceCount:  1,
+			wantPartitionKey:  "other-uid.other-utid",
 		},
 		{
-			desc:             "empty homeAccountID produces empty partition key",
-			homeAccountID:    "",
+			desc:              "empty homeAccountID produces empty partition key",
+			homeAccountID:     "",
 			withCacheAccessor: true,
-			wantReplaceCount: 1,
-			wantPartitionKey: "",
+			wantReplaceCount:  1,
+			wantPartitionKey:  "",
 		},
 		{
-			desc:             "no cache accessor means Replace is never called",
-			homeAccountID:    "uid.utid",
+			desc:              "no cache accessor means Replace is never called",
+			homeAccountID:     "uid.utid",
 			withCacheAccessor: false,
-			wantReplaceCount: 0,
-			wantPartitionKey: "",
+			wantReplaceCount:  0,
+			wantPartitionKey:  "",
 		},
 	}
 
@@ -393,7 +393,6 @@ func TestAccountCachePartitionKey(t *testing.T) {
 		}
 
 		client := fakeClient(t, opts...)
-
 
 		if _, err := client.Account(ctx, test.homeAccountID); err != nil {
 			t.Errorf("TestAccountCachePartitionKey(%s): unexpected error: %s", test.desc, err.Error())

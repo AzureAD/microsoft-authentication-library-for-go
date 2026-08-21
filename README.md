@@ -145,6 +145,77 @@ use with `NewCredFromCert`.
 > openssl pkcs8 -topk8 -nocrypt -in legacy.key -out key.pem
 > ```
 
+## mTLS Proof-of-Possession (SNI)
+
+A confidential client configured with a Subject Name + Issuer (SN/I) certificate can request an
+**mTLS-bound proof-of-possession** token (`token_type=mtls_pop`) instead of a Bearer token. The same
+certificate used for the credential is presented as the **client TLS certificate** in the mutual-TLS
+handshake to Entra ID, and the returned token is cryptographically bound to that certificate
+(`cnf/x5t#S256`). Opt in per call with `WithMtlsProofOfPossession()`:
+
+```go
+certs, key, _ := confidential.CertFromPEM(pem, "")
+cred, _ := confidential.NewCredFromCert(certs, key)
+
+// The authority must be tenanted (not /common, /organizations, or /consumers).
+app, _ := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+
+result, err := app.AcquireTokenByCredential(context.TODO(),
+    []string{"https://vault.azure.net/.default"},
+    confidential.WithMtlsProofOfPossession())
+if err != nil {
+    // TODO: handle error
+}
+_ = result.Metadata.TokenType                  // "mtls_pop"
+_ = result.BindingCertificate                  // *tls.Certificate bound to the token (leaf + private key)
+_ = result.BindingCertificateThumbprint()      // base64url SHA-256 (x5t#S256)
+```
+
+Notes:
+
+- **Binding is via the TLS certificate**: on the mTLS PoP path no `client_assertion` and no `req_cnf`
+  are sent — the certificate presented on the TLS handshake is the proof. This omission is specific to
+  mTLS PoP: a normal Bearer acquisition with the same SN/I certificate (i.e. without
+  `WithMtlsProofOfPossession()`) still signs and sends a `client_assertion`. The endpoint is rewritten
+  from `login.*` to `mtlsauth.*`.
+- **Using the token**: present it to the resource with the `mtls_pop` authorization scheme (not
+  `Bearer`) and `result.BindingCertificate` as the client certificate on the TLS handshake, so the
+  connection matches the token binding. `BindingCertificate` is a `*tls.Certificate` that carries both
+  the parsed leaf (`.Leaf`) and the private key MSAL used, so it goes straight into
+  `tls.Config.Certificates` — including when the key is non-exportable (KeyGuard/CNG/HSM), because
+  `crypto/tls` only needs a `crypto.Signer`:
+
+  ```go
+  transport := http.DefaultTransport.(*http.Transport).Clone()
+  transport.TLSClientConfig = &tls.Config{
+      Certificates: []tls.Certificate{*result.BindingCertificate},
+      MinVersion:   tls.VersionTLS12,
+  }
+  req, _ := http.NewRequest(http.MethodGet, resourceURL, nil)
+  req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
+  resp, err := (&http.Client{Transport: transport}).Do(req)
+  ```
+- **App-only**: mTLS PoP is a client-credentials-only mechanism — the binding certificate
+  authenticates the application, not a user, so `WithMtlsProofOfPossession()` is accepted by
+  `AcquireTokenByCredential` only (as in MSAL .NET, where it exists only on `AcquireTokenForClient`).
+  App tokens are cached automatically, so a repeat `AcquireTokenByCredential` call is a cache hit;
+  there is no need to call `AcquireTokenSilent`.
+- **Region is optional**: the global `mtlsauth.microsoft.com` endpoint is used when no region is
+  configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
+- **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
+  certificate thumbprint). A plain `WithHTTPClient` cannot carry the certificate; use
+  `WithMtlsHTTPClient` to override the transport when you need to own the TLS handshake yourself.
+  A `WithHTTPClient` client's settings reach the mTLS leg only when its `Transport` is an
+  `*http.Transport` — that is where proxy, dialer and root CAs live. A custom `http.RoundTripper`,
+  such as a tracing or retry wrapper, cannot be carried across, because a TLS client certificate can
+  only be installed through `*http.Transport`; that leg builds on `http.DefaultTransport` instead and
+  the wrapper does not run for it.
+- **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
+  `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. The
+  legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are aliases: they resolve
+  to their preferred-network host first, so they reach the same endpoint as the modern hostname
+  (`mtlsauth.microsoftonline.us` and `mtlsauth.partner.microsoftonline.cn`).
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.

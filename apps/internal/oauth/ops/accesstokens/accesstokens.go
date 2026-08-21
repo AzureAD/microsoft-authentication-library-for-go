@@ -18,6 +18,7 @@ import (
 	/* #nosec */
 	"crypto/sha1"
 	"crypto/sha256"
+	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
@@ -27,6 +28,7 @@ import (
 	"strings"
 	"time"
 
+	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
@@ -61,6 +63,9 @@ const (
 
 type urlFormCaller interface {
 	URLFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}) error
+	// URLFormCallWithCertificate performs the request over a mutual-TLS connection presenting cert
+	// as the client certificate. Used for mTLS proof-of-possession token requests.
+	URLFormCallWithCertificate(ctx context.Context, endpoint string, qv url.Values, resp interface{}, cert *tls.Certificate) error
 }
 
 // DeviceCodeResponse represents the HTTP response received from the device code endpoint
@@ -283,7 +288,9 @@ func (c Client) FromClientSecret(ctx context.Context, authParameters authority.A
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -301,7 +308,30 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
+
+	return c.doTokenResp(ctx, authParameters, qv)
+}
+
+// FromClientCertificate requests an mTLS proof-of-possession token authenticated solely by the
+// client certificate presented on the mutual-TLS handshake. Unlike the assertion path it sends no
+// client_assertion and no req_cnf: the TLS client certificate authenticates the client and binds the
+// resulting token (token_type=mtls_pop). authParameters.MtlsBindingCert must be set.
+func (c Client) FromClientCertificate(ctx context.Context, authParameters authority.AuthParams) (TokenResponse, error) {
+	qv := url.Values{}
+	if err := addClaims(qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
+	qv.Set(grantType, grant.ClientCredential)
+	qv.Set(clientID, authParameters.ClientID)
+	addScopeQueryParam(qv, authParameters)
+
+	// Add extra body parameters if provided
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	return c.doTokenResp(ctx, authParameters, qv)
 }
@@ -337,7 +367,9 @@ func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authPara
 	addScopeQueryParam(qv, authParameters)
 
 	// Add extra body parameters if provided
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 	return c.doTokenResp(ctx, authParameters, qv)
 }
 
@@ -364,7 +396,9 @@ func (c Client) FromUserFederatedIdentityCredential(ctx context.Context, authPar
 	}
 
 	addScopeQueryParam(qv, authParameters)
-	addExtraBodyParameters(ctx, qv, authParameters)
+	if err := addExtraBodyParameters(ctx, qv, authParameters); err != nil {
+		return TokenResponse{}, err
+	}
 
 	credParams, err := prepURLVals(ctx, cred, authParameters)
 	if err != nil {
@@ -444,7 +478,20 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 			qv.Set(k, v)
 		}
 	}
-	err := c.Comm.URLFormCall(ctx, authParams.Endpoints.TokenEndpoint, qv, &resp)
+	endpoint := authParams.Endpoints.TokenEndpoint
+	var err error
+	if authParams.IsMtlsPoP {
+		// mTLS PoP: rewrite login.* -> mtlsauth.* and present the binding certificate on the TLS
+		// handshake. The endpoint derivation also enforces the mTLS guardrails (tenanted authority,
+		// supported cloud, login.* host).
+		endpoint, err = authParams.MtlsTokenEndpoint()
+		if err != nil {
+			return resp, err
+		}
+		err = c.Comm.URLFormCallWithCertificate(ctx, endpoint, qv, &resp, authParams.MtlsBindingCert)
+	} else {
+		err = c.Comm.URLFormCall(ctx, endpoint, qv, &resp)
+	}
 	if err != nil {
 		return resp, err
 	}
@@ -452,7 +499,20 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 	if c.testing {
 		return resp, nil
 	}
-	return resp, resp.Validate()
+	if err := resp.Validate(); err != nil {
+		return resp, err
+	}
+	// mTLS PoP is a security primitive: when the caller requests a certificate-bound token the
+	// identity provider must honor it. Fail closed on a downgrade (e.g. token_type=Bearer) rather
+	// than returning a token that only looks bound. Mirrors MSAL .NET's TokenClient token_type
+	// check (error code "token_type_mismatch").
+	if authParams.IsMtlsPoP && !strings.EqualFold(resp.TokenType, authority.AccessTokenTypeMtlsPoP) {
+		return resp, msalerrors.MtlsPoPTokenTypeMismatchError{
+			Expected: authority.AccessTokenTypeMtlsPoP,
+			Actual:   resp.TokenType,
+		}
+	}
+	return resp, nil
 }
 
 // prepURLVals returns an url.Values that sets various key/values if we are doing secrets
@@ -514,11 +574,38 @@ func addScopeQueryParam(queryParams url.Values, authParameters authority.AuthPar
 	queryParams.Set("scope", strings.Join(scopes, " "))
 }
 
-// addExtraBodyParameters evaluates and adds extra body parameters to the request
-func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.AuthParams) {
+// reservedBodyParameters are token-request body parameters that MSAL owns. addExtraBodyParameters
+// uses url.Values.Set, which overwrites, and runs last in every request builder, so an extra body
+// parameter under one of these keys would silently replace a value MSAL computed - the client
+// assertion, the grant type, the client identity, or the requested token type - and change what is
+// actually being requested or how the client is authenticated.
+//
+// Nothing in this module can currently populate these keys: the only writers of ExtraBodyParameters
+// are WithFMIPath and WithAttribute, and both hardcode their key. This is a guard placed ahead of
+// any future caller-supplied extra-parameters API rather than a fix for a reachable hole. It lives
+// inside addExtraBodyParameters, not at one call site, so it covers all five request builders and
+// any that are added later.
+var reservedBodyParameters = map[string]struct{}{
+	"client_assertion":      {},
+	"client_assertion_type": {},
+	"req_cnf":               {},
+	grantType:               {},
+	clientID:                {},
+	"token_type":            {},
+}
+
+// addExtraBodyParameters evaluates and adds extra body parameters to the request. It reports an
+// error rather than letting an extra parameter overwrite a value MSAL owns; see
+// reservedBodyParameters.
+func addExtraBodyParameters(ctx context.Context, v url.Values, ap authority.AuthParams) error {
 	for key, value := range ap.ExtraBodyParameters {
-		if value != "" {
-			v.Set(key, value)
+		if value == "" {
+			continue
 		}
+		if _, reserved := reservedBodyParameters[key]; reserved {
+			return fmt.Errorf("%q is reserved by MSAL and cannot be set as an extra body parameter", key)
+		}
+		v.Set(key, value)
 	}
+	return nil
 }

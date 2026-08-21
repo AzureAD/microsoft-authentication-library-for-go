@@ -32,6 +32,14 @@
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out
 
+# Certificates and private keys. The integration tests read a lab SN/I certificate from the repo
+# root as cert.pem (provisioned by the pipelines from Key Vault); it must never be committed.
+/cert.pem
+/*.pem
+*.pfx
+*.p12
+*.key
+
 pkg/
 github.com/
 golang.org/
