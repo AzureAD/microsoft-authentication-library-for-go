@@ -22,6 +22,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"strconv"
@@ -100,6 +101,10 @@ type Credential struct {
 	Key crypto.PrivateKey
 	// X5c is the JWT assertion's x5c header value, required for SN/I authentication.
 	X5c []string
+	// SignerOnly indicates Key is a crypto.Signer whose private material can't be exported (for
+	// example a Windows KeyGuard or other CNG/HSM-backed key). Such a key can only be used for the
+	// mutual-TLS handshake of an mTLS proof-of-possession request, never to sign a client assertion.
+	SignerOnly bool
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
 	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
@@ -118,6 +123,11 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 			FMIPath:       authParams.ExtraBodyParameters["fmi_path"],
 		}
 		return c.AssertionCallback(ctx, options)
+	}
+	if c.SignerOnly {
+		// jwt's RSA signing methods require an *rsa.PrivateKey, which a non-exportable key can never
+		// be. Fail here with actionable guidance instead of deep inside the signing method.
+		return "", errors.New("this credential's private key is not exportable and can only be used with WithMtlsProofOfPossession()")
 	}
 	claims := jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,

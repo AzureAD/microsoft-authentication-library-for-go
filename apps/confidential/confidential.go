@@ -10,6 +10,7 @@ Confidential clients can hold configuration-time secrets.
 package confidential
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rsa"
@@ -156,6 +157,10 @@ type Credential struct {
 	key  crypto.PrivateKey
 	x5c  []string
 
+	// signerOnly is set when key can't be exported as an *rsa.PrivateKey, which restricts the
+	// credential to mTLS proof-of-possession. See NewCredFromTLSCertificate.
+	signerOnly bool
+
 	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
 
 	tokenProvider func(context.Context, TokenProviderParameters) (TokenProviderResult, error)
@@ -173,7 +178,7 @@ func (c Credential) toInternal() (*accesstokens.Credential, error) {
 		if c.key == nil {
 			return nil, errors.New("missing private key for certificate")
 		}
-		return &accesstokens.Credential{Cert: c.cert, Key: c.key, X5c: c.x5c}, nil
+		return &accesstokens.Credential{Cert: c.cert, Key: c.key, X5c: c.x5c, SignerOnly: c.signerOnly}, nil
 	}
 	if c.key != nil {
 		return nil, errors.New("missing certificate for private key")
@@ -203,10 +208,27 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 
 // NewCredFromCert creates a Credential from a certificate or chain of certificates and an RSA private key
 // as returned by [CertFromPEM].
+//
+// key may also be a [crypto.Signer] whose public key is an *rsa.PublicKey. That's how a non-exportable
+// key such as a Windows KeyGuard (VBS-isolated) or other CNG/HSM-backed key surfaces in Go. Because
+// the private material can never be retrieved, such a credential can only be used for mTLS
+// proof-of-possession (see [WithMtlsProofOfPossession]); every other flow signs a client assertion and
+// will fail with an error saying so. [NewCredFromTLSCertificate] is the more direct constructor for
+// these keys.
 func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
-	k, ok := key.(*rsa.PrivateKey)
-	if !ok {
+	var k *rsa.PublicKey
+	switch t := key.(type) {
+	case *rsa.PrivateKey:
+		k = &t.PublicKey
+	case crypto.Signer:
+		pub, ok := t.Public().(*rsa.PublicKey)
+		if !ok {
+			return cred, errors.New("key must be an RSA key")
+		}
+		k = pub
+		cred.signerOnly = true
+	default:
 		return cred, errors.New("key must be an RSA key")
 	}
 	for _, cert := range certs {
@@ -226,6 +248,52 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 	}
 	if cred.cert == nil {
 		return cred, errors.New("key doesn't match any certificate")
+	}
+	return cred, nil
+}
+
+// NewCredFromTLSCertificate creates a Credential from a [tls.Certificate] whose PrivateKey is any
+// [crypto.Signer]. This is the entry point for keys whose private material can never be exported,
+// such as Windows KeyGuard (VBS-isolated) keys imported with PKCS12_VIRTUAL_ISOLATION_KEY, or other
+// CNG/HSM-backed keys: the signer stays in its protected store and is invoked only to sign the TLS
+// handshake.
+//
+// Such a credential is limited to mTLS proof-of-possession (see [WithMtlsProofOfPossession]), because
+// that's the only flow in which the key isn't used to sign a client assertion: the TLS client
+// certificate authenticates the client and binds the token, so no client_assertion is sent. Any other
+// flow returns an error explaining the restriction. When cert.PrivateKey is an *rsa.PrivateKey the
+// credential has no such restriction and behaves like one from [NewCredFromCert].
+//
+// cert.Certificate must hold the DER-encoded chain leaf first, as [tls.Certificate] requires. cert.Leaf
+// is used when it matches that leaf; otherwise the leaf is parsed from cert.Certificate[0].
+func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
+	if len(cert.Certificate) == 0 || len(cert.Certificate[0]) == 0 {
+		return Credential{}, errors.New("tls.Certificate must contain at least one certificate")
+	}
+	signer, ok := cert.PrivateKey.(crypto.Signer)
+	if !ok {
+		return Credential{}, errors.New("tls.Certificate.PrivateKey must implement crypto.Signer")
+	}
+	leaf := cert.Leaf
+	if leaf == nil || !bytes.Equal(leaf.Raw, cert.Certificate[0]) {
+		var err error
+		leaf, err = x509.ParseCertificate(cert.Certificate[0])
+		if err != nil {
+			return Credential{}, fmt.Errorf("could not parse the leaf certificate: %v", err)
+		}
+	}
+	// every public key type x509 can parse implements Equal, added in Go 1.15
+	pub, ok := leaf.PublicKey.(interface{ Equal(crypto.PublicKey) bool })
+	if !ok || !pub.Equal(signer.Public()) {
+		return Credential{}, errors.New("key doesn't match the leaf certificate")
+	}
+	cred := Credential{cert: leaf, key: cert.PrivateKey}
+	// tls.Certificate stores the chain leaf first, which is the order x5c requires
+	for _, der := range cert.Certificate {
+		cred.x5c = append(cred.x5c, base64.StdEncoding.EncodeToString(der))
+	}
+	if _, ok := cert.PrivateKey.(*rsa.PrivateKey); !ok {
+		cred.signerOnly = true
 	}
 	return cred, nil
 }
@@ -308,12 +376,10 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 // token requests (see [WithMtlsProofOfPossession]). The factory receives the binding certificate and
 // must return an [http.Client] whose transport presents that certificate during the TLS handshake.
 //
-// This is an escape hatch for callers who must own the TLS handshake themselves. When unset, MSAL
-// auto-builds and caches an mTLS client per certificate thumbprint.
-//
-// The binding certificate is currently derived from a [NewCredFromCert] credential, which requires an
-// exportable *rsa.PrivateKey. Binding to a non-exportable key held behind a [crypto.Signer] (for
-// example a KeyGuard, CNG or HSM-backed key) is not supported yet; it arrives in a follow-up change.
+// This is an escape hatch for callers who must own the TLS handshake themselves. It isn't needed for
+// non-exportable keys: a [crypto.Signer] supplied through [NewCredFromTLSCertificate] is passed
+// straight to the built-in transport, which crypto/tls signs with on both TLS 1.2 and 1.3. When
+// unset, MSAL auto-builds and caches an mTLS client per certificate thumbprint.
 func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) Option {
 	return func(o *clientOptions) {
 		if factory == nil {
@@ -1106,15 +1172,18 @@ func WithAttribute(attrValue string) interface {
 // certificate. The authority must be tenanted (not /common, /organizations, or /consumers) and in a
 // supported cloud.
 //
-// The binding certificate is inferred from a [NewCredFromCert] credential. The result exposes it via
-// [AuthResult.BindingCertificate] — a *tls.Certificate carrying the parsed leaf and the private key,
-// ready to drop into tls.Config.Certificates — and its thumbprint via
-// [AuthResult.BindingCertificateThumbprint].
+// The binding certificate is inferred from a [NewCredFromCert] or [NewCredFromTLSCertificate]
+// credential. The result exposes it via [AuthResult.BindingCertificate] — a *tls.Certificate
+// carrying the parsed leaf and the private key, ready to drop into tls.Config.Certificates — and
+// its thumbprint via [AuthResult.BindingCertificateThumbprint].
 //
 // mTLS PoP is app-only: it is available on [Client.AcquireTokenByCredential] (the client credentials
 // flow) only, because the binding certificate authenticates the application, not a user, so a
 // user-delegated token can never be bound to it. This matches MSAL .NET, where the option exists only
 // on AcquireTokenForClient.
+//
+// mTLS PoP is also the only flow that works with a non-exportable key (KeyGuard/CNG/HSM), because the
+// key is used solely for the TLS handshake and never to sign a client assertion.
 //
 // The credential and the authority are both validated up front, before any cache lookup or network
 // call. A credential that cannot present a client certificate is reported first, so that error is
@@ -1151,7 +1220,9 @@ func WithMtlsProofOfPossession() interface {
 }
 
 // resolveMtlsBindingCert returns the binding certificate for an mTLS PoP request, derived from a
-// certificate credential (NewCredFromCert).
+// certificate credential (NewCredFromCert or NewCredFromTLSCertificate). The credential's key is
+// carried through unchanged, so a crypto.Signer backed by a non-exportable key reaches the TLS
+// handshake intact.
 func (cca Client) resolveMtlsBindingCert() (*tls.Certificate, error) {
 	if cca.cred != nil && cca.cred.Cert != nil && cca.cred.Key != nil {
 		der := make([][]byte, 0, len(cca.cred.X5c))
@@ -1167,7 +1238,7 @@ func (cca Client) resolveMtlsBindingCert() (*tls.Certificate, error) {
 		}
 		return &tls.Certificate{Certificate: der, PrivateKey: cca.cred.Key, Leaf: cca.cred.Cert}, nil
 	}
-	return nil, errors.New("mTLS proof-of-possession requires a certificate credential (NewCredFromCert)")
+	return nil, errors.New("mTLS proof-of-possession requires a certificate credential (NewCredFromCert or NewCredFromTLSCertificate)")
 }
 
 // errMtlsPoPWithAuthnScheme is returned when a caller combines WithAuthenticationScheme with
@@ -1183,7 +1254,7 @@ var errMtlsPoPWithAuthnScheme = errors.New(
 // validateMtlsCredential rejects credential kinds that can't perform mTLS proof-of-possession.
 func validateMtlsCredential(cred *accesstokens.Credential) error {
 	if cred == nil {
-		return errors.New("mTLS proof-of-possession requires a certificate credential (NewCredFromCert)")
+		return errors.New("mTLS proof-of-possession requires a certificate credential (NewCredFromCert or NewCredFromTLSCertificate)")
 	}
 	if cred.Secret != "" {
 		return errors.New("mTLS proof-of-possession is not supported with a client secret credential")
