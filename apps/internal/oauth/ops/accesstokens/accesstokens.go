@@ -530,9 +530,10 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 	}
 	endpoint := authParams.Endpoints.TokenEndpoint
 	var err error
-	if authParams.IsMtlsPoP {
-		// mTLS PoP: rewrite login.* -> mtlsauth.* and present the binding certificate on the TLS
-		// handshake. The endpoint derivation also enforces the mTLS guardrails (tenanted authority,
+	if authParams.IsMtlsPoP || authParams.MtlsTransport {
+		// mTLS transport: rewrite login.* -> mtlsauth.* and present the binding certificate on the TLS
+		// handshake. This covers both mTLS PoP (token_type=mtls_pop) and Bearer-over-mTLS (plain Bearer
+		// token). The endpoint derivation also enforces the mTLS guardrails (tenanted authority,
 		// supported cloud, login.* host).
 		endpoint, err = authParams.MtlsTokenEndpoint()
 		if err != nil {
