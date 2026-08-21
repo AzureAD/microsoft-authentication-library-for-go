@@ -127,8 +127,11 @@ object.
 
 We wrote the thumbprint creator for the internals. 
 
-Since we also require the private key and it is not straightforward to get, we added a CertFromPEM()
-function that will extract the x509.Certificate and private key. We did support encrypted PEM.
+Since we also require the private key and it is not straightforward to get, we added
+CertFromUnencryptedPEM(), which extracts the x509.Certificate and private key from unencrypted
+PKCS#1 and PKCS#8 keys. CertFromPEM() is deprecated because it supports legacy RFC 1423 encrypted
+PEM for backward compatibility. Callers should migrate to unencrypted key material protected by
+filesystem permissions or a secret store. Encrypted PKCS#8 is not supported.
 
 It should be noted that Keyvault stores things in PKCS12 and PEM. Keyvault is not straight forward
 in how it works. Frankly, I'm in serious doubt that a regular Go user can get certs out of

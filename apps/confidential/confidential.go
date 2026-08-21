@@ -77,19 +77,26 @@ const (
 )
 
 // CertFromPEM converts a PEM file (.pem or .key) for use with [NewCredFromCert]. The file
-// must contain the public certificate and the unencrypted private key.
-// Multiple certs are due to certificate chaining for use cases like TLS that sign from root to leaf.
+// must contain the public certificate and a PKCS#1 or PKCS#8 private key. It supports legacy
+// RFC 1423 encrypted PEM for backward compatibility.
 //
-// Encrypted PEM private keys are not supported. Legacy RFC 1423 encrypted PEM blocks (identified
-// by a DEK-Info header, e.g. "DEK-Info: DES-EDE3-CBC,...") rely on a weak key derivation function
-// (a single MD5 iteration) and obsolete DES/3DES ciphers, so CertFromPEM rejects them with an
-// error instead of decrypting them. Provide the private key unencrypted and protect it with
-// filesystem permissions; you can remove legacy encryption with, for example:
-//
-//	openssl pkcs8 -topk8 -nocrypt -in legacy.key -out key.pem
-//
-// The password parameter is retained for backward compatibility and is ignored.
+// Deprecated: This function supports weak legacy RFC 1423 encrypted PEM. Use
+// [CertFromUnencryptedPEM] for new code. Support for legacy encrypted PEM will be removed in a
+// future major version.
 func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.PrivateKey, error) {
+	return certFromPEM(pemData, password, true)
+}
+
+// CertFromUnencryptedPEM converts a PEM file (.pem or .key) for use with [NewCredFromCert]. The
+// file must contain the public certificate and an unencrypted PKCS#1 or PKCS#8 private key.
+// Encrypted PEM is not supported. Protect unencrypted key material with filesystem permissions or
+// a secret store. Multiple certs are due to certificate chaining for use cases like TLS that sign
+// from root to leaf.
+func CertFromUnencryptedPEM(pemData []byte) ([]*x509.Certificate, crypto.PrivateKey, error) {
+	return certFromPEM(pemData, "", false)
+}
+
+func certFromPEM(pemData []byte, password string, allowLegacyEncryption bool) ([]*x509.Certificate, crypto.PrivateKey, error) {
 	var certs []*x509.Certificate
 	var priv crypto.PrivateKey
 	for {
@@ -98,8 +105,19 @@ func CertFromPEM(pemData []byte, password string) ([]*x509.Certificate, crypto.P
 			break
 		}
 
-		if _, encrypted := block.Headers["DEK-Info"]; encrypted {
-			return nil, nil, fmt.Errorf("legacy RFC 1423 encrypted PEM blocks are not supported because they use a weak key derivation function (single MD5 iteration) and obsolete DES/3DES ciphers; provide the private key unencrypted (e.g. `openssl pkcs8 -topk8 -nocrypt -in legacy.key -out key.pem`) and protect it with filesystem permissions")
+		if _, legacyEncrypted := block.Headers["DEK-Info"]; legacyEncrypted {
+			if !allowLegacyEncryption {
+				return nil, nil, errors.New("legacy RFC 1423 encrypted PEM is not supported; convert it to an unencrypted PKCS#1 or PKCS#8 private key")
+			}
+			//nolint:staticcheck // RFC 1423 support is deprecated and retained for compatibility.
+			b, err := x509.DecryptPEMBlock(block, []byte(password))
+			if err != nil {
+				return nil, nil, fmt.Errorf("could not decrypt encrypted PEM block: %v", err)
+			}
+			block = &pem.Block{Type: block.Type, Bytes: b}
+		}
+		if block.Type == "ENCRYPTED PRIVATE KEY" {
+			return nil, nil, errors.New("encrypted PKCS#8 PEM is not supported; convert it to an unencrypted PKCS#1 or PKCS#8 private key")
 		}
 
 		switch block.Type {
@@ -200,7 +218,7 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 }
 
 // NewCredFromCert creates a Credential from a certificate or chain of certificates and an RSA private key
-// as returned by [CertFromPEM].
+// as returned by [CertFromUnencryptedPEM].
 func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
 	k, ok := key.(*rsa.PrivateKey)
