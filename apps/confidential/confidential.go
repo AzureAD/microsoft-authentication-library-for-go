@@ -157,8 +157,8 @@ type Credential struct {
 	key  crypto.PrivateKey
 	x5c  []string
 
-	// signerOnly is set when key can't be exported as an *rsa.PrivateKey, which restricts the
-	// credential to mTLS proof-of-possession. See NewCredFromTLSCertificate.
+	// signerOnly is set when key can't be exported as an *rsa.PrivateKey, which means MSAL must sign
+	// through its crypto.Signer interface. See NewCredFromTLSCertificate.
 	signerOnly bool
 
 	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
@@ -210,11 +210,9 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 // as returned by [CertFromPEM].
 //
 // key may also be a [crypto.Signer] whose public key is an *rsa.PublicKey. That's how a non-exportable
-// key such as a Windows KeyGuard (VBS-isolated) or other CNG/HSM-backed key surfaces in Go. Because
-// the private material can never be retrieved, such a credential can only be used for mTLS
-// proof-of-possession (see [WithMtlsProofOfPossession]); every other flow signs a client assertion and
-// will fail with an error saying so. [NewCredFromTLSCertificate] is the more direct constructor for
-// these keys.
+// key such as a Windows KeyGuard (VBS-isolated) or other CNG/HSM-backed key surfaces in Go. MSAL signs
+// client assertions through the signer, so such a credential works in every flow.
+// [NewCredFromTLSCertificate] is the more direct constructor for these keys.
 func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
 	var k *rsa.PublicKey
@@ -255,14 +253,12 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 // NewCredFromTLSCertificate creates a Credential from a [tls.Certificate] whose PrivateKey is any
 // [crypto.Signer]. This is the entry point for keys whose private material can never be exported,
 // such as Windows KeyGuard (VBS-isolated) keys imported with PKCS12_VIRTUAL_ISOLATION_KEY, or other
-// CNG/HSM-backed keys: the signer stays in its protected store and is invoked only to sign the TLS
-// handshake.
+// CNG/HSM-backed keys: the signer stays in its protected store and is invoked only to sign.
 //
-// Such a credential is limited to mTLS proof-of-possession (see [WithMtlsProofOfPossession]), because
-// that's the only flow in which the key isn't used to sign a client assertion: the TLS client
-// certificate authenticates the client and binds the token, so no client_assertion is sent. Any other
-// flow returns an error explaining the restriction. When cert.PrivateKey is an *rsa.PrivateKey the
-// credential has no such restriction and behaves like one from [NewCredFromCert].
+// The credential works in every flow. mTLS proof-of-possession (see [WithMtlsProofOfPossession])
+// presents the certificate on the TLS handshake and sends no client_assertion; every other flow has
+// the signer sign the assertion. Because the service accepts only RSA client assertions, a signer
+// whose public key isn't an *rsa.PublicKey is limited to mTLS proof-of-possession.
 //
 // cert.Certificate must hold the DER-encoded chain leaf first, as [tls.Certificate] requires. cert.Leaf
 // is used when it matches that leaf; otherwise the leaf is parsed from cert.Certificate[0].
@@ -1182,8 +1178,9 @@ func WithAttribute(attrValue string) interface {
 // user-delegated token can never be bound to it. This matches MSAL .NET, where the option exists only
 // on AcquireTokenForClient.
 //
-// mTLS PoP is also the only flow that works with a non-exportable key (KeyGuard/CNG/HSM), because the
-// key is used solely for the TLS handshake and never to sign a client assertion.
+// A non-exportable key (KeyGuard/CNG/HSM) works here without signing anything at the application
+// layer, because the key is used solely for the TLS handshake. Such a key can also sign client
+// assertions for the other flows; see [NewCredFromTLSCertificate].
 //
 // The credential and the authority are both validated up front, before any cache lookup or network
 // call. A credential that cannot present a client certificate is reported first, so that error is

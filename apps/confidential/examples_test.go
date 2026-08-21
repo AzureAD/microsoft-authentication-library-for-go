@@ -125,13 +125,14 @@ func ExampleClient_AcquireTokenByCredential_withMtlsProofOfPossession() {
 }
 
 // This example demonstrates using a non-exportable key -- such as a Windows KeyGuard (VBS-isolated)
-// key, a CNG key handle, or an HSM-backed key -- to request an mTLS-bound proof-of-possession token.
-// Such a key can never be retrieved as an *rsa.PrivateKey; it can only be surfaced as a crypto.Signer,
-// which the caller implements over its key provider (MSAL adds no platform-specific dependencies).
+// key, a CNG key handle, or an HSM-backed key -- to authenticate a confidential client. Such a key
+// can never be retrieved as an *rsa.PrivateKey; it can only be surfaced as a crypto.Signer, which the
+// caller implements over its key provider (MSAL adds no platform-specific dependencies).
 //
-// These credentials work only with WithMtlsProofOfPossession, because it's the only flow that doesn't
-// sign a client assertion: the key is used solely for the mutual-TLS handshake, and the certificate
-// presented there both authenticates the client and binds the token.
+// The credential works in every flow: MSAL signs the client assertion through the signer. This
+// example additionally requests an mTLS-bound proof-of-possession token, the one flow that sends no
+// client assertion at all because the certificate presented on the mutual-TLS handshake both
+// authenticates the client and binds the token.
 func ExampleNewCredFromTLSCertificate() {
 	// signer is the application's crypto.Signer over the non-exportable key, and chain holds the
 	// DER-encoded certificate chain, leaf first.
@@ -151,9 +152,8 @@ func ExampleNewCredFromTLSCertificate() {
 		// TODO: handle error
 	}
 
-	// MSAL passes the signer to the mTLS transport, which signs the TLS handshake with it. Any flow
-	// other than mTLS proof-of-possession returns an error because it would have to sign a client
-	// assertion, which requires an exportable key.
+	// MSAL passes the signer to the mTLS transport, which signs the TLS handshake with it. Without
+	// WithMtlsProofOfPossession the same signer signs the private_key_jwt client assertion instead.
 	result, err := client.AcquireTokenByCredential(context.TODO(), []string{"https://vault.azure.net/.default"},
 		confidential.WithMtlsProofOfPossession())
 	if err != nil {
