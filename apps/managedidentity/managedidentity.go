@@ -102,6 +102,9 @@ const (
 	identityServerThumbprintEnvVar      = "IDENTITY_SERVER_THUMBPRINT"
 
 	defaultRetryCount = 3
+
+	// maxRetryBackoff caps the exponential backoff wait between IMDS retries.
+	maxRetryBackoff = 60 * time.Second
 )
 
 var retryCodesForIMDS = []int{
@@ -128,6 +131,12 @@ var retryStatusCodes = []int{
 	http.StatusBadGateway,          // 502
 	http.StatusServiceUnavailable,  // 503
 	http.StatusGatewayTimeout,      // 504
+}
+
+// after wraps time.After so tests can override the retry backoff wait and run
+// deterministically without sleeping for real.
+var after = func(d time.Duration) <-chan time.Time {
+	return time.After(d)
 }
 
 var getAzureArcPlatformPath = func(platform string) string {
@@ -618,8 +627,22 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 			tryCancel()
 			return resp, err
 		}
+		// For IMDS, use exponential backoff based on attempt number
+		var waitTime time.Duration
+		if c.source == DefaultToIMDS {
+			// Exponential backoff following IMDS retry guidance: 2s, 4s, 8s, 16s,
+			// etc., capped at maxRetryBackoff.
+			// https://learn.microsoft.com/entra/identity/managed-identities-azure-resources/how-to-use-vm-token#retry-guidance
+			waitTime = time.Second * time.Duration(2<<uint(attempt))
+			if waitTime > maxRetryBackoff {
+				waitTime = maxRetryBackoff
+			}
+		} else {
+			// For non-IMDS sources, use the fixed 1 second delay
+			waitTime = time.Second
+		}
 		select {
-		case <-time.After(time.Second):
+		case <-after(waitTime):
 		case <-req.Context().Done():
 			err = req.Context().Err()
 			tryCancel()

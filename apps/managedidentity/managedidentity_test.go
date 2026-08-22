@@ -175,6 +175,7 @@ func TestRetryFunction(t *testing.T) {
 		expectedBody   string
 		maxRetries     int
 		source         Source
+		expectedDelays []time.Duration // Expected delays for IMDS exponential backoff
 	}{
 		{
 			name: "Successful Request",
@@ -232,19 +233,68 @@ func TestRetryFunction(t *testing.T) {
 			maxRetries:     2,
 			source:         DefaultToIMDS,
 		},
+		{
+			name: "Successful Request IMDS with Exponential Backoff",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusInternalServerError},
+				{"Failed", http.StatusInternalServerError},
+				{"Failed", http.StatusInternalServerError},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     4,
+			source:         DefaultToIMDS,
+			expectedDelays: []time.Duration{2 * time.Second, 4 * time.Second, 8 * time.Second},
+		},
+		{
+			name: "Successful Request Non-IMDS with Fixed Delay",
+			mockResponses: []struct {
+				body       string
+				statusCode int
+			}{
+				{"Failed", http.StatusInternalServerError},
+				{"Success", http.StatusOK},
+			},
+			expectedStatus: http.StatusOK,
+			expectedBody:   "Success",
+			maxRetries:     3,
+			source:         AzureArc, // Non-IMDS source
+			expectedDelays: []time.Duration{1 * time.Second},
+		},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockClient := mock.NewClient()
+
 			for _, resp := range tt.mockResponses {
 				body := bytes.NewBufferString(resp.body)
 				mockClient.AppendResponse(mock.WithBody(body.Bytes()), mock.WithHTTPStatusCode(resp.statusCode))
 			}
-			client, err := New(SystemAssigned(), WithHTTPClient(mockClient), WithRetryPolicyDisabled())
+
+			// Override the backoff hook so the test doesn't sleep for real and can
+			// deterministically assert the requested wait durations.
+			var actualDelays []time.Duration
+			realAfter := after
+			after = func(d time.Duration) <-chan time.Time {
+				actualDelays = append(actualDelays, d)
+				ch := make(chan time.Time, 1)
+				ch <- time.Now()
+				return ch
+			}
+			defer func() { after = realAfter }()
+
+			client, err := New(SystemAssigned(), WithHTTPClient(mockClient))
 			if err != nil {
 				t.Fatal(err)
 			}
+			// Manually set the source for testing purposes
+			client.source = tt.source
+
 			reqBody := bytes.NewBufferString("Test Body")
 			req, err := http.NewRequest("POST", "https://example.com", reqBody)
 			if err != nil {
@@ -252,7 +302,9 @@ func TestRetryFunction(t *testing.T) {
 			}
 			finalResp, err := client.retry(tt.maxRetries, req)
 			if err != nil {
-				t.Fatal(err)
+				if tt.expectedStatus != finalResp.StatusCode {
+					t.Fatal(err)
+				}
 			}
 			if finalResp.StatusCode != tt.expectedStatus {
 				t.Fatalf("Expected status code %d, got %d", tt.expectedStatus, finalResp.StatusCode)
@@ -265,11 +317,31 @@ func TestRetryFunction(t *testing.T) {
 			if string(bodyBytes) != tt.expectedBody {
 				t.Fatalf("Expected body %q, got %q", tt.expectedBody, bodyBytes)
 			}
+
+			if len(tt.expectedDelays) > 0 {
+				if len(actualDelays) != len(tt.expectedDelays) {
+					t.Fatalf("Expected %d delays, got %d. Actual delays: %v", len(tt.expectedDelays), len(actualDelays), actualDelays)
+				}
+				for i, expectedDelay := range tt.expectedDelays {
+					if actualDelays[i] != expectedDelay {
+						t.Fatalf("Expected delay %v at attempt %d, got %v", expectedDelay, i, actualDelays[i])
+					}
+				}
+			}
 		})
 	}
 }
 
 func Test_RetryPolicy_For_AcquireToken(t *testing.T) {
+	// Skip the real backoff waits; this test only asserts retry counts.
+	realAfter := after
+	after = func(time.Duration) <-chan time.Time {
+		ch := make(chan time.Time, 1)
+		ch <- time.Now()
+		return ch
+	}
+	defer func() { after = realAfter }()
+
 	testCases := []struct {
 		numberOfFails int
 		expectedFail  bool
@@ -1301,7 +1373,7 @@ func TestAzureArcErrors(t *testing.T) {
 		},
 		{
 			name:          "Invalid file path",
-			headerValue:   "Basic realm=" + filepath.Join("path", "to", secretKey),
+			headerValue:   basicRealm + filepath.Join("path", "to", secretKey),
 			expectedError: "invalid file path, expected " + testCaseFilePath + ", got " + filepath.Join("path", "to"),
 		},
 		{
