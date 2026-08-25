@@ -36,6 +36,13 @@ const (
 	graphMtlsResourceURL = "https://mtlstb.graph.microsoft.com/v1.0/applications?$top=1"
 )
 
+// mtlsMissingCertMarker is the error code the Graph mTLS host returns when an mtls_pop token arrives
+// without the client certificate it is bound to. requireTokenRejectedWithoutCertificate asserts on
+// this marker and not on the status code alone, because it is the only part of the response that
+// attributes the rejection specifically to the absent certificate. Mirrors MSAL .NET PR #6167, which
+// asserts on the same marker.
+const mtlsMissingCertMarker = "MtlsMissingClientCertificate"
+
 // SN/I-allow-listed app + MSI team tenant; mTLS PoP only works on this pair. Mirrors MSAL .NET
 // ClientCredentialsMtlsPopTests and MSAL Java MtlsPopIT. Public identifiers, not secrets.
 const (
@@ -141,12 +148,84 @@ func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert *tls
 	}
 }
 
+// requireTokenRejectedWithoutCertificate is the negative control for requireTokenAcceptedByResource.
+// The HTTP 200 that helper requires proves the token is usable, but on its own it does not prove the
+// resource is enforcing the certificate binding: a resource that ignored client certificates
+// entirely would answer 200 just the same. Only a controlled negative separates those two worlds.
+//
+// So this replays the *identical* request - same token, same URL, same "Authorization: mtls_pop
+// <token>" header, same timeout and TLS floor - and changes exactly one thing: no client certificate
+// is offered on the handshake. Because that is the only variable, a rejection here can only be
+// attributed to the missing certificate. Anything that made the two calls differ in some other way
+// (a different URL, a re-acquired token, a different auth scheme) would break that attribution and
+// leave the test proving nothing, so keep them in lockstep.
+//
+// The assertion is on mtlsMissingCertMarker rather than on the status code alone: a bare 401 could
+// equally mean the token expired or was malformed, neither of which says anything about enforcement.
+// The marker is what pins the failure to the absent certificate. Mirrors MSAL .NET PR #6167.
+func requireTokenRejectedWithoutCertificate(t *testing.T, token string) {
+	t.Helper()
+
+	// No Certificates on the TLS config: this omission is the single variable under test.
+	client := &http.Client{
+		Timeout: 30 * time.Second,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{
+				MinVersion: tls.VersionTLS12,
+			},
+		},
+	}
+
+	req, err := http.NewRequest(http.MethodGet, graphMtlsResourceURL, nil)
+	if err != nil {
+		t.Fatalf("building the certificate-less mTLS resource request failed: %s", err)
+	}
+	req.Header.Set("Authorization", "mtls_pop "+token)
+
+	resp, err := client.Do(req)
+	if err != nil {
+		// A transport-level failure is deliberately not accepted as proof of enforcement: a DNS
+		// failure or a timeout would be indistinguishable from a refused handshake. If the resource
+		// ever moves enforcement down to the TLS layer and rejects the certificate-less handshake
+		// outright, it will surface here, and this check should then be relaxed deliberately rather
+		// than by accident.
+		t.Fatalf("the certificate-less call to %s failed before any HTTP response was received: %s",
+			graphMtlsResourceURL, err)
+	}
+	defer resp.Body.Close()
+
+	// Truncate the external response body before emitting it into (public) CI logs. The marker sits
+	// in the first ~80 bytes of the resource's error envelope, well inside this limit.
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
+
+	if resp.StatusCode == http.StatusOK {
+		t.Fatalf("the resource returned HTTP 200 for an mtls_pop token presented WITHOUT its binding "+
+			"certificate. The resource is therefore not enforcing the certificate binding at all, which "+
+			"means the HTTP 200 in requireTokenAcceptedByResource proves only that the token was accepted, "+
+			"not that proof-of-possession was checked. Response: %s", string(body))
+	}
+	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
+		t.Fatalf("expected the resource to reject the certificate-less call with HTTP 401 or 403, got HTTP "+
+			"%d. An unexpected status means the call never reached the mTLS enforcement path, so this "+
+			"negative control is not proving anything and needs to be re-verified against the resource. "+
+			"Response: %s", resp.StatusCode, string(body))
+	}
+	if !strings.Contains(string(body), mtlsMissingCertMarker) {
+		t.Fatalf("the resource rejected the certificate-less call with HTTP %d, but the response does not "+
+			"contain %q, so the rejection cannot be attributed to the missing binding certificate - an "+
+			"expired or malformed token would look the same from here. Response: %s",
+			resp.StatusCode, mtlsMissingCertMarker, string(body))
+	}
+}
+
 // TestCredential_X509_Output_Pop is the SNI X509 -> mtls_pop end-to-end test on the global endpoint.
 // It uses the lab SN/I certificate (provisioned by the pipelines as cert.pem) as the client TLS
 // certificate to obtain a Graph-scoped, certificate-bound mtls_pop token, verifies the token type and
 // public binding certificate, then calls Microsoft Graph over mTLS with that certificate to prove the
-// token is actually accepted by a resource (HTTP 200). A second call must be served from the cache.
-// Mirrors MSAL .NET's Credential_X509_Output_Pop.
+// token is actually accepted by a resource (HTTP 200). It then replays that same call without the
+// certificate to prove the resource is genuinely enforcing the binding rather than ignoring client
+// certificates. A second call must be served from the cache. Mirrors MSAL .NET's
+// Credential_X509_Output_Pop.
 func TestCredential_X509_Output_Pop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -197,6 +276,12 @@ func TestCredential_X509_Output_Pop(t *testing.T) {
 	// certificate exactly as MSAL returned it. This is the strict "200-or-fail" check that a mere
 	// acquisition assertion cannot make.
 	requireTokenAcceptedByResource(t, result.AccessToken, result.BindingCertificate)
+
+	// The 200 above proves the token is accepted, not that the binding is enforced. Replay the same
+	// call with the same token and no client certificate; it must be rejected. This lives on this
+	// test only: enforcement is a property of the resource, not of each acquisition path, so
+	// repeating it on the other cells would spend extra round trips for no additional proof.
+	requireTokenRejectedWithoutCertificate(t, result.AccessToken)
 
 	// Second call must come from the cache and keep the mTLS PoP metadata.
 	cached, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
