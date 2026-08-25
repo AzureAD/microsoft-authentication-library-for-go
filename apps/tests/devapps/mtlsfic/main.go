@@ -178,8 +178,19 @@ func run(certPath, clientID, authority, ficClientID, ficAuthority, exchangeScope
 	if err != nil {
 		return fmt.Errorf("leg 1 confidential.New failed: %w", err)
 	}
-	leg1, err := leg1App.AcquireTokenByCredential(ctx, []string{exchangeScope},
-		confidential.WithMtlsProofOfPossession())
+
+	// acquireLeg1 performs leg 1: an ordinary mTLS PoP acquisition whose "access token" is the
+	// federated assertion for leg 2, together with the certificate it is bound to. leg1App has its
+	// own cache, so repeat calls are served from it rather than the network.
+	//
+	// It is a closure because leg 2's callback has to run leg 1 again on every invocation, while
+	// the narration below still needs to run it once up front and report on it.
+	acquireLeg1 := func(ctx context.Context) (confidential.AuthResult, error) {
+		return leg1App.AcquireTokenByCredential(ctx, []string{exchangeScope},
+			confidential.WithMtlsProofOfPossession())
+	}
+
+	leg1, err := acquireLeg1(ctx)
 	if err != nil {
 		return fmt.Errorf("leg 1 AcquireTokenByCredential with mTLS PoP failed: %w", err)
 	}
@@ -199,11 +210,34 @@ func run(certPath, clientID, authority, ficClientID, ficAuthority, exchangeScope
 	// Leg 2: the assertion and the certificate it is bound to, handed over together. This callback
 	// is the only route by which a binding certificate reaches an assertion credential.
 	section("leg 2: assertion (jwt-pop) + same certificate -> resource token")
+
+	// These two observe what happens inside the callback so the result section can report it rather
+	// than merely assert it. NewCredFromSignedAssertionCallback requires a thread-safe callback; a
+	// plain int is safe here only because this demo drives one acquisition on a single goroutine. A
+	// concurrent service would need a mutex or sync/atomic.
+	leg1CallbackCalls := 0
+	leg1CallbackSource := confidential.TokenSourceIdentityProvider
+
 	leg2Cred := confidential.NewCredFromSignedAssertionCallback(
-		func(context.Context, confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+		func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+			// Leg 1 runs HERE, on every invocation, rather than being captured once outside. MSAL
+			// resolves this callback before consulting the cache, so a rotated certificate or a
+			// refreshed assertion is picked up automatically; leg1App's own cache keeps the repeat
+			// call cheap. Closing over a single pre-computed result instead would pin an assertion
+			// that eventually expires, alongside a certificate that may since have rotated -- a bug
+			// a one-shot demo never exposes but a long-running service hits.
+			//
+			// Note this uses the callback's own ctx, not the enclosing one, so cancellation and
+			// deadlines from the leg-2 acquisition propagate into leg 1.
+			fresh, err := acquireLeg1(ctx)
+			if err != nil {
+				return confidential.SignedAssertion{}, fmt.Errorf("leg 1 inside leg-2 callback: %w", err)
+			}
+			leg1CallbackCalls++
+			leg1CallbackSource = fresh.Metadata.TokenSource
 			return confidential.SignedAssertion{
-				Assertion:          leg1.AccessToken,
-				BindingCertificate: leg1.BindingCertificate,
+				Assertion:          fresh.AccessToken,
+				BindingCertificate: fresh.BindingCertificate,
 			}, nil
 		})
 	var leg2Opts []confidential.Option
@@ -232,6 +266,19 @@ func run(certPath, clientID, authority, ficClientID, ficAuthority, exchangeScope
 		return err
 	}
 	kv("final token cnf[x5t#S256]", orNone(cnf))
+
+	// The callback re-ran leg 1, which is the whole point of putting leg 1 inside it. Report where
+	// that repeat acquisition actually came from instead of claiming the cache absorbed it.
+	repeatSource := "identity provider (network)"
+	if leg1CallbackSource == confidential.TokenSourceCache {
+		repeatSource = "served from cache"
+	}
+	kv("leg 1 inside callback", fmt.Sprintf("%s (callback fired %dx)", repeatSource, leg1CallbackCalls))
+	if leg1CallbackSource != confidential.TokenSourceCache {
+		fmt.Println("  NOTE: the callback's leg 1 went to the network rather than leg1App's cache.")
+		fmt.Println("  That is legitimate when the first assertion was already near expiry, so it is")
+		fmt.Println("  reported rather than treated as a failure.")
+	}
 
 	if final.Metadata.TokenType != "mtls_pop" {
 		return fmt.Errorf("final token_type = %q, want mtls_pop", final.Metadata.TokenType)

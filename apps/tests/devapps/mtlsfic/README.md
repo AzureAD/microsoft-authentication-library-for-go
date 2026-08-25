@@ -11,7 +11,7 @@ The application orchestrates two mTLS PoP calls and carries the result of the fi
 | | Call | Result |
 |---|---|---|
 | **Leg 1** | An ordinary `WithMtlsProofOfPossession()` acquisition (the mTLS PoP capability this branch builds on) for scope `api://AzureADTokenExchange/.default` | A certificate-bound **federated assertion**, plus the `*tls.Certificate` it is bound to. `AccessToken` here is an assertion for leg 2, **not** a usable resource token. |
-| **Leg 2** | `NewCredFromSignedAssertionCallback`, whose callback returns one `SignedAssertion{Assertion, BindingCertificate}` | The final `mtls_pop` resource token, bound to leg 1's certificate. |
+| **Leg 2** | `NewCredFromSignedAssertionCallback`, whose callback *runs leg 1* and returns one `SignedAssertion{Assertion, BindingCertificate}` | The final `mtls_pop` resource token, bound to leg 1's certificate. |
 
 The points the demo exists to make, each verifiable in this branch's source:
 
@@ -22,6 +22,13 @@ The points the demo exists to make, each verifiable in this branch's source:
   MSAL .NET's `ClientSignedAssertion.TokenBindingCertificate`.
 - **`BindingCertificate` may be nil**, in which case MSAL falls back to the client's own certificate
   credential, and fails with guidance if it has none.
+- **Leg 1 belongs *inside* the callback, not captured before it.** Under mTLS PoP the binding
+  certificate partitions the token cache and selects the TLS connection, so MSAL resolves the
+  callback *before* consulting the cache — meaning it is re-invoked on later acquisitions. A callback
+  that closed over one pre-computed leg-1 result would keep replaying an assertion that eventually
+  expires, bound to a certificate that may since have rotated. That bug is invisible in a one-shot
+  demo and bites a long-running service, so this demo calls leg 1 inside the callback and reports
+  whether the repeat call was absorbed by `leg1App`'s cache.
 - **Leg 2's wire format:** `client_assertion` *returns*, carried with
   `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-pop`
   (`grant.ClientAssertionPoP` in `apps/internal/oauth/ops/internal/grant/grant.go`).
@@ -79,12 +86,27 @@ fabricates a token.
 Without a certificate it prints the `Two-leg FIC over mTLS proof-of-possession` section explaining
 the flow, then `live run skipped`.
 
-With a certificate it additionally prints `live run`, `leg 1`, `leg 2` and `result` sections, and
-ends with a line confirming that four thumbprints agree: the certificate on disk, leg 1's binding
+With a certificate it additionally prints `live run`, `leg 1`, `leg 2` and `result` sections. The
+`result` section reports the final `token_type`, the thumbprints, and what the callback itself did —
+in this shape (illustrative, since running it needs a lab certificate and network):
+
+```
+  final token_type:                mtls_pop
+  final binding cert x5t#S256:     <thumbprint>
+  final token cnf[x5t#S256]:       <the same thumbprint>
+  leg 1 inside callback:           served from cache (callback fired 1x)
+```
+
+It ends with a line confirming that four thumbprints agree: the certificate on disk, leg 1's binding
 certificate, leg 2's, and the `cnf["x5t#S256"]` claim the issuer put in the final token. That last
 one is the meaningful proof — it is the issuer's own statement of what the token is bound to, not
 MSAL echoing a certificate back at us. Any mismatch, or a `token_type` that is not `mtls_pop` on
 either leg, exits non-zero rather than reporting success.
+
+The `leg 1 inside callback` line is how the demo backs up its own claim that re-running leg 1 in the
+callback is cheap. If that repeat acquisition goes to the network instead of the cache — legitimate
+when the first assertion was already near expiry — it is reported as a `NOTE` rather than treated as
+a failure.
 
 ## Caveat: same-app by default
 
