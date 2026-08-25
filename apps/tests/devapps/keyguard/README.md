@@ -58,20 +58,86 @@ the handshake.
 
 ## Provisioning a KeyGuard key
 
-You need a Windows host with virtualization-based security enabled, and a certificate in a store
-whose private key was created or imported with virtual isolation:
+You need a Windows host with virtualization-based security enabled.
 
-- **Import an existing PFX** with `PFXImportCertStore` and the `PKCS12_VIRTUAL_ISOLATION_KEY` flag.
-  `Import-PfxCertificate` does not expose this flag, so the import has to go through the API.
-- **Generate a new key** with `NCryptCreatePersistedKey` and `NCRYPT_USE_VIRTUAL_ISOLATION_FLAG`
-  (`0x00020000`), then certify it.
+**Isolation can only be applied when a key is imported.** There is no way to create an isolated key
+directly — `New-SelfSignedCertificate` has no isolation parameter, and `Import-PfxCertificate` has
+no flag for it either. Every route below therefore ends in an import that sets
+`PKCS12_VIRTUAL_ISOLATION_KEY`.
+
+### If you already have a PFX
+
+Import it with the Certificate Import Wizard (double-click the `.pfx`, or `certmgr.msc` →
+*All Tasks* → *Import*) and tick the option to protect the private key with virtualization-based
+security — labelled roughly *"Protect private key using virtualization-based security
+(Non-exportable)"*; the exact wording varies by Windows build. Leave *"Mark this key as
+exportable"* unchecked.
+
+### If you want to make your own test certificate
+
+A self-signed certificate is enough to exercise this sample's certificate handling and the TLS
+handshake. It is **not** enough to acquire a token — for that the certificate has to be registered
+on an app registration (see below).
+
+```powershell
+# 1. Create it. The key must be Exportable at this stage, purely so it can be
+#    moved into a PFX in step 2. This is a temporary, non-isolated key.
+$c = New-SelfSignedCertificate -Subject 'CN=my-keyguard-test' `
+       -CertStoreLocation 'Cert:\CurrentUser\My' `
+       -KeyAlgorithm RSA -KeyLength 2048 `
+       -Provider 'Microsoft Software Key Storage Provider' `
+       -KeyExportPolicy Exportable
+
+# 2. Export to a PFX.
+$pw = Read-Host -AsSecureString 'PFX password'
+Export-PfxCertificate -Cert "Cert:\CurrentUser\My\$($c.Thumbprint)" `
+                      -FilePath .\test.pfx -Password $pw
+
+# 3. DELETE the exportable copy before re-importing. Do not skip this.
+Get-ChildItem Cert:\CurrentUser\My |
+    Where-Object { $_.Thumbprint -eq $c.Thumbprint } | Remove-Item
+
+# 4. Re-import test.pfx through the wizard with the virtualization-based
+#    security option ticked (see above).
+
+# 5. Verify - see the next section.
+```
+
+Step 3 matters. You deliberately created a **plaintext-exportable** private key in order to produce
+a PFX. If you re-import over the top without removing it first, an exportable copy of the key can be
+left behind in your store while you believe you are testing a non-exportable one. Delete the PFX
+afterwards too.
+
+### Verifying isolation
+
+This check is offline and needs no app registration, so do it before anything else:
+
+```powershell
+$c   = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Thumbprint -eq '<thumbprint>' }
+$rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
+$rsa.Key.ExportPolicy   # expect: None
+$rsa.Key.GetProperty('Virtual Iso',
+    [System.Security.Cryptography.CngPropertyOptions]::None).GetValue()[0]   # expect: 1
+```
+
+`Virtual Iso` is `1` for a KeyGuard key and `0` for a software key. A freshly created
+`New-SelfSignedCertificate` key reports `0`, which is the quickest way to confirm the check is
+telling you something real.
+
+Running this sample reports the same thing via CNG: `VBS isolated: true`, or
+`VBS isolated: false` plus a warning for a software key. Prefer the check above when you are only
+validating provisioning — it does not need a tenant, a client id, or network access.
+
+### Automating it (build agents)
+
+A headless build agent cannot use the wizard. Call `PFXImportCertStore` directly with
+`PKCS12_VIRTUAL_ISOLATION_KEY | PKCS12_ALWAYS_CNG_KSP | PKCS12_INCLUDE_EXTENDED_PROPERTIES`, and
+deliberately **omit** `CRYPT_EXPORTABLE`. Under `LocalMachine\My` the agent's service account also
+needs an ACL granting it read access to the private key, or `CryptAcquireCertificatePrivateKey`
+will fail.
 
 Background: [Advancing key protection in Windows using
 VBS](https://techcommunity.microsoft.com/blog/windows-itpro-blog/advancing-key-protection-in-windows-using-vbs/4050988).
-
-To confirm a certificate is actually KeyGuard protected, run the sample: it prints
-`VBS isolated: true` only when CNG reports the isolation property. A software key prints
-`VBS isolated: false` together with a warning.
 
 ## Registering the certificate
 
