@@ -351,8 +351,8 @@ func WithX5C() Option {
 // sends no client credential at all) or [Client.AcquireTokenByUserFederatedIdentityCredential];
 // those two flows continue to use the regular token endpoint. This matches MSAL .NET, whose
 // SendCertificateOverMtls covers the same four flows. A per-request [WithMtlsProofOfPossession]
-// always takes precedence over it. It requires a certificate credential (see [NewCredFromCert]); New
-// returns an error for any other credential kind.
+// always takes precedence over it. It requires a certificate credential, such as one from
+// [NewCredFromCert]; New returns an error for any other credential kind.
 func WithSendCertificateOverMtls() Option {
 	return func(o *clientOptions) {
 		o.sendCertOverMtls = true
@@ -408,7 +408,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		opts.azureRegion = ""
 	}
 	if opts.sendCertOverMtls && internalCred.Cert == nil {
-		return Client{}, errors.New("WithSendCertificateOverMtls requires a certificate credential (NewCredFromCert)")
+		return Client{}, errors.New("WithSendCertificateOverMtls requires a certificate credential, such as one from NewCredFromCert")
 	}
 
 	baseOpts := []base.Option{

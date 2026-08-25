@@ -199,7 +199,7 @@ func showCredentialGuardrail(cfg config) error {
 	}
 	kv("New(secret credential)", "rejected")
 	kv("error", err.Error())
-	fmt.Println("  PASS  only a NewCredFromCert credential can be sent over mTLS.")
+	fmt.Println("  PASS  only a certificate credential can be sent over mTLS.")
 	return nil
 }
 

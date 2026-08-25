@@ -56,7 +56,7 @@ the same client can still mint a bound `mtls_pop` token on demand. See the sibli
 `confidential.New` returns an error for any non-certificate credential:
 
 ```
-WithSendCertificateOverMtls requires a certificate credential (NewCredFromCert)
+WithSendCertificateOverMtls requires a certificate credential, such as one from NewCredFromCert
 ```
 
 ## Running it
@@ -100,8 +100,8 @@ The first two sections are verbatim from a real run; they need no certificate an
 
 == guardrail: the option requires a certificate credential (offline) ==
   New(secret credential):          rejected
-  error:                           WithSendCertificateOverMtls requires a certificate credential (NewCredFromCert)
-  PASS  only a NewCredFromCert credential can be sent over mTLS.
+  error:                           WithSendCertificateOverMtls requires a certificate credential, such as one from NewCredFromCert
+  PASS  only a certificate credential can be sent over mTLS.
 ```
 
 With a certificate and network access, the run continues in this shape (token values and thumbprints
