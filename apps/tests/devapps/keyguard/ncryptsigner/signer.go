@@ -1,0 +1,468 @@
+//go:build windows
+
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+// Package ncryptsigner exposes a certificate from a Windows certificate store whose private key is
+// held by CNG -- including a KeyGuard (VBS-isolated) key -- as a [crypto.Signer], so it can be used
+// directly as [tls.Certificate].PrivateKey and therefore as an MSAL credential via
+// confidential.NewCredFromTLSCertificate.
+//
+// A KeyGuard key can never be an *rsa.PrivateKey: the private material lives inside a
+// virtualization-based-security trustlet and is not retrievable, so anything that type-asserts to
+// *rsa.PrivateKey is a hard block. crypto/tls, by contrast, only ever needs a crypto.Signer, which
+// is exactly what CNG can provide. Every signature here is produced by NCryptSignHash; no key
+// material crosses the CNG boundary.
+//
+// This package is sample and test code. It is deliberately NOT part of the MSAL public API: MSAL Go
+// stays platform-agnostic and takes any crypto.Signer, so the Windows-specific plumbing belongs to
+// the application. Copy it into your own project and adapt it; do not import it as a supported API,
+// because it carries no compatibility guarantee.
+package ncryptsigner
+
+import (
+	"bytes"
+	"crypto"
+	"crypto/rsa"
+	"crypto/x509"
+	"encoding/hex"
+	"fmt"
+	"io"
+	"runtime"
+	"strings"
+	"sync"
+	"unsafe"
+
+	"golang.org/x/sys/windows"
+)
+
+// ncrypt.dll holds the CNG key-storage-provider entry points. crypt32.dll's certificate APIs are
+// already wrapped with typed signatures by golang.org/x/sys/windows, so only the NCrypt* functions
+// need lazy binding here. NewLazySystemDLL resolves out of %SystemRoot%\System32 only, which avoids
+// DLL preloading attacks.
+var (
+	ncrypt = windows.NewLazySystemDLL("ncrypt.dll")
+
+	procNCryptSignHash    = ncrypt.NewProc("NCryptSignHash")
+	procNCryptFreeObject  = ncrypt.NewProc("NCryptFreeObject")
+	procNCryptGetProperty = ncrypt.NewProc("NCryptGetProperty")
+)
+
+const (
+	// BCRYPT_PAD_* select the RSA padding NCryptSignHash applies.
+	bcryptPadPKCS1 = 0x00000002
+	bcryptPadPSS   = 0x00000008
+
+	// NCRYPT_VIRTUAL_ISO_PROPERTY. CNG sets it to 1 for keys whose material is held by the VBS
+	// trustlet, which is what "KeyGuard" means in practice.
+	virtualIsoProperty = "Virtual Iso"
+
+	// chainURLRetrievalTimeoutMs bounds any AIA fetch CertGetCertificateChain performs to complete a
+	// chain whose intermediates aren't installed locally. Without a bound, chain building on a host
+	// with no outbound network can stall for the CryptoAPI default.
+	chainURLRetrievalTimeoutMs = 10000
+
+	// SECURITY_STATUS codes. NCrypt reports "no such property" with one of the latter three, which
+	// this package treats as a definitive answer rather than a failure.
+	errorSuccessSecurity = 0
+	nteNotFound          = 0x80090011
+	nteInvalidParameter  = 0x80090027
+	nteNotSupported      = 0x80090029
+)
+
+// cryptHashBlob is CRYPT_HASH_BLOB, the findPara CertFindCertificateInStore expects for
+// CERT_FIND_HASH.
+type cryptHashBlob struct {
+	cbData uint32
+	pbData *byte
+}
+
+// pkcs1PaddingInfo is BCRYPT_PKCS1_PADDING_INFO.
+type pkcs1PaddingInfo struct {
+	pszAlgID *uint16
+}
+
+// pssPaddingInfo is BCRYPT_PSS_PADDING_INFO.
+type pssPaddingInfo struct {
+	pszAlgID *uint16
+	cbSalt   uint32
+}
+
+// Signer is a crypto.Signer backed by a CNG key handle. The private key never leaves the CNG/VBS
+// boundary.
+//
+// A Signer holds OS handles and must be closed with [Signer.Close] when it is no longer needed.
+// It is safe for concurrent use: crypto/tls may sign from any goroutine.
+type Signer struct {
+	cert     *x509.Certificate
+	chain    [][]byte
+	chainErr error
+	pub      *rsa.PublicKey
+
+	// mu guards hKey against use-after-free if Close races a TLS handshake.
+	mu      sync.RWMutex
+	hKey    windows.Handle
+	closed  bool
+	release func()
+}
+
+// Certificate returns the leaf certificate.
+func (s *Signer) Certificate() *x509.Certificate { return s.cert }
+
+// Chain returns the DER-encoded certificate chain, leaf first, in the order [tls.Certificate] and
+// the JWT x5c header both require.
+//
+// The chain is built with CertGetCertificateChain and includes any intermediates, but deliberately
+// omits a self-signed root: x5c conventionally carries leaf plus intermediates, and Entra does not
+// need the root to validate the certificate. When the chain could not be built the slice degrades to
+// the leaf alone and [Signer.ChainError] explains why.
+func (s *Signer) Chain() [][]byte { return s.chain }
+
+// ChainError returns the reason [Signer.Chain] holds only the leaf, or nil if a full chain was
+// built. It is a warning, not a failure: [Open] still succeeds with a leaf-only chain, because a
+// leaf-only x5c is enough for Entra when the intermediates are already known to it.
+func (s *Signer) ChainError() error { return s.chainErr }
+
+// Public implements crypto.Signer.
+func (s *Signer) Public() crypto.PublicKey { return s.pub }
+
+// Close releases the CNG key handle, the certificate context and the store handle. It is idempotent.
+//
+// Close returns nothing because none of the underlying releases can fail in a way a caller could act
+// on, which also keeps "defer signer.Close()" correct at every call site.
+func (s *Signer) Close() {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed {
+		return
+	}
+	s.closed = true
+	if s.release != nil {
+		s.release()
+		s.release = nil
+	}
+}
+
+func algIDForHash(h crypto.Hash) (*uint16, error) {
+	switch h {
+	case crypto.SHA256:
+		return windows.StringToUTF16Ptr("SHA256"), nil
+	case crypto.SHA384:
+		return windows.StringToUTF16Ptr("SHA384"), nil
+	case crypto.SHA512:
+		return windows.StringToUTF16Ptr("SHA512"), nil
+	default:
+		return nil, fmt.Errorf("ncryptsigner: unsupported hash %v", h)
+	}
+}
+
+// Sign implements crypto.Signer. crypto/tls calls it with *rsa.PSSOptions for TLS 1.3
+// (rsa_pss_rsae_*) and with a bare crypto.Hash for TLS 1.2 PKCS#1 v1.5, so both paddings are
+// supported. The rand argument is ignored: CNG supplies its own randomness inside the key's
+// protection boundary.
+func (s *Signer) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	hash := opts.HashFunc()
+	algID, err := algIDForHash(hash)
+	if err != nil {
+		return nil, err
+	}
+	if len(digest) != hash.Size() {
+		return nil, fmt.Errorf("ncryptsigner: digest length %d does not match %v", len(digest), hash)
+	}
+
+	if pss, ok := opts.(*rsa.PSSOptions); ok {
+		saltLen := pss.SaltLength
+		switch saltLen {
+		case rsa.PSSSaltLengthAuto, rsa.PSSSaltLengthEqualsHash:
+			// Auto means "as large as possible" when signing, but CNG wants an explicit length and
+			// every TLS PSS scheme uses a salt the size of the hash.
+			saltLen = hash.Size()
+		}
+		info := pssPaddingInfo{pszAlgID: algID, cbSalt: uint32(saltLen)}
+		sig, err := s.signHash(unsafe.Pointer(&info), digest, bcryptPadPSS)
+		runtime.KeepAlive(&info)
+		return sig, err
+	}
+
+	info := pkcs1PaddingInfo{pszAlgID: algID}
+	sig, err := s.signHash(unsafe.Pointer(&info), digest, bcryptPadPKCS1)
+	runtime.KeepAlive(&info)
+	return sig, err
+}
+
+// signHash performs the two-call NCryptSignHash sequence: ask CNG for the signature size, then sign.
+func (s *Signer) signHash(padInfo unsafe.Pointer, digest []byte, flags uintptr) ([]byte, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return nil, fmt.Errorf("ncryptsigner: signer is closed")
+	}
+
+	var size uint32
+	status, _, _ := procNCryptSignHash.Call(
+		uintptr(s.hKey), uintptr(padInfo),
+		uintptr(unsafe.Pointer(&digest[0])), uintptr(len(digest)),
+		0, 0, uintptr(unsafe.Pointer(&size)), flags,
+	)
+	if status != errorSuccessSecurity {
+		return nil, ncryptError("NCryptSignHash(size)", status)
+	}
+
+	sig := make([]byte, size)
+	status, _, _ = procNCryptSignHash.Call(
+		uintptr(s.hKey), uintptr(padInfo),
+		uintptr(unsafe.Pointer(&digest[0])), uintptr(len(digest)),
+		uintptr(unsafe.Pointer(&sig[0])), uintptr(size),
+		uintptr(unsafe.Pointer(&size)), flags,
+	)
+	runtime.KeepAlive(digest)
+	if status != errorSuccessSecurity {
+		return nil, ncryptError("NCryptSignHash", status)
+	}
+	return sig[:size], nil
+}
+
+// IsVirtualIsolated reports the CNG "Virtual Iso" property, which is 1 for a KeyGuard
+// (VBS-isolated) key and absent or 0 otherwise.
+//
+// Applications should check this themselves whenever isolation is a security requirement. MSAL sets
+// its internal signer-only flag purely from the Go type of the key, so it cannot tell a VBS-isolated
+// key from a software key wrapped in a crypto.Signer, and it makes no isolation claim either way. A
+// provisioning step that silently fell back to a software key is otherwise invisible from Go.
+//
+// A provider that does not implement the property reports (false, nil): the property's absence is a
+// definitive "not isolated", not an error.
+func (s *Signer) IsVirtualIsolated() (bool, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	if s.closed {
+		return false, fmt.Errorf("ncryptsigner: signer is closed")
+	}
+
+	prop := windows.StringToUTF16Ptr(virtualIsoProperty)
+	var val uint32
+	var got uint32
+	status, _, _ := procNCryptGetProperty.Call(
+		uintptr(s.hKey), uintptr(unsafe.Pointer(prop)),
+		uintptr(unsafe.Pointer(&val)), unsafe.Sizeof(val),
+		uintptr(unsafe.Pointer(&got)), 0,
+	)
+	runtime.KeepAlive(prop)
+	switch status {
+	case errorSuccessSecurity:
+		return val == 1, nil
+	case nteNotSupported, nteNotFound, nteInvalidParameter:
+		return false, nil
+	default:
+		return false, ncryptError("NCryptGetProperty("+virtualIsoProperty+")", status)
+	}
+}
+
+// ncryptError renders a SECURITY_STATUS both as the Windows message (NTE_* codes are in the system
+// message table) and as the raw code, because the raw code is what CNG documentation refers to.
+func ncryptError(op string, status uintptr) error {
+	return fmt.Errorf("ncryptsigner: %s failed: %w (0x%08X)", op, windows.Errno(status), uint32(status))
+}
+
+// Open finds a certificate by SHA-1 thumbprint in the given store and returns a Signer bound to its
+// CNG key. storeLocation is "CurrentUser" or "LocalMachine"; storeName is a store such as "My".
+//
+// The caller must call [Signer.Close] to release the OS handles.
+func Open(storeLocation, storeName, thumbprint string) (*Signer, error) {
+	loc, err := storeLocationFlag(storeLocation)
+	if err != nil {
+		return nil, err
+	}
+	if storeName == "" {
+		return nil, fmt.Errorf("ncryptsigner: store name can't be empty")
+	}
+	hash, err := parseThumbprint(thumbprint)
+	if err != nil {
+		return nil, err
+	}
+
+	name, err := windows.UTF16PtrFromString(storeName)
+	if err != nil {
+		return nil, fmt.Errorf("ncryptsigner: bad store name %q: %w", storeName, err)
+	}
+	// The store is opened read-only, and OPEN_EXISTING keeps CryptoAPI from silently creating an
+	// empty store when the name is wrong -- that would otherwise surface as a confusing
+	// "certificate not found".
+	hStore, err := windows.CertOpenStore(
+		windows.CERT_STORE_PROV_SYSTEM_W, 0, 0,
+		loc|windows.CERT_STORE_READONLY_FLAG|windows.CERT_STORE_OPEN_EXISTING_FLAG,
+		uintptr(unsafe.Pointer(name)),
+	)
+	runtime.KeepAlive(name)
+	if err != nil {
+		return nil, fmt.Errorf("ncryptsigner: CertOpenStore(%s\\%s) failed: %w", storeLocation, storeName, err)
+	}
+	// Every failure past this point has to release what has already been acquired. cleanup is set to
+	// nil once ownership transfers to the returned Signer.
+	cleanup := func() { _ = windows.CertCloseStore(hStore, 0) }
+	defer func() {
+		if cleanup != nil {
+			cleanup()
+		}
+	}()
+
+	blob := cryptHashBlob{cbData: uint32(len(hash)), pbData: &hash[0]}
+	ctx, err := windows.CertFindCertificateInStore(
+		hStore, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0,
+		windows.CERT_FIND_HASH, unsafe.Pointer(&blob), nil,
+	)
+	runtime.KeepAlive(&blob)
+	if err != nil {
+		return nil, fmt.Errorf("ncryptsigner: certificate %s not found in %s\\%s: %w",
+			thumbprint, storeLocation, storeName, err)
+	}
+	closeStore := cleanup
+	cleanup = func() {
+		_ = windows.CertFreeCertificateContext(ctx)
+		closeStore()
+	}
+
+	der := derFromContext(ctx)
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		return nil, fmt.Errorf("ncryptsigner: parse certificate: %w", err)
+	}
+	pub, ok := leaf.PublicKey.(*rsa.PublicKey)
+	if !ok {
+		return nil, fmt.Errorf("ncryptsigner: only RSA certificates are supported, got %T", leaf.PublicKey)
+	}
+
+	// CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG forces an NCRYPT_KEY_HANDLE, which is required for
+	// VBS-isolated keys: they have no legacy CAPI representation. CRYPT_ACQUIRE_SILENT_FLAG keeps
+	// the provider from putting up UI on a headless machine.
+	var hKey windows.Handle
+	var keySpec uint32
+	var callerFree bool
+	err = windows.CryptAcquireCertificatePrivateKey(
+		ctx, windows.CRYPT_ACQUIRE_ONLY_NCRYPT_KEY_FLAG|windows.CRYPT_ACQUIRE_SILENT_FLAG, nil,
+		&hKey, &keySpec, &callerFree,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("ncryptsigner: CryptAcquireCertificatePrivateKey failed "+
+			"(the certificate has no CNG private key, or this process can't reach it): %w", err)
+	}
+
+	chain, chainErr := buildChain(ctx, hStore, der)
+
+	owned := cleanup
+	s := &Signer{cert: leaf, chain: chain, chainErr: chainErr, pub: pub, hKey: hKey}
+	s.release = func() {
+		if callerFree {
+			_, _, _ = procNCryptFreeObject.Call(uintptr(hKey))
+		}
+		owned()
+	}
+	cleanup = nil
+	return s, nil
+}
+
+func storeLocationFlag(storeLocation string) (uint32, error) {
+	switch strings.ToLower(strings.ReplaceAll(storeLocation, " ", "")) {
+	case "currentuser":
+		return windows.CERT_SYSTEM_STORE_CURRENT_USER, nil
+	case "localmachine":
+		return windows.CERT_SYSTEM_STORE_LOCAL_MACHINE, nil
+	default:
+		return 0, fmt.Errorf("ncryptsigner: unknown store location %q, want CurrentUser or LocalMachine", storeLocation)
+	}
+}
+
+// parseThumbprint accepts the SHA-1 thumbprint in any of the shapes Windows tooling emits: bare hex,
+// space-separated pairs (certmgr's Details tab), or colon-separated pairs.
+func parseThumbprint(thumbprint string) ([]byte, error) {
+	cleaned := strings.NewReplacer(" ", "", ":", "", "-", "").Replace(strings.TrimSpace(thumbprint))
+	if cleaned == "" {
+		return nil, fmt.Errorf("ncryptsigner: thumbprint can't be empty")
+	}
+	raw, err := hex.DecodeString(cleaned)
+	if err != nil {
+		return nil, fmt.Errorf("ncryptsigner: bad thumbprint %q: %w", thumbprint, err)
+	}
+	if len(raw) != 20 {
+		return nil, fmt.Errorf("ncryptsigner: thumbprint must be a 20-byte SHA-1 hash, got %d bytes", len(raw))
+	}
+	return raw, nil
+}
+
+// derFromContext copies the encoded certificate out of a CERT_CONTEXT into Go memory, so the result
+// outlives the context.
+func derFromContext(ctx *windows.CertContext) []byte {
+	der := make([]byte, ctx.Length)
+	copy(der, unsafe.Slice(ctx.EncodedCert, ctx.Length))
+	return der
+}
+
+// buildChain returns the DER chain for the certificate ctx refers to, leaf first, with intermediates
+// included and a self-signed root omitted.
+//
+// It never fails the caller: when a chain can't be built it returns the leaf alone plus the reason,
+// because a leaf-only x5c is still usable and refusing to open the signer would be a worse outcome
+// than a narrower chain. Callers that require intermediates should check the returned error (see
+// [Signer.ChainError]).
+func buildChain(ctx *windows.CertContext, additionalStore windows.Handle, leafDER []byte) ([][]byte, error) {
+	leafOnly := [][]byte{leafDER}
+
+	para := windows.CertChainPara{URLRetrievalTimeout: chainURLRetrievalTimeoutMs}
+	para.Size = uint32(unsafe.Sizeof(para))
+
+	var chainCtx *windows.CertChainContext
+	// A zeroed RequestedUsage means "no EKU filtering" and flags 0 means no revocation checking:
+	// this call is only used to discover issuers, never to decide trust. additionalStore lets
+	// intermediates that were imported alongside the leaf (the usual PFX case) be found even when
+	// they aren't in the machine's CA store.
+	err := windows.CertGetCertificateChain(0, ctx, nil, additionalStore, &para, 0, 0, &chainCtx)
+	runtime.KeepAlive(&para)
+	if err != nil {
+		return leafOnly, fmt.Errorf("ncryptsigner: CertGetCertificateChain failed, "+
+			"falling back to a leaf-only chain (x5c will carry no intermediates): %w", err)
+	}
+	defer windows.CertFreeCertificateChain(chainCtx)
+
+	if chainCtx.ChainCount == 0 {
+		return leafOnly, fmt.Errorf("ncryptsigner: CertGetCertificateChain returned no chains, " +
+			"falling back to a leaf-only chain")
+	}
+	simple := unsafe.Slice(chainCtx.Chains, chainCtx.ChainCount)[0]
+	if simple == nil || simple.NumElements == 0 {
+		return leafOnly, fmt.Errorf("ncryptsigner: CertGetCertificateChain returned an empty chain, " +
+			"falling back to a leaf-only chain")
+	}
+	elements := unsafe.Slice(simple.Elements, simple.NumElements)
+
+	chain := make([][]byte, 0, len(elements))
+	for i, element := range elements {
+		if element == nil || element.CertContext == nil {
+			return leafOnly, fmt.Errorf("ncryptsigner: chain element %d is empty, "+
+				"falling back to a leaf-only chain", i)
+		}
+		elementDER := derFromContext(element.CertContext)
+		if i == 0 {
+			// Element 0 has to be the certificate that was asked for; anything else means the chain
+			// engine resolved a different certificate, and that chain can't be trusted to describe
+			// this key.
+			if !bytes.Equal(elementDER, leafDER) {
+				return leafOnly, fmt.Errorf("ncryptsigner: chain does not start with the requested " +
+					"certificate, falling back to a leaf-only chain")
+			}
+			chain = append(chain, leafDER)
+			continue
+		}
+		cert, err := x509.ParseCertificate(elementDER)
+		if err != nil {
+			return leafOnly, fmt.Errorf("ncryptsigner: parsing chain element %d failed, "+
+				"falling back to a leaf-only chain: %w", i, err)
+		}
+		// Stop at a self-signed certificate: that's the root, and x5c carries leaf plus
+		// intermediates only. Entra already trusts the root and doesn't need it on the wire.
+		if bytes.Equal(cert.RawIssuer, cert.RawSubject) {
+			break
+		}
+		chain = append(chain, elementDER)
+	}
+	return chain, nil
+}
