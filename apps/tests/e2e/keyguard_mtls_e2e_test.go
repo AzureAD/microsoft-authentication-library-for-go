@@ -260,10 +260,15 @@ func TestKeyGuardMtlsPoPEndToEnd(t *testing.T) {
 	})
 }
 
-// TestKeyGuardSignerOnlyRejectsAssertionFlows proves the guard rail from the other direction: the
-// same credential used WITHOUT proof-of-possession has to fail fast with actionable guidance rather
-// than attempt an assertion signature the key can never produce.
-func TestKeyGuardSignerOnlyRejectsAssertionFlows(t *testing.T) {
+// TestKeyGuardSignerBackedAssertionSucceeds is the positive counterpart to the proof-of-possession
+// tests above, and the reason this change exists. This exact call used to fail fast, because the
+// JWT signing methods required an *rsa.PrivateKey that a VBS-isolated key can never produce. The
+// assertion is now signed through the CNG handle itself, so the call has to succeed and return an
+// ordinary Bearer token.
+//
+// x5c is sent because the lab app is an SN/I (subject name / issuer) registration: Entra matches
+// the assertion on the certificate chain rather than on a per-certificate thumbprint.
+func TestKeyGuardSignerBackedAssertionSucceeds(t *testing.T) {
 	signer := openKeyGuardSigner(t)
 
 	cred, err := confidential.NewCredFromTLSCertificate(tls.Certificate{
@@ -277,19 +282,34 @@ func TestKeyGuardSignerOnlyRejectsAssertionFlows(t *testing.T) {
 		envOrDefault(keyguardAuthorityEnv, keyguardDefaultAuthority),
 		envOrDefault(keyguardClientIDEnv, keyguardDefaultClientID),
 		cred,
+		confidential.WithX5C(),
 	)
 	if err != nil {
 		t.Fatalf("confidential.New() failed: %s", err)
 	}
 
-	_, err = app.AcquireTokenByCredential(context.Background(), []string{keyguardGraphScope})
-	if err == nil {
-		t.Fatal("a non-exportable key produced a client assertion, which is impossible; the signer-only " +
-			"guard is not being applied")
+	result, err := app.AcquireTokenByCredential(context.Background(), []string{keyguardGraphScope})
+	if err != nil {
+		t.Fatalf("a non-exportable key could not sign a client assertion: %s", err)
 	}
-	if !strings.Contains(err.Error(), "WithMtlsProofOfPossession") {
-		t.Fatalf("the error does not point the caller at WithMtlsProofOfPossession(): %s", err)
+	if result.AccessToken == "" {
+		t.Fatal("the call succeeded but returned no access token")
 	}
+
+	// No proof-of-possession option was passed, so this has to be an ordinary unbound token.
+	// Asserting on the token type, the binding certificate and the cnf claim together keeps the
+	// test meaningful if any one of them regresses on its own.
+	if !strings.EqualFold(result.Metadata.TokenType, "Bearer") {
+		t.Errorf("token type is %q, want Bearer", result.Metadata.TokenType)
+	}
+	if result.BindingCertificate != nil {
+		t.Error("the token carries a binding certificate although proof-of-possession was not requested")
+	}
+	if thumb, err := cnfThumbprint(result.AccessToken); err == nil {
+		t.Errorf("the token carries a cnf x5t#S256 claim (%s), so it is certificate-bound", thumb)
+	}
+
+	t.Logf("a VBS-isolated key signed a client assertion; Entra returned a %s token", result.Metadata.TokenType)
 }
 
 // cnfThumbprint extracts cnf["x5t#S256"] from an access token.
