@@ -6,28 +6,9 @@ package errors
 import (
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
-	"reflect"
 	"strings"
-
-	"github.com/kylelemons/godebug/pretty"
 )
-
-var prettyConf = &pretty.Config{
-	IncludeUnexported: false,
-	SkipZeroFields:    true,
-	TrackCycles:       true,
-	Formatter: map[reflect.Type]interface{}{
-		reflect.TypeOf((*io.Reader)(nil)).Elem(): func(r io.Reader) string {
-			b, err := io.ReadAll(r)
-			if err != nil {
-				return "could not read io.Reader content"
-			}
-			return string(b)
-		},
-	},
-}
 
 type verboser interface {
 	Verbose() string
@@ -82,7 +63,34 @@ func (e InvalidJsonErr) Error() string {
 func (e CallErr) Verbose() string {
 	e.Resp.Request = nil // This brings in a bunch of TLS crap we don't need
 	e.Resp.TLS = nil     // Same
-	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, prettyConf.Sprint(e.Req), prettyConf.Sprint(e.Resp))
+	return fmt.Sprintf("%s:\nRequest:\n%s\nResponse:\n%s", e.Err, dumpRequest(e.Req), dumpResponse(e.Resp))
+}
+
+func dumpRequest(req *http.Request) string {
+	if req == nil {
+		return "nil"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "{Method:     %q,\n", req.Method)
+	fmt.Fprintf(&b, " URL:        {Scheme:   %q,\n", req.URL.Scheme)
+	fmt.Fprintf(&b, "              Host:     %q,\n", req.URL.Host)
+	fmt.Fprintf(&b, "              Path:     %q},\n", req.URL.Path)
+	fmt.Fprintf(&b, " Proto:      %q,\n", req.Proto)
+	fmt.Fprintf(&b, " Host:       %q}", req.Host)
+	return b.String()
+}
+
+func dumpResponse(resp *http.Response) string {
+	if resp == nil {
+		return "nil"
+	}
+
+	var b strings.Builder
+	fmt.Fprintf(&b, "{Status:        %q,\n", resp.Status)
+	fmt.Fprintf(&b, " StatusCode:    %d,\n", resp.StatusCode)
+	fmt.Fprintf(&b, " Proto:         %q,\n", resp.Proto)
+	fmt.Fprintf(&b, " ContentLength: %d}", resp.ContentLength)
+	return b.String()
 }
 
 // Is reports whether any error in errors chain matches target.

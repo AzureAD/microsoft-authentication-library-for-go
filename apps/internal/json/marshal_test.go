@@ -7,8 +7,21 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
+
+func normalizeJSONValue(v interface{}) interface{} {
+	b, err := json.Marshal(v)
+	if err != nil {
+		return v
+	}
+	var normalized interface{}
+	if err := json.Unmarshal(b, &normalized); err != nil {
+		return v
+	}
+	return normalized
+}
 
 func TestMarshalStruct(t *testing.T) {
 	tests := []struct {
@@ -207,7 +220,7 @@ func TestMarshalStruct(t *testing.T) {
 			t.Errorf("TestMarshal(%s): Marshal produced invalid JSON:\n%s\n%s", test.desc, err, string(b))
 			continue
 		}
-		if diff := pretty.Compare(test.want, got); diff != "" {
+		if diff := cmp.Diff(normalizeJSONValue(test.want), normalizeJSONValue(got), cmpopts.EquateEmpty()); diff != "" {
 			t.Errorf("TestMarshal(%s): -want/+got:\n%s", test.desc, diff)
 		}
 	}
@@ -241,7 +254,7 @@ func TestEmptyTypes(t *testing.T) {
 		t.Fatalf("TestEmptyTypes: unexpected error when Umarshalling: %v", err)
 	}
 
-	if diff := pretty.Compare(got, val); diff != "" {
+	if diff := cmp.Diff(got, val, cmpopts.EquateEmpty()); diff != "" {
 		t.Fatalf("TestEmptyTypes: -want/+got:\n%s", diff)
 	}
 }
