@@ -15,7 +15,7 @@
 // Run it against a certificate whose key is KeyGuard (VBS) protected:
 //
 //	go run ./apps/tests/devapps/keyguard \
-//	  -thumbprint 0123456789ABCDEF0123456789ABCDEF01234567 \
+//	  -thumbprint 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF \
 //	  -client-id  <app registration client id> \
 //	  -authority  https://login.microsoftonline.com/<tenant id>
 //
@@ -73,7 +73,7 @@ func envOr(name, fallback string) string {
 func parseConfig() (config, error) {
 	var c config
 	flag.StringVar(&c.thumbprint, "thumbprint", os.Getenv("KEYGUARD_THUMBPRINT"),
-		"SHA-1 thumbprint of the certificate to use (env KEYGUARD_THUMBPRINT)")
+		"SHA-256 thumbprint of the certificate to use (env KEYGUARD_THUMBPRINT)")
 	flag.StringVar(&c.storeLocation, "store-location", envOr("KEYGUARD_STORE_LOCATION", defaultStoreLocation),
 		"certificate store location: CurrentUser or LocalMachine (env KEYGUARD_STORE_LOCATION)")
 	flag.StringVar(&c.storeName, "store-name", envOr("KEYGUARD_STORE_NAME", defaultStoreName),

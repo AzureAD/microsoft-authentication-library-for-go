@@ -18,7 +18,7 @@
 // These tests compile and run only with the "e2e" build tag, on Windows, and only when a KeyGuard
 // certificate thumbprint is supplied:
 //
-//	$env:KEYGUARD_E2E_THUMBPRINT = "<sha1 thumbprint>"
+//	$env:KEYGUARD_E2E_THUMBPRINT = "<sha256 thumbprint>"
 //	go test -tags e2e -run KeyGuard -v ./apps/tests/e2e/...
 //
 // See apps/tests/devapps/keyguard/README.md for how to provision the key.
@@ -86,7 +86,7 @@ func openKeyGuardSigner(t *testing.T) *ncryptsigner.Signer {
 
 	thumbprint := os.Getenv(keyguardThumbprintEnv)
 	if thumbprint == "" {
-		t.Skipf("set %s to the SHA-1 thumbprint of a KeyGuard (VBS-isolated) certificate to run this test; "+
+		t.Skipf("set %s to the SHA-256 thumbprint of a KeyGuard (VBS-isolated) certificate to run this test; "+
 			"see apps/tests/devapps/keyguard/README.md for provisioning", keyguardThumbprintEnv)
 	}
 	storeLocation := envOrDefault(keyguardStoreLocationEnv, keyguardDefaultStoreLocation)
