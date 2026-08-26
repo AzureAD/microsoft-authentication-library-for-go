@@ -70,6 +70,17 @@ export MTLS_CERT_PATH=/path/to/cert.pem
 go run ./apps/tests/devapps/mtlspop
 ```
 
+If your certificate is a PFX/PKCS#12 file (the usual case on Windows), convert it once:
+
+```sh
+openssl pkcs12 -in cert.pfx -nodes -out cert.pem
+```
+
+`-nodes` (`-noenc` in OpenSSL 3.x) is required — it leaves the private key unencrypted.
+`CertFromPEM` ignores its password parameter and skips encrypted key blocks, so a key left
+encrypted fails with the unhelpful `no private key found`. Protect the file with filesystem
+permissions instead. Block order does not matter; the leaf is found by matching the private key.
+
 Show the wire format, and call a resource end to end:
 
 ```sh

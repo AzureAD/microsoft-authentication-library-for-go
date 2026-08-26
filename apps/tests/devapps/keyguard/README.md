@@ -108,12 +108,34 @@ a PFX. If you re-import over the top without removing it first, an exportable co
 left behind in your store while you believe you are testing a non-exportable one. Delete the PFX
 afterwards too.
 
+### Getting the SHA-256 thumbprint
+
+This sample identifies a certificate by its **SHA-256** thumbprint, because SHA-1 is collision-prone
+and a lookup key that can collide is a certificate-substitution risk. Windows makes that value
+slightly awkward to obtain: `$cert.Thumbprint`, certmgr's *Thumbprint* field, and the paths in the
+`Cert:` drive are all SHA-1, and certmgr has no SHA-256 column. Ask for it explicitly:
+
+```powershell
+# By subject, when only one certificate matches:
+(Get-ChildItem Cert:\CurrentUser\My |
+    Where-Object { $_.Subject -eq 'CN=my-keyguard-test' }).GetCertHashString('SHA256')
+
+# Or convert a SHA-1 thumbprint you already have. The Cert: drive is indexed by SHA-1, so the
+# SHA-1 value is still what addresses the certificate here:
+(Get-Item Cert:\CurrentUser\My\<sha1 thumbprint>).GetCertHashString('SHA256')
+```
+
+Keep that 64-character value: it is what `-thumbprint` and `KEYGUARD_THUMBPRINT` expect. Passing the
+40-character SHA-1 value instead is the most likely mistake, so the sample detects it and tells you
+how to convert it rather than reporting a bare length error.
+
 ### Verifying isolation
 
 This check is offline and needs no app registration, so do it before anything else:
 
 ```powershell
-$c   = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.Thumbprint -eq '<thumbprint>' }
+$c   = Get-ChildItem Cert:\CurrentUser\My |
+       Where-Object { $_.GetCertHashString('SHA256') -eq '<sha256 thumbprint>' }
 $rsa = [System.Security.Cryptography.X509Certificates.RSACertificateExtensions]::GetRSAPrivateKey($c)
 $rsa.Key.ExportPolicy   # expect: None
 $rsa.Key.GetProperty('Virtual Iso',
@@ -150,7 +172,7 @@ perform a client-certificate handshake, so a bound token has to go to the dedica
 
 ```powershell
 go run ./apps/tests/devapps/keyguard `
-  -thumbprint 0123456789ABCDEF0123456789ABCDEF01234567 `
+  -thumbprint 0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF `
   -client-id  <app registration client id> `
   -authority  https://login.microsoftonline.com/<tenant id>
 ```
@@ -197,7 +219,7 @@ the token's `cnf["x5t#S256"]` claim and the negative case where the bound token 
 the client certificate. It is behind the `e2e` build tag and skips unless a thumbprint is supplied:
 
 ```powershell
-$env:KEYGUARD_E2E_THUMBPRINT = "0123456789ABCDEF0123456789ABCDEF01234567"
+$env:KEYGUARD_E2E_THUMBPRINT = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
 go test -tags e2e -run KeyGuard -v ./apps/tests/e2e/...
 ```
 
@@ -209,7 +231,8 @@ integration tests use.
 
 | Symptom                                                                       | Cause                                                                                       |
 | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| `certificate ... not found`                                                   | Wrong store location, store name, or thumbprint. `LocalMachine` also needs an elevated process. |
+| `certificate ... not found`                                                   | Wrong store location, store name, or SHA-256 thumbprint. `LocalMachine` also needs an elevated process. |
+| `looks like a SHA-1 thumbprint`                                               | A 40-character SHA-1 value was passed; the lookup needs the 64-character SHA-256 one. See above. |
 | `CryptAcquireCertificatePrivateKey failed`                                    | The certificate has no CNG private key, or this account cannot reach it.                     |
 | `VBS isolated: false`                                                          | The key is a software key. Re-provision it with virtual isolation.                            |
 | `chain length: 1` with a warning                                              | The intermediates are not installed locally and could not be fetched.                        |

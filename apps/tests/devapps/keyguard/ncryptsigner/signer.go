@@ -53,6 +53,21 @@ const (
 	bcryptPadPKCS1 = 0x00000002
 	bcryptPadPSS   = 0x00000008
 
+	// certFindSHA256Hash is CERT_FIND_SHA256_HASH, i.e. CERT_COMPARE_SHA256_HASH (22) <<
+	// CERT_COMPARE_SHIFT (16). It is declared here rather than taken from golang.org/x/sys/windows
+	// because the version this module pins exposes only the SHA-1 and MD5 find types --
+	// windows.CERT_FIND_HASH is itself an alias for CERT_FIND_SHA1_HASH. wincrypt.h defines this
+	// value directly beside CERT_FIND_SHA1_HASH with no version guard, so CryptoAPI accepts it
+	// wherever the SHA-1 form works.
+	certFindSHA256Hash = 22 << 16 // 0x00160000
+
+	// Thumbprint lengths in bytes. Certificates are looked up by SHA-256, because SHA-1 is
+	// collision-broken and a lookup key that can collide is a certificate-substitution risk. The
+	// SHA-1 length is recognized only to return a better error: it is the value every Windows
+	// surface displays.
+	sha1ThumbprintLen   = 20
+	sha256ThumbprintLen = 32
+
 	// NCRYPT_VIRTUAL_ISO_PROPERTY. CNG sets it to 1 for keys whose material is held by the VBS
 	// trustlet, which is what "KeyGuard" means in practice.
 	virtualIsoProperty = "Virtual Iso"
@@ -70,8 +85,9 @@ const (
 	nteNotSupported      = 0x80090029
 )
 
-// cryptHashBlob is CRYPT_HASH_BLOB, the findPara CertFindCertificateInStore expects for
-// CERT_FIND_HASH.
+// cryptHashBlob is CRYPT_HASH_BLOB, the findPara CertFindCertificateInStore expects for a hash
+// find type such as CERT_FIND_SHA256_HASH. It is length-prefixed by cbData, so it carries a hash of
+// any width.
 type cryptHashBlob struct {
 	cbData uint32
 	pbData *byte
@@ -264,8 +280,8 @@ func ncryptError(op string, status uintptr) error {
 	return fmt.Errorf("ncryptsigner: %s failed: %w (0x%08X)", op, windows.Errno(status), uint32(status))
 }
 
-// Open finds a certificate by SHA-1 thumbprint in the given store and returns a Signer bound to its
-// CNG key. storeLocation is "CurrentUser" or "LocalMachine"; storeName is a store such as "My".
+// Open finds a certificate by SHA-256 thumbprint in the given store and returns a Signer bound to
+// its CNG key. storeLocation is "CurrentUser" or "LocalMachine"; storeName is a store such as "My".
 //
 // The caller must call [Signer.Close] to release the OS handles.
 func Open(storeLocation, storeName, thumbprint string) (*Signer, error) {
@@ -309,7 +325,7 @@ func Open(storeLocation, storeName, thumbprint string) (*Signer, error) {
 	blob := cryptHashBlob{cbData: uint32(len(hash)), pbData: &hash[0]}
 	ctx, err := windows.CertFindCertificateInStore(
 		hStore, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0,
-		windows.CERT_FIND_HASH, unsafe.Pointer(&blob), nil,
+		certFindSHA256Hash, unsafe.Pointer(&blob), nil,
 	)
 	runtime.KeepAlive(&blob)
 	if err != nil {
@@ -372,8 +388,8 @@ func storeLocationFlag(storeLocation string) (uint32, error) {
 	}
 }
 
-// parseThumbprint accepts the SHA-1 thumbprint in any of the shapes Windows tooling emits: bare hex,
-// space-separated pairs (certmgr's Details tab), or colon-separated pairs.
+// parseThumbprint accepts the SHA-256 thumbprint in any of the shapes Windows tooling emits: bare
+// hex, space-separated pairs (certmgr's Details tab), or colon-separated pairs.
 func parseThumbprint(thumbprint string) ([]byte, error) {
 	cleaned := strings.NewReplacer(" ", "", ":", "", "-", "").Replace(strings.TrimSpace(thumbprint))
 	if cleaned == "" {
@@ -383,8 +399,19 @@ func parseThumbprint(thumbprint string) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("ncryptsigner: bad thumbprint %q: %w", thumbprint, err)
 	}
-	if len(raw) != 20 {
-		return nil, fmt.Errorf("ncryptsigner: thumbprint must be a 20-byte SHA-1 hash, got %d bytes", len(raw))
+	// A 20-byte value is a SHA-1 thumbprint, which is what every Windows surface hands out:
+	// certmgr's Details tab, the Cert: drive's path, and $cert.Thumbprint all show SHA-1. It is
+	// the overwhelmingly likely first thing a caller pastes, so name it and give the one-liner
+	// that converts it instead of reporting a bare length mismatch.
+	if len(raw) == sha1ThumbprintLen {
+		return nil, fmt.Errorf("ncryptsigner: %q looks like a SHA-1 thumbprint; this sample identifies "+
+			"certificates by SHA-256 thumbprint because SHA-1 is collision-prone. Get the SHA-256 value with: "+
+			`(Get-Item Cert:\CurrentUser\My\%s).GetCertHashString('SHA256')`,
+			thumbprint, strings.ToUpper(cleaned))
+	}
+	if len(raw) != sha256ThumbprintLen {
+		return nil, fmt.Errorf("ncryptsigner: thumbprint must be a %d-byte SHA-256 hash, got %d bytes",
+			sha256ThumbprintLen, len(raw))
 	}
 	return raw, nil
 }
