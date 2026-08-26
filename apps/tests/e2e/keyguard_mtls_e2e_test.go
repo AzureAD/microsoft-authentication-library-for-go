@@ -151,8 +151,9 @@ func TestKeyGuardMtlsPoPEndToEnd(t *testing.T) {
 	ctx := context.Background()
 	scopes := []string{keyguardGraphScope}
 
-	// WithMtlsProofOfPossession is mandatory for a non-exportable key: every other flow signs a
-	// client assertion, which requires an *rsa.PrivateKey a KeyGuard key can never be.
+	// WithMtlsProofOfPossession asks for a certificate-bound token: the mutual-TLS handshake both
+	// authenticates the client and binds the token, so no client assertion is sent. It is one of two
+	// flows this key can use; TestKeyGuardSignerBackedAssertionSucceeds covers the other.
 	result, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
 	if err != nil {
 		t.Fatalf("AcquireTokenByCredential() with mTLS PoP failed: %s", err)

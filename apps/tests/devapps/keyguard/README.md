@@ -40,21 +40,35 @@ and it deliberately makes no isolation claim either way. A provisioning step tha
 to a software key would therefore be completely invisible from Go. If isolation is a security
 requirement for your workload, assert on it in your own code, as the sample does.
 
-## Why `WithMtlsProofOfPossession()` is mandatory
+## Choosing between mTLS PoP and a client assertion
 
-It is not an optimization; it is the only flow a non-exportable key can use.
+A non-exportable key works in both flows, so this is a design decision rather than a constraint.
 
-Every other confidential-client flow signs a `client_assertion` JWT, and the JWT RSA signing methods
-require an `*rsa.PrivateKey`, which a KeyGuard key can never be. Those flows fail fast in
-`Credential.JWT()` with:
+**mTLS proof-of-possession**, which is what `main.go` does, sends no assertion at all: the client
+certificate on the mutual-TLS handshake both authenticates the client and binds the token, so the key
+is only ever asked to sign the handshake. The result is a certificate-bound token — a resource can
+confirm the caller holds the key the token was issued to by comparing the presented certificate with
+the `cnf["x5t#S256"]` claim. Request it with `confidential.WithMtlsProofOfPossession()`.
 
-```
-this credential's private key is not exportable and can only be used with WithMtlsProofOfPossession()
-```
+**A client assertion**, which is what every other confidential-client flow sends, is signed through
+the `crypto.Signer` rather than an `*rsa.PrivateKey`, so the CNG handle signs it without exporting
+anything. The result is an ordinary bearer token, not bound to the certificate. Add
+`confidential.WithX5C()` when the app registration is SN/I, so Entra matches the assertion on the
+certificate chain rather than on a per-certificate thumbprint.
 
-With mTLS proof-of-possession no assertion is sent at all: the client certificate on the mutual-TLS
-handshake both authenticates the client and binds the token, so the key is only ever asked to sign
-the handshake.
+Prefer proof-of-possession where the resource accepts it: a bound token is of no use to anyone who
+steals it. Use an assertion when the resource only takes bearer tokens.
+
+### Assertion signing can fall back to RS256
+
+Assertions are signed PS256 (RSA-PSS) and carry an `x5t#S256` header thumbprint. Some providers —
+CNG, KeyGuard, HSMs, smart cards — cannot do RSA-PSS at all, so if the signer fails MSAL rebuilds the
+assertion once with PKCS #1 v1.5 (RS256) and an `x5t` thumbprint, as MSAL .NET does. It is automatic
+and needs no configuration; the retry is visible only as a different `alg` on the wire.
+
+Only signer-backed keys reach the retry. An exportable `*rsa.PrivateKey` uses Go's software RSA, which
+always supports PSS, and ADFS and dSTS authorities sign RS256 to begin with, so both report the
+original signing error instead.
 
 ## Provisioning a KeyGuard key
 
@@ -236,5 +250,4 @@ integration tests use.
 | `CryptAcquireCertificatePrivateKey failed`                                    | The certificate has no CNG private key, or this account cannot reach it.                     |
 | `VBS isolated: false`                                                          | The key is a software key. Re-provision it with virtual isolation.                            |
 | `chain length: 1` with a warning                                              | The intermediates are not installed locally and could not be fetched.                        |
-| `not exportable and can only be used with WithMtlsProofOfPossession()`        | A flow other than mTLS PoP was requested. See above.                                          |
 | HTTP 401 from the resource                                                     | The binding certificate was not presented, or the app/resource pair is not allow-listed.      |
