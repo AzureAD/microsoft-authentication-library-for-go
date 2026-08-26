@@ -81,6 +81,17 @@ exercises for this flow. Set it to opt into the regional token endpoint.
 as a single PEM file. Without `-cert` the demo prints the explanation and exits 0; it never
 fabricates a token.
 
+If your certificate is a PFX/PKCS#12 file (the usual case on Windows), convert it once:
+
+```sh
+openssl pkcs12 -in cert.pfx -nodes -out cert.pem
+```
+
+`-nodes` (`-noenc` in OpenSSL 3.x) is required — it leaves the private key unencrypted.
+`CertFromPEM` ignores its password parameter and skips encrypted key blocks, so a key left
+encrypted fails with the unhelpful `no private key found`. Protect the file with filesystem
+permissions instead. Block order does not matter; the leaf is found by matching the private key.
+
 ## Expected output
 
 Without a certificate it prints the `Two-leg FIC over mTLS proof-of-possession` section explaining
