@@ -258,7 +258,7 @@ Notes:
   TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
   `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
 - **The signer lives in your code**: MSAL adds no platform-specific dependencies. Implement
-  `crypto.Signer` over your key provider (NCrypt, PKCS#11, KMS, ...) and hand it to MSAL.
+  `crypto.Signer` over your key provider (NCrypt, TPM 2.0, PKCS#11, KMS, ...) and hand it to MSAL.
 - `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`.
 
 ## Community Help and Support

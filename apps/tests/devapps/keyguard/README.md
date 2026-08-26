@@ -13,6 +13,12 @@ public API -> developer code -> real credential -> token acquisition
   -> returned binding certificate -> resource call
 ```
 
+KeyGuard is a Windows technology, so this sample is Windows-only — but MSAL Go is not. The library
+needs only a `crypto.Signer`, so the same code path works with a TPM 2.0 key on Linux, a PKCS#11 HSM
+or a cloud KMS; MSAL takes no dependency on any of them, so the provider-specific part is yours to
+write. See "Non-exportable keys (KeyGuard, CNG, HSM)" in the root `README.md` for the general
+contract.
+
 ## What is in this directory
 
 | Path                  | What it is                                                                   |
