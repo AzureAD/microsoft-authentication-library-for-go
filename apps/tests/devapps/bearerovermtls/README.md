@@ -69,10 +69,22 @@ go run ./apps/tests/devapps/bearerovermtls -cert /path/to/sni-cert.pem
 the certificate is embedded in this program or written to its output, and no certificate is committed
 to this repository.
 
+If your certificate is a PFX/PKCS#12 file (the usual case on Windows), convert it once:
+
+```sh
+openssl pkcs12 -in cert.pfx -nodes -out cert.pem
+```
+
+`-nodes` (`-noenc` in OpenSSL 3.x) is required — it leaves the private key unencrypted.
+`CertFromPEM` ignores its password parameter and skips encrypted key blocks, so a key left
+encrypted fails with the unhelpful `no private key found`. Protect the file with filesystem
+permissions instead. Block order does not matter; the leaf is found by matching the private key.
+
 The first section (the credential guardrail) runs entirely offline, so `go run
 ./apps/tests/devapps/bearerovermtls` with no arguments still prints something useful before it stops
 with an actionable "no certificate supplied" message. Everything after it needs the certificate,
 network access, and an mTLS-enabled app registration.
+
 ### Flags
 
 Every flag falls back to an environment variable, then to a known-good lab default. The defaults

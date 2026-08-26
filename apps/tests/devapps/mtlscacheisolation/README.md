@@ -72,6 +72,17 @@ the certificate is embedded in this program or written to its output, and no cer
 to this repository. Access tokens are never printed in full — only a short, non-reversible
 head/tail fingerprint, so two tokens can be told apart on screen.
 
+If your certificate is a PFX/PKCS#12 file (the usual case on Windows), convert it once:
+
+```sh
+openssl pkcs12 -in cert.pfx -nodes -out cert.pem
+```
+
+`-nodes` (`-noenc` in OpenSSL 3.x) is required — it leaves the private key unencrypted.
+`CertFromPEM` ignores its password parameter and skips encrypted key blocks, so a key left
+encrypted fails with the unhelpful `no private key found`. Protect the file with filesystem
+permissions instead. Block order does not matter; the leaf is found by matching the private key.
+
 Unlike the sibling [`bearerovermtls`](../bearerovermtls) demo, this one has no offline path: it needs
 the certificate, network access, and an mTLS-enabled app registration, because the whole point is what
 the cache does with two real tokens.
