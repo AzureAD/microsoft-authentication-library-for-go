@@ -175,15 +175,15 @@ func run() error {
 
 	// Step 5: acquire the token.
 	//
-	// WithMtlsProofOfPossession is MANDATORY for a non-exportable key, not an optimization. It is the
-	// only flow that never signs a client assertion: the mutual-TLS handshake both authenticates the
-	// client and binds the token, so the key is only ever asked to sign the handshake. Every other
-	// flow reaches the signer-only gate in Credential.JWT() and fails with
+	// WithMtlsProofOfPossession is a choice here, not a requirement. It returns a certificate-bound
+	// token: the mutual-TLS handshake both authenticates the client and binds the token, so the key
+	// is only ever asked to sign the handshake and no assertion is sent at all.
 	//
-	//	this credential's private key is not exportable and can only be used with
-	//	WithMtlsProofOfPossession()
-	//
-	// because the JWT signing methods require an *rsa.PrivateKey, which a KeyGuard key can never be.
+	// The same key can equally sign a client assertion, which is what every other confidential-client
+	// flow sends. MSAL signs it through the crypto.Signer, here the CNG handle, instead of requiring
+	// an *rsa.PrivateKey, so a non-exportable key is not shut out of those flows. That path returns
+	// an ordinary bearer token rather than a bound one, and needs confidential.WithX5C() when the app
+	// registration uses subject name / issuer (SN/I).
 	ctx := context.Background()
 	result, err := app.AcquireTokenByCredential(ctx, []string{cfg.scope},
 		confidential.WithMtlsProofOfPossession())
