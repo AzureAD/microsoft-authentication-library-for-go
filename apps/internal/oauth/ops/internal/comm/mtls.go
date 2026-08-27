@@ -213,7 +213,11 @@ func rejectTLSDialHooks(t *http.Transport, source, remedy string) error {
 	switch {
 	case t.DialTLSContext != nil:
 		hook = "DialTLSContext"
-	case t.DialTLS != nil:
+	// DialTLS is deprecated but not disabled: Transport.customDialTLS still calls it whenever
+	// DialTLSContext is nil, and Transport.Clone copies it. Detecting the hook therefore means
+	// reading the deprecated field, and not reading it would reintroduce exactly the bypass this
+	// function exists to prevent.
+	case t.DialTLS != nil: //nolint:staticcheck // SA1019: read to reject the deprecated hook, not to use it.
 		hook = "DialTLS"
 	default:
 		return nil

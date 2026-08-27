@@ -8,6 +8,21 @@
 *.swp
 *.pprof
 
+# Certificates and private keys
+*.pem
+*.crt
+*.cer
+*.cert
+*.der
+*.p7b
+*.p7c
+*.p12
+*.pfx
+*.key
+*.jks
+*.keystore
+
+
 # OSX specific os files
 *.DS_Store
 
