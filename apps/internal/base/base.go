@@ -152,35 +152,37 @@ func (ar AuthResult) BindingCertificateThumbprint() string {
 }
 
 // bindingCertWithLeaf returns a binding certificate whose Leaf is guaranteed to be populated, or nil
-// when cert is nil or carries no parsable leaf. It never writes to cert: the same *tls.Certificate is
-// retained by the per-thumbprint mTLS client cache, so populating Leaf in place would race with
-// concurrent token acquisitions.
+// when cert is nil, carries no DER chain, or carries no parsable leaf. It never writes to cert: the
+// same *tls.Certificate is retained by the per-thumbprint mTLS client cache, so populating Leaf in
+// place would race with concurrent token acquisitions.
 //
 // The DER chain is deep-copied for the same reason. A shallow copy would share the backing arrays of
 // Certificate with the cached certificate, so a caller mutating
 // result.BindingCertificate.Certificate[i] could corrupt a future TLS handshake or race an in-flight
 // one.
 //
+// The leaf is re-parsed from that copy rather than reused, which is why the copy is made first.
+// x509.ParseCertificate aliases the DER it is handed instead of copying it, so a parsed certificate's
+// Raw (and RawTBSCertificate, RawSubject, ...) stays a live window onto whichever chain it came from.
+// Reusing cert.Leaf would therefore hand back the credential's own *x509.Certificate: mutating the
+// returned Leaf.Raw would change every later thumbprint and authentication-scheme key ID, race
+// concurrent acquisitions, and leave Leaf disagreeing with the Certificate bytes actually presented on
+// the wire. Parsing from out.Certificate[0] keeps Leaf.Raw pointing into this result's private copy,
+// so Leaf and Certificate always describe the same bytes and a caller can only corrupt its own value.
+//
 // PrivateKey is deliberately shared rather than copied: callers need the live signer to present the
 // certificate on the handshake to the resource, and a non-exportable key cannot be copied at all.
 func bindingCertWithLeaf(cert *tls.Certificate) *tls.Certificate {
-	if cert == nil {
+	if cert == nil || len(cert.Certificate) == 0 {
 		return nil
 	}
-	leaf := cert.Leaf
-	if leaf == nil {
-		if len(cert.Certificate) == 0 {
-			return nil
-		}
-		parsed, err := x509.ParseCertificate(cert.Certificate[0])
-		if err != nil {
-			return nil
-		}
-		leaf = parsed
-	}
 	out := *cert
-	out.Leaf = leaf
 	out.Certificate = copyDERChain(cert.Certificate)
+	leaf, err := x509.ParseCertificate(out.Certificate[0])
+	if err != nil {
+		return nil
+	}
+	out.Leaf = leaf
 	return &out
 }
 

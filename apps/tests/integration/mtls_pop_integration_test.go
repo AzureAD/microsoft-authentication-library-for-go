@@ -5,13 +5,17 @@ package integration
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"strings"
 	"testing"
@@ -36,12 +40,38 @@ const (
 	graphMtlsResourceURL = "https://mtlstb.graph.microsoft.com/v1.0/applications?$top=1"
 )
 
-// mtlsMissingCertMarker is the error code the Graph mTLS host returns when an mtls_pop token arrives
-// without the client certificate it is bound to. requireTokenRejectedWithoutCertificate asserts on
-// this marker and not on the status code alone, because it is the only part of the response that
-// attributes the rejection specifically to the absent certificate. Mirrors MSAL .NET PR #6167, which
-// asserts on the same marker.
-const mtlsMissingCertMarker = "MtlsMissingClientCertificate"
+// The markers below are the error codes the Graph mTLS host returns for the three ways a call can
+// fail the certificate-binding contract. requireTokenRejectedByResource asserts on these and not on
+// the status code alone: all three rejections are an HTTP 401 carrying the same
+// "InvalidAuthenticationToken" error code, so only the marker attributes a rejection to the one
+// thing its negative control changed. The three markers are mutually exclusive, which is what stops
+// a control that started failing for some other reason from passing anyway.
+//
+// All three were captured from the live resource. Mirrors MSAL .NET PR #6167, which asserts on
+// mtlsMissingCertMarker.
+const (
+	// mtlsMissingCertMarker: no client certificate was presented on the handshake at all.
+	mtlsMissingCertMarker = "MtlsMissingClientCertificate"
+
+	// mtlsWrongSchemeMarker: the binding certificate was presented, but the token was offered under
+	// "Bearer", a scheme that carries no proof-of-possession. Distinct from mtlsMissingCertMarker
+	// because the certificate is on the handshake here, so only the scheme can explain the
+	// rejection. The resource validates the scheme before the binding, so this marker is returned
+	// whatever certificate is presented and never overlaps with mtlsWrongCertMarker.
+	//
+	// This is a fixed server-side error string rather than an error code; if it ever proves
+	// brittle, "Cnf claim not supported over" is the stable prefix to fall back to. Do not weaken
+	// it to the bare HTTP status, which proves nothing here.
+	mtlsWrongSchemeMarker = "Cnf claim not supported over Bearer protocol."
+
+	// mtlsWrongCertMarker: a client certificate was presented under the right scheme, but it is not
+	// the one named by the token's cnf claim. Distinct from mtlsMissingCertMarker, which is what
+	// this same request returns when nothing is presented - confirmed against the live resource by
+	// replaying it with a deliberately empty certificate. That distinction is what makes the
+	// wrong-certificate control prove the resource compares the certificate against the binding,
+	// rather than merely checking that some certificate exists.
+	mtlsWrongCertMarker = "MtlsCnfClaimRequestDataValidationFailed"
+)
 
 // SN/I-allow-listed app + MSI team tenant; mTLS PoP only works on this pair. Mirrors MSAL .NET
 // ClientCredentialsMtlsPopTests and MSAL Java MtlsPopIT. Public identifiers, not secrets.
@@ -148,84 +178,149 @@ func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert *tls
 	}
 }
 
-// requireTokenRejectedWithoutCertificate is the negative control for requireTokenAcceptedByResource.
-// The HTTP 200 that helper requires proves the token is usable, but on its own it does not prove the
+// mtlsNegativeControl describes one negative control for requireTokenAcceptedByResource: the single
+// deviation from that positive call, and the marker that must attribute the rejection to it.
+type mtlsNegativeControl struct {
+	// deviation names the one thing this control changes relative to the positive call. It is
+	// interpolated into every failure message below, so phrase it to read after "even though".
+	deviation string
+	// scheme is the Authorization scheme to send. "mtls_pop" matches the positive call.
+	scheme string
+	// clientCert is the certificate offered on the TLS handshake; nil offers none. The token's
+	// binding certificate matches the positive call.
+	clientCert *tls.Certificate
+	// wantMarker is the error marker the resource must return. This, and not the status code, is
+	// what pins the rejection to deviation.
+	wantMarker string
+}
+
+// requireTokenRejectedByResource is the negative control for requireTokenAcceptedByResource. The
+// HTTP 200 that helper requires proves the token is usable, but on its own it does not prove the
 // resource is enforcing the certificate binding: a resource that ignored client certificates
 // entirely would answer 200 just the same. Only a controlled negative separates those two worlds.
 //
-// So this replays the *identical* request - same token, same URL, same "Authorization: mtls_pop
-// <token>" header, same timeout and TLS floor - and changes exactly one thing: no client certificate
-// is offered on the handshake. Because that is the only variable, a rejection here can only be
-// attributed to the missing certificate. Anything that made the two calls differ in some other way
-// (a different URL, a re-acquired token, a different auth scheme) would break that attribution and
+// So this replays the *identical* request - same token, same URL, same timeout and TLS floor - and
+// changes exactly one thing, described by control. Because that is the only variable, a rejection
+// can only be attributed to it. Anything that made the two calls differ in some other way (a
+// different URL, a re-acquired token, two deviations at once) would break that attribution and
 // leave the test proving nothing, so keep them in lockstep.
 //
-// The assertion is on mtlsMissingCertMarker rather than on the status code alone: a bare 401 could
-// equally mean the token expired or was malformed, neither of which says anything about enforcement.
-// The marker is what pins the failure to the absent certificate. Mirrors MSAL .NET PR #6167.
-func requireTokenRejectedWithoutCertificate(t *testing.T, token string) {
+// The assertion is on control.wantMarker rather than on the status code alone: a bare 401 could
+// equally mean the token expired or was malformed, neither of which says anything about
+// enforcement. The marker is what pins the failure to the deviation - all three controls otherwise
+// return an indistinguishable HTTP 401 with error code "InvalidAuthenticationToken". Mirrors MSAL
+// .NET PR #6167.
+func requireTokenRejectedByResource(t *testing.T, token string, control mtlsNegativeControl) {
 	t.Helper()
 
-	// No Certificates on the TLS config: this omission is the single variable under test.
+	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12}
+	if control.clientCert != nil {
+		// Deliberately GetClientCertificate and not Certificates. With Certificates, Go only sends
+		// the certificate if it satisfies the server's CertificateRequest, and silently sends an
+		// EMPTY certificate message if it does not. The Graph mTLS host currently advertises no
+		// acceptable CAs, so today both spellings put the certificate on the wire - but were that
+		// to change, the wrong-certificate control would silently stop presenting a certificate at
+		// all and decay into a duplicate of the no-certificate control. GetClientCertificate forces
+		// the certificate onto the wire unconditionally, so the control keeps testing what it says
+		// it tests. (The wantMarker assertion is the backstop: such a decay would return
+		// mtlsMissingCertMarker and fail here rather than pass silently.)
+		cert := control.clientCert
+		tlsConfig.GetClientCertificate = func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+			return cert, nil
+		}
+	}
+
 	client := &http.Client{
-		Timeout: 30 * time.Second,
-		Transport: &http.Transport{
-			TLSClientConfig: &tls.Config{
-				MinVersion: tls.VersionTLS12,
-			},
-		},
+		Timeout:   30 * time.Second,
+		Transport: &http.Transport{TLSClientConfig: tlsConfig},
 	}
 
 	req, err := http.NewRequest(http.MethodGet, graphMtlsResourceURL, nil)
 	if err != nil {
-		t.Fatalf("building the certificate-less mTLS resource request failed: %s", err)
+		t.Fatalf("building the mTLS resource request for the negative control (%s) failed: %s",
+			control.deviation, err)
 	}
-	req.Header.Set("Authorization", "mtls_pop "+token)
+	req.Header.Set("Authorization", control.scheme+" "+token)
 
 	resp, err := client.Do(req)
 	if err != nil {
 		// A transport-level failure is deliberately not accepted as proof of enforcement: a DNS
-		// failure or a timeout would be indistinguishable from a refused handshake. If the resource
-		// ever moves enforcement down to the TLS layer and rejects the certificate-less handshake
-		// outright, it will surface here, and this check should then be relaxed deliberately rather
-		// than by accident.
-		t.Fatalf("the certificate-less call to %s failed before any HTTP response was received: %s",
-			graphMtlsResourceURL, err)
+		// failure or a timeout would be indistinguishable from a refused handshake. The resource
+		// enforces all three of these controls at the application layer - verified live, where even
+		// an untrusted, unrelated client certificate completes the handshake and is then rejected
+		// with an HTTP 401 - so if the resource ever moves enforcement down to the TLS layer and
+		// refuses the handshake outright, it will surface here, and this check should then be
+		// relaxed deliberately rather than by accident.
+		t.Fatalf("the negative control call to %s (%s) failed before any HTTP response was received: %s",
+			graphMtlsResourceURL, control.deviation, err)
 	}
 	defer resp.Body.Close()
 
-	// Truncate the external response body before emitting it into (public) CI logs. The marker sits
-	// in the first ~80 bytes of the resource's error envelope, well inside this limit.
+	// Truncate the external response body before emitting it into (public) CI logs. Every marker
+	// sits in the first ~100 bytes of the resource's error envelope, well inside this limit.
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 
 	if resp.StatusCode == http.StatusOK {
-		t.Fatalf("the resource returned HTTP 200 for an mtls_pop token presented WITHOUT its binding "+
-			"certificate. The resource is therefore not enforcing the certificate binding at all, which "+
-			"means the HTTP 200 in requireTokenAcceptedByResource proves only that the token was accepted, "+
-			"not that proof-of-possession was checked. Response: %s", string(body))
+		t.Fatalf("the resource returned HTTP 200 for an mtls_pop token even though %s. Exactly one thing "+
+			"differs between this call and the positive call, so a 200 here means the resource does not "+
+			"enforce that part of the binding contract at all, which means the HTTP 200 in "+
+			"requireTokenAcceptedByResource proves only that the token was accepted, not that "+
+			"proof-of-possession was checked. Response: %s", control.deviation, string(body))
 	}
 	if resp.StatusCode != http.StatusUnauthorized && resp.StatusCode != http.StatusForbidden {
-		t.Fatalf("expected the resource to reject the certificate-less call with HTTP 401 or 403, got HTTP "+
-			"%d. An unexpected status means the call never reached the mTLS enforcement path, so this "+
-			"negative control is not proving anything and needs to be re-verified against the resource. "+
-			"Response: %s", resp.StatusCode, string(body))
+		t.Fatalf("expected the resource to reject the call with HTTP 401 or 403 when %s, got HTTP %d. An "+
+			"unexpected status means the call never reached the mTLS enforcement path, so this negative "+
+			"control is not proving anything and needs to be re-verified against the resource. "+
+			"Response: %s", control.deviation, resp.StatusCode, string(body))
 	}
-	if !strings.Contains(string(body), mtlsMissingCertMarker) {
-		t.Fatalf("the resource rejected the certificate-less call with HTTP %d, but the response does not "+
-			"contain %q, so the rejection cannot be attributed to the missing binding certificate - an "+
-			"expired or malformed token would look the same from here. Response: %s",
-			resp.StatusCode, mtlsMissingCertMarker, string(body))
+	if !strings.Contains(string(body), control.wantMarker) {
+		t.Fatalf("the resource rejected the call with HTTP %d when %s, but the response does not contain "+
+			"%q, so the rejection cannot be attributed to that deviation - an expired or malformed token, "+
+			"or a rejection for one of the other binding failures, would look the same from here. "+
+			"Response: %s", resp.StatusCode, control.deviation, control.wantMarker, string(body))
 	}
+}
+
+// newUnrelatedClientCert builds a throwaway self-signed client certificate for the
+// wrong-certificate negative control. It is generated in-process rather than provisioned from the
+// lab: the control only needs some certificate the token is *not* bound to, so a second lab
+// certificate would add a deployment dependency for no additional proof. It does not need to chain
+// to a CA the resource trusts either, because the resource rejects it at the application layer on
+// the cnf claim rather than at the TLS layer.
+func newUnrelatedClientCert(t *testing.T) *tls.Certificate {
+	t.Helper()
+
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatalf("generating the unrelated client certificate's key failed: %s", err)
+	}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject:      pkix.Name{CommonName: "msal-go-unrelated-client-cert"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature | x509.KeyUsageKeyEncipherment,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatalf("creating the unrelated client certificate failed: %s", err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatalf("parsing the unrelated client certificate failed: %s", err)
+	}
+	return &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key, Leaf: leaf}
 }
 
 // TestCredential_X509_Output_Pop is the SNI X509 -> mtls_pop end-to-end test on the global endpoint.
 // It uses the lab SN/I certificate (provisioned by the pipelines as cert.pem) as the client TLS
 // certificate to obtain a Graph-scoped, certificate-bound mtls_pop token, verifies the token type and
 // public binding certificate, then calls Microsoft Graph over mTLS with that certificate to prove the
-// token is actually accepted by a resource (HTTP 200). It then replays that same call without the
-// certificate to prove the resource is genuinely enforcing the binding rather than ignoring client
-// certificates. A second call must be served from the cache. Mirrors MSAL .NET's
-// Credential_X509_Output_Pop.
+// token is actually accepted by a resource (HTTP 200). It then replays that same call three times -
+// without the certificate, under the Bearer scheme, and with an unrelated certificate - to prove the
+// resource is genuinely enforcing the binding rather than ignoring client certificates. A second
+// call must be served from the cache. Mirrors MSAL .NET's Credential_X509_Output_Pop.
 func TestCredential_X509_Output_Pop(t *testing.T) {
 	if testing.Short() {
 		t.Skip("skipping integration test")
@@ -277,11 +372,33 @@ func TestCredential_X509_Output_Pop(t *testing.T) {
 	// acquisition assertion cannot make.
 	requireTokenAcceptedByResource(t, result.AccessToken, result.BindingCertificate)
 
-	// The 200 above proves the token is accepted, not that the binding is enforced. Replay the same
-	// call with the same token and no client certificate; it must be rejected. This lives on this
-	// test only: enforcement is a property of the resource, not of each acquisition path, so
-	// repeating it on the other cells would spend extra round trips for no additional proof.
-	requireTokenRejectedWithoutCertificate(t, result.AccessToken)
+	// The 200 above proves the token is accepted, not that the binding is enforced. Replay that same
+	// call three times, each changing exactly one thing, and require a rejection that names the
+	// thing that changed. Together they close the three ways the resource could be lenient:
+	// ignoring client certificates entirely, honouring a cnf-bound token under a scheme that
+	// carries no proof-of-possession, and accepting any certificate rather than the bound one.
+	//
+	// These live on this test only: enforcement is a property of the resource, not of each
+	// acquisition path, so repeating them on the other cells would spend extra round trips for no
+	// additional proof. All three reuse the token acquired above, for the same reason.
+	requireTokenRejectedByResource(t, result.AccessToken, mtlsNegativeControl{
+		deviation:  "no client certificate was presented on the TLS handshake",
+		scheme:     "mtls_pop",
+		clientCert: nil,
+		wantMarker: mtlsMissingCertMarker,
+	})
+	requireTokenRejectedByResource(t, result.AccessToken, mtlsNegativeControl{
+		deviation:  `the Authorization scheme was "Bearer" rather than "mtls_pop"`,
+		scheme:     "Bearer",
+		clientCert: result.BindingCertificate,
+		wantMarker: mtlsWrongSchemeMarker,
+	})
+	requireTokenRejectedByResource(t, result.AccessToken, mtlsNegativeControl{
+		deviation:  "a client certificate other than the token's binding certificate was presented",
+		scheme:     "mtls_pop",
+		clientCert: newUnrelatedClientCert(t),
+		wantMarker: mtlsWrongCertMarker,
+	})
 
 	// Second call must come from the cache and keep the mTLS PoP metadata.
 	cached, err := app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())

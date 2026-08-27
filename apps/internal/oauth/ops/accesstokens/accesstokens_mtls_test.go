@@ -44,7 +44,9 @@ func selfSignedTLSCert(t *testing.T) *tls.Certificate {
 
 func mtlsAuthParams(cert *tls.Certificate) authority.AuthParams {
 	return authority.AuthParams{
-		AuthorityInfo: authority.Info{Host: "login.microsoftonline.com", Tenant: "mytenant"},
+		// AuthorityType matches what NewInfoFromAuthorityURI derives for this authority. It is set
+		// explicitly because MtlsTokenEndpoint requires an AAD authority and a zero Info is not one.
+		AuthorityInfo: authority.Info{Host: "login.microsoftonline.com", Tenant: "mytenant", AuthorityType: authority.AAD},
 		Endpoints: authority.NewEndpoints(
 			"https://login.microsoftonline.com/mytenant/oauth2/v2.0/authorize",
 			"https://login.microsoftonline.com/mytenant/oauth2/v2.0/token",
