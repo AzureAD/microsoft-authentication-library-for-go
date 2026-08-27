@@ -58,7 +58,7 @@ const (
 
 	// tokenExchangeScope is the audience leg 1 requests: it yields a federated assertion rather
 	// than a resource token. Mirrors MSAL .NET's TokenExchangeUrl.
-	tokenExchangeScope = "api://AzureADTokenExchange/.default"
+	tokenExchangeScope = "api://AzureADTokenExchange/.default" //nolint:gosec // G101: a public OAuth audience URI, not a credential.
 
 	// defaultResourceScope is an ESTS allow-listed resource audience (Azure Key Vault). ESTS gates
 	// mTLS PoP on the final resource being allow-listed, so a demo that only needs a token and does
