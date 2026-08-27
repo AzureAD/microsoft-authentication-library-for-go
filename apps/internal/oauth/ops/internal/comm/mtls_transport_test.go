@@ -8,6 +8,7 @@ import (
 	"crypto/x509"
 	"net/http"
 	"net/url"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -58,7 +59,10 @@ func TestBuildMtlsClientUsesConfiguredTransport(t *testing.T) {
 	base := &http.Client{Transport: configured}
 
 	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
-	client := BuildMtlsClient(cert, base)
+	client, err := BuildMtlsClient(cert, base)
+	if err != nil {
+		t.Fatalf("BuildMtlsClient error: %v", err)
+	}
 	if client == nil {
 		t.Fatal("BuildMtlsClient returned nil")
 	}
@@ -102,22 +106,26 @@ func TestBuildMtlsClientUsesConfiguredTransport(t *testing.T) {
 	}
 }
 
-// TestBuildMtlsClientFallsBackToDefaultTransport covers the base clients BuildMtlsClient can't
-// introspect: nil, a non-*http.Client implementation, and an *http.Client with a custom
-// RoundTripper. All must still yield a usable transport carrying the binding certificate.
-func TestBuildMtlsClientFallsBackToDefaultTransport(t *testing.T) {
+// TestBuildMtlsClientUsesDefaultTransportWhenUnconfigured covers the base clients that carry no
+// network path to lose: no client at all, and an *http.Client with no Transport (which net/http
+// would itself serve from http.DefaultTransport). Both must still yield a usable transport carrying
+// the binding certificate.
+func TestBuildMtlsClientUsesDefaultTransportWhenUnconfigured(t *testing.T) {
 	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
+	var typedNil *http.Client
 	for _, test := range []struct {
 		desc string
 		base HTTPClient
 	}{
 		{desc: "nil base", base: nil},
-		{desc: "non-http.Client base", base: &recordingClient{}},
-		{desc: "custom RoundTripper", base: &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) { return nil, nil })}},
+		{desc: "typed-nil *http.Client base", base: typedNil},
 		{desc: "nil transport", base: &http.Client{}},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
-			client := BuildMtlsClient(cert, test.base)
+			client, err := BuildMtlsClient(cert, test.base)
+			if err != nil {
+				t.Fatalf("BuildMtlsClient error: %v", err)
+			}
 			if client == nil {
 				t.Fatal("BuildMtlsClient returned nil")
 			}
@@ -138,6 +146,53 @@ func TestBuildMtlsClientFallsBackToDefaultTransport(t *testing.T) {
 	}
 }
 
+// TestBuildMtlsClientRejectsOpaqueTransport replaces the old test that pinned a silent fallback to
+// http.DefaultTransport. A wrapper this package cannot introspect may be enforcing mandatory proxy
+// routing, certificate pinning, auditing, request signing or egress policy; swapping it for the
+// process default would send the one request that carries a client credential outside all of them.
+// Both shapes must now fail, and the error must name the option that resolves it.
+func TestBuildMtlsClientRejectsOpaqueTransport(t *testing.T) {
+	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
+	for _, test := range []struct {
+		desc string
+		base HTTPClient
+	}{
+		{desc: "non-http.Client base", base: &recordingClient{}},
+		{desc: "custom RoundTripper", base: &http.Client{Transport: roundTripperFunc(func(*http.Request) (*http.Response, error) { return nil, nil })}},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			client, err := BuildMtlsClient(cert, test.base)
+			if err == nil {
+				t.Fatal("BuildMtlsClient silently fell back to the default transport, want an error")
+			}
+			if client != nil {
+				t.Errorf("BuildMtlsClient returned a client (%T) alongside an error", client)
+			}
+			if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
+				t.Errorf("error does not name WithMtlsHTTPClient: %v", err)
+			}
+		})
+	}
+}
+
+// TestMtlsClientPropagatesBuildError pins that the failure reaches the caller of a token request
+// rather than being swallowed into a cached client.
+func TestMtlsClientPropagatesBuildError(t *testing.T) {
+	c := &Client{client: &recordingClient{}}
+	cert := &tls.Certificate{Certificate: [][]byte{{0x77}}, PrivateKey: testKey}
+	if _, err := c.mtlsClient(cert); err == nil {
+		t.Fatal("mtlsClient with an opaque base client = nil error, want an error")
+	} else if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
+		t.Errorf("error does not name WithMtlsHTTPClient: %v", err)
+	}
+	c.mtlsMu.Lock()
+	size := len(c.mtlsClients)
+	c.mtlsMu.Unlock()
+	if size != 0 {
+		t.Errorf("cache holds %d entries after a failed build, want 0", size)
+	}
+}
+
 type roundTripperFunc func(*http.Request) (*http.Response, error)
 
 func (f roundTripperFunc) RoundTrip(r *http.Request) (*http.Response, error) { return f(r) }
@@ -148,7 +203,10 @@ func TestBuildMtlsClientKeepsStrongerMinVersion(t *testing.T) {
 	base := &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13},
 	}}
-	client := BuildMtlsClient(tls.Certificate{Certificate: [][]byte{{0x01}}}, base)
+	client, err := BuildMtlsClient(tls.Certificate{Certificate: [][]byte{{0x01}}}, base)
+	if err != nil {
+		t.Fatalf("BuildMtlsClient error: %v", err)
+	}
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("client.Transport = %T, want *http.Transport", client.Transport)
@@ -169,7 +227,10 @@ func TestBuildMtlsClientClearsGetClientCertificate(t *testing.T) {
 			GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return other, nil },
 		},
 	}}
-	client := BuildMtlsClient(tls.Certificate{Certificate: [][]byte{{0x01}}}, base)
+	client, err := BuildMtlsClient(tls.Certificate{Certificate: [][]byte{{0x01}}}, base)
+	if err != nil {
+		t.Fatalf("BuildMtlsClient error: %v", err)
+	}
 	transport, ok := client.Transport.(*http.Transport)
 	if !ok {
 		t.Fatalf("client.Transport = %T, want *http.Transport", client.Transport)
