@@ -182,8 +182,7 @@ Notes:
   `Bearer`) and `result.BindingCertificate` as the client certificate on the TLS handshake, so the
   connection matches the token binding. `BindingCertificate` is a `*tls.Certificate` that carries both
   the parsed leaf (`.Leaf`) and the private key MSAL used, so it goes straight into
-  `tls.Config.Certificates` — including when the key is non-exportable (KeyGuard/CNG/HSM), because
-  `crypto/tls` only needs a `crypto.Signer`:
+  `tls.Config.Certificates`:
 
   ```go
   transport := http.DefaultTransport.(*http.Transport).Clone()
