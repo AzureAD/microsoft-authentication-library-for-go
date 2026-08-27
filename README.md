@@ -212,10 +212,21 @@ Notes:
   only be installed through `*http.Transport`; that leg builds on `http.DefaultTransport` instead and
   the wrapper does not run for it.
 - **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
-  `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. The
-  legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are aliases: they resolve
-  to their preferred-network host first, so they reach the same endpoint as the modern hostname
-  (`mtlsauth.microsoftonline.us` and `mtlsauth.partner.microsoftonline.cn`).
+  `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. For the
+  mTLS token endpoint the legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are
+  treated as aliases: they resolve to their preferred-network host first, so they reach the same
+  endpoint as the modern hostname (`mtlsauth.microsoftonline.us` and
+  `mtlsauth.partner.microsoftonline.cn`). This normalization applies to the mTLS token endpoint only.
+  Instance discovery does not normalize a legacy alias before regionalizing it, so combining
+  `WithAzureRegion` with a legacy alias still produces a regional discovery host built from the
+  un-normalized alias — tracked by
+  [#654](https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/654). Prefer the
+  modern hostname when you configure a region.
+- **Authority requirements**: mTLS PoP is AAD-only and tenanted. ADFS and dSTS authorities are
+  rejected, including when they are hosted on a `login.*` host, as are `/common`, `/organizations`
+  and `/consumers`. The `login.*` host must belong to a known Microsoft cloud; a private cloud opts
+  in with `WithInstanceDiscovery(false)`, because the derived `mtlsauth.*` host receives the binding
+  certificate and the client assertion.
 
 ### Non-exportable keys (KeyGuard, CNG, HSM)
 

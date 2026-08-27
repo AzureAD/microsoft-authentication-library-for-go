@@ -35,7 +35,7 @@ func TestRegionalDiscoveryUsesTheUnnormalizedAlias(t *testing.T) {
 		tenant    = "contoso.onmicrosoft.us"
 	)
 
-	info := Info{Host: alias, Tenant: tenant, Region: region}
+	info := Info{Host: alias, Tenant: tenant, Region: region, AuthorityType: AAD}
 
 	// A region short-circuits the network call, so no Comm is needed.
 	resp, err := (Client{}).AADInstanceDiscovery(context.Background(), info)
