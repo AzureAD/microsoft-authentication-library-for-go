@@ -305,7 +305,8 @@ func WithClientCapabilities(capabilities []string) Option {
 //     handshake through that hook and ignores TLSClientConfig entirely.
 //
 // A client with no Transport is fine: there is no caller network path to lose, so the mutual-TLS leg
-// builds on a clone of [http.DefaultTransport].
+// builds on a clone of [http.DefaultTransport]. That clone is checked for TLS dial hooks too, since
+// [http.DefaultTransport] is an exported package-level variable anything in the process can patch.
 //
 // Redirects are refused on the mutual-TLS leg unless this client sets CheckRedirect. A 307 or 308
 // would replay the token request body, which carries a client credential, and present the binding

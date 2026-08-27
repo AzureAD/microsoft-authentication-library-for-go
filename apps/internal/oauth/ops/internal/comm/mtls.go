@@ -158,9 +158,14 @@ func refuseMtlsRedirect(req *http.Request, via []*http.Request) error {
 // are preserved, which is exactly what this function exists to do.
 //
 // A caller with no HTTP client, or an *http.Client with no Transport, gets a clone of
-// http.DefaultTransport: there is no caller network path to lose. Dropping the caller's transport
-// unconditionally was a real parity gap with MSAL .NET, whose HttpManager routes through the
-// configured IMsalHttpClientFactory on every branch.
+// http.DefaultTransport: there is no caller network path to lose. That clone is checked for TLS dial
+// hooks too. http.DefaultTransport is an exported package-level variable, so tracing,
+// proxy-injection and test libraries can and do patch a hook onto it process-wide; cloning it
+// unchecked would drop the binding certificate through a path that never touches the caller's
+// transport at all. Every transport that reaches Clone here has been checked.
+//
+// Dropping the caller's transport unconditionally was a real parity gap with MSAL .NET, whose
+// HttpManager routes through the configured IMsalHttpClientFactory on every branch.
 func cloneBaseTransport(base HTTPClient) (*http.Transport, error) {
 	if !isNilClient(base) {
 		hc, ok := base.(*http.Client)
@@ -172,23 +177,38 @@ func cloneBaseTransport(base HTTPClient) (*http.Transport, error) {
 			if !ok {
 				return nil, fmt.Errorf("mTLS proof-of-possession cannot use the configured HTTP client: its Transport is a %T, not an *http.Transport, so the binding certificate cannot be installed on it, and falling back to the default transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls that wrapper enforces. Use WithMtlsHTTPClient to supply a client that presents the binding certificate", hc.Transport)
 			}
-			if err := rejectTLSDialHooks(t); err != nil {
+			if err := rejectTLSDialHooks(t, "the configured HTTP client's *http.Transport", callerHookRemedy); err != nil {
 				return nil, err
 			}
 			return t.Clone(), nil
 		}
 	}
 	if t, ok := http.DefaultTransport.(*http.Transport); ok && t != nil {
+		if err := rejectTLSDialHooks(t, "http.DefaultTransport", defaultHookRemedy); err != nil {
+			return nil, err
+		}
 		return t.Clone(), nil
 	}
+	// Freshly constructed and never handed out, so it cannot carry a hook.
 	return &http.Transport{}, nil
 }
 
-// rejectTLSDialHooks fails when the caller's transport establishes TLS itself. http.Transport.Clone
-// copies DialTLSContext and DialTLS, and net/http then uses the hook instead of TLSClientConfig, so
-// a clone that looks correctly configured would hand the binding certificate, the TLS 1.2 floor and
-// the caller's RootCAs to code that ignores all three.
-func rejectTLSDialHooks(t *http.Transport) error {
+// Remedies for rejectTLSDialHooks. Both point at WithMtlsHTTPClient, but only the caller-transport
+// case may imply the application installed the hook: http.DefaultTransport is an exported
+// package-level variable that anything in the process can patch, so MSAL must not tell a caller they
+// configured something they did not.
+const (
+	callerHookRemedy  = "Use WithMtlsHTTPClient to supply a client that presents the binding certificate"
+	defaultHookRemedy = "MSAL did not configure this transport - http.DefaultTransport is an exported package-level variable and something else in this process installed the hook on it. Use WithMtlsHTTPClient to supply a client that presents the binding certificate, or pass your own *http.Transport with WithHTTPClient"
+)
+
+// rejectTLSDialHooks fails when transport establishes TLS itself. http.Transport.Clone copies
+// DialTLSContext and DialTLS, and net/http then uses the hook instead of TLSClientConfig, so a clone
+// that looks correctly configured would hand the binding certificate, the TLS 1.2 floor and the
+// RootCAs to code that ignores all three. source names the transport and remedy tells the caller
+// what to do about it, because the answer differs for a transport they configured and for a shared
+// default something else in the process patched.
+func rejectTLSDialHooks(t *http.Transport, source, remedy string) error {
 	hook := ""
 	switch {
 	case t.DialTLSContext != nil:
@@ -198,7 +218,7 @@ func rejectTLSDialHooks(t *http.Transport) error {
 	default:
 		return nil
 	}
-	return fmt.Errorf("mTLS proof-of-possession cannot use the configured HTTP client: its *http.Transport sets %s, and net/http then establishes TLS through that hook and ignores TLSClientConfig, so the binding certificate would never be offered (or a different one would be) and the TLS 1.2 minimum, RootCAs and TLSHandshakeTimeout would all be silently dropped. Use WithMtlsHTTPClient to supply a client that presents the binding certificate", hook)
+	return fmt.Errorf("mTLS proof-of-possession cannot use %s because it sets %s: net/http then establishes TLS through that hook and ignores TLSClientConfig, so the binding certificate would never be offered (or a different one would be) and the TLS 1.2 minimum, RootCAs and TLSHandshakeTimeout would all be silently dropped. %s", source, hook, remedy)
 }
 
 // mtlsClient returns an HTTPClient bound to cert, building and caching one per certificate thumbprint

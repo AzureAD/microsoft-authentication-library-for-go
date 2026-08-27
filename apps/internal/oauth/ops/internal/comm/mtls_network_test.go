@@ -280,6 +280,95 @@ func TestBuildMtlsClientRejectsTLSDialHooks(t *testing.T) {
 	}
 }
 
+// TestBuildMtlsClientRejectsTLSDialHooksOnDefaultTransport closes the path that never touches the
+// caller's transport at all. http.DefaultTransport is an exported package-level variable, so
+// tracing, proxy-injection and test libraries can install a TLS dial hook on it process-wide. Both
+// entry points that fall through to it - no configured client, and an *http.Client whose Transport
+// is nil - must be checked too, or MSAL would clone a transport that silently drops the binding
+// certificate through a route the caller-transport check cannot see.
+//
+// This test mutates process-global state. It must never call t.Parallel or run alongside anything
+// that touches the default transport, and it restores the original hooks through t.Cleanup.
+func TestBuildMtlsClientRejectsTLSDialHooksOnDefaultTransport(t *testing.T) {
+	dt, ok := http.DefaultTransport.(*http.Transport)
+	if !ok {
+		t.Skipf("http.DefaultTransport is a %T, not an *http.Transport", http.DefaultTransport)
+	}
+	origDialTLS, origDialTLSContext := dt.DialTLS, dt.DialTLSContext
+	t.Cleanup(func() {
+		dt.DialTLS, dt.DialTLSContext = origDialTLS, origDialTLSContext
+	})
+
+	cert := newBindingCert(t, "binding-cert")
+	var typedNil *http.Client
+	for _, hook := range []struct {
+		field   string
+		install func()
+	}{
+		{
+			field: "DialTLSContext",
+			install: func() {
+				dt.DialTLS = nil
+				dt.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
+					return nil, errors.New("the patched default TLS dialer should never run")
+				}
+			},
+		},
+		{
+			field: "DialTLS",
+			install: func() {
+				dt.DialTLSContext = nil
+				dt.DialTLS = func(network, addr string) (net.Conn, error) {
+					return nil, errors.New("the patched default TLS dialer should never run")
+				}
+			},
+		},
+	} {
+		t.Run(hook.field, func(t *testing.T) {
+			hook.install()
+			for _, entry := range []struct {
+				desc string
+				base HTTPClient
+			}{
+				{desc: "no configured client", base: nil},
+				{desc: "typed-nil client", base: typedNil},
+				{desc: "client with nil Transport", base: &http.Client{}},
+			} {
+				t.Run(entry.desc, func(t *testing.T) {
+					client, err := BuildMtlsClient(cert, entry.base)
+					if err == nil {
+						t.Fatalf("BuildMtlsClient cloned an http.DefaultTransport carrying %s, so the binding certificate would never reach the handshake", hook.field)
+					}
+					if client != nil {
+						t.Errorf("BuildMtlsClient returned a client (%T) alongside an error", client)
+					}
+					if !strings.Contains(err.Error(), hook.field) {
+						t.Errorf("the error does not name %s: %v", hook.field, err)
+					}
+					if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
+						t.Errorf("the error does not name WithMtlsHTTPClient: %v", err)
+					}
+					// The caller did not configure this transport, so the message must identify the
+					// shared default as the source and must not read as if they had set the hook.
+					if !strings.Contains(err.Error(), "http.DefaultTransport") {
+						t.Errorf("the error does not identify http.DefaultTransport as the source: %v", err)
+					}
+					if !strings.Contains(err.Error(), "MSAL did not configure this transport") {
+						t.Errorf("the error blames the caller for a hook they did not set: %v", err)
+					}
+				})
+			}
+		})
+	}
+
+	// Restoring must leave the default transport exactly as it was found. Assert it here as well as
+	// in Cleanup, so a leak is attributable to this test rather than to whatever runs next.
+	dt.DialTLS, dt.DialTLSContext = origDialTLS, origDialTLSContext
+	if _, err := BuildMtlsClient(cert, nil); err != nil {
+		t.Fatalf("BuildMtlsClient failed after http.DefaultTransport was restored: %v", err)
+	}
+}
+
 // TestBuildMtlsClientPreservesDialContext pins that the TLS dial hook rejection is scoped to the TLS
 // hooks. DialContext establishes only the TCP connection - the handshake still runs against our
 // TLSClientConfig - so a caller's dialer, proxy routing and DNS control must survive, which is what
