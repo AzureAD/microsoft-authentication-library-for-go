@@ -294,9 +294,9 @@ func TestBuildMtlsClientRejectsTLSDialHooksOnDefaultTransport(t *testing.T) {
 	if !ok {
 		t.Skipf("http.DefaultTransport is a %T, not an *http.Transport", http.DefaultTransport)
 	}
-	origDialTLS, origDialTLSContext := dt.DialTLS, dt.DialTLSContext
+	origDialTLS, origDialTLSContext := dt.DialTLS, dt.DialTLSContext //nolint:staticcheck // SA1019: the test has to save and restore the deprecated hook the code under test rejects.
 	t.Cleanup(func() {
-		dt.DialTLS, dt.DialTLSContext = origDialTLS, origDialTLSContext
+		dt.DialTLS, dt.DialTLSContext = origDialTLS, origDialTLSContext //nolint:staticcheck // SA1019: restoring the deprecated hook.
 	})
 
 	cert := newBindingCert(t, "binding-cert")
@@ -308,7 +308,7 @@ func TestBuildMtlsClientRejectsTLSDialHooksOnDefaultTransport(t *testing.T) {
 		{
 			field: "DialTLSContext",
 			install: func() {
-				dt.DialTLS = nil
+				dt.DialTLS = nil //nolint:staticcheck // SA1019: installing the deprecated hook is the point of the test.
 				dt.DialTLSContext = func(ctx context.Context, network, addr string) (net.Conn, error) {
 					return nil, errors.New("the patched default TLS dialer should never run")
 				}
@@ -318,7 +318,7 @@ func TestBuildMtlsClientRejectsTLSDialHooksOnDefaultTransport(t *testing.T) {
 			field: "DialTLS",
 			install: func() {
 				dt.DialTLSContext = nil
-				dt.DialTLS = func(network, addr string) (net.Conn, error) {
+				dt.DialTLS = func(network, addr string) (net.Conn, error) { //nolint:staticcheck // SA1019: installing the deprecated hook is the point of the test.
 					return nil, errors.New("the patched default TLS dialer should never run")
 				}
 			},
@@ -363,7 +363,7 @@ func TestBuildMtlsClientRejectsTLSDialHooksOnDefaultTransport(t *testing.T) {
 
 	// Restoring must leave the default transport exactly as it was found. Assert it here as well as
 	// in Cleanup, so a leak is attributable to this test rather than to whatever runs next.
-	dt.DialTLS, dt.DialTLSContext = origDialTLS, origDialTLSContext
+	dt.DialTLS, dt.DialTLSContext = origDialTLS, origDialTLSContext //nolint:staticcheck // SA1019: restoring the deprecated hook.
 	if _, err := BuildMtlsClient(cert, nil); err != nil {
 		t.Fatalf("BuildMtlsClient failed after http.DefaultTransport was restored: %v", err)
 	}
