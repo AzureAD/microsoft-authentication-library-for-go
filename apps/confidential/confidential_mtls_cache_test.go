@@ -53,27 +53,21 @@ func newBindingCertCred(t *testing.T, commonName string, serial int64) Credentia
 	return cred
 }
 
-// TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion is the evidence for declining to add the
-// binding certificate's thumbprint to the access-token cache WRITE key.
+// TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion proves that two binding certificates for the
+// same client, tenant and scope COEXIST in one access-token cache.
 //
-// The concern was that two binding certificates for the same client, tenant and scope collide in the
-// cache and one certificate's token gets served for the other. They do share a write key - and that
-// is fine, because the thumbprint is applied as a READ filter: readAccessToken compares the request's
-// authentication-scheme key ID (x5t#S256) against the cached entry's AuthnSchemeKeyID
-// (storage.go and partitioned_storage.go). A request bound to a different certificate therefore
-// MISSES and goes to the identity provider; it never receives the other certificate's token.
-//
-// MSAL .NET behaves the same way; its analogue is
-// MtlsPop_SameKeyCertRenewal_MustNotServeStaleCachedTokenAsync in MtlsPopTests.
+// The binding certificate's x5t#S256 thumbprint is carried in the access-token cache key
+// (AccessToken.Key) as well as in the read filter, so each certificate gets its own entry. A request
+// bound to a different certificate misses and goes to the identity provider; it is never served the
+// other certificate's token, and its own token is not displaced by the other certificate's write.
 //
 // This test shares one cache between two clients that differ only in their binding certificate. The
 // mock panics when its response queue is empty, so a call that is expected to hit the cache is proven
 // by consuming no queued response, and a call that is expected to miss is proven by consuming one.
 //
-// Note what the test also documents: because the write key collides, the second certificate's token
-// REPLACES the first's. The read filter guarantees correctness, not coexistence - alternating
-// certificates costs a cache miss each time. That is the same shape .NET depends on for certificate
-// renewal, and it is a performance characteristic rather than a correctness problem.
+// Across the whole test exactly TWO identity-provider acquisitions occur: one for cert A and one for
+// cert B. The A -> B -> A sequence costs no extra round trip, because cert B's write does not evict
+// cert A's entry.
 func TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion(t *testing.T) {
 	credA := newBindingCertCred(t, "binding-cert-a", 1)
 	credB := newBindingCertCred(t, "binding-cert-b", 2)
@@ -125,8 +119,9 @@ func TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion(t *testing.T) {
 			cachedA.Metadata.TokenSource, cachedA.AccessToken)
 	}
 
-	// Different binding certificate, same client/tenant/scope and the SAME cache. The write key
-	// collides; the read filter must still refuse cert A's token.
+	// Different binding certificate, same client/tenant/scope and the SAME cache. The thumbprint is
+	// part of the cache key, so this is a distinct entry and must be acquired from the identity
+	// provider rather than served cert A's token.
 	clientB := newClient(credB)
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
 	mockClient.AppendResponse(mock.WithBody(mtlsPoPTokenBody("token-for-cert-b", 3600)))
@@ -148,14 +143,11 @@ func TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion(t *testing.T) {
 		t.Fatal("the two credentials produced the same thumbprint; the test proves nothing")
 	}
 
-	// Both entries share a write key, so cert B's acquisition OVERWROTE cert A's entry rather than
-	// sitting beside it. That is the behavior to document: the read filter buys correctness, not
-	// coexistence. Cert A therefore MISSES and re-acquires - the important part being that it is
-	// never handed cert B's token. MSAL .NET relies on exactly this for certificate renewal
-	// (MtlsPop_SameKeyCertRenewal_MustNotServeStaleCachedTokenAsync): the new certificate's write
-	// displaces the old token, and the read filter keeps the stale one from being served in the
-	// meantime.
-	mockClient.AppendResponse(mock.WithBody(mtlsPoPTokenBody("token-for-cert-a-again", 3600)))
+	// Back to cert A. Because the thumbprint is part of the write key, cert B's acquisition wrote a
+	// SEPARATE entry rather than overwriting cert A's, so cert A is still cached and must be served
+	// its ORIGINAL token. No response is queued here - a miss would panic the mock rather than
+	// quietly pass - which also pins the identity-provider acquisition count for the whole test at
+	// exactly two: one for cert A, one for cert B.
 	reacquiredA, err := clientA.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
 	if err != nil {
 		t.Fatal(err)
@@ -163,11 +155,11 @@ func TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion(t *testing.T) {
 	if reacquiredA.AccessToken == resB.AccessToken {
 		t.Fatal("cert A was served cert B's token; the read filter is not working")
 	}
-	if reacquiredA.Metadata.TokenSource != TokenSourceIdentityProvider {
-		t.Fatal("cert A should have missed the cache after cert B's write and re-acquired")
+	if reacquiredA.Metadata.TokenSource != TokenSourceCache {
+		t.Fatal("cert A should have been served from the cache; cert B's write must not evict cert A's entry")
 	}
-	if reacquiredA.AccessToken != "token-for-cert-a-again" {
-		t.Fatalf("cert A re-acquired %q, want token-for-cert-a-again", reacquiredA.AccessToken)
+	if reacquiredA.AccessToken != resA.AccessToken {
+		t.Fatalf("cert A was served %q, want its original token %q", reacquiredA.AccessToken, resA.AccessToken)
 	}
 }
 
