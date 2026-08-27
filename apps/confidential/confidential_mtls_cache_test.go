@@ -400,3 +400,133 @@ func TestMtlsPoPDowngradedTokenIsNotCached(t *testing.T) {
 		t.Fatalf("token endpoint called %d time(s) in total, want 2; the downgraded response was cached", n)
 	}
 }
+
+// TestBearerAndMtlsPoPTokensDoNotCrossServeFromCache pins that a Bearer token and an mtls_pop token
+// for the SAME client, tenant and scope occupy SEPARATE access-token cache entries, and that neither
+// is ever served in place of the other.
+//
+// This dimension of the cache key has always been correct: AccessToken.Key appends the token type for
+// any non-bearer entry, and readAccessToken compares the token type on the way out. Nothing asserted
+// it, though - every other test exercises one token type at a time, so the bearer/mtls_pop pair was
+// never actually put in one cache together. A change that "simplified" the
+// !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) guard in AccessToken.Key would
+// merge the two entries with every other test still green, and the read filter would not catch it
+// either: its bearer fallback treats an empty stored token type as matching "Bearer".
+//
+// One client serves both token types, which is what makes the collision reachable.
+// WithSendCertificateOverMtls is an app-level option yielding a plain Bearer token over an mTLS
+// transport; a per-request WithMtlsProofOfPossession takes precedence over it and yields an mtls_pop
+// token. Both therefore share one cache, one client ID, one tenant and one scope. Two clients would
+// have two independent caches and prove nothing.
+//
+// Exactly TWO token responses are queued for four acquisitions. The mock panics on an empty queue, so
+// a cache miss on the third or fourth call crashes the test rather than quietly acquiring a third
+// token: "exactly two identity-provider round trips" is structural here, not merely asserted.
+func TestBearerAndMtlsPoPTokensDoNotCrossServeFromCache(t *testing.T) {
+	certs, key := loadTestCert(t)
+	cred, err := NewCredFromCert(certs, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	mockClient := mock.NewClient()
+	ctx := context.Background()
+
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+		WithHTTPClient(mockClient),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		WithSendCertificateOverMtls(),
+		WithInstanceDiscovery(false),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// 1. Bearer over mTLS. No per-request option, so the app-level option applies.
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("bearer-token", "", "", "", 3600, 0)))
+
+	bearer, err := client.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bearer.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatal("the first Bearer acquisition should have gone to the identity provider")
+	}
+	if bearer.AccessToken != "bearer-token" {
+		t.Fatalf("Bearer acquisition returned %q, want bearer-token", bearer.AccessToken)
+	}
+
+	// 2. mTLS PoP, same client, tenant and scope. The per-request option takes precedence over the
+	// app-level one, so this is a genuinely different token type and must MISS the cache rather than
+	// be served the Bearer token above.
+	mockClient.AppendResponse(mock.WithBody(mtlsPoPTokenBody("mtls-pop-token", 3600)))
+
+	pop, err := client.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if pop.Metadata.TokenSource != TokenSourceIdentityProvider {
+		t.Fatal("the mtls_pop acquisition must MISS the cache, not reuse the Bearer entry")
+	}
+	if pop.AccessToken == bearer.AccessToken {
+		t.Fatal("the mtls_pop request was served the Bearer token; the token type is not partitioning the cache")
+	}
+	if pop.AccessToken != "mtls-pop-token" {
+		t.Fatalf("mtls_pop acquisition returned %q, want mtls-pop-token", pop.AccessToken)
+	}
+
+	// Preconditions, asserted so the test cannot become vacuous. If the two acquisitions ever stop
+	// producing two different token types - for instance if the per-request option stopped taking
+	// precedence - this must say so rather than pass for the wrong reason.
+	if bearer.Metadata.TokenType != "Bearer" {
+		t.Fatalf("first acquisition token type = %q, want Bearer; the test is not comparing two token types",
+			bearer.Metadata.TokenType)
+	}
+	if pop.Metadata.TokenType != "mtls_pop" {
+		t.Fatalf("second acquisition token type = %q, want mtls_pop; the test is not comparing two token types",
+			pop.Metadata.TokenType)
+	}
+	if bearer.BindingCertificate != nil {
+		t.Error("the Bearer-over-mTLS token is unbound; BindingCertificate must be nil")
+	}
+	if pop.BindingCertificate == nil {
+		t.Error("the mtls_pop token must carry a binding certificate")
+	}
+
+	// 3. Bearer again. This is the load-bearing assertion: the mtls_pop write above must not have
+	// evicted or overwritten the Bearer entry, so this is served from the cache and returns the
+	// ORIGINAL Bearer token. No response is queued, so a miss panics the mock.
+	bearerAgain, err := client.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bearerAgain.AccessToken == pop.AccessToken {
+		t.Fatal("the Bearer request was served the mtls_pop token; the two entries have merged")
+	}
+	if bearerAgain.Metadata.TokenSource != TokenSourceCache {
+		t.Fatal("the repeat Bearer call should have been served from the cache; the mtls_pop write must not evict it")
+	}
+	if bearerAgain.AccessToken != bearer.AccessToken {
+		t.Fatalf("the repeat Bearer call returned %q, want its original token %q",
+			bearerAgain.AccessToken, bearer.AccessToken)
+	}
+
+	// 4. mTLS PoP again, symmetrically: served from its own entry, which the Bearer traffic left alone.
+	popAgain, err := client.AcquireTokenByCredential(ctx, tokenScope, WithMtlsProofOfPossession())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if popAgain.AccessToken == bearer.AccessToken {
+		t.Fatal("the mtls_pop request was served the Bearer token; the two entries have merged")
+	}
+	if popAgain.Metadata.TokenSource != TokenSourceCache {
+		t.Fatal("the repeat mtls_pop call should have been served from the cache")
+	}
+	if popAgain.AccessToken != pop.AccessToken {
+		t.Fatalf("the repeat mtls_pop call returned %q, want its original token %q",
+			popAgain.AccessToken, pop.AccessToken)
+	}
+}
