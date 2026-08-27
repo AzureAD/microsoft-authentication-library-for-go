@@ -361,11 +361,24 @@ func WithClientCapabilities(capabilities []string) Option {
 //
 // On that mutual-TLS leg MSAL installs the binding certificate on a copy of this client's transport,
 // which carries the caller's configuration across only when Transport is an [*http.Transport] - the
-// type that holds Proxy, DialContext and TLSClientConfig (including RootCAs). A custom
-// [http.RoundTripper], such as a tracing or retry wrapper, cannot be carried across, because a TLS
-// client certificate can only be installed through [*http.Transport]. The mutual-TLS leg then builds
-// on a clone of [http.DefaultTransport] instead, and the wrapper does not run for it. Use
-// [WithMtlsHTTPClient] to own that leg.
+// type that holds Proxy, DialContext and TLSClientConfig (including RootCAs). Shapes that cannot
+// carry the certificate into the handshake are rejected rather than quietly rerouted, and mTLS token
+// requests then fail with an error naming [WithMtlsHTTPClient]:
+//
+//   - a custom [http.RoundTripper], such as a tracing, retry, pinning or request-signing wrapper,
+//     because a TLS client certificate can only be installed through [*http.Transport], and
+//     substituting [http.DefaultTransport] would send a credential-bearing request outside whatever
+//     proxy, audit or egress controls that wrapper enforces;
+//   - an [*http.Transport] that sets DialTLS or DialTLSContext, because net/http then runs the
+//     handshake through that hook and ignores TLSClientConfig entirely.
+//
+// A client with no Transport is fine: there is no caller network path to lose, so the mutual-TLS leg
+// builds on a clone of [http.DefaultTransport]. That clone is checked for TLS dial hooks too, since
+// [http.DefaultTransport] is an exported package-level variable anything in the process can patch.
+//
+// Redirects are refused on the mutual-TLS leg unless this client sets CheckRedirect. A 307 or 308
+// would replay the token request body, which carries a client credential, and present the binding
+// certificate to the redirect target. Setting CheckRedirect here takes ownership of that decision.
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	return func(o *clientOptions) {
 		o.httpClient = httpClient
