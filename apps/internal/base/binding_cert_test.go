@@ -4,6 +4,7 @@
 package base
 
 import (
+	"bytes"
 	"crypto"
 	"crypto/ecdsa"
 	"crypto/elliptic"
@@ -15,6 +16,7 @@ import (
 	"encoding/base64"
 	"io"
 	"math/big"
+	"sync"
 	"testing"
 	"time"
 )
@@ -67,6 +69,10 @@ func (s opaqueSigner) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) (
 // TestBindingCertWithLeafPopulatesLeaf covers the two inputs MSAL can hand the helper: a certificate
 // that already carries a parsed Leaf, and one that carries only DER. Both must come back with Leaf
 // populated and, critically, with PrivateKey preserved — stripping it is the defect this guards.
+//
+// Leaf is compared by value, not by pointer: the helper deliberately returns a freshly parsed leaf
+// rather than the credential's own, so pointer identity with the input is a bug, not the contract.
+// TestBindingCertWithLeafReturnedLeafIsIndependent pins that directly.
 func TestBindingCertWithLeafPopulatesLeaf(t *testing.T) {
 	leaf, key := selfSignedCert(t)
 
@@ -76,8 +82,11 @@ func TestBindingCertWithLeafPopulatesLeaf(t *testing.T) {
 		if got == nil {
 			t.Fatal("bindingCertWithLeaf returned nil")
 		}
-		if got.Leaf != leaf {
-			t.Error("Leaf was not preserved")
+		if got.Leaf == nil {
+			t.Fatal("Leaf was not populated")
+		}
+		if !got.Leaf.Equal(leaf) {
+			t.Error("returned Leaf does not describe the input certificate")
 		}
 		if got.PrivateKey == nil {
 			t.Fatal("PrivateKey was stripped; the caller can no longer present the certificate")
@@ -121,6 +130,141 @@ func TestBindingCertWithLeafDoesNotMutateInput(t *testing.T) {
 	}
 	if got == in {
 		t.Error("bindingCertWithLeaf returned the input pointer, not a copy")
+	}
+}
+
+// TestBindingCertWithLeafReturnedLeafIsIndependent is the mutation counterpart to
+// TestBindingCertWithLeafDoesNotMutateInput. That test proves the helper does not write to its input;
+// this one proves the CALLER cannot either, which is the reachable defect.
+//
+// x509.ParseCertificate aliases the DER it is handed rather than copying it, so a parsed leaf's Raw is
+// a live window onto whichever chain it came from. Handing back the credential's own Leaf - or parsing
+// from the credential's chain - therefore lets a caller writing to result.BindingCertificate.Leaf.Raw
+// silently rewrite the shared certificate, changing every later thumbprint and authentication-scheme
+// key ID while the bytes actually presented on the wire stay as they were.
+//
+// Both input shapes are covered because both leaked: the fast path shared cert.Leaf outright, and the
+// fallback parsed from cert.Certificate[0] before the chain was copied.
+func TestBindingCertWithLeafReturnedLeafIsIndependent(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		withLeaf bool
+	}{
+		// resolveMtlsBindingCert always populates Leaf, so this is the production shape.
+		{"leaf already set", true},
+		{"leaf parsed from DER", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A fresh certificate per subtest: if the helper regresses, the mutation below corrupts
+			// the source, and a shared fixture would carry that damage into the next subtest.
+			leaf, key := selfSignedCert(t)
+			in := &tls.Certificate{Certificate: [][]byte{leaf.Raw}, PrivateKey: key}
+			if tc.withLeaf {
+				in.Leaf = leaf
+			}
+
+			// Snapshot every byte the caller could reach back through, before handing it out.
+			wantLeafRaw := append([]byte(nil), leaf.Raw...)
+			wantChain0 := append([]byte(nil), in.Certificate[0]...)
+
+			got := bindingCertWithLeaf(in)
+			if got == nil {
+				t.Fatal("bindingCertWithLeaf returned nil")
+			}
+			if got.Leaf == nil {
+				t.Fatal("Leaf was not populated")
+			}
+			if len(got.Leaf.Raw) == 0 {
+				t.Fatal("returned Leaf.Raw is empty")
+			}
+			if tc.withLeaf && got.Leaf == in.Leaf {
+				t.Error("returned Leaf is the credential's own *x509.Certificate; it must be parsed from the copied chain")
+			}
+			if !got.Leaf.Equal(leaf) {
+				t.Error("returned Leaf does not describe the input certificate")
+			}
+
+			// Scribble on the whole leaf, the way a careless caller re-encoding a certificate might.
+			for i := range got.Leaf.Raw {
+				got.Leaf.Raw[i] ^= 0xFF
+			}
+
+			if !bytes.Equal(leaf.Raw, wantLeafRaw) {
+				t.Error("mutating the returned Leaf.Raw rewrote the source certificate's Raw; every later thumbprint and KeyID would change")
+			}
+			if !bytes.Equal(in.Certificate[0], wantChain0) {
+				t.Error("mutating the returned Leaf.Raw rewrote the source DER chain; the bytes presented on the wire would change")
+			}
+			if in.Leaf != nil && !bytes.Equal(in.Leaf.Raw, wantLeafRaw) {
+				t.Error("mutating the returned Leaf.Raw rewrote the input's Leaf.Raw")
+			}
+		})
+	}
+}
+
+// TestBindingCertWithLeafConcurrentMutation is the race-detector companion to the test above, with
+// genuine writers rather than the readers TestBindingCertWithLeafConcurrent uses. Half the goroutines
+// mutate a leaf they were handed while the other half resolve and hash the same shared certificate.
+// If the returned leaf aliases the shared one, that is an unsynchronised write-write and write-read on
+// the credential's DER, which -race reports.
+//
+// The mutation is idempotent - each byte is set from a snapshot rather than toggled - so the check
+// after the goroutines join cannot pass by accident through an even number of XOR passes. That makes
+// this test meaningful even on a toolchain without cgo, where -race cannot run.
+func TestBindingCertWithLeafConcurrentMutation(t *testing.T) {
+	leaf, key := selfSignedCert(t)
+	shared := &tls.Certificate{Certificate: [][]byte{leaf.Raw}, PrivateKey: key, Leaf: leaf}
+
+	wantLeafRaw := append([]byte(nil), leaf.Raw...)
+	wantChain0 := append([]byte(nil), shared.Certificate[0]...)
+	scribble := make([]byte, len(wantLeafRaw))
+	for i, b := range wantLeafRaw {
+		scribble[i] = b ^ 0xFF
+	}
+
+	const goroutines = 8
+	const iterations = 50
+	var wg sync.WaitGroup
+
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				got := bindingCertWithLeaf(shared)
+				if got == nil || got.Leaf == nil {
+					t.Error("bindingCertWithLeaf returned an incomplete certificate")
+					return
+				}
+				if len(got.Leaf.Raw) != len(scribble) {
+					t.Error("returned Leaf.Raw is not the expected length")
+					return
+				}
+				copy(got.Leaf.Raw, scribble)
+			}
+		}()
+	}
+	for i := 0; i < goroutines; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for j := 0; j < iterations; j++ {
+				got := bindingCertWithLeaf(shared)
+				if got == nil || got.Leaf == nil {
+					t.Error("bindingCertWithLeaf returned an incomplete certificate")
+					return
+				}
+				_ = sha256.Sum256(got.Leaf.Raw)
+			}
+		}()
+	}
+	wg.Wait()
+
+	if !bytes.Equal(leaf.Raw, wantLeafRaw) {
+		t.Error("concurrent mutation of returned leaves rewrote the shared certificate's Raw")
+	}
+	if !bytes.Equal(shared.Certificate[0], wantChain0) {
+		t.Error("concurrent mutation of returned leaves rewrote the shared DER chain")
 	}
 }
 
