@@ -11,6 +11,8 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 // countingClient records every request it is asked to make and refuses to make any, so a test can
@@ -62,6 +64,27 @@ func TestMtlsPoPValidatesAuthorityBeforeNetwork(t *testing.T) {
 			desc:      "unsupported host",
 			authority: "https://sts.windows.net/tenant",
 			wantErr:   "a login.* host is required",
+		},
+		{
+			// AuthorityType comes from the authority's first path segment, never from the host, so
+			// a non-AAD authority can be login.*-hosted and satisfy every other check. Before the
+			// type guard this derived https://mtlsauth.microsoft.com/adfs/oauth2/v2.0/token.
+			desc:      "ADFS on a login.* host",
+			authority: "https://login.microsoftonline.com/adfs",
+			wantErr:   `authority type "ADFS"`,
+		},
+		{
+			desc:      "dSTS on a login.* host",
+			authority: "https://login.microsoftonline.com/dstsv2/" + authority.DSTSTenant,
+			wantErr:   `authority type "DSTS"`,
+		},
+		{
+			// The derived mtlsauth host receives the binding certificate and a live client
+			// assertion, so an untrusted login.* host must not be rewritten. Before the trust guard
+			// this derived https://mtlsauth.evil.test/tenant/oauth2/v2.0/token.
+			desc:      "untrusted login.* host",
+			authority: "https://login.evil.test/tenant",
+			wantErr:   "not a known Microsoft cloud host",
 		},
 	} {
 		t.Run(test.desc, func(t *testing.T) {
@@ -143,6 +166,57 @@ func TestMtlsPoPAuthorityValidationStillGuardsTheNetworkPath(t *testing.T) {
 	authParams.AuthorityInfo.Host = "sts.windows.net"
 	if _, err := authParams.MtlsTokenEndpoint(); err == nil {
 		t.Error("MtlsTokenEndpoint accepted an unsupported host; the network path is unguarded")
+	}
+}
+
+// TestMtlsPoPPrivateCloudOptInIsHonored is the counterpart control to the untrusted-host case in
+// TestMtlsPoPValidatesAuthorityBeforeNetwork: the same authority that is refused with instance
+// discovery left on is accepted once the caller opts in with WithInstanceDiscovery(false), which is
+// the documented switch for private cloud scenarios. Exactly one option differs between the two, so
+// the host-trust guard cannot be silently over-rejecting private clouds.
+func TestMtlsPoPPrivateCloudOptInIsHonored(t *testing.T) {
+	certs, key := loadTestCert(t)
+	cred, err := NewCredFromCert(certs, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const privateAuthority = "https://login.contoso.internal:9443/contoso.onmicrosoft.com"
+
+	counter := &countingClient{}
+	client, err := New(privateAuthority, fakeClientID, cred, WithHTTPClient(counter), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireTokenByCredential(context.Background(), tokenScope, WithMtlsProofOfPossession())
+	if err == nil {
+		t.Fatal("expected the counting client to refuse the request")
+	}
+	if strings.Contains(err.Error(), "mTLS proof-of-possession") {
+		t.Errorf("a private cloud that opted out of instance discovery was rejected by the mTLS contract check: %v", err)
+	}
+	if counter.count() == 0 {
+		t.Error("the request never reached the network, so the private-cloud opt-in is not honored")
+	}
+
+	// The endpoint the opted-in caller derives is the private cloud's own, port and all.
+	authParams := client.base.AuthParams
+	endpoint, err := authParams.MtlsTokenEndpoint()
+	if err != nil {
+		t.Fatalf("MtlsTokenEndpoint() unexpected error: %v", err)
+	}
+	if want := "https://mtlsauth.contoso.internal:9443/contoso.onmicrosoft.com/oauth2/v2.0/token"; endpoint != want {
+		t.Errorf("MtlsTokenEndpoint() = %q, want %q", endpoint, want)
+	}
+
+	// Exactly one option changes: instance discovery is left on, and the same authority is refused.
+	strict, err := New(privateAuthority, fakeClientID, cred, WithHTTPClient(&countingClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := strict.base.AuthParams.MtlsTokenEndpoint(); err == nil {
+		t.Error("the same authority was accepted with instance discovery enabled; the trust guard is not gating on the opt-in")
+	} else if !strings.Contains(err.Error(), "not a known Microsoft cloud host") {
+		t.Errorf("error = %q, want the host-trust message", err)
 	}
 }
 
