@@ -111,6 +111,18 @@ func (a AccessToken) Key() string {
 	// preserve fwd and back compat between a common cache and msal clients
 	if !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) {
 		ks = append(ks, a.TokenType)
+		// The authentication scheme's key ID partitions entries by the credential the token is bound
+		// to; for mtls_pop that is the binding certificate's x5t#S256 thumbprint. Without it, two
+		// certificates sharing a home account, environment, client, realm, scopes and token type
+		// collide on one key and each write overwrites the other, so alternating certificates cost an
+		// identity-provider round trip every time and an external cache can hold only one of them.
+		// readAccessToken already compares this value, so including it here makes the write key as
+		// specific as the read filter and lets the two entries coexist.
+		//
+		// The guard above excludes bearer entries, so keys written by existing clients are unchanged.
+		if a.AuthnSchemeKeyID != "" {
+			ks = append(ks, a.AuthnSchemeKeyID)
+		}
 	}
 	// add extra body param hash to key if present
 	if a.ExtCacheKey != "" {
