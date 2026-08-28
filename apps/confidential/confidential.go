@@ -402,6 +402,11 @@ func WithClientCapabilities(capabilities []string) Option {
 // carry the certificate into the handshake are rejected rather than quietly rerouted, and mTLS token
 // requests then fail with an error naming [WithMtlsHTTPClient]:
 //
+//   - an httpClient that is not an [*http.Client] at all. This parameter is an interface, so any
+//     wrapper implementing Do and CloseIdleConnections is accepted here, but a TLS client
+//     certificate can only be installed through [*http.Transport]. Azure's azidentity passes such a
+//     wrapper, so applications reaching MSAL through it must set [WithMtlsHTTPClient] to use mTLS
+//     proof-of-possession;
 //   - a custom [http.RoundTripper], such as a tracing, retry, pinning or request-signing wrapper,
 //     because a TLS client certificate can only be installed through [*http.Transport], and
 //     substituting [http.DefaultTransport] would send a credential-bearing request outside whatever
@@ -426,10 +431,23 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 // token requests (see [WithMtlsProofOfPossession]). The factory receives the binding certificate and
 // must return an [http.Client] whose transport presents that certificate during the TLS handshake.
 //
-// This is an escape hatch for callers who must own the TLS handshake themselves. It isn't needed for
-// non-exportable keys: a [crypto.Signer] supplied through [NewCredFromTLSCertificate] is passed
-// straight to the built-in transport, which crypto/tls signs with on both TLS 1.2 and 1.3. When
-// unset, MSAL auto-builds and caches an mTLS client per certificate thumbprint.
+// This option is REQUIRED whenever the value passed to [WithHTTPClient] is not an [*http.Client].
+// [WithHTTPClient] accepts an interface, but a TLS client certificate can only be installed through
+// [*http.Transport], so MSAL rejects any other implementation rather than reroute a
+// credential-bearing request onto [http.DefaultTransport] and out of whatever proxy, pinning,
+// auditing or egress controls the caller's client enforces. Azure's azidentity is the concrete case:
+// it passes its own wrapper type to [WithHTTPClient], so an application that reaches MSAL through
+// azidentity has no other way to use mTLS proof-of-possession. Owning the TLS handshake for its own
+// sake is the other, rarer reason to set it.
+//
+// It isn't needed for non-exportable keys: a [crypto.Signer] supplied through
+// [NewCredFromTLSCertificate] is passed straight to the built-in transport, which crypto/tls signs
+// with on both TLS 1.2 and 1.3.
+//
+// When unset, MSAL auto-builds and caches an mTLS client per certificate thumbprint.
+//
+// A caller-supplied client belongs to the caller: MSAL never calls CloseIdleConnections on it during
+// its own cache housekeeping, so a factory is free to memoize and return one shared client.
 func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) Option {
 	return func(o *clientOptions) {
 		if factory == nil {
@@ -456,6 +474,10 @@ func WithX5C() Option {
 }
 
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
+//
+// This also disables the mTLS proof-of-possession host allowlist: with validation off, the binding
+// certificate may be sent to any login.* host's derived mtlsauth.* endpoint, not only a known
+// Microsoft cloud's. See [WithMtlsProofOfPossession].
 func WithInstanceDiscovery(enabled bool) Option {
 	return func(o *clientOptions) {
 		o.disableInstanceDiscovery = !enabled
@@ -1238,6 +1260,13 @@ func WithAttribute(attrValue string) interface {
 // The credential and the authority are both validated up front, before any cache lookup or network
 // call. A credential that cannot present a client certificate is reported first, so that error is
 // what a caller sees even when the authority is also unsupported.
+//
+// [WithMtlsHTTPClient] is required when the value passed to [WithHTTPClient] is not an
+// [*http.Client] — notably when the application reaches MSAL through Azure's azidentity.
+//
+// The authority's login.* host must belong to a known Microsoft cloud before its mtlsauth.* endpoint
+// is derived; [WithInstanceDiscovery](false) turns that check off along with the rest of authority
+// validation.
 //
 // This option cannot be combined with [WithAuthenticationScheme]; supplying both returns an error.
 // mTLS PoP installs its own authentication scheme, so accepting both would mean silently discarding

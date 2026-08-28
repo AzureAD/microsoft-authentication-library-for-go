@@ -204,16 +204,20 @@ Notes:
 - **Region is optional**: the global `mtlsauth.microsoft.com` endpoint is used when no region is
   configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
-  certificate thumbprint). A plain `WithHTTPClient` cannot carry the certificate; use
-  `WithMtlsHTTPClient` to override the transport when you need to own the TLS handshake yourself.
-  A `WithHTTPClient` client's settings reach the mTLS leg only when its `Transport` is an
-  `*http.Transport` — that is where proxy, dialer and root CAs live. A custom `http.RoundTripper`
-  (a tracing, retry, pinning or request-signing wrapper), or an `*http.Transport` that sets
-  `DialTLS`/`DialTLSContext`, cannot carry the binding certificate into the handshake; rather than
-  silently rerouting a credential-bearing request onto `http.DefaultTransport`, mTLS token requests
-  fail with an error pointing at `WithMtlsHTTPClient`. Redirects are refused on that leg unless the
-  `WithHTTPClient` client sets `CheckRedirect`, because a 307 or 308 would replay the request body
-  and present the binding certificate to the redirect target.
+  certificate thumbprint). A `WithHTTPClient` client's settings reach the mTLS leg only when its
+  `Transport` is an `*http.Transport` — that is where proxy, dialer and root CAs live. A custom
+  `http.RoundTripper` (a tracing, retry, pinning or request-signing wrapper), or an `*http.Transport`
+  that sets `DialTLS`/`DialTLSContext`, cannot carry the binding certificate into the handshake;
+  rather than silently rerouting a credential-bearing request onto `http.DefaultTransport`, mTLS
+  token requests fail with an error pointing at `WithMtlsHTTPClient`. Redirects are refused on that
+  leg unless the `WithHTTPClient` client sets `CheckRedirect`, because a 307 or 308 would replay the
+  request body and present the binding certificate to the redirect target.
+- **`WithMtlsHTTPClient` is required when the value you pass to `WithHTTPClient` is not an
+  `*http.Client`.** `WithHTTPClient` takes an interface (`Do` + `CloseIdleConnections`), but a TLS
+  client certificate can only be installed through `*http.Transport`, so any other implementation is
+  rejected before the request is sent. Azure's `azidentity` is the concrete case: it passes its own
+  `*confidentialClient` wrapper, so applications reaching MSAL through `azidentity` must supply
+  `WithMtlsHTTPClient` to use mTLS PoP at all. It is not an escape hatch for exotic setups.
 - **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. For the
   mTLS token endpoint the legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are
@@ -229,7 +233,8 @@ Notes:
   rejected, including when they are hosted on a `login.*` host, as are `/common`, `/organizations`
   and `/consumers`. The `login.*` host must belong to a known Microsoft cloud; a private cloud opts
   in with `WithInstanceDiscovery(false)`, because the derived `mtlsauth.*` host receives the binding
-  certificate and the client assertion.
+  certificate. Note that `WithInstanceDiscovery(false)` therefore also disables this allowlist for
+  every authority, not just a private cloud one.
 
 ### Non-exportable keys (KeyGuard, CNG, HSM)
 
