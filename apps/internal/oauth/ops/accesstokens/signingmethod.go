@@ -80,7 +80,32 @@ func (s *signerMethod) Sign(signingString string, key interface{}) ([]byte, erro
 	hasher.Write([]byte(signingString))
 	sig, err := signer.Sign(rand.Reader, hasher.Sum(nil), s.opts)
 	if err != nil {
-		return nil, fmt.Errorf("signer failed to sign the assertion: %w", err)
+		return nil, &signerError{opts: s.opts, err: err}
 	}
 	return sig, nil
+}
+
+// signerError reports that crypto.Signer.Sign itself failed, as opposed to any of the other work
+// that goes into producing an assertion. Its message and Unwrap behavior are what callers saw before
+// it existed; the type is what lets JWT() tell a failed signing operation from a failed one.
+type signerError struct {
+	// opts is what the signer was given, which identifies the algorithm it was asked for.
+	opts crypto.SignerOpts
+	err  error
+}
+
+func (e *signerError) Error() string {
+	return fmt.Sprintf("signer failed to sign the assertion: %v", e.err)
+}
+
+func (e *signerError) Unwrap() error {
+	return e.err
+}
+
+// isSignerFailure reports whether err came from crypto.Signer.Sign. JWT()'s RS256 fallback is gated
+// on this, because re-signing with a different algorithm can only help when the signing operation is
+// what failed: assembling or marshaling the assertion fails identically whatever the algorithm.
+func isSignerFailure(err error) bool {
+	var se *signerError
+	return errors.As(err, &se)
 }

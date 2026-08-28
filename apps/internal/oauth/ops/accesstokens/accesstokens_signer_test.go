@@ -596,3 +596,143 @@ func TestJWTSignerFallbackAlsoFails(t *testing.T) {
 		t.Errorf("the signer got %d PKCS #1 requests, want 1", signer.pkcs1Calls)
 	}
 }
+
+// cancellingSigner cancels an acquisition from inside its failing PSS attempt. That's the shape of a
+// caller giving up while the first signing operation is in flight, which is exactly when a second
+// one must not be started.
+type cancellingSigner struct {
+	*pssRejectingSigner
+	cancel context.CancelFunc
+}
+
+func (s *cancellingSigner) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	if _, ok := opts.(*rsa.PSSOptions); ok {
+		s.cancel()
+	}
+	return s.pssRejectingSigner.Sign(r, digest, opts)
+}
+
+// TestJWTContextCancelled verifies an acquisition that's already been cancelled never reaches the key
+// store. A signer can sit in hardware or behind a remote service and its Sign call can't be cancelled
+// once it's running, so declining to start one is the only control JWT() has.
+func TestJWTContextCancelled(t *testing.T) {
+	leaf, key, x5c := assertionFixture(t)
+	for _, authorityType := range []string{authority.AAD, authority.ADFS} {
+		t.Run(authorityType, func(t *testing.T) {
+			signer := &pssRejectingSigner{key: key}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+
+			assertion, err := cred.JWT(ctx, assertionAuthParams(authorityType, false))
+			if err == nil {
+				t.Fatal("expected an error because the context is already cancelled")
+			}
+			if assertion != "" {
+				t.Errorf("assertion = %q, want no token", assertion)
+			}
+			if !errors.Is(err, context.Canceled) {
+				t.Errorf("error %q should wrap context.Canceled", err)
+			}
+			if signer.pssCalls != 0 || signer.pkcs1Calls != 0 {
+				t.Errorf("the signer was called %d times, want 0", signer.pssCalls+signer.pkcs1Calls)
+			}
+		})
+	}
+}
+
+// TestJWTContextCancelledBeforeFallback verifies the RS256 retry is skipped when the acquisition was
+// cancelled while PS256 was being signed. The first signing operation can't be taken back, but a
+// second one must not be started for a caller who has already given up.
+func TestJWTContextCancelledBeforeFallback(t *testing.T) {
+	leaf, key, x5c := assertionFixture(t)
+	inner := &pssRejectingSigner{key: key}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	cred := &Credential{Cert: leaf, Key: &cancellingSigner{pssRejectingSigner: inner, cancel: cancel}, X5c: x5c}
+
+	assertion, err := cred.JWT(ctx, assertionAuthParams(authority.AAD, false))
+	if err == nil {
+		t.Fatal("expected an error because the context was cancelled before the retry")
+	}
+	if assertion != "" {
+		t.Errorf("assertion = %q, want no token", assertion)
+	}
+	if !errors.Is(err, context.Canceled) {
+		t.Errorf("error %q should wrap context.Canceled", err)
+	}
+	// the PS256 failure that prompted the retry must still be reported, so cancellation doesn't hide it
+	for _, want := range []string{"PS256", errNoPSS.Error()} {
+		if !strings.Contains(err.Error(), want) {
+			t.Errorf("error %q should mention %q", err, want)
+		}
+	}
+	if inner.pssCalls != 1 {
+		t.Errorf("the signer got %d PSS requests, want 1", inner.pssCalls)
+	}
+	if inner.pkcs1Calls != 0 {
+		t.Errorf("the signer got %d PKCS #1 requests, want 0: the context was cancelled before the retry", inner.pkcs1Calls)
+	}
+}
+
+// TestFallbackOnlyForSigningFailures pins that the RS256 retry is reserved for a failure of
+// crypto.Signer.Sign itself. A provider that can't do RSA-PSS is worth asking again with PKCS #1
+// v1.5; a failure to assemble the assertion is not, because it would recur identically.
+//
+// JWT()'s own inputs can't produce the second kind -- the header and claims it builds always marshal
+// -- so these cases drive the same jwt.Token.SignedString path build() uses and assert on how each
+// failure is classified. TestJWTSignerPS256Fallback covers the retry itself end to end.
+func TestFallbackOnlyForSigningFailures(t *testing.T) {
+	_, key, _ := assertionFixture(t)
+	newToken := func(t *testing.T) (*jwt.Token, *pssRejectingSigner) {
+		t.Helper()
+		method, err := newSignerMethod(jwt.SigningMethodPS256)
+		if err != nil {
+			t.Fatal(err)
+		}
+		token := jwt.NewWithClaims(method, jwt.MapClaims{"iss": "clientID"})
+		token.Header = map[string]interface{}{"alg": method.Alg(), "typ": "JWT"}
+		return token, &pssRejectingSigner{key: key}
+	}
+
+	t.Run("assembling the assertion isn't retried", func(t *testing.T) {
+		token, signer := newToken(t)
+		// a header value encoding/json can't marshal stands in for any failure before signing
+		token.Header["x5c"] = make(chan int)
+		if _, err := token.SignedString(signer); err == nil {
+			t.Fatal("expected a header that doesn't marshal to fail")
+		} else if isSignerFailure(err) {
+			t.Errorf("error %q is reported as a signing failure, so JWT() would retry a failure RS256 can't fix", err)
+		}
+		if signer.pssCalls != 0 || signer.pkcs1Calls != 0 {
+			t.Errorf("the signer was called %d times, want 0: the assertion never got as far as signing", signer.pssCalls+signer.pkcs1Calls)
+		}
+	})
+
+	t.Run("signing the assertion is retried", func(t *testing.T) {
+		token, signer := newToken(t)
+		_, err := token.SignedString(signer)
+		if err == nil {
+			t.Fatal("expected the signer's PSS refusal to fail")
+		}
+		if !isSignerFailure(err) {
+			t.Errorf("error %q isn't reported as a signing failure, so JWT() would skip the RS256 retry this path exists for", err)
+		}
+		if !errors.Is(err, errNoPSS) {
+			t.Errorf("error %q should still wrap the provider's error", err)
+		}
+		if !strings.HasPrefix(err.Error(), "signer failed to sign the assertion: ") {
+			t.Errorf("error %q should keep the wording callers already saw", err)
+		}
+		var se *signerError
+		if !errors.As(err, &se) {
+			t.Fatalf("error is %T, want a *signerError", err)
+		}
+		if _, ok := se.opts.(*rsa.PSSOptions); !ok {
+			t.Errorf("the error carries %T, want the *rsa.PSSOptions the signer was given", se.opts)
+		}
+		if signer.pssCalls != 1 {
+			t.Errorf("the signer got %d PSS requests, want 1", signer.pssCalls)
+		}
+	})
+}

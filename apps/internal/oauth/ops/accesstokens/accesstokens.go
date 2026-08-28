@@ -183,20 +183,51 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		return token.SignedString(c.Key)
 	}
 
+	// A signer-backed key can live in hardware or behind a remote service, so signing may be slow.
+	// crypto.Signer.Sign can't be cancelled once it's running, so the only control MSAL has is not
+	// starting one for an acquisition that's already been cancelled.
+	if err := ctx.Err(); err != nil {
+		return "", fmt.Errorf("unable to sign JWT token: %w", err)
+	}
+
 	assertion, err := build(signingMethod, thumbprintKey)
 	if err == nil {
 		return assertion, nil
 	}
-	if exportableRSA || isADFSorDSTS {
+	if exportableRSA || isADFSorDSTS || !isSignerFailure(err) {
 		// an exportable key is an *rsa.PrivateKey, and Go's software RSA always supports PSS, so
-		// there's nothing to fall back from. ADFS and dSTS already signed with RS256.
+		// there's nothing to fall back from. ADFS and dSTS already signed with RS256. And a failure
+		// that isn't the signer's -- assembling or marshaling the assertion -- fails the same way
+		// under any algorithm, so retrying it would only bury the real error behind a second one.
 		return "", fmt.Errorf("unable to sign JWT token: %w", err)
 	}
 
 	// The signer couldn't produce the PS256 signature. Some key providers (CNG, KeyGuard, HSMs,
 	// smart cards) can't do RSA-PSS at all, so try once more with PKCS #1 v1.5, as MSAL .NET does.
-	// Nothing else can realistically have failed above: the key is a crypto.Signer holding an RSA
-	// key, SHA-256 is always available, and the header and claims always marshal.
+	//
+	// This retry downgrades the algorithm after a failure MSAL can't fully attribute, which is a
+	// deliberate, security-reviewed trade-off rather than an oversight. crypto.Signer defines no
+	// sentinel for "this algorithm is unsupported", and provider errors aren't portably classifiable
+	// -- a CNG NTE_NOT_SUPPORTED, a PKCS #11 CKR_MECHANISM_INVALID and a vendor-specific HSM status
+	// have nothing in common to match on -- so a provider that failed PS256 for some other reason
+	// (permission denied, key deleted, device unavailable, cancellation) is retried as well. What
+	// bounds that:
+	//   - only signer-backed credentials reach this line. An exportable *rsa.PrivateKey is rejected
+	//     above, so no caller silently loses PSS on a key that supports it.
+	//   - RS256 isn't a downgrade to something weak or deprecated. It's an algorithm the service
+	//     accepts for client assertions, and it's what MSAL already sends to ADFS and dSTS.
+	//   - the retry is one further call into a key store the caller owns, and anyone able to induce a
+	//     signer failure already controls that key store.
+	//   - a real failure still fails: if RS256 fails too, both errors are reported below.
+	//
+	// Memoizing the outcome was considered and rejected. toInternal() runs once, in New(), so this
+	// Credential outlives every request its Client makes; pinning RS256 after one transient failure
+	// would make the downgrade permanent for the life of the process, which is a strictly worse
+	// version of the risk above.
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		// as above, don't start a signing operation the caller has already given up on
+		return "", fmt.Errorf("unable to sign JWT token: signing with PS256 failed (%v) and the context ended before retrying with RS256: %w", err, ctxErr)
+	}
 	fallbackMethod, fallbackErr := newSignerMethod(jwt.SigningMethodRS256)
 	if fallbackErr == nil {
 		assertion, fallbackErr = build(fallbackMethod, "x5t")
