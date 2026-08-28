@@ -65,8 +65,12 @@ type AcquireTokenSilentParameters struct {
 	CacheKeyComponents  map[string]string
 	// IsMtlsPoP requests an mTLS-bound proof-of-possession token (token_type=mtls_pop).
 	IsMtlsPoP bool
-	// MtlsBindingCert is the certificate presented on the mutual-TLS handshake when IsMtlsPoP is set.
+	// MtlsBindingCert is the certificate presented on the mutual-TLS handshake when IsMtlsPoP or
+	// MtlsTransport is set.
 	MtlsBindingCert *tls.Certificate
+	// MtlsTransport requests Bearer-over-mTLS: route over the mutual-TLS transport (mtlsauth.*) using
+	// MtlsBindingCert but return a plain Bearer token (see authority.AuthParams.MtlsTransport).
+	MtlsTransport bool
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -84,6 +88,10 @@ type AcquireTokenAuthCodeParameters struct {
 	Credential         *accesstokens.Credential
 	TenantID           string
 	CacheKeyComponents map[string]string
+	// MtlsBindingCert / MtlsTransport request Bearer-over-mTLS for the auth-code flow (route over
+	// mtlsauth.* with the certificate on the handshake, return a plain Bearer token).
+	MtlsBindingCert *tls.Certificate
+	MtlsTransport   bool
 }
 
 type AcquireTokenOnBehalfOfParameters struct {
@@ -94,6 +102,10 @@ type AcquireTokenOnBehalfOfParameters struct {
 	TenantID           string
 	UserAssertion      string
 	CacheKeyComponents map[string]string
+	// MtlsBindingCert / MtlsTransport request Bearer-over-mTLS for the on-behalf-of flow (route over
+	// mtlsauth.* with the certificate on the handshake, return a plain Bearer token).
+	MtlsBindingCert *tls.Certificate
+	MtlsTransport   bool
 }
 
 // AcquireTokenByUserFICParameters contains the parameters to acquire a user token via the user_fic flow.
@@ -442,6 +454,12 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	}
 	authParams.IsMtlsPoP = silent.IsMtlsPoP
 	authParams.MtlsBindingCert = silent.MtlsBindingCert
+	authParams.MtlsTransport = silent.MtlsTransport
+	if silent.MtlsTransport {
+		// Bearer-over-mTLS forces the x5c chain onto the private_key_jwt client assertion regardless of
+		// the app-level WithX5C setting (mirrors MSAL .NET's Mode=OAuth credential resolution).
+		authParams.SendX5C = true
+	}
 	m := b.pmanager
 	if authParams.AuthorizationType != authority.ATOnBehalfOf {
 		authParams.AuthorizationType = authority.ATRefreshToken
@@ -465,7 +483,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	if silent.Claims == "" {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
-			ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
+			if authParams.IsMtlsPoP {
+				ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
+			}
 			if rt := storageTokenResponse.AccessToken.RefreshOn.T; !rt.IsZero() && Now().After(rt) {
 				b.canRefreshMu.Lock()
 				refreshValue, ok := b.canRefresh[tenant]
@@ -532,6 +552,11 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams.Scopes = authCodeParams.Scopes
 	authParams.Redirecturi = authCodeParams.RedirectURI
 	authParams.AuthorizationType = authority.ATAuthCode
+	authParams.MtlsBindingCert = authCodeParams.MtlsBindingCert
+	authParams.MtlsTransport = authCodeParams.MtlsTransport
+	if authCodeParams.MtlsTransport {
+		authParams.SendX5C = true
+	}
 
 	var cc *accesstokens.Credential
 	if authCodeParams.AppType == accesstokens.ATConfidential {
@@ -565,6 +590,8 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 		Claims:             onBehalfOfParams.Claims,
 		ClientClaims:       onBehalfOfParams.ClientClaims,
 		CacheKeyComponents: onBehalfOfParams.CacheKeyComponents,
+		MtlsBindingCert:    onBehalfOfParams.MtlsBindingCert,
+		MtlsTransport:      onBehalfOfParams.MtlsTransport,
 	}
 	ar, err := b.AcquireTokenSilent(ctx, silentParameters)
 	if err == nil {
@@ -581,6 +608,11 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 	authParams.UserAssertion = onBehalfOfParams.UserAssertion
 	if onBehalfOfParams.CacheKeyComponents != nil {
 		authParams.CacheKeyComponents = onBehalfOfParams.CacheKeyComponents
+	}
+	authParams.MtlsBindingCert = onBehalfOfParams.MtlsBindingCert
+	authParams.MtlsTransport = onBehalfOfParams.MtlsTransport
+	if onBehalfOfParams.MtlsTransport {
+		authParams.SendX5C = true
 	}
 	if authParams.ExtraBodyParameters != nil {
 		authParams.ExtraBodyParameters = silentParameters.ExtraBodyParameters
@@ -642,7 +674,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		return AuthResult{}, err
 	}
 
-	ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
+	if authParams.IsMtlsPoP {
+		ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
+	}
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
 }
