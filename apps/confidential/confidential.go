@@ -266,8 +266,10 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 // on-behalf-of) invoke it only when a token request is actually sent, exactly like
 // [NewCredFromAssertionCallback].
 //
-// The callback must return a non-empty assertion; an empty or whitespace-only one is rejected
-// locally rather than sent as a malformed token request.
+// On an mTLS proof-of-possession request ([WithMtlsProofOfPossession]) the callback must return a
+// non-empty assertion; an empty or whitespace-only one is rejected locally rather than sent as a
+// malformed token request. On every other request the assertion is forwarded without local
+// validation, exactly like [NewCredFromAssertionCallback].
 //
 // This is the only way to supply a binding certificate for an assertion credential. MSAL offers no
 // call-site option that would let the assertion and the certificate be sourced separately, because

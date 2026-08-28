@@ -671,6 +671,12 @@ func TestPlainAssertionCredentialRejectedForMtlsPoP(t *testing.T) {
 // identity provider rejects as a malformed token request — an error that says nothing about which
 // callback misbehaved. MSAL .NET validates the same credential result locally and returns
 // InvalidClientAssertion.
+//
+// This check lives in prepareMtlsPoP, so it is reached only on an mTLS proof-of-possession request.
+// TestSignedAssertionEmptyAssertionForwardedWithoutMtls pins the other half — without
+// WithMtlsProofOfPossession the assertion is forwarded unvalidated — which is what makes the
+// "on an mTLS proof-of-possession request" qualifier in the NewCredFromSignedAssertionCallback doc
+// comment verifiable rather than decorative.
 func TestSignedAssertionEmptyAssertionRejected(t *testing.T) {
 	leaf, key := newSelfSignedCert(t, "empty-assertion-binding-cert")
 	for _, test := range []struct {
@@ -695,6 +701,82 @@ func TestSignedAssertionEmptyAssertionRejected(t *testing.T) {
 			}
 			if got := srv.tokenCalls(); got != 0 {
 				t.Errorf("token endpoint called %d times, want 0: an empty assertion must not reach the network", got)
+			}
+		})
+	}
+}
+
+// TestSignedAssertionEmptyAssertionForwardedWithoutMtls is the counterpart to
+// TestSignedAssertionEmptyAssertionRejected and the reason the doc comment on
+// NewCredFromSignedAssertionCallback scopes the empty-assertion promise to the mTLS
+// proof-of-possession path.
+//
+// The check that rejects an empty assertion lives in prepareMtlsPoP, which runs only under
+// WithMtlsProofOfPossession. Without that option a signed-assertion credential takes the lazy path
+// in Credential.toInternal, which wraps the callback in a plain AssertionCallback and forwards
+// whatever it yields with no validation at all — exactly like NewCredFromAssertionCallback. So an
+// empty assertion must reach the token endpoint here, not be rejected locally.
+//
+// This is a behavioral contract, not an aspiration: adding validation to the non-PoP path would
+// diverge from NewCredFromAssertionCallback, which forwards an empty assertion too. If that
+// divergence is ever wanted it must be a deliberate change to both credentials, and this test
+// failing is the signal that it happened by accident.
+func TestSignedAssertionEmptyAssertionForwardedWithoutMtls(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "ignored-binding-cert")
+	for _, test := range []struct {
+		name, assertion string
+	}{
+		{"empty", ""},
+		{"whitespace only", " \t\r\n"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tenant := "tenant"
+			lmo := "login.microsoftonline.com"
+			mockClient := mock.NewClient()
+			mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+			var calls int32
+			cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+				atomic.AddInt32(&calls, 1)
+				return SignedAssertion{Assertion: test.assertion, BindingCertificate: tlsCertFor(leaf, key)}, nil
+			})
+			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var body url.Values
+			var requests int32
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			mockClient.AppendResponse(
+				mock.WithBody(mock.GetAccessTokenBody("bearer-token", "", "", "", 3600, 0)),
+				mock.WithCallback(func(r *http.Request) {
+					atomic.AddInt32(&requests, 1)
+					raw, _ := io.ReadAll(r.Body)
+					body, _ = url.ParseQuery(string(raw))
+				}),
+			)
+
+			res, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+			if err != nil {
+				t.Fatalf("AcquireTokenByCredential = %v, want the empty assertion to be forwarded rather than rejected locally", err)
+			}
+			if res.AccessToken != "bearer-token" {
+				t.Errorf("AccessToken = %q, want bearer-token", res.AccessToken)
+			}
+			if got := atomic.LoadInt32(&calls); got != 1 {
+				t.Errorf("callback invoked %d times, want exactly 1", got)
+			}
+			// The request reaching the token endpoint at all is the point: a local rejection would
+			// have failed above, but asserting the request happened keeps the test honest if the
+			// error path ever changes to something that doesn't surface as an error here.
+			if got := atomic.LoadInt32(&requests); got != 1 {
+				t.Fatalf("token endpoint called %d times, want 1: the assertion must be forwarded, not rejected locally", got)
+			}
+			if _, ok := body["client_assertion"]; !ok {
+				t.Fatal("the request carried no client_assertion parameter")
+			}
+			if got := body.Get("client_assertion"); got != test.assertion {
+				t.Errorf("client_assertion = %q, want the callback's value %q forwarded verbatim", got, test.assertion)
 			}
 		})
 	}
