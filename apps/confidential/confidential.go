@@ -207,22 +207,24 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 	return Credential{assertionCallback: callback}
 }
 
-// isNilSigner reports whether s is unusable: either an untyped nil interface, or an interface
-// wrapping a nil pointer. The second case is what a caller written as
+// isNilPointer reports whether v is unusable: either an untyped nil interface, or an interface
+// wrapping a nil pointer. Both shapes reach these constructors. A caller written as
 //
 //	var s *myKeySigner
 //	return tls.Certificate{PrivateKey: s}
 //
-// produces: s == nil is false because the interface carries a type, and the crypto.Signer type
-// assertion succeeds, so without this check calling Public would panic instead of returning an error.
-func isNilSigner(s crypto.Signer) bool {
-	if s == nil {
+// produces the second: s == nil is false because the interface carries a type, and the crypto.Signer
+// type assertion succeeds, so without this check calling Public would panic instead of returning an
+// error. A signer whose Public returns a typed-nil *rsa.PublicKey is the same hazard one level down:
+// the public key type assertion succeeds too, and the first field access panics.
+func isNilPointer(v any) bool {
+	if v == nil {
 		return true
 	}
-	v := reflect.ValueOf(s)
-	switch v.Kind() {
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
 	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface, reflect.UnsafePointer:
-		return v.IsNil()
+		return rv.IsNil()
 	default:
 		return false
 	}
@@ -248,11 +250,13 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 		}
 		k = &t.PublicKey
 	case crypto.Signer:
-		if isNilSigner(t) {
+		if isNilPointer(t) {
 			return cred, errors.New("key must not be a nil crypto.Signer")
 		}
 		pub, ok := t.Public().(*rsa.PublicKey)
-		if !ok {
+		// a typed-nil *rsa.PublicKey satisfies the assertion, so reject it here rather than
+		// dereference it below
+		if !ok || pub == nil {
 			return cred, errors.New("key must be an RSA key")
 		}
 		k = pub
@@ -303,7 +307,14 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 //
 // cert.Certificate must hold the DER-encoded chain leaf first, as [tls.Certificate] requires. The leaf
 // is always parsed from cert.Certificate[0] and cert.Leaf is ignored, so every field of the
-// credential's certificate derives from the DER presented on the handshake.
+// credential's certificate derives from the DER presented on the handshake. That DER is copied, so
+// mutating cert.Certificate afterwards can't change the credential.
+//
+// Unlike [NewCredFromCert], which requires an RSA key, this constructor accepts a signer of any key
+// type the leaf certificate carries and the TLS handshake can use, because a signer-only credential
+// is confined to mTLS proof-of-possession, where the key is only ever used for the handshake. Whether
+// a given key type is accepted for mTLS PoP is then up to the certificate's registration and the
+// service, not to MSAL.
 func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 	if len(cert.Certificate) == 0 || len(cert.Certificate[0]) == 0 {
 		return Credential{}, errors.New("tls.Certificate must contain at least one certificate")
@@ -312,16 +323,31 @@ func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 	if !ok {
 		return Credential{}, errors.New("tls.Certificate.PrivateKey must implement crypto.Signer")
 	}
-	if isNilSigner(signer) {
+	if isNilPointer(signer) {
 		return Credential{}, errors.New("tls.Certificate.PrivateKey must not be a nil crypto.Signer")
 	}
-	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	signerPub := signer.Public()
+	// a typed-nil public key satisfies the type assertion every Equal implementation makes on its
+	// argument, which then dereferences it, so reject it before it reaches Equal below
+	if isNilPointer(signerPub) {
+		return Credential{}, errors.New("tls.Certificate.PrivateKey's public key must not be nil")
+	}
+	// x509.ParseCertificate aliases the DER it's handed instead of copying it, so leaf.Raw (and
+	// every other Raw* field) would stay a live window onto the caller's tls.Certificate. The
+	// credential retains that leaf for its lifetime and derives the x5t#S256 thumbprint from
+	// cert.Raw, while the x5c entries below are snapshots, so a caller mutating its own DER
+	// afterwards would silently change the thumbprint and leave it disagreeing with x5c and with
+	// the bytes presented on the wire. Parsing a private copy keeps the credential immutable.
+	// apps/internal/base does the same for the same reason.
+	der := make([]byte, len(cert.Certificate[0]))
+	copy(der, cert.Certificate[0])
+	leaf, err := x509.ParseCertificate(der)
 	if err != nil {
 		return Credential{}, fmt.Errorf("could not parse the leaf certificate: %w", err)
 	}
 	// every public key type x509 can parse implements Equal, added in Go 1.15
 	pub, ok := leaf.PublicKey.(interface{ Equal(crypto.PublicKey) bool })
-	if !ok || !pub.Equal(signer.Public()) {
+	if !ok || !pub.Equal(signerPub) {
 		return Credential{}, errors.New("key doesn't match the leaf certificate")
 	}
 	cred := Credential{cert: leaf, key: cert.PrivateKey}
