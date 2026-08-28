@@ -31,26 +31,12 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
 	"os"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/tests/devapps/internal/mtlsdemo"
 )
-
-// Helpers shared by the demos in this PR live in apps/tests/devapps/internal/mtlsdemo. A small
-// overlap with sibling-PR demos such as mtlspop is left in place on purpose so each PR in the
-// mTLS stack stays runnable on its own branch.
-
-// config holds everything the demo needs to build a client.
-type config struct {
-	clientID  string
-	authority string
-	region    string
-	certPath  string
-	scope     string
-}
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -60,24 +46,13 @@ func main() {
 }
 
 func run(args []string) error {
-	fs := flag.NewFlagSet("mtlscacheisolation", flag.ExitOnError)
-	var cfg config
-	fs.StringVar(&cfg.clientID, "client-id", mtlsdemo.Env("MTLS_CLIENT_ID", mtlsdemo.DefaultClientID), "application (client) ID")
-	fs.StringVar(&cfg.authority, "authority", mtlsdemo.Env("MTLS_AUTHORITY", mtlsdemo.DefaultAuthority), "authority URL (must be tenanted for mTLS PoP)")
-	fs.StringVar(&cfg.region, "region", mtlsdemo.Env("MTLS_REGION", mtlsdemo.DefaultRegion), "Azure region for the regional mtlsauth endpoint (empty to use the global one)")
-	fs.StringVar(&cfg.certPath, "cert", mtlsdemo.Env("MTLS_CERT_PATH", ""), "path to a PEM file holding the SN/I certificate and its private key")
-	fs.StringVar(&cfg.scope, "scope", mtlsdemo.Env("MTLS_SCOPE", mtlsdemo.DefaultScope), "resource scope to request")
-	if err := fs.Parse(args); err != nil {
+	cfg, err := mtlsdemo.ParseFlags("mtlscacheisolation", "authority URL (must be tenanted for mTLS PoP)", args)
+	if err != nil {
 		return err
 	}
+	mtlsdemo.PrintConfig(cfg)
 
-	mtlsdemo.Section("configuration")
-	mtlsdemo.KV("authority", cfg.authority)
-	mtlsdemo.KV("client id", cfg.clientID)
-	mtlsdemo.KV("region", mtlsdemo.RegionLabel(cfg.region))
-	mtlsdemo.KV("scope", cfg.scope)
-
-	cred, leaf, err := mtlsdemo.LoadCertificate(cfg.certPath)
+	cred, leaf, err := mtlsdemo.LoadCertificate(cfg.CertPath)
 	if err != nil {
 		return err
 	}
@@ -93,16 +68,16 @@ func run(args []string) error {
 	// and produces a bound mtls_pop token instead. Both requests go to the same mtlsauth.* endpoint
 	// over the same certificate.
 	opts := []confidential.Option{confidential.WithSendCertificateOverMtls()}
-	if cfg.region != "" {
-		opts = append(opts, confidential.WithAzureRegion(cfg.region))
+	if cfg.Region != "" {
+		opts = append(opts, confidential.WithAzureRegion(cfg.Region))
 	}
-	app, err := confidential.New(cfg.authority, cfg.clientID, cred, opts...)
+	app, err := confidential.New(cfg.Authority, cfg.ClientID, cred, opts...)
 	if err != nil {
 		return fmt.Errorf("confidential.New failed: %w", err)
 	}
 
 	ctx := context.Background()
-	scopes := []string{cfg.scope}
+	scopes := []string{cfg.Scope}
 
 	acquirePoP := func() (confidential.AuthResult, error) {
 		return app.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())

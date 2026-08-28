@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
+	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -27,6 +28,41 @@ const (
 	DefaultRegion    = "westus3"
 	DefaultScope     = "https://vault.azure.net/.default"
 )
+
+// Config holds everything a demo needs to build a client.
+type Config struct {
+	ClientID  string
+	Authority string
+	Region    string
+	CertPath  string
+	Scope     string
+}
+
+// ParseFlags parses the standard mTLS demo flags from args and returns a Config.
+// The demoName parameter is used in the flag.FlagSet name (e.g. "bearerovermtls").
+// The authorityHelp parameter allows customizing the authority flag's help text.
+func ParseFlags(demoName, authorityHelp string, args []string) (Config, error) {
+	fs := flag.NewFlagSet(demoName, flag.ExitOnError)
+	var cfg Config
+	fs.StringVar(&cfg.ClientID, "client-id", Env("MTLS_CLIENT_ID", DefaultClientID), "application (client) ID")
+	fs.StringVar(&cfg.Authority, "authority", Env("MTLS_AUTHORITY", DefaultAuthority), authorityHelp)
+	fs.StringVar(&cfg.Region, "region", Env("MTLS_REGION", DefaultRegion), "Azure region for the regional mtlsauth endpoint (empty to use the global one)")
+	fs.StringVar(&cfg.CertPath, "cert", Env("MTLS_CERT_PATH", ""), "path to a PEM file holding the SN/I certificate and its private key")
+	fs.StringVar(&cfg.Scope, "scope", Env("MTLS_SCOPE", DefaultScope), "resource scope to request")
+	if err := fs.Parse(args); err != nil {
+		return Config{}, err
+	}
+	return cfg, nil
+}
+
+// PrintConfig prints the configuration section for the demo.
+func PrintConfig(cfg Config) {
+	Section("configuration")
+	KV("authority", cfg.Authority)
+	KV("client id", cfg.ClientID)
+	KV("region", RegionLabel(cfg.Region))
+	KV("scope", cfg.Scope)
+}
 
 // LoadCertificate reads a PEM file holding a certificate and its private key and builds a
 // NewCredFromCert credential from it, the same way apps/tests/integration's getCertDataFromFile

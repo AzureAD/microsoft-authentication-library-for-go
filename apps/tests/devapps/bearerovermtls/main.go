@@ -31,7 +31,6 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
-	"flag"
 	"fmt"
 	"os"
 	"strings"
@@ -39,19 +38,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/tests/devapps/internal/mtlsdemo"
 )
-
-// Helpers shared by the demos in this PR live in apps/tests/devapps/internal/mtlsdemo. A small
-// overlap with sibling-PR demos such as mtlspop is left in place on purpose so each PR in the
-// mTLS stack stays runnable on its own branch.
-
-// config holds everything the demo needs to build a client.
-type config struct {
-	clientID  string
-	authority string
-	region    string
-	certPath  string
-	scope     string
-}
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
@@ -61,22 +47,11 @@ func main() {
 }
 
 func run(args []string) error {
-	fs := flag.NewFlagSet("bearerovermtls", flag.ExitOnError)
-	var cfg config
-	fs.StringVar(&cfg.clientID, "client-id", mtlsdemo.Env("MTLS_CLIENT_ID", mtlsdemo.DefaultClientID), "application (client) ID")
-	fs.StringVar(&cfg.authority, "authority", mtlsdemo.Env("MTLS_AUTHORITY", mtlsdemo.DefaultAuthority), "authority URL (must be tenanted)")
-	fs.StringVar(&cfg.region, "region", mtlsdemo.Env("MTLS_REGION", mtlsdemo.DefaultRegion), "Azure region for the regional mtlsauth endpoint (empty to use the global one)")
-	fs.StringVar(&cfg.certPath, "cert", mtlsdemo.Env("MTLS_CERT_PATH", ""), "path to a PEM file holding the SN/I certificate and its private key")
-	fs.StringVar(&cfg.scope, "scope", mtlsdemo.Env("MTLS_SCOPE", mtlsdemo.DefaultScope), "resource scope to request")
-	if err := fs.Parse(args); err != nil {
+	cfg, err := mtlsdemo.ParseFlags("bearerovermtls", "authority URL (must be tenanted)", args)
+	if err != nil {
 		return err
 	}
-
-	mtlsdemo.Section("configuration")
-	mtlsdemo.KV("authority", cfg.authority)
-	mtlsdemo.KV("client id", cfg.clientID)
-	mtlsdemo.KV("region", mtlsdemo.RegionLabel(cfg.region))
-	mtlsdemo.KV("scope", cfg.scope)
+	mtlsdemo.PrintConfig(cfg)
 
 	// This part needs neither a certificate nor the network, so it always runs and the demo prints
 	// something useful even when it is invoked with no arguments at all.
@@ -84,7 +59,7 @@ func run(args []string) error {
 		return err
 	}
 
-	cred, leaf, err := mtlsdemo.LoadCertificate(cfg.certPath)
+	cred, leaf, err := mtlsdemo.LoadCertificate(cfg.CertPath)
 	if err != nil {
 		return err
 	}
@@ -107,7 +82,7 @@ func run(args []string) error {
 	mtlsdemo.Section("acquire")
 	// Note what is NOT here: no per-request option. A per-request WithMtlsProofOfPossession would
 	// take precedence over the app-level flag and produce a bound mtls_pop token instead.
-	result, err := app.AcquireTokenByCredential(ctx, []string{cfg.scope})
+	result, err := app.AcquireTokenByCredential(ctx, []string{cfg.Scope})
 	if err != nil {
 		return fmt.Errorf("AcquireTokenByCredential over mTLS failed: %w", err)
 	}
@@ -131,7 +106,7 @@ func run(args []string) error {
 	// A plain Bearer token is cached under the ordinary Bearer-token key, so a second call for the
 	// same scope is served from the cache rather than from Entra ID.
 	mtlsdemo.Section("acquire again (same client, same scope)")
-	cached, err := app.AcquireTokenByCredential(ctx, []string{cfg.scope})
+	cached, err := app.AcquireTokenByCredential(ctx, []string{cfg.Scope})
 	if err != nil {
 		return fmt.Errorf("second AcquireTokenByCredential failed: %w", err)
 	}
@@ -174,14 +149,14 @@ func run(args []string) error {
 // confidential.New rejects it for any credential that is not a certificate, because there would be
 // nothing to present on the handshake. It runs entirely offline -- confidential.New performs no
 // network I/O -- so this section prints even without a certificate or connectivity.
-func showCredentialGuardrail(cfg config) error {
+func showCredentialGuardrail(cfg mtlsdemo.Config) error {
 	mtlsdemo.Section("guardrail: the option requires a certificate credential (offline)")
 	// Not a secret: this literal exists only to be rejected, and is never sent anywhere.
 	secretCred, err := confidential.NewCredFromSecret("placeholder-value-that-is-not-a-secret")
 	if err != nil {
 		return fmt.Errorf("NewCredFromSecret failed: %w", err)
 	}
-	_, err = confidential.New(cfg.authority, cfg.clientID, secretCred, confidential.WithSendCertificateOverMtls())
+	_, err = confidential.New(cfg.Authority, cfg.ClientID, secretCred, confidential.WithSendCertificateOverMtls())
 	if err == nil {
 		return fmt.Errorf("confidential.New accepted a secret credential with WithSendCertificateOverMtls; it must reject it")
 	}
@@ -193,12 +168,12 @@ func showCredentialGuardrail(cfg config) error {
 
 // buildClient constructs the confidential client, applying the regional mtlsauth endpoint when a
 // region is configured. extra carries the feature under demonstration.
-func buildClient(cfg config, cred confidential.Credential, extra ...confidential.Option) (confidential.Client, error) {
+func buildClient(cfg mtlsdemo.Config, cred confidential.Credential, extra ...confidential.Option) (confidential.Client, error) {
 	opts := extra
-	if cfg.region != "" {
-		opts = append(opts, confidential.WithAzureRegion(cfg.region))
+	if cfg.Region != "" {
+		opts = append(opts, confidential.WithAzureRegion(cfg.Region))
 	}
-	return confidential.New(cfg.authority, cfg.clientID, cred, opts...)
+	return confidential.New(cfg.Authority, cfg.ClientID, cred, opts...)
 }
 
 // cnfThumbprintFromToken decodes an access token's JWT body and returns its cnf["x5t#S256"] claim --
