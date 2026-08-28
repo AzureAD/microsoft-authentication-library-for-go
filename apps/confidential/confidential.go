@@ -1049,6 +1049,15 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		if err != nil {
 			return AuthResult{}, err
 		}
+		// Validate the authority here for the same reason the PoP branch above does: this path also
+		// derives the mtlsauth endpoint and presents the binding certificate, so an unsupported
+		// authority must not survive the silent cache lookup and endpoint discovery before being
+		// rejected. Ordered after credential resolution to match the PoP branch, so a credential
+		// that cannot present a client certificate still reports that rather than an authority
+		// error. The check still runs while deriving the endpoint, so it can't be bypassed.
+		if err := authParams.AuthorityInfo.ValidateMtlsPoP(); err != nil {
+			return AuthResult{}, err
+		}
 		authParams.MtlsBindingCert = mtlsBindingCert
 		authParams.MtlsTransport = true
 		authParams.SendX5C = true

@@ -36,10 +36,14 @@ type bearerMtlsRouter struct {
 	tenant string
 
 	mu        sync.Mutex
+	reqs      int
 	tokenReqs []*url.URL
 }
 
 func (r *bearerMtlsRouter) Do(req *http.Request) (*http.Response, error) {
+	r.mu.Lock()
+	r.reqs++
+	r.mu.Unlock()
 	var body []byte
 	switch path := req.URL.Path; {
 	case strings.Contains(path, "/discovery/instance"):
@@ -69,6 +73,14 @@ func (r *bearerMtlsRouter) tokenRequest() *url.URL {
 		return nil
 	}
 	return r.tokenReqs[0]
+}
+
+// requestCount returns how many requests the client attempted in total, discovery included, so a
+// test can assert the authority was rejected before the network was touched at all.
+func (r *bearerMtlsRouter) requestCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.reqs
 }
 
 type bearerMtlsRoundTripper struct{ router *bearerMtlsRouter }
@@ -107,16 +119,15 @@ func newBearerMtlsClient(t *testing.T, cred Credential, authorityURI string, ext
 	return client, router
 }
 
-// Bearer-over-mTLS reaches the same authority guards as mTLS PoP, but by a different route and with
-// different timing. accesstokens.doTokenResp routes on `IsMtlsPoP || MtlsTransport`, and both go
-// through AuthParams.MtlsTokenEndpoint, which calls ValidateMtlsPoP. Unlike the PoP path there is no
-// early check in confidential.go, so the bearer path is validated while the token endpoint is being
-// derived - after endpoint discovery, immediately before the token request would be sent.
+// Bearer-over-mTLS reaches the same authority guards as mTLS PoP, and now with the same timing.
+// Both paths validate up front in confidential.go, before the silent cache lookup and endpoint
+// discovery, and both remain guarded on the network path: accesstokens.doTokenResp routes on
+// `IsMtlsPoP || MtlsTransport`, and both go through AuthParams.MtlsTokenEndpoint, which calls
+// ValidateMtlsPoP again. The guard therefore cannot be bypassed by another entry point.
 //
-// That timing is why these cases do not use countingClient the way the PoP tests do: discovery has
-// to be allowed to succeed for the request to reach the guard at all. Each case instead asserts the
-// token request itself never went out, which is the bearer-path equivalent of "rejected before the
-// network call that matters".
+// Each case asserts both that no token request went out and that no request went out at all,
+// discovery included, which is the standard the PoP tests hold themselves to. The router is wired
+// as both the plain and the mutual-TLS client, so either transport would be counted.
 //
 // None of these use WithMtlsProofOfPossession. They are plain Bearer callers that only asked for the
 // mutual-TLS transport, which is precisely the combination that had no coverage.
@@ -185,6 +196,9 @@ func TestSendCertificateOverMtls_ValidatesAuthority(t *testing.T) {
 			}
 			if got := router.tokenRequest(); got != nil {
 				t.Errorf("a token request was sent to %s; the authority must be rejected before the token request goes out", got)
+			}
+			if n := router.requestCount(); n != 0 {
+				t.Errorf("the authority was rejected only after %d network call(s); validation must happen before any cache or discovery work", n)
 			}
 		})
 	}
