@@ -14,18 +14,23 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"math/big"
 	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 // signerBackedKey stands in for a non-exportable key such as a Windows KeyGuard (VBS-isolated) key: it
@@ -196,7 +201,9 @@ func TestNewCredFromTLSCertificateError(t *testing.T) {
 		}},
 		{"Leaf disagrees with the chain", tls.Certificate{
 			// Leaf claims a cert whose key matches, but the DER actually presented on the handshake
-			// doesn't parse, so the mismatch must be caught rather than trusted.
+			// doesn't parse, so the mismatch must be caught rather than trusted. The positive half
+			// of this property -- a valid but different Leaf being ignored -- is
+			// TestNewCredFromTLSCertificateIgnoresLeaf.
 			Certificate: [][]byte{{0x01, 0x02, 0x03}},
 			PrivateKey:  tlsCert.PrivateKey,
 			Leaf:        certs[0],
@@ -699,6 +706,187 @@ func TestSignerCredentialAllFlows(t *testing.T) {
 			opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256}
 			if err := rsa.VerifyPSS(pub, crypto.SHA256, digest[:], sig, opts); err != nil {
 				t.Fatalf("the client_assertion doesn't verify against the signer's public key: %v", err)
+			}
+		})
+	}
+}
+
+// TestNewCredFromTLSCertificateIgnoresLeaf pins that the credential derives from Certificate[0], the
+// DER actually presented on the handshake, and never from cert.Leaf. Leaf here is a valid
+// certificate that simply isn't the leaf, which is the case a Leaf-trusting implementation would get
+// wrong while still rejecting the unparseable-DER fixture in TestNewCredFromTLSCertificateError.
+func TestNewCredFromTLSCertificateIgnoresLeaf(t *testing.T) {
+	tlsCert, certs, _ := testSignerCert(t)
+	// certs[1] is the intermediate: a perfectly valid certificate that isn't the signer's leaf
+	wrongLeaf := certs[1]
+	if wrongLeaf.Equal(certs[0]) {
+		t.Fatal("setup is invalid: the fixture's intermediate equals its leaf")
+	}
+	c := tlsCert
+	c.Leaf = wrongLeaf
+
+	cred, err := NewCredFromTLSCertificate(c)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cred.cert == nil {
+		t.Fatal("credential has no certificate")
+	}
+	if !cred.cert.Equal(certs[0]) {
+		t.Error("credential's certificate isn't the one parsed from Certificate[0]")
+	}
+	if cred.cert.Equal(wrongLeaf) {
+		t.Error("credential's certificate came from cert.Leaf, which must be ignored")
+	}
+	if !bytes.Equal(cred.cert.Raw, tlsCert.Certificate[0]) {
+		t.Error("credential's certificate DER isn't Certificate[0]")
+	}
+	if want := base64.StdEncoding.EncodeToString(certs[0].Raw); cred.x5c[0] != want {
+		t.Error("x5c must lead with Certificate[0], not with cert.Leaf")
+	}
+}
+
+// TestNewCredFromTLSCertificateCopiesDER is a regression test: x509.ParseCertificate aliases the DER
+// it's given, so without a copy the credential's certificate would stay a live window onto the
+// caller's tls.Certificate. The credential retains that certificate for its lifetime and derives the
+// x5t#S256 thumbprint from its Raw, while x5c is snapshotted at construction, so an aliased leaf lets
+// a caller silently desynchronize the thumbprint from x5c and from the bytes sent on the wire.
+func TestNewCredFromTLSCertificateCopiesDER(t *testing.T) {
+	tlsCert, certs, _ := testSignerCert(t)
+	der := make([]byte, len(tlsCert.Certificate[0]))
+	copy(der, tlsCert.Certificate[0])
+	cred, err := NewCredFromTLSCertificate(tls.Certificate{
+		Certificate: [][]byte{der},
+		PrivateKey:  tlsCert.PrivateKey,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	before := sha256.Sum256(cred.cert.Raw)
+
+	// a caller reusing or scrubbing its own buffer must not be able to reach into the credential
+	for i := range der {
+		der[i] ^= 0xFF
+	}
+
+	if after := sha256.Sum256(cred.cert.Raw); after != before {
+		t.Error("the credential's certificate DER changed when the caller mutated its own buffer")
+	}
+	if !cred.cert.Equal(certs[0]) {
+		t.Error("the credential's certificate no longer matches the fixture's leaf")
+	}
+	if want := base64.StdEncoding.EncodeToString(certs[0].Raw); cred.x5c[0] != want {
+		t.Error("x5c changed when the caller mutated its own buffer")
+	}
+}
+
+// ecdsaSignerCert returns a self-signed ECDSA certificate and its key, as a tls.Certificate.
+func ecdsaSignerCert(t *testing.T) (tls.Certificate, *ecdsa.PrivateKey) {
+	t.Helper()
+	key, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject:      pkix.Name{CommonName: "msal-go-ecdsa-test"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &key.PublicKey, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}, key
+}
+
+// TestNonRSAKeyConstructorAsymmetry pins a deliberate difference between the two constructors:
+// NewCredFromCert requires RSA up front because it may have to sign a client assertion, while
+// NewCredFromTLSCertificate accepts any key the leaf carries so the credential can still be used for
+// mTLS proof-of-possession, where the key only takes part in the TLS handshake. Signing a client
+// assertion with such a credential is refused when it's attempted, not at construction. This test
+// exists so the asymmetry can't be "fixed" in either direction without a deliberate decision.
+func TestNonRSAKeyConstructorAsymmetry(t *testing.T) {
+	tlsCert, key := ecdsaSignerCert(t)
+	leaf, err := x509.ParseCertificate(tlsCert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cred, err := NewCredFromTLSCertificate(tlsCert)
+	if err != nil {
+		t.Fatalf("NewCredFromTLSCertificate rejected an ECDSA key: %v", err)
+	}
+	if cred.cert == nil || !cred.cert.Equal(leaf) {
+		t.Error("credential's certificate isn't the ECDSA leaf")
+	}
+
+	// the credential exists, but it can't authenticate with a client assertion
+	ic, err := cred.toInternal()
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = ic.JWT(context.Background(), authority.AuthParams{})
+	if err == nil || !strings.Contains(err.Error(), "must be RSA") {
+		t.Errorf("signing a client assertion with an ECDSA credential = %v, want it refused as non-RSA", err)
+	}
+
+	if _, err := NewCredFromCert([]*x509.Certificate{leaf}, key); err == nil {
+		t.Error("NewCredFromCert accepted an ECDSA key; it signs client assertions and must stay RSA-only")
+	}
+}
+
+// nilPublicKeySigner is a usable, non-nil signer that reports a typed-nil public key. That is what a
+// caller adapting the KeyGuard sample gets by forgetting to populate the key it returns from Public:
+// the *rsa.PublicKey type assertion succeeds because the interface carries a type, and the first
+// field access panics.
+type nilPublicKeySigner struct{}
+
+func (nilPublicKeySigner) Public() crypto.PublicKey {
+	var pub *rsa.PublicKey
+	return pub
+}
+
+func (nilPublicKeySigner) Sign(io.Reader, []byte, crypto.SignerOpts) ([]byte, error) {
+	return nil, errors.New("nilPublicKeySigner can't sign")
+}
+
+// TestNewCredFromNilPublicKeySigner is a regression test for a panic in both constructors. The nil
+// checks they already perform cover a nil signer, not a signer that returns a nil public key:
+// NewCredFromCert dereferenced the asserted *rsa.PublicKey, and NewCredFromTLSCertificate handed the
+// typed nil to the leaf key's Equal, which asserts and dereferences it in turn.
+func TestNewCredFromNilPublicKeySigner(t *testing.T) {
+	tlsCert, certs, _ := testSignerCert(t)
+	var signer crypto.Signer = nilPublicKeySigner{}
+	// the premise of the test: Public returns a non-nil interface holding a nil *rsa.PublicKey
+	pub, ok := signer.Public().(*rsa.PublicKey)
+	if !ok || pub != nil {
+		t.Fatal("expected Public to return a typed-nil *rsa.PublicKey")
+	}
+	for _, test := range []struct {
+		name    string
+		newCred func() (Credential, error)
+	}{
+		{"NewCredFromCert", func() (Credential, error) {
+			return NewCredFromCert(certs, signer)
+		}},
+		{"NewCredFromTLSCertificate", func() (Credential, error) {
+			return NewCredFromTLSCertificate(tls.Certificate{
+				Certificate: tlsCert.Certificate,
+				PrivateKey:  signer,
+			})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("a signer with a nil public key panicked instead of returning an error: %v", r)
+				}
+			}()
+			if _, err := test.newCred(); err == nil {
+				t.Fatal("expected an error because the signer's public key is nil")
 			}
 		})
 	}

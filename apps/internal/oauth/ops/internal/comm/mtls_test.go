@@ -42,6 +42,10 @@ func (s signerKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]b
 	return s.key.Sign(r, digest, opts)
 }
 
+// signerTestCertCN is the subject of the certificate signerOnlyTestCert issues, so a test server can
+// confirm it saw that certificate rather than merely some certificate.
+const signerTestCertCN = "msal-go-signer-test"
+
 // signerOnlyTestCert returns a self-signed certificate whose key is only ever a crypto.Signer.
 func signerOnlyTestCert(t *testing.T) tls.Certificate {
 	t.Helper()
@@ -51,7 +55,7 @@ func signerOnlyTestCert(t *testing.T) tls.Certificate {
 	}
 	template := x509.Certificate{
 		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "msal-go-signer-test"},
+		Subject:      pkix.Name{CommonName: signerTestCertCN},
 		NotBefore:    time.Now().Add(-time.Hour),
 		NotAfter:     time.Now().Add(time.Hour),
 		KeyUsage:     x509.KeyUsageDigitalSignature,
@@ -67,21 +71,10 @@ func signerOnlyTestCert(t *testing.T) tls.Certificate {
 // TestBuildMtlsClientSignerHandshake proves crypto/tls can complete a client-certificate handshake
 // when the certificate's key is only a crypto.Signer, which is all a non-exportable key
 // (KeyGuard/CNG/HSM) can ever be. TLS 1.3 signs with RSA-PSS and TLS 1.2 with PKCS#1 v1.5, so both
-// are covered.
+// are covered -- which is why each subtest asserts the version it actually negotiated. Without that
+// assertion, losing MaxVersion would silently collapse both subtests onto one padding scheme.
 func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 	cert := signerOnlyTestCert(t)
-	var gotClientCerts int
-	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotClientCerts = len(r.TLS.PeerCertificates)
-		w.WriteHeader(http.StatusOK)
-	}))
-	server.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert, MinVersion: tls.VersionTLS12}
-	server.StartTLS()
-	defer server.Close()
-
-	roots := x509.NewCertPool()
-	roots.AddCert(server.Certificate())
-
 	for _, test := range []struct {
 		name       string
 		maxVersion uint16
@@ -90,7 +83,18 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 		{"TLS 1.3", tls.VersionTLS13},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			gotClientCerts = 0
+			// The handler runs on the server's goroutine while the assertions run on this one, so
+			// what it observes has to be read under a lock; tlsRecorder is the same guard
+			// mtls_network_test.go uses. A server per subtest keeps the recorder unshared.
+			recorder := &tlsRecorder{}
+			server := httptest.NewUnstartedServer(recorder.handler(http.StatusOK, ""))
+			server.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert, MinVersion: tls.VersionTLS12}
+			server.StartTLS()
+			defer server.Close()
+
+			roots := x509.NewCertPool()
+			roots.AddCert(server.Certificate())
+
 			client, err := BuildMtlsClient(cert, nil)
 			if err != nil {
 				t.Fatalf("BuildMtlsClient error: %v", err)
@@ -110,8 +114,22 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 			}
-			if gotClientCerts != 1 {
-				t.Errorf("server saw %d client certificates, want 1", gotClientCerts)
+			if resp.TLS == nil {
+				t.Fatal("the response carries no TLS connection state")
+			}
+			if resp.TLS.Version != test.maxVersion {
+				t.Errorf("negotiated TLS version %#04x, want %#04x; this subtest only covers the padding "+
+					"scheme its name claims when the version matches", resp.TLS.Version, test.maxVersion)
+			}
+			hits := recorder.snapshot()
+			if len(hits) != 1 {
+				t.Fatalf("server handled %d requests, want 1", len(hits))
+			}
+			if hits[0].numCerts != 1 {
+				t.Errorf("server saw %d client certificates, want 1", hits[0].numCerts)
+			}
+			if hits[0].clientCN != signerTestCertCN {
+				t.Errorf("server saw client certificate %q, want %q", hits[0].clientCN, signerTestCertCN)
 			}
 		})
 	}
