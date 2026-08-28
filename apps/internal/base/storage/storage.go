@@ -372,8 +372,43 @@ func (m *Manager) writeAccessToken(accessToken AccessToken) error {
 	m.contractMu.Lock()
 	defer m.contractMu.Unlock()
 	key := accessToken.Key()
+	evictSupersededAccessToken(m.contract.AccessTokens, key, accessToken)
 	m.contract.AccessTokens[key] = accessToken
 	return nil
+}
+
+// evictSupersededAccessToken removes the entry a previous version of this module wrote for the same
+// token under the shorter key it used before the authentication scheme's key ID became part of
+// AccessToken.Key().
+//
+// That older key applies to every non-bearer token, so it also covers the pre-existing
+// WithAuthenticationScheme PoP/SHR path, not just mtls_pop. On upgrade the cached entry stays at the
+// old key while new writes land at the new one. readAccessToken filters on struct fields and never
+// on the key, so both entries match, Go randomizes map iteration order, and which one is served is a
+// coin flip. It is never a wrong token - same client, realm, scopes, type and key ID - but the stale
+// copy is never overwritten, so it occupies a slot forever and can be served in place of the fresher
+// entry, costing a round trip when it expires first.
+//
+// The guard keeps this off the hot path: a bearer token, or a non-bearer token with no key ID, has
+// no shorter form and returns immediately, so the overwhelming majority of writes remain a single
+// O(1) map store. The stale key is computable rather than searched for, so even the affected path
+// adds only one map lookup - deliberately not the linear scan readAccessToken is already flagged for
+// (see its TODO).
+func evictSupersededAccessToken(tokens map[string]AccessToken, key string, at AccessToken) {
+	if strings.EqualFold(at.TokenType, authority.AccessTokenTypeBearer) || at.AuthnSchemeKeyID == "" {
+		return
+	}
+	superseded := at.keyWithoutAuthnSchemeKeyID()
+	if superseded == key {
+		return
+	}
+	// Everything else the key is built from is identical by construction: an entry stored under the
+	// shorter key produced it from its own fields. Matching the key ID as well is what proves this
+	// is the stale twin and not a distinct, still-reachable entry that legitimately has no key ID -
+	// readAccessToken would never return that one for this request.
+	if existing, ok := tokens[superseded]; ok && existing.AuthnSchemeKeyID == at.AuthnSchemeKeyID {
+		delete(tokens, superseded)
+	}
 }
 
 func (m *Manager) readRefreshToken(homeID string, envAliases []string, familyID, clientID string) (accesstokens.RefreshToken, error) {

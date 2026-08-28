@@ -107,7 +107,24 @@ func As(err error, target interface{}) bool {
 // produces an unbound token and is a separate, deliberately adopted application policy of accepting a
 // weaker credential; it is not a sanctioned reaction to this error.
 //
-// Detect it with errors.As. Mirrors MSAL .NET's "token_type_mismatch" (MsalClientException).
+// Detect it with errors.As, passing the address of a value of this type:
+//
+//	var mismatch errors.MtlsPoPTokenTypeMismatchError
+//	if errors.As(err, &mismatch) {
+//		log.Printf("tenant returned %q, wanted %q", mismatch.Actual, mismatch.Expected)
+//	}
+//
+// The reflexive Go idiom of declaring a pointer target
+//
+//	var mismatch *errors.MtlsPoPTokenTypeMismatchError // wrong: never matches
+//
+// compiles, does not panic, and always returns false. MSAL always returns this error as a value, so
+// there is never a *MtlsPoPTokenTypeMismatchError in the chain for errors.As to assign from. The
+// pointer type does satisfy error, because a method declared on a value receiver is in the method
+// set of both T and *T, which is exactly why the call fails silently instead of panicking. Use the
+// value form above.
+//
+// Mirrors MSAL .NET's "token_type_mismatch" (MsalClientException).
 type MtlsPoPTokenTypeMismatchError struct {
 	// Expected is the token_type the request required (always "mtls_pop").
 	Expected string
@@ -116,7 +133,10 @@ type MtlsPoPTokenTypeMismatchError struct {
 	Actual string
 }
 
-// Error implements error.
+// Error implements error on a value receiver. That is deliberate, and it is paired with an invariant
+// at the raise site: this type is always returned as a value, never as a pointer. Returning it by
+// pointer, or moving Error to a pointer receiver (which would force the raise site to a pointer),
+// would silently break every caller using the errors.As form the type's doc comment prescribes.
 func (e MtlsPoPTokenTypeMismatchError) Error() string {
 	actual := e.Actual
 	if actual == "" {
