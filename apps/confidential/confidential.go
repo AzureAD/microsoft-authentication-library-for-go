@@ -157,10 +157,6 @@ type Credential struct {
 	key  crypto.PrivateKey
 	x5c  []string
 
-	// signerOnly is set when key can't be exported as an *rsa.PrivateKey, which means MSAL must sign
-	// through its crypto.Signer interface. See NewCredFromTLSCertificate.
-	signerOnly bool
-
 	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
 
 	tokenProvider func(context.Context, TokenProviderParameters) (TokenProviderResult, error)
@@ -178,7 +174,7 @@ func (c Credential) toInternal() (*accesstokens.Credential, error) {
 		if c.key == nil {
 			return nil, errors.New("missing private key for certificate")
 		}
-		return &accesstokens.Credential{Cert: c.cert, Key: c.key, X5c: c.x5c, SignerOnly: c.signerOnly}, nil
+		return &accesstokens.Credential{Cert: c.cert, Key: c.key, X5c: c.x5c}, nil
 	}
 	if c.key != nil {
 		return nil, errors.New("missing certificate for private key")
@@ -253,7 +249,6 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 			return cred, errors.New("key must be an RSA key")
 		}
 		k = pub
-		cred.signerOnly = true
 	default:
 		return cred, errors.New("key must be an RSA key")
 	}
@@ -322,9 +317,6 @@ func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 	// tls.Certificate stores the chain leaf first, which is the order x5c requires
 	for _, der := range cert.Certificate {
 		cred.x5c = append(cred.x5c, base64.StdEncoding.EncodeToString(der))
-	}
-	if _, ok := cert.PrivateKey.(*rsa.PrivateKey); !ok {
-		cred.signerOnly = true
 	}
 	return cred, nil
 }

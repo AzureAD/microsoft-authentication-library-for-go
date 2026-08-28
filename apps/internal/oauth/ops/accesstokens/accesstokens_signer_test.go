@@ -31,35 +31,35 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// signerOnlyRSAKey stands in for a non-exportable key such as a Windows KeyGuard (VBS-isolated) key:
+// signerBackedRSAKey stands in for a non-exportable key such as a Windows KeyGuard (VBS-isolated) key:
 // it satisfies crypto.Signer by delegating to an RSA key it never exposes, so no code can type assert
 // it to an *rsa.PrivateKey. Tests using it therefore run anywhere, without CNG. It records what it
 // was asked to sign so tests can assert the digest and options reaching a real key store.
-type signerOnlyRSAKey struct {
+type signerBackedRSAKey struct {
 	key    *rsa.PrivateKey
 	calls  int
 	opts   crypto.SignerOpts
 	digest []byte
 }
 
-func (s *signerOnlyRSAKey) Public() crypto.PublicKey { return &s.key.PublicKey }
+func (s *signerBackedRSAKey) Public() crypto.PublicKey { return &s.key.PublicKey }
 
-func (s *signerOnlyRSAKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+func (s *signerBackedRSAKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	s.calls++
 	s.opts = opts
 	s.digest = append([]byte(nil), digest...)
 	return s.key.Sign(r, digest, opts)
 }
 
-// signerOnlyECKey is the same idea for an ECDSA key, which a credential can hold because
+// signerBackedECKey is the same idea for an ECDSA key, which a credential can hold because
 // NewCredFromTLSCertificate validates the signer against the leaf rather than requiring RSA.
-type signerOnlyECKey struct {
+type signerBackedECKey struct {
 	key *ecdsa.PrivateKey
 }
 
-func (s signerOnlyECKey) Public() crypto.PublicKey { return &s.key.PublicKey }
+func (s signerBackedECKey) Public() crypto.PublicKey { return &s.key.PublicKey }
 
-func (s signerOnlyECKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+func (s signerBackedECKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	return s.key.Sign(r, digest, opts)
 }
 
@@ -181,13 +181,13 @@ func decodeAssertion(t *testing.T, assertion string) (map[string]interface{}, ma
 	return decode(parts[0]), decode(parts[1]), parts[0] + "." + parts[1], sig
 }
 
-// TestJWTSignerOnlyPS256 covers the default (AAD) case: a non-exportable key must produce a PS256
+// TestJWTSignerPS256 covers the default (AAD) case: a non-exportable key must produce a PS256
 // assertion that verifies against the certificate's public key, with the salt length
 // jwt.SigningMethodPS256 uses.
-func TestJWTSignerOnlyPS256(t *testing.T) {
+func TestJWTSignerPS256(t *testing.T) {
 	leaf, key, x5c := assertionFixture(t)
-	signer := &signerOnlyRSAKey{key: key}
-	cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+	signer := &signerBackedRSAKey{key: key}
+	cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
 
 	assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, false))
 	if err != nil {
@@ -241,14 +241,14 @@ func TestJWTSignerOnlyPS256(t *testing.T) {
 	}
 }
 
-// TestJWTSignerOnlyRS256 covers the ADFS and dSTS branch, which signs PKCS #1 v1.5 with a SHA-1
+// TestJWTSignerRS256 covers the ADFS and dSTS branch, which signs PKCS #1 v1.5 with a SHA-1
 // thumbprint.
-func TestJWTSignerOnlyRS256(t *testing.T) {
+func TestJWTSignerRS256(t *testing.T) {
 	for _, authorityType := range []string{authority.ADFS, authority.DSTS} {
 		t.Run(authorityType, func(t *testing.T) {
 			leaf, key, x5c := assertionFixture(t)
-			signer := &signerOnlyRSAKey{key: key}
-			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+			signer := &signerBackedRSAKey{key: key}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
 
 			assertion, err := cred.JWT(context.Background(), assertionAuthParams(authorityType, false))
 			if err != nil {
@@ -285,19 +285,19 @@ func TestJWTSignerOnlyRS256(t *testing.T) {
 	}
 }
 
-// TestJWTSignerOnlyWireFormat is the regression guard: for the same input, a signer-backed credential
+// TestJWTSignerWireFormat is the regression guard: for the same input, a signer-backed credential
 // must produce exactly the header an *rsa.PrivateKey credential does, byte for byte. Only the header
 // can be compared that way. The claims carry a fresh jti and clock-derived nbf/exp, and a PS256
 // signature is salted with random bytes, so two assertions never have identical bytes even from the
 // same key.
-func TestJWTSignerOnlyWireFormat(t *testing.T) {
+func TestJWTSignerWireFormat(t *testing.T) {
 	for _, authorityType := range []string{authority.AAD, authority.ADFS, authority.DSTS} {
 		for _, sendX5C := range []bool{false, true} {
 			t.Run(fmt.Sprintf("%s/x5c=%v", authorityType, sendX5C), func(t *testing.T) {
 				leaf, key, x5c := assertionFixture(t)
 				authParams := assertionAuthParams(authorityType, sendX5C)
 				keyCred := &Credential{Cert: leaf, Key: key, X5c: x5c}
-				signerCred := &Credential{Cert: leaf, Key: &signerOnlyRSAKey{key: key}, X5c: x5c, SignerOnly: true}
+				signerCred := &Credential{Cert: leaf, Key: &signerBackedRSAKey{key: key}, X5c: x5c}
 
 				want, err := keyCred.JWT(context.Background(), authParams)
 				if err != nil {
@@ -342,7 +342,7 @@ func TestJWTSignerOnlyWireFormat(t *testing.T) {
 }
 
 // TestJWTPrivateKeyUnaffected verifies an exportable key still goes through jwt's built-in methods:
-// the swap is gated on SignerOnly and nothing else changed.
+// the swap is gated on the key's type and nothing else changed.
 func TestJWTPrivateKeyUnaffected(t *testing.T) {
 	leaf, key, x5c := assertionFixture(t)
 	cred := &Credential{Cert: leaf, Key: key, X5c: x5c}
@@ -362,19 +362,11 @@ func TestJWTPrivateKeyUnaffected(t *testing.T) {
 			}
 		})
 	}
-	t.Run("a signer is rejected when SignerOnly isn't set", func(t *testing.T) {
-		// jwt's built-in RSA methods require an *rsa.PrivateKey. This proves JWT() hands the key
-		// straight to them unless the credential says the key can't be exported.
-		c := &Credential{Cert: leaf, Key: &signerOnlyRSAKey{key: key}, X5c: x5c}
-		if _, err := c.JWT(context.Background(), assertionAuthParams(authority.AAD, false)); err == nil {
-			t.Fatal("expected jwt's built-in method to reject a key that isn't an *rsa.PrivateKey")
-		}
-	})
 }
 
-// TestJWTSignerOnlyNonRSA verifies a signer ESTS can't accept still fails with actionable guidance
+// TestJWTSignerNonRSA verifies a signer ESTS can't accept still fails with actionable guidance
 // rather than producing an assertion the service will reject.
-func TestJWTSignerOnlyNonRSA(t *testing.T) {
+func TestJWTSignerNonRSA(t *testing.T) {
 	leaf, _, x5c := assertionFixture(t)
 	ecKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
@@ -385,11 +377,11 @@ func TestJWTSignerOnlyNonRSA(t *testing.T) {
 		key  crypto.PrivateKey
 		want string
 	}{
-		{"ECDSA signer", signerOnlyECKey{key: ecKey}, "must be RSA"},
+		{"ECDSA signer", signerBackedECKey{key: ecKey}, "must be RSA"},
 		{"not a signer", struct{}{}, "crypto.Signer"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			cred := &Credential{Cert: leaf, Key: test.key, X5c: x5c, SignerOnly: true}
+			cred := &Credential{Cert: leaf, Key: test.key, X5c: x5c}
 			for _, authorityType := range []string{authority.AAD, authority.ADFS} {
 				_, err := cred.JWT(context.Background(), assertionAuthParams(authorityType, false))
 				if err == nil {
@@ -403,17 +395,17 @@ func TestJWTSignerOnlyNonRSA(t *testing.T) {
 	}
 }
 
-// TestJWTSignerOnlyPS256Fallback covers the key providers this whole path exists for: many CNG,
+// TestJWTSignerPS256Fallback covers the key providers this whole path exists for: many CNG,
 // KeyGuard, HSM and smart card keys can't perform RSA-PSS at all, so PS256 signing fails outright.
 // MSAL .NET retries such a certificate with PKCS #1 v1.5, and so must this. The retry has to rebuild
 // the header, because RS256 changes the "alg" value, which header carries the thumbprint, and the
 // hash that thumbprint uses.
-func TestJWTSignerOnlyPS256Fallback(t *testing.T) {
+func TestJWTSignerPS256Fallback(t *testing.T) {
 	for _, sendX5C := range []bool{false, true} {
 		t.Run(fmt.Sprintf("x5c=%v", sendX5C), func(t *testing.T) {
 			leaf, key, x5c := assertionFixture(t)
 			signer := &pssRejectingSigner{key: key}
-			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
 
 			assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, sendX5C))
 			if err != nil {
@@ -486,15 +478,15 @@ func TestJWTSignerOnlyPS256Fallback(t *testing.T) {
 	}
 }
 
-// TestJWTSignerOnlyNoFallbackForADFSOrDSTS verifies the fallback is limited to the PS256 path. ADFS
+// TestJWTSignerNoFallbackForADFSOrDSTS verifies the fallback is limited to the PS256 path. ADFS
 // and dSTS already sign RS256, so a second RS256 attempt would only ask a failing key store the same
 // question twice and report the failure as a PS256 one.
-func TestJWTSignerOnlyNoFallbackForADFSOrDSTS(t *testing.T) {
+func TestJWTSignerNoFallbackForADFSOrDSTS(t *testing.T) {
 	for _, authorityType := range []string{authority.ADFS, authority.DSTS} {
 		t.Run(authorityType, func(t *testing.T) {
 			leaf, key, x5c := assertionFixture(t)
 			signer := &pssRejectingSigner{key: key}
-			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
 
 			assertion, err := cred.JWT(context.Background(), assertionAuthParams(authorityType, false))
 			if err != nil {
@@ -518,7 +510,7 @@ func TestJWTSignerOnlyNoFallbackForADFSOrDSTS(t *testing.T) {
 		t.Run(authorityType+"/signing fails", func(t *testing.T) {
 			leaf, key, x5c := assertionFixture(t)
 			signer := &pssRejectingSigner{key: key, failPKCS1: true}
-			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+			cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
 
 			assertion, err := cred.JWT(context.Background(), assertionAuthParams(authorityType, false))
 			if err == nil {
@@ -545,8 +537,7 @@ func TestJWTSignerOnlyNoFallbackForADFSOrDSTS(t *testing.T) {
 }
 
 // TestJWTNoFallbackForExportableKey verifies the fallback can't fire for an exportable key. Go's
-// software RSA always supports PSS, so falling back there would only paper over a real problem, such
-// as a credential holding a key the JWT library can't use.
+// software RSA always supports PSS, so falling back there would only paper over a real problem.
 func TestJWTNoFallbackForExportableKey(t *testing.T) {
 	leaf, key, x5c := assertionFixture(t)
 
@@ -574,31 +565,14 @@ func TestJWTNoFallbackForExportableKey(t *testing.T) {
 			t.Fatalf("the assertion doesn't verify with jwt.SigningMethodPS256's salt length: %v", err)
 		}
 	})
-
-	t.Run("a signer without SignerOnly still fails", func(t *testing.T) {
-		// jwt's built-in PS256 rejects this key before any signing happens. The fallback must not
-		// rescue it by wrapping the key in a signer method the credential never asked for.
-		signer := &pssRejectingSigner{key: key}
-		cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
-		assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, false))
-		if err == nil {
-			t.Fatal("expected jwt's built-in method to reject a key that isn't an *rsa.PrivateKey")
-		}
-		if assertion != "" {
-			t.Errorf("assertion = %q, want no token", assertion)
-		}
-		if signer.pssCalls != 0 || signer.pkcs1Calls != 0 {
-			t.Errorf("the signer was used %d times, want 0: SignerOnly isn't set", signer.pssCalls+signer.pkcs1Calls)
-		}
-	})
 }
 
-// TestJWTSignerOnlyFallbackAlsoFails verifies a key store that can't do either algorithm reports both
+// TestJWTSignerFallbackAlsoFails verifies a key store that can't do either algorithm reports both
 // failures, so the cause isn't hidden behind the fallback's.
-func TestJWTSignerOnlyFallbackAlsoFails(t *testing.T) {
+func TestJWTSignerFallbackAlsoFails(t *testing.T) {
 	leaf, key, x5c := assertionFixture(t)
 	signer := &pssRejectingSigner{key: key, failPKCS1: true}
-	cred := &Credential{Cert: leaf, Key: signer, X5c: x5c, SignerOnly: true}
+	cred := &Credential{Cert: leaf, Key: signer, X5c: x5c}
 
 	assertion, err := cred.JWT(context.Background(), assertionAuthParams(authority.AAD, false))
 	if err == nil {

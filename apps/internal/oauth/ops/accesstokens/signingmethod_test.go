@@ -99,7 +99,7 @@ func TestSignerMethodSignRS256Equivalence(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := m.Sign(signingString, &signerOnlyRSAKey{key: key})
+	got, err := m.Sign(signingString, &signerBackedRSAKey{key: key})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -120,7 +120,7 @@ func TestSignerMethodSignPS256(t *testing.T) {
 		t.Fatal(err)
 	}
 	signingString := "eyJhbGciOiJQUzI1NiJ9.eyJpc3MiOiJjbGllbnQifQ"
-	sig, err := m.Sign(signingString, &signerOnlyRSAKey{key: key})
+	sig, err := m.Sign(signingString, &signerBackedRSAKey{key: key})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -144,7 +144,7 @@ func TestSignerMethodSignHashesSigningString(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			signer := &signerOnlyRSAKey{key: key}
+			signer := &signerBackedRSAKey{key: key}
 			signingString := "signing.string"
 			if _, err := m.Sign(signingString, signer); err != nil {
 				t.Fatal(err)
@@ -173,7 +173,7 @@ func TestSignerMethodVerify(t *testing.T) {
 				t.Fatal(err)
 			}
 			signingString := "eyJhbGciOiJ4In0.eyJpc3MiOiJjbGllbnQifQ"
-			sig, err := m.Sign(signingString, &signerOnlyRSAKey{key: key})
+			sig, err := m.Sign(signingString, &signerBackedRSAKey{key: key})
 			if err != nil {
 				t.Fatal(err)
 			}

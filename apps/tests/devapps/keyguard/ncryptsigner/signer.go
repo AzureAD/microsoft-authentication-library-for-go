@@ -241,8 +241,8 @@ func (s *Signer) signHash(padInfo unsafe.Pointer, digest []byte, flags uintptr) 
 // IsVirtualIsolated reports the CNG "Virtual Iso" property, which is 1 for a KeyGuard
 // (VBS-isolated) key and absent or 0 otherwise.
 //
-// Applications should check this themselves whenever isolation is a security requirement. MSAL sets
-// its internal signer-only flag purely from the Go type of the key, so it cannot tell a VBS-isolated
+// Applications should check this themselves whenever isolation is a security requirement. MSAL
+// decides how to sign purely from the Go type of the key, so it cannot tell a VBS-isolated
 // key from a software key wrapped in a crypto.Signer, and it makes no isolation claim either way. A
 // provisioning step that silently fell back to a software key is otherwise invisible from Go.
 //

@@ -102,10 +102,6 @@ type Credential struct {
 	Key crypto.PrivateKey
 	// X5c is the JWT assertion's x5c header value, required for SN/I authentication.
 	X5c []string
-	// SignerOnly indicates Key is a crypto.Signer whose private material can't be exported (for
-	// example a Windows KeyGuard or other CNG/HSM-backed key). Such a key must be used through its
-	// Sign method, so JWT wraps the signing method rather than handing Key to the JWT library.
-	SignerOnly bool
 
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
 	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
@@ -145,10 +141,14 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		thumbprintKey = "x5t"
 	}
 
-	// A non-exportable key (Windows KeyGuard/CNG/HSM) can only ever be a crypto.Signer, which jwt's
-	// built-in RSA methods reject because they need an *rsa.PrivateKey. Wrap the method selected above
-	// in one that delegates to the signer. Alg() is unchanged, so the assertion's wire format is too.
-	if c.SignerOnly {
+	// jwt's built-in RSA methods need a concrete *rsa.PrivateKey. Any other key is necessarily a
+	// non-exportable one (KeyGuard/CNG/HSM) and has to sign through crypto.Signer.
+	_, exportableRSA := c.Key.(*rsa.PrivateKey)
+
+	// A non-exportable key can only ever be a crypto.Signer, which jwt's built-in RSA methods reject.
+	// Wrap the method selected above in one that delegates to the signer. Alg() is unchanged, so the
+	// assertion's wire format is too.
+	if !exportableRSA {
 		signer, ok := c.Key.(crypto.Signer)
 		if !ok {
 			return "", errors.New("this credential's private key must implement crypto.Signer to sign a client assertion")
@@ -187,7 +187,7 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 	if err == nil {
 		return assertion, nil
 	}
-	if !c.SignerOnly || isADFSorDSTS {
+	if exportableRSA || isADFSorDSTS {
 		// an exportable key is an *rsa.PrivateKey, and Go's software RSA always supports PSS, so
 		// there's nothing to fall back from. ADFS and dSTS already signed with RS256.
 		return "", fmt.Errorf("unable to sign JWT token: %w", err)

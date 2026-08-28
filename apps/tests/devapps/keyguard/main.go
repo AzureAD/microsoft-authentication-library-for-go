@@ -136,8 +136,8 @@ func run() error {
 
 	// Step 2: report whether the key really is VBS-isolated.
 	//
-	// The application has to make this check itself. MSAL sets its internal signer-only flag purely
-	// from the Go type of the key, so it cannot distinguish a VBS-isolated key from a software key
+	// The application has to make this check itself. MSAL decides how to sign purely from the Go type
+	// of the key, so it cannot distinguish a VBS-isolated key from a software key
 	// wrapped in a crypto.Signer, and it deliberately makes no isolation claim. That means a
 	// provisioning step that silently fell back to a software key would be completely invisible from
 	// Go unless the application asks CNG directly, as this does.

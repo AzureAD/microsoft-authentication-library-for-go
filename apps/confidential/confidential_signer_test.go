@@ -28,18 +28,18 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
-// signerOnlyKey stands in for a non-exportable key such as a Windows KeyGuard (VBS-isolated) key: it
+// signerBackedKey stands in for a non-exportable key such as a Windows KeyGuard (VBS-isolated) key: it
 // satisfies crypto.Signer by delegating to an RSA key it never exposes, so no code can type assert it
 // to an *rsa.PrivateKey. Tests using it therefore run anywhere, without CNG.
-type signerOnlyKey struct {
+type signerBackedKey struct {
 	key *rsa.PrivateKey
 }
 
-func (s signerOnlyKey) Public() crypto.PublicKey {
+func (s signerBackedKey) Public() crypto.PublicKey {
 	return &s.key.PublicKey
 }
 
-func (s signerOnlyKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+func (s signerBackedKey) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
 	return s.key.Sign(r, digest, opts)
 }
 
@@ -61,10 +61,10 @@ func loadTestCertFile(t *testing.T, path string) ([]*x509.Certificate, *rsa.Priv
 	return certs, k
 }
 
-// testSignerCert returns a certificate chain paired with a signer-only key, in the shape a caller
+// testSignerCert returns a certificate chain paired with a signer-backed key, in the shape a caller
 // with a KeyGuard/CNG key would build: DER chain leaf first plus a crypto.Signer. The chain fixture
 // holds a leaf and an intermediate, so chain-order assertions are meaningful.
-func testSignerCert(t *testing.T) (tls.Certificate, []*x509.Certificate, signerOnlyKey) {
+func testSignerCert(t *testing.T) (tls.Certificate, []*x509.Certificate, signerBackedKey) {
 	t.Helper()
 	certs, k := loadTestCertFile(t, "../testdata/test-cert-chain.pem")
 	if len(certs) < 2 {
@@ -77,11 +77,11 @@ func testSignerCert(t *testing.T) (tls.Certificate, []*x509.Certificate, signerO
 	for _, cert := range certs {
 		der = append(der, cert.Raw)
 	}
-	signer := signerOnlyKey{key: k}
+	signer := signerBackedKey{key: k}
 	return tls.Certificate{Certificate: der, PrivateKey: signer}, certs, signer
 }
 
-// TestNewCredFromTLSCertificate verifies a signer-only key produces a credential that carries the
+// TestNewCredFromTLSCertificate verifies a signer-backed key produces a credential that carries the
 // signer, the leaf, and a leaf-first x5c, whether or not tls.Certificate.Leaf was populated.
 func TestNewCredFromTLSCertificate(t *testing.T) {
 	tlsCert, certs, signer := testSignerCert(t)
@@ -95,8 +95,8 @@ func TestNewCredFromTLSCertificate(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if !cred.signerOnly {
-				t.Error("a credential whose key isn't an *rsa.PrivateKey must be marked signer-only")
+			if _, ok := cred.key.(*rsa.PrivateKey); ok {
+				t.Error("a non-exportable key must not be stored as an *rsa.PrivateKey: MSAL derives the signing path from that type")
 			}
 			if cred.cert == nil || !cred.cert.Equal(certs[0]) {
 				t.Error("credential's certificate isn't the leaf")
@@ -131,7 +131,7 @@ func TestNewCredFromTLSCertificateRejectsNonLeafFirstChain(t *testing.T) {
 	}
 	_, err := NewCredFromTLSCertificate(tls.Certificate{
 		Certificate: der,
-		PrivateKey:  signerOnlyKey{key: k},
+		PrivateKey:  signerBackedKey{key: k},
 	})
 	if err == nil {
 		t.Fatal("expected an error because the chain doesn't lead with the signer's certificate")
@@ -188,7 +188,7 @@ func TestNewCredFromTLSCertificateError(t *testing.T) {
 		{"key isn't a signer", tls.Certificate{Certificate: tlsCert.Certificate, PrivateKey: struct{}{}}},
 		{"key doesn't match the leaf", tls.Certificate{
 			Certificate: tlsCert.Certificate,
-			PrivateKey:  signerOnlyKey{key: otherKey},
+			PrivateKey:  signerBackedKey{key: otherKey},
 		}},
 		{"unparseable leaf", tls.Certificate{
 			Certificate: [][]byte{{0x01, 0x02, 0x03}},
@@ -308,8 +308,8 @@ func TestNewCredFromCertWithSigner(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !cred.signerOnly {
-		t.Error("a credential whose key isn't an *rsa.PrivateKey must be marked signer-only")
+	if _, ok := cred.key.(*rsa.PrivateKey); ok {
+		t.Error("a non-exportable key must not be stored as an *rsa.PrivateKey: MSAL derives the signing path from that type")
 	}
 	if cred.cert == nil || !cred.cert.Equal(certs[0]) {
 		t.Error("credential's certificate isn't the signing cert")
@@ -339,7 +339,7 @@ func TestNewCredFromCertSignerError(t *testing.T) {
 		key  crypto.PrivateKey
 	}{
 		{"ECDSA signer", ecKey},
-		{"signer for another key", signerOnlyKey{key: otherKey}},
+		{"signer for another key", signerBackedKey{key: otherKey}},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := NewCredFromCert(certs, test.key); err == nil {
@@ -349,10 +349,10 @@ func TestNewCredFromCertSignerError(t *testing.T) {
 	}
 }
 
-// TestSignerOnlyCredentialAssertion is the end-to-end case for a KeyGuard-style key on the client
+// TestSignerCredentialAssertion is the end-to-end case for a KeyGuard-style key on the client
 // assertion path: the request carries a client_assertion the signer produced, and it verifies against
 // the certificate's public key.
-func TestSignerOnlyCredentialAssertion(t *testing.T) {
+func TestSignerCredentialAssertion(t *testing.T) {
 	tlsCert, certs, _ := testSignerCert(t)
 	cred, err := NewCredFromTLSCertificate(tlsCert)
 	if err != nil {
@@ -425,10 +425,10 @@ func TestSignerOnlyCredentialAssertion(t *testing.T) {
 	}
 }
 
-// TestSignerOnlyCredentialMtlsPoP is the end-to-end case for a KeyGuard-style key: the signer is
+// TestSignerCredentialMtlsPoP is the end-to-end case for a KeyGuard-style key: the signer is
 // handed to the mTLS transport, the request carries no client_assertion, and the token is bound to
 // the certificate.
-func TestSignerOnlyCredentialMtlsPoP(t *testing.T) {
+func TestSignerCredentialMtlsPoP(t *testing.T) {
 	tlsCert, certs, signer := testSignerCert(t)
 	cred, err := NewCredFromTLSCertificate(tlsCert)
 	if err != nil {

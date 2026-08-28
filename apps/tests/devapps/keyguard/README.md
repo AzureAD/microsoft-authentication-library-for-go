@@ -40,8 +40,8 @@ adapt it; do not treat it as a supported API.
 `ncryptsigner.Signer.IsVirtualIsolated()` reads the CNG `"Virtual Iso"` property, which is `1` for a
 KeyGuard key.
 
-MSAL cannot make this check for you. It sets its internal signer-only flag purely from the Go *type*
-of the key, so it cannot tell a VBS-isolated key from a software key wrapped in a `crypto.Signer`,
+MSAL cannot make this check for you. It decides how to sign purely from the Go *type* of the key, so
+it cannot tell a VBS-isolated key from a software key wrapped in a `crypto.Signer`,
 and it deliberately makes no isolation claim either way. A provisioning step that silently fell back
 to a software key would therefore be completely invisible from Go. If isolation is a security
 requirement for your workload, assert on it in your own code, as the sample does.
