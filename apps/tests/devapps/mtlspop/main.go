@@ -121,9 +121,10 @@ func run(cfg config) error {
 		opts = append(opts, confidential.WithAzureRegion(cfg.region))
 	}
 	if cfg.trace {
-		// WithMtlsHTTPClient is the escape hatch for callers who must own the mutual-TLS handshake.
-		// Here it is used only to observe the token request; the transport it builds mirrors the one
-		// MSAL builds by default.
+		// WithMtlsHTTPClient overrides how the mutual-TLS client is built. It is required whenever
+		// the client passed to WithHTTPClient is not an *http.Client - notably when an application
+		// reaches MSAL through Azure's azidentity. Here it is used only to observe the token
+		// request; the transport it builds mirrors the one MSAL builds by default.
 		opts = append(opts, confidential.WithMtlsHTTPClient(tracingMtlsClient))
 	}
 

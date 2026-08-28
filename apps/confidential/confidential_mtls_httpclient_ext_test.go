@@ -11,15 +11,16 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
-// TestWithMtlsHTTPClientIsCallableExternally is a compile-time regression test for the documented
-// mTLS escape hatch.
+// TestWithMtlsHTTPClientIsCallableExternally is a compile-time regression test for
+// WithMtlsHTTPClient, which is the only way to use mTLS proof-of-possession when the client passed
+// to WithHTTPClient is not an *http.Client — the situation every azidentity caller is in.
 //
 // This file is package confidential_test, so it is a genuine external consumer: it can only name
 // exported identifiers of apps/confidential and cannot import anything under apps/internal. The
 // option previously took func(tls.Certificate) ops.HTTPClient, where ops.HTTPClient was a type alias
 // for an interface declared in apps/internal/oauth/ops/internal/comm. A type alias does not launder
 // internal-ness, and Go function types are invariant in their result type, so no external module
-// could construct a value of that function type — the documented escape hatch did not compile for
+// could construct a value of that function type — the one supported override did not compile for
 // consumers.
 //
 // Passing a plain func(tls.Certificate) *http.Client literal below is the whole point: if the

@@ -12,6 +12,7 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"math/big"
+	"net/url"
 	"os"
 	"strings"
 	"testing"
@@ -566,6 +567,93 @@ func TestMtlsPoPKnownSovereignHostsSupported(t *testing.T) {
 			}
 			if !strings.Contains(got, "//"+mtlsAuthPrefix+".") {
 				t.Errorf("host %q derived %q, want an mtlsauth.* host", host, got)
+			}
+		})
+	}
+}
+
+// TestMtlsTokenEndpointRejectsInvalidRegion pins the region check at the point of use. The region is
+// concatenated straight onto the mtlsauth host, so it must be a DNS label before it gets there.
+//
+// AADInstanceDiscovery applies the same check, and today every non-empty region reaches it first via
+// resolvers.go, so nothing here is reachable from the public API. That ordering is a property of the
+// resolver, not a guarantee this function makes, which is why the check is duplicated here and why
+// this test drives MtlsTokenEndpoint directly instead of going through a client.
+func TestMtlsTokenEndpointRejectsInvalidRegion(t *testing.T) {
+	for _, region := range []string{
+		"hostile.example/x",     // path separator: escapes the host entirely
+		"evil.example",          // extra label
+		"westus:8443",           // port
+		"WestUS",                // uppercase is not a region name
+		"-westus",               // leading hyphen is not a valid DNS label
+		"westus-",               // trailing hyphen is not a valid DNS label
+		"west us",               // space
+		strings.Repeat("a", 64), // one label, but longer than 63 characters
+	} {
+		t.Run(region, func(t *testing.T) {
+			params := mtlsParams("login.microsoftonline.com", "contoso.onmicrosoft.com", region,
+				"https://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token")
+			got, err := params.MtlsTokenEndpoint()
+			if err == nil {
+				t.Fatalf("MtlsTokenEndpoint() with region %q = %q, want an error", region, got)
+			}
+			if !strings.Contains(err.Error(), "invalid region") {
+				t.Errorf("MtlsTokenEndpoint() error = %v, want an invalid region error", err)
+			}
+			if got != "" {
+				t.Errorf("MtlsTokenEndpoint() returned %q alongside an error", got)
+			}
+		})
+	}
+}
+
+// TestMtlsTokenEndpointPinsSchemeAndDropsUserinfo covers the fields the host rewrite used to inherit
+// from the tenant discovery document. TenantDiscoveryResponse.Validate only checks that
+// token_endpoint is non-empty, so its scheme and userinfo are untrusted input: an http:// endpoint
+// would produce an http:// mTLS endpoint, where no handshake runs and the certificate binding is
+// silently void, and userinfo would survive into an Authorization: Basic header added by net/http.
+func TestMtlsTokenEndpointPinsSchemeAndDropsUserinfo(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		tokenEndpoint string
+		want          string
+	}{
+		{
+			name:          "http scheme is replaced with https",
+			tokenEndpoint: "http://login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
+			want:          "https://mtlsauth.microsoft.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			name:          "userinfo is dropped",
+			tokenEndpoint: "https://user:pass@login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
+			want:          "https://mtlsauth.microsoft.com/contoso.onmicrosoft.com/oauth2/v2.0/token",
+		},
+		{
+			name:          "http and userinfo together",
+			tokenEndpoint: "http://user:pass@login.microsoftonline.com/contoso.onmicrosoft.com/oauth2/v2.0/token?p=1",
+			want:          "https://mtlsauth.microsoft.com/contoso.onmicrosoft.com/oauth2/v2.0/token?p=1",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			got, err := mtlsParams("login.microsoftonline.com", "contoso.onmicrosoft.com", "", test.tokenEndpoint).MtlsTokenEndpoint()
+			if err != nil {
+				t.Fatalf("MtlsTokenEndpoint() error = %v", err)
+			}
+			if got != test.want {
+				t.Fatalf("MtlsTokenEndpoint() = %q, want %q", got, test.want)
+			}
+			u, err := url.Parse(got)
+			if err != nil {
+				t.Fatalf("parsing the derived endpoint failed: %v", err)
+			}
+			if u.Scheme != "https" {
+				t.Errorf("derived endpoint scheme = %q, want https", u.Scheme)
+			}
+			if u.User != nil {
+				t.Errorf("derived endpoint carries userinfo %q", u.User)
+			}
+			if u.Host != publicMtlsAuthHost {
+				t.Errorf("derived endpoint host = %q, want %q", u.Host, publicMtlsAuthHost)
 			}
 		})
 	}
