@@ -50,3 +50,35 @@ jobs:
       #     oboConfidentialClientSecret: ${{ secrets.OBO_CONFIDENTIAL_APP_CLIENT_SECRET }}
       #     oboPublicClientId: ${{ secrets.OBO_PUBLIC_APP_CLIENT_ID }}
       #     CI: ${{secrets.ENABLECI}}
+
+  # The KeyGuard/CNG dev app and its ncryptsigner package are //go:build windows. On a Linux runner
+  # they are not merely skipped, they are absent from the package graph entirely: "go list ./apps/..."
+  # does not name them and "go build ./apps/..." succeeds without ever parsing them. That made the
+  # NCrypt interop -- the least portable code in the repo -- the only code here with no automated
+  # verification at all. This job compiles and tests it.
+  build-windows:
+    name: Build (windows)
+
+    runs-on: windows-latest
+
+    steps:
+      - name: Set up Go 1.x
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+        id: go
+
+      - name: Check out code into the Go module directory
+        uses: actions/checkout@v5
+
+      - name: Get dependencies
+        run: go get -v -t -d ./...
+
+      - name: Build
+        run: go build ./apps/...
+
+      # ./apps/tests/devapps/... is what reaches the KeyGuard packages; the other dev apps report
+      # "no test files" and cost nothing. -race is omitted deliberately: it requires cgo and a C
+      # toolchain, and these are single-goroutine parsing and validation tests.
+      - name: Unit Tests
+        run: go test -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/... ./apps/tests/devapps/...

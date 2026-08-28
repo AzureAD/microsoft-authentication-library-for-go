@@ -230,6 +230,14 @@ func (s *Signer) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) ([]byt
 			// every TLS PSS scheme uses a salt the size of the hash.
 			saltLen = hash.Size()
 		}
+		// Any other negative value is not a defined salt length. Without this the conversion below
+		// wraps: a SaltLength of -7 would reach CNG as cbSalt 4294967289. crypto/rsa rejects the
+		// same inputs, so this only refuses what the standard library already refuses.
+		if saltLen < 0 {
+			return nil, fmt.Errorf("ncryptsigner: invalid PSS salt length %d", saltLen)
+		}
+		// #nosec G115 -- the guard above makes saltLen non-negative, and a PSS salt is bounded by the
+		// modulus size, so it cannot overflow uint32. gosec cannot follow the value through the switch.
 		info := pssPaddingInfo{pszAlgID: algID, cbSalt: uint32(saltLen)}
 		sig, err := s.signHash(unsafe.Pointer(&info), digest, bcryptPadPSS)
 		runtime.KeepAlive(&info)
@@ -317,6 +325,8 @@ func (s *Signer) IsVirtualIsolated() (bool, error) {
 // ncryptError renders a SECURITY_STATUS both as the Windows message (NTE_* codes are in the system
 // message table) and as the raw code, because the raw code is what CNG documentation refers to.
 func ncryptError(op string, status uintptr) error {
+	// #nosec G115 -- SECURITY_STATUS is a 32-bit value widened into a uintptr by the syscall ABI;
+	// narrowing it back is what produces the 0x-prefixed code CNG documentation uses.
 	return fmt.Errorf("ncryptsigner: %s failed: %w (0x%08X)", op, windows.Errno(status), uint32(status))
 }
 
@@ -362,6 +372,8 @@ func Open(storeLocation, storeName, thumbprint string) (*Signer, error) {
 		}
 	}()
 
+	// #nosec G115 -- parseThumbprint returns exactly sha256ThumbprintLen bytes or an error, so the
+	// length is a small constant and the index below is in range.
 	blob := cryptHashBlob{cbData: uint32(len(hash)), pbData: &hash[0]}
 	ctx, err := windows.CertFindCertificateInStore(
 		hStore, windows.X509_ASN_ENCODING|windows.PKCS_7_ASN_ENCODING, 0,

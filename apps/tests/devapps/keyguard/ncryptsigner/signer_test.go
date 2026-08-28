@@ -6,10 +6,12 @@
 package ncryptsigner
 
 import (
+	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
 	"encoding/binary"
 	"math/big"
+	"strings"
 	"testing"
 )
 
@@ -129,5 +131,22 @@ func TestParseRSAPublicBlobRejects(t *testing.T) {
 				t.Fatal("expected an error")
 			}
 		})
+	}
+}
+
+// TestSignRejectsNegativeSaltLength pins the guard in Sign. A PSS salt length that is negative but is
+// neither PSSSaltLengthAuto nor PSSSaltLengthEqualsHash has to be rejected before it reaches CNG:
+// cbSalt is a uint32, so without the guard a SaltLength of -7 arrives as 4294967289. The assertion is
+// on the specific message rather than merely "an error" because CNG returns an error here anyway, for
+// its own reasons, which would make a bare non-nil check pass with or without the guard.
+func TestSignRejectsNegativeSaltLength(t *testing.T) {
+	var s Signer // the guard runs before any key handle is touched, so no key store is needed
+	digest := make([]byte, crypto.SHA256.Size())
+	_, err := s.Sign(nil, digest, &rsa.PSSOptions{SaltLength: -7, Hash: crypto.SHA256})
+	if err == nil {
+		t.Fatal("Sign() = nil error, want a rejection for a negative PSS salt length")
+	}
+	if !strings.Contains(err.Error(), "invalid PSS salt length -7") {
+		t.Errorf("Sign() error = %v, want it to name the invalid salt length", err)
 	}
 }

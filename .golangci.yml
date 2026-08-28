@@ -15,6 +15,14 @@ linters:
       - path: _test\.go
         linters:
           - gosec
+      # ncryptsigner is a thin wrapper over the Windows CNG/NCrypt syscall surface, where handing an
+      # unsafe.Pointer to syscall.SyscallN and CertFindCertificateInStore is the only way to call the
+      # API at all. G103 flags every such call, so scope the exclusion to that one package instead of
+      # scattering suppressions through it. Every other gosec rule still applies there.
+      - path: apps/tests/devapps/keyguard/ncryptsigner/
+        linters:
+          - gosec
+        text: "G103"
       # TODO: temporary suppressions to be addressed separately after the v2 upgrade.
       - linters:
           - gosec

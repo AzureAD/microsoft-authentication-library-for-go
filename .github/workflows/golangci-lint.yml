@@ -24,5 +24,23 @@ jobs:
           # Required: the version of golangci-lint is required and must be specified without patch version: we always use the latest patch version.
           version: v2.12
 
+  # golangci-lint analyses one GOOS at a time, so the run above never sees a //go:build windows file.
+  # Cross-analysing the same tree with GOOS=windows lints the KeyGuard/CNG packages without needing a
+  # Windows runner. Kept as a separate job so the existing "lint" check name is unchanged.
+  golangci-windows:
+    name: lint (windows)
+    runs-on: ubuntu-latest
+    env:
+      GOOS: windows
+    steps:
+      - uses: actions/setup-go@v6
+        with:
+          go-version: "1.22"
+      - uses: actions/checkout@v5
+      - name: golangci-lint
+        uses: golangci/golangci-lint-action@v9
+        with:
+          version: v2.12
+
           # Optional: golangci-lint command line arguments.
           # args: --issues-exit-code=0
