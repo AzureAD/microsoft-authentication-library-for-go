@@ -233,7 +233,8 @@ func isNilPointer(v any) bool {
 // client assertions through the signer, so such a credential works in every flow that authenticates
 // with a client assertion; see [NewCredFromTLSCertificate] for the two flows that send none. The
 // credential retains the signer under the lifetime and concurrency requirements documented on
-// [NewCredFromTLSCertificate], which is the more direct constructor for these keys.
+// [NewCredFromTLSCertificate], which is the more direct constructor for these keys. Assertions signed
+// through a signer can silently fall back from PS256 to RS256; see [NewCredFromTLSCertificate].
 func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
 	var k *rsa.PublicKey
@@ -308,6 +309,16 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 // is confined to mTLS proof-of-possession, where the key is only ever used for the handshake. Whether
 // a given key type is accepted for mTLS PoP is then up to the certificate's registration and the
 // service, not to MSAL.
+//
+// When a signer-backed credential signs a client assertion, MSAL signs PS256 (RSA-PSS). Some key
+// providers -- CNG, KeyGuard, HSMs, smart cards -- can't do RSA-PSS at all, so if the signer fails
+// MSAL rebuilds the assertion once with RS256 (PKCS #1 v1.5) and an "x5t" thumbprint, as MSAL .NET
+// does. The retry is automatic and needs no configuration. It follows any signing failure, not only an
+// unsupported-algorithm one, because [crypto.Signer] defines no portable way to tell them apart; a
+// failure RS256 can't fix still fails, and reports both errors. An exportable *rsa.PrivateKey never
+// falls back, because Go's software RSA always supports PSS. MSAL exposes no logging or callback hook,
+// so a retry that succeeds is otherwise silent: the only signal is the assertion's "alg" header on the
+// wire, RS256 rather than PS256.
 func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 	if len(cert.Certificate) == 0 || len(cert.Certificate[0]) == 0 {
 		return Credential{}, errors.New("tls.Certificate must contain at least one certificate")

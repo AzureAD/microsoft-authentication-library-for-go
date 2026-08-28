@@ -216,8 +216,12 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 	//     above, so no caller silently loses PSS on a key that supports it.
 	//   - RS256 isn't a downgrade to something weak or deprecated. It's an algorithm the service
 	//     accepts for client assertions, and it's what MSAL already sends to ADFS and dSTS.
-	//   - the retry is one further call into a key store the caller owns, and anyone able to induce a
-	//     signer failure already controls that key store.
+	//   - the retry is one further call into a key store the caller owns. For a store on the local
+	//     machine, inducing a signer failure already requires control of it. That bound is weaker for
+	//     a signer that calls out to a remote service, as the comment above contemplates: whoever can
+	//     fail the first call can force RS256 without any access to the key. What that buys is
+	//     limited -- the same key signs the same claims with an algorithm the service already accepts
+	//     -- but a successful retry is silent, so it's documented on the exported constructors.
 	//   - a real failure still fails: if RS256 fails too, both errors are reported below.
 	//
 	// Memoizing the outcome was considered and rejected. toInternal() runs once, in New(), so this

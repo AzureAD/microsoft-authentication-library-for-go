@@ -275,6 +275,13 @@ Notes:
   is bound to the certificate, and a confidential client's username/password flow, which sends no
   client credential of any kind. The signer's public key must be an `*rsa.PublicKey` to sign an
   assertion, because the service accepts only RSA assertions; a non-RSA signer is limited to mTLS PoP.
+- **Assertion signing can fall back to RS256**: assertions are signed PS256 (RSA-PSS). Some providers
+  can't do RSA-PSS at all, so if the signer fails MSAL rebuilds the assertion once with RS256 (PKCS#1
+  v1.5) and an `x5t` thumbprint, as MSAL .NET does. It's automatic, and it follows any signing failure
+  rather than only an unsupported-algorithm one, because `crypto.Signer` gives no portable way to tell
+  them apart; a failure RS256 can't fix still fails. An exportable `*rsa.PrivateKey` never falls back.
+  MSAL has no logging hook, so a retry that succeeds is otherwise silent — the only signal is the `alg`
+  on the wire.
 - **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
   TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
   `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
