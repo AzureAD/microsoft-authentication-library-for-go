@@ -4,10 +4,13 @@
 package comm
 
 import (
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
+	"encoding/base64"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -274,8 +277,9 @@ func TestMtlsClientFactoryNotCalledUnderLock(t *testing.T) {
 }
 
 // TestMtlsClientConcurrentSameCertPublishesOneClient covers the double-check publish. Many
-// goroutines racing on the same thumbprint must all end up with the same client, and every client
-// that loses the race must have its idle connections closed rather than being silently dropped.
+// goroutines racing on the same thumbprint must all end up with the same client, and no client may
+// be closed: they all came from the caller's factory, which owns their lifetime. Closing a race
+// loser here is what breaks a memoizing factory, where the "loser" is the same object as the winner.
 func TestMtlsClientConcurrentSameCertPublishesOneClient(t *testing.T) {
 	cert := &tls.Certificate{Certificate: [][]byte{{0x42}}, PrivateKey: testKey}
 
@@ -326,22 +330,20 @@ func TestMtlsClientConcurrentSameCertPublishesOneClient(t *testing.T) {
 	mu.Lock()
 	defer mu.Unlock()
 	for _, rc := range built {
-		if HTTPClient(rc) == winner {
-			if n := rc.closeCount(); n != 0 {
-				t.Errorf("the published client was closed %d times", n)
-			}
-			continue
-		}
-		if n := rc.closeCount(); n != 1 {
-			t.Errorf("a client that lost the publish race was closed %d times, want 1", n)
+		if n := rc.closeCount(); n != 0 {
+			t.Errorf("a factory-supplied client was closed %d times, want 0", n)
 		}
 	}
 }
 
 // TestMtlsClientCacheCapClears pins the cap-then-clear policy, which is exact parity with MSAL .NET's
 // SimpleHttpClientFactory.CheckAndManageCache (clear at 1000, no eviction ordering, no disposal).
-// Unlike .NET, every dropped client is asked to close its idle connections, because Go's
-// http.Transport pools keep-alive sockets that nothing else reclaims.
+//
+// The clients here all came from a caller-supplied factory, so none of them may be closed: a factory
+// is free to memoize, in which case every entry in the cache - and the newcomer that just tripped
+// the cap - is the same *http.Client, and "closing the evicted entries" would tear down the pool of
+// the client being returned. MSAL closes only pools it created; see
+// TestMtlsClientCacheCapClosesOnlyMsalBuiltClients for that half.
 func TestMtlsClientCacheCapClears(t *testing.T) {
 	var mu sync.Mutex
 	built := []*recordingClient{}
@@ -388,18 +390,143 @@ func TestMtlsClientCacheCapClears(t *testing.T) {
 	if len(built) != maxMtlsClients+1 {
 		t.Fatalf("factory produced %d clients, want %d", len(built), maxMtlsClients+1)
 	}
-	for i, rc := range built[:maxMtlsClients] {
-		if n := rc.closeCount(); n != 1 {
-			t.Fatalf("evicted client %d had CloseIdleConnections called %d times, want 1", i, n)
+	for i, rc := range built {
+		if n := rc.closeCount(); n != 0 {
+			t.Fatalf("factory-supplied client %d had CloseIdleConnections called %d times, want 0: MSAL must not close a pool the caller owns", i, n)
 		}
 	}
-	if n := built[maxMtlsClients].closeCount(); n != 0 {
-		t.Errorf("the surviving client was closed %d times, want 0", n)
+}
+
+// TestMtlsClientCacheCapClosesOnlyMsalBuiltClients is the other half of the ownership rule: a client
+// MSAL built (no factory installed) still has its keep-alive sockets released when the cap clears it,
+// because nothing else in the process holds a reference to reclaim them. The cache is seeded directly
+// so both provenances can be observed with recording clients.
+func TestMtlsClientCacheCapClosesOnlyMsalBuiltClients(t *testing.T) {
+	msalBuilt := &recordingClient{}
+	callerOwned := &recordingClient{}
+
+	c := &Client{}
+	c.mtlsMu.Lock()
+	c.mtlsClients = map[string]mtlsCacheEntry{
+		"msal-built":   {client: msalBuilt, owned: true},
+		"caller-owned": {client: callerOwned, owned: false},
+	}
+	for i := 0; len(c.mtlsClients) < maxMtlsClients; i++ {
+		c.mtlsClients["filler-"+strconv.Itoa(i)] = mtlsCacheEntry{client: &recordingClient{}, owned: true}
+	}
+	c.mtlsMu.Unlock()
+
+	// No factory, so this builds through BuildMtlsClient and trips the cap.
+	cert := &tls.Certificate{Certificate: [][]byte{{0x91, 0x92}}, PrivateKey: testKey}
+	if _, err := c.mtlsClient(cert); err != nil {
+		t.Fatalf("mtlsClient failed: %v", err)
+	}
+
+	c.mtlsMu.Lock()
+	size := len(c.mtlsClients)
+	c.mtlsMu.Unlock()
+	if size != 1 {
+		t.Fatalf("cache holds %d entries after the cap was tripped, want 1", size)
+	}
+	if n := msalBuilt.closeCount(); n != 1 {
+		t.Errorf("MSAL-built client had CloseIdleConnections called %d times, want 1", n)
+	}
+	if n := callerOwned.closeCount(); n != 0 {
+		t.Errorf("caller-supplied client had CloseIdleConnections called %d times, want 0", n)
+	}
+}
+
+// TestMtlsClientRaceLoserKeepsCallerClientOpen covers the other eviction path. A factory that
+// memoizes returns the same client to both racers, so the loser closing "its" client would close the
+// exact object it is about to hand back. The interleaving is forced by publishing the winner from
+// inside the factory, which mtlsClient invokes outside mtlsMu.
+func TestMtlsClientRaceLoserKeepsCallerClientOpen(t *testing.T) {
+	cert := &tls.Certificate{Certificate: [][]byte{{0x64, 0x65}}, PrivateKey: testKey}
+	sum := sha256.Sum256(cert.Certificate[0])
+	key := base64.RawURLEncoding.EncodeToString(sum[:])
+
+	shared := &recordingClient{}
+	c := &Client{}
+	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
+		c.mtlsMu.Lock()
+		if c.mtlsClients == nil {
+			c.mtlsClients = map[string]mtlsCacheEntry{}
+		}
+		if _, ok := c.mtlsClients[key]; !ok {
+			c.mtlsClients[key] = mtlsCacheEntry{client: shared}
+		}
+		c.mtlsMu.Unlock()
+		return shared
+	})
+
+	got, err := c.mtlsClient(cert)
+	if err != nil {
+		t.Fatalf("mtlsClient failed: %v", err)
+	}
+	if got != shared {
+		t.Fatalf("mtlsClient returned %p, want the published client %p", got, shared)
+	}
+	if n := shared.closeCount(); n != 0 {
+		t.Errorf("the client returned to the caller had CloseIdleConnections called %d times, want 0", n)
+	}
+}
+
+// TestMtlsClientDiscardsClientFromRetiredFactory pins the publish race. mtlsClient reads the factory
+// under mtlsMu, builds outside it, then retakes the lock to publish; SetMtlsClientFactory landing in
+// that window nils the cache precisely so clients cannot mix factories, and without a generation
+// check the in-flight goroutine would seed the fresh map with a client from the factory that was just
+// retired and serve it indefinitely.
+//
+// The interleaving is deterministic: the first factory swaps itself out while it is being invoked,
+// which is legal because mtlsClient calls factories outside the lock.
+func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
+	cert := &tls.Certificate{Certificate: [][]byte{{0x71, 0x72}}, PrivateKey: testKey}
+	retired := &recordingClient{}
+	current := &recordingClient{}
+
+	c := &Client{}
+	var swapped bool
+	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
+		if !swapped {
+			swapped = true
+			c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return current })
+			return retired
+		}
+		t.Error("the retired factory was consulted again after being replaced")
+		return retired
+	})
+
+	got, err := c.mtlsClient(cert)
+	if err != nil {
+		t.Fatalf("mtlsClient failed: %v", err)
+	}
+	if got != current {
+		t.Fatalf("mtlsClient returned a client from the retired factory")
+	}
+	c.mtlsMu.Lock()
+	cached := c.mtlsClients
+	c.mtlsMu.Unlock()
+	if len(cached) != 1 {
+		t.Fatalf("cache holds %d entries, want 1", len(cached))
+	}
+	for _, entry := range cached {
+		if entry.client != current {
+			t.Error("the cache published a client built by the retired factory")
+		}
+	}
+	// The discarded client came from the caller's factory, so MSAL must not close it either.
+	if n := retired.closeCount(); n != 0 {
+		t.Errorf("discarded caller-supplied client had CloseIdleConnections called %d times, want 0", n)
 	}
 }
 
 // TestSetMtlsClientFactoryClosesDiscardedClients covers the reset path: replacing the factory drops
 // the whole cache, and those clients' pooled sockets must be released.
+//
+// This is the one place MSAL closes a client it did not build, and deliberately so. It is an
+// explicit, caller-initiated lifecycle event - the application is retiring the factory that produced
+// these clients - rather than the invisible cache housekeeping in mtlsClient, and nothing is
+// published afterwards, so unlike those paths it can never close a client it is about to return.
 func TestSetMtlsClientFactoryClosesDiscardedClients(t *testing.T) {
 	cert := &tls.Certificate{Certificate: [][]byte{{0x55}}, PrivateKey: testKey}
 	rc := &recordingClient{}

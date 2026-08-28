@@ -128,10 +128,10 @@ func (i Info) ValidateMtlsPoP() error {
 	// known to be a login.* host that MtlsTokenEndpoint would rewrite.
 	//
 	// MtlsTokenEndpoint turns login.<rest> into mtlsauth.<rest> and then presents the binding
-	// certificate - and, since the FIC work, a live client assertion - to whatever that host
-	// resolves to. Without this guard any attacker-influenced authority derives a matching mtlsauth
-	// host (login.evil.test -> mtlsauth.evil.test) and receives those credentials, so the rewrite is
-	// allowed only for a host backed by trusted cloud metadata.
+	// certificate to whatever that host resolves to. Without this guard any attacker-influenced
+	// authority derives a matching mtlsauth host (login.evil.test -> mtlsauth.evil.test) and
+	// receives that certificate, so the rewrite is allowed only for a host backed by trusted cloud
+	// metadata.
 	//
 	// TrustedHost is the same predicate the bearer path uses to decide whether an authority needs
 	// instance discovery (see openIDConfigurationEndpoint), so mTLS PoP trusts exactly the set the
@@ -178,8 +178,15 @@ func (i Info) ValidateMtlsPoP() error {
 // authorities are not login.*-hosted; Go does not rely on that.
 //
 // A login.* host that is not a known Microsoft cloud is rewritten only when the caller has made an
-// explicit private-cloud trust decision, because this host receives the binding certificate and the
-// client assertion. See ValidateMtlsPoP.
+// explicit private-cloud trust decision, because this host receives the binding certificate. See
+// ValidateMtlsPoP.
+//
+// The returned endpoint is always https with no userinfo. The resolved token endpoint it is built
+// from comes from the tenant discovery document, whose Validate only checks that the field is
+// non-empty, so its scheme and userinfo are not trustworthy inputs: an http:// token_endpoint would
+// otherwise yield an http:// mTLS endpoint, where no handshake happens, no client certificate is
+// presented and the certificate binding this API promises is silently void, and surviving userinfo
+// would be turned into an Authorization: Basic header by net/http.
 func (p AuthParams) MtlsTokenEndpoint() (string, error) {
 	if err := p.AuthorityInfo.ValidateMtlsPoP(); err != nil {
 		return "", err
@@ -205,15 +212,27 @@ func (p AuthParams) MtlsTokenEndpoint() (string, error) {
 		mtlsHost = mtlsAuthPrefix + host[len(loginPrefix):]
 	}
 	if region := p.AuthorityInfo.Region; region != "" && region != autoDetectRegion {
+		// The region becomes a DNS label in the host this request's binding certificate is
+		// presented to, so it is validated here rather than relying on some earlier caller having
+		// done it. AADInstanceDiscovery applies the same check, and today every non-empty region
+		// reaches it before this function runs, but that ordering is an emergent property of the
+		// resolver rather than a guarantee this function makes for itself. Validating at the point
+		// of concatenation keeps a value like "hostile.example/x" out of the host under any future
+		// call order.
+		if !validRegion.MatchString(region) {
+			return "", fmt.Errorf("invalid region %q: region must be a lowercase ASCII DNS label of at most 63 characters", region)
+		}
 		mtlsHost = region + "." + mtlsHost
 	}
 	if port != "" {
 		mtlsHost += ":" + port
 	}
 
-	// Preserve the resolved token endpoint's path/query, swapping only the host.
+	// Preserve the resolved token endpoint's path/query, swapping the host and pinning the scheme.
 	if p.Endpoints.TokenEndpoint != "" {
 		if u, err := url.Parse(p.Endpoints.TokenEndpoint); err == nil && u.Host != "" {
+			u.Scheme = "https"
+			u.User = nil
 			u.Host = mtlsHost
 			return u.String(), nil
 		}

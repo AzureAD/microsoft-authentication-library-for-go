@@ -51,15 +51,15 @@ func (c *blockingHTTPClient) count() int {
 // valid Azure region name never reaches a hostname.
 //
 // It matters here because MtlsTokenEndpoint interpolates the region straight into the token host
-// ({region}.mtlsauth.microsoft.com) and does not validate it, and because MSAL_FORCE_REGION is read
-// from the process environment in New. The token endpoint is what receives the client assertion and
-// the binding certificate, so the region must be checked before it is used to build that host.
+// ({region}.mtlsauth.microsoft.com), and because MSAL_FORCE_REGION is read from the process
+// environment in New. The token endpoint is what receives the binding certificate, so the region
+// must be checked before it is used to build that host.
 //
-// The guarantee currently holds only as an emergent consequence of endpoint resolution: the sole
-// validation site reached on this path is AADInstanceDiscovery, called from
-// openIDConfigurationEndpoint's "the caller asked for a region" branch - a branch that exists to
-// choose an endpoint, not to validate one. Nothing structural stops a later refactor from removing
-// it, which is exactly why this asserts the end-to-end property instead of the mechanism.
+// Two independent sites now reject it: AADInstanceDiscovery, reached from
+// openIDConfigurationEndpoint's "the caller asked for a region" branch, and MtlsTokenEndpoint
+// itself, which validates before concatenating (see TestMtlsTokenEndpointRejectsInvalidRegion). This
+// test asserts the end-to-end property rather than either mechanism, so it keeps holding whichever
+// one runs first.
 //
 // Instance discovery is disabled deliberately: that clears ValidateAuthority, which is the weakest
 // configuration and the one where validation is most likely to be skipped.

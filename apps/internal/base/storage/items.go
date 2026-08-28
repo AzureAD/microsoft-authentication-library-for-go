@@ -105,6 +105,18 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, refreshOn, ex
 
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
+	return a.key(true)
+}
+
+// keyWithoutAuthnSchemeKeyID returns the key this entry had before the authentication scheme's key
+// ID became part of Key(). It is only meaningful for a non-bearer token that carries a key ID, and
+// exists so writeAccessToken can evict the duplicate an upgrade would otherwise strand; see
+// Manager.writeAccessToken.
+func (a AccessToken) keyWithoutAuthnSchemeKeyID() string {
+	return a.key(false)
+}
+
+func (a AccessToken) key(includeAuthnSchemeKeyID bool) string {
 	ks := []string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes}
 
 	// add token type to key for new access tokens types. skip for bearer token type to
@@ -120,7 +132,7 @@ func (a AccessToken) Key() string {
 		// specific as the read filter and lets the two entries coexist.
 		//
 		// The guard above excludes bearer entries, so keys written by existing clients are unchanged.
-		if a.AuthnSchemeKeyID != "" {
+		if includeAuthnSchemeKeyID && a.AuthnSchemeKeyID != "" {
 			ks = append(ks, a.AuthnSchemeKeyID)
 		}
 	}
