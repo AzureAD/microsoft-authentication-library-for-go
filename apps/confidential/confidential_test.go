@@ -1021,19 +1021,25 @@ func TestRefreshInMultipleRequests(t *testing.T) {
 	}
 	var wg sync.WaitGroup
 	ch := make(chan error, 1)
+	// checkerMu guards the two flags below: respond is registered on more than one
+	// queued response, so the mock may invoke it from several goroutines at once.
+	var checkerMu sync.Mutex
 	firstTenantChecker := false
 	secondTenantChecker := false
 	respond := func(r *http.Request) {
-		if s := strings.SplitN(r.URL.Path, "/", 3); len(s) == 3 {
-			switch s[1] {
-			case "firstTenant":
-				firstTenantChecker = true
-			case "secondTenant":
-				secondTenantChecker = true
-			default:
-				t.Error("unexpected token request URL: " + r.URL.String())
-			}
-		} else {
+		s := strings.SplitN(r.URL.Path, "/", 3)
+		if len(s) != 3 {
+			t.Error("unexpected token request URL: " + r.URL.String())
+			return
+		}
+		checkerMu.Lock()
+		defer checkerMu.Unlock()
+		switch s[1] {
+		case "firstTenant":
+			firstTenantChecker = true
+		case "secondTenant":
+			secondTenantChecker = true
+		default:
 			t.Error("unexpected token request URL: " + r.URL.String())
 		}
 	}
@@ -1133,8 +1139,12 @@ func TestConcurrentRequests(t *testing.T) {
 	wg := sync.WaitGroup{}
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()
-	for _, tenant := range []string{"firstTenant", "secondTenant"} {
-		wg.Add(1)
+	tenants := []string{"firstTenant", "secondTenant"}
+	// Queue every response before starting any goroutine. Each callback blocks on
+	// proceed, which only the loop below sends on, so a goroutine started here can
+	// stall the mock until this goroutine reaches that loop. Appending first keeps
+	// this goroutine off the mock entirely once the workers are running.
+	for _, tenant := range tenants {
 		mockClient.AppendResponse(
 			mock.WithBody(mock.GetAccessTokenBody(tenant, "", "", "", expiresIn, refreshIn)),
 			mock.WithCallback(func(r *http.Request) {
@@ -1146,6 +1156,9 @@ func TestConcurrentRequests(t *testing.T) {
 				}
 			}),
 		)
+	}
+	for _, tenant := range tenants {
+		wg.Add(1)
 		go func(id string) {
 			defer wg.Done()
 			if _, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(id)); err != nil {
