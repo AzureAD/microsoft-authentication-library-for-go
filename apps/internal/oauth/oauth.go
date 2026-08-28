@@ -150,8 +150,17 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 
 	if authParams.IsMtlsPoP {
 		// mTLS proof-of-possession: the binding certificate (authParams.MtlsBindingCert) is presented
-		// on the TLS handshake and binds the resulting token. A NewCredFromCert credential authenticates
-		// purely via the TLS client certificate, so no client_assertion is sent.
+		// on the TLS handshake and binds the resulting token. A credential that carries its own
+		// certificate (NewCredFromCert) authenticates purely via the TLS client certificate, so no
+		// client_assertion is sent. An assertion/callback credential (FIC leg 2) still sends its
+		// assertion, certificate-bound via client_assertion_type=jwt-pop.
+		if cred.AssertionCallback != nil {
+			jwt, err := cred.JWT(ctx, authParams)
+			if err != nil {
+				return accesstokens.TokenResponse{}, err
+			}
+			return t.AccessTokens.FromAssertion(ctx, authParams, jwt)
+		}
 		return t.AccessTokens.FromClientCertificate(ctx, authParams)
 	}
 

@@ -293,6 +293,64 @@ Notes:
   (VBS-isolated) key, along with the steps to provision one.
 - `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`.
 
+### Two-leg federated identity credential (FIC) over mTLS PoP
+
+For service-to-service FIC, the application orchestrates two calls, each opting into mTLS PoP. Leg 1
+uses the SN/I certificate to obtain a certificate-bound federated assertion; leg 2 presents that
+assertion (as a jwt-pop client assertion) together with the binding certificate to obtain the final
+`mtls_pop` token:
+
+```go
+// Leg 1: SN/I cert -> cert-bound federated assertion (itself mTLS PoP).
+leg1, _ := rmaApp.AcquireTokenByCredential(ctx,
+    []string{"api://AzureADTokenExchange/.default"},
+    confidential.WithMtlsProofOfPossession())
+
+// Leg 2: assertion (jwt-pop) + binding cert -> final mtls_pop token. One callback returns both, so
+// they stay paired: leg1.BindingCertificate is a *tls.Certificate carrying the private key, handed
+// over without taking it apart.
+assertionCred := confidential.NewCredFromSignedAssertionCallback(
+    func(context.Context, confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        return confidential.SignedAssertion{
+            Assertion:          leg1.AccessToken,
+            BindingCertificate: leg1.BindingCertificate,
+        }, nil
+    })
+ficApp, _ := confidential.New(authority, ficClientID, assertionCred)
+final, _ := ficApp.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+```
+
+`NewCredFromSignedAssertionCallback` is the only way to supply leg 2's binding certificate, and that
+is deliberate: routing the assertion through the credential and the certificate through a separate
+call-site option would let the two drift apart across a certificate rotation. MSAL .NET takes the
+same position, sourcing the certificate solely from `ClientSignedAssertion.TokenBindingCertificate`.
+Running leg 1 inside the callback keeps the pair fresh rather than capturing a single leg-1 result:
+
+```go
+cred := confidential.NewCredFromSignedAssertionCallback(
+    func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        leg1, err := rmaApp.AcquireTokenByCredential(ctx,
+            []string{"api://AzureADTokenExchange/.default"},
+            confidential.WithMtlsProofOfPossession())
+        if err != nil {
+            return confidential.SignedAssertion{}, err
+        }
+        return confidential.SignedAssertion{
+            Assertion:          leg1.AccessToken,
+            BindingCertificate: leg1.BindingCertificate,
+        }, nil
+    })
+ficApp, _ := confidential.New(authority, ficClientID, cred)
+final, _ := ficApp.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+```
+
+MSAL invokes the callback at most once per token request. The binding certificate's private key may
+be non-exportable (Windows KeyGuard, CNG, an HSM); MSAL only requires that it implement
+`crypto.Signer`.
+
+See [docs/federated_managed_identity.md](docs/federated_managed_identity.md) for the full FIC/FMI
+walkthrough.
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.

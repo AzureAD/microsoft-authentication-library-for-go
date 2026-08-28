@@ -106,20 +106,42 @@ type Credential struct {
 	// AssertionCallback is a function provided by the application, if we're authenticating by assertion.
 	AssertionCallback func(context.Context, exported.AssertionRequestOptions) (string, error)
 
+	// SignedAssertionCallback is set when the application supplies its assertion together with the
+	// certificate the assertion is bound to (confidential.NewCredFromSignedAssertionCallback).
+	// AssertionCallback is always set alongside it and yields the same assertion, so every code path
+	// that only knows about assertions keeps working unchanged; SignedAssertionCallback exists so the
+	// mTLS proof-of-possession path can also obtain the binding certificate, which it needs before
+	// the request body is built.
+	SignedAssertionCallback func(context.Context, exported.AssertionRequestOptions) (exported.SignedAssertion, error)
+
 	// TokenProvider is a function provided by the application that implements custom authentication
 	// logic for a confidential client
 	TokenProvider func(context.Context, exported.TokenProviderParameters) (exported.TokenProviderResult, error)
 }
 
+// assertionRequestOptions builds the options handed to an application-provided assertion callback.
+func assertionRequestOptions(authParams authority.AuthParams) exported.AssertionRequestOptions {
+	return exported.AssertionRequestOptions{
+		ClientID:      authParams.ClientID,
+		TokenEndpoint: authParams.Endpoints.TokenEndpoint,
+		FMIPath:       authParams.ExtraBodyParameters["fmi_path"],
+	}
+}
+
+// SignedAssertion invokes the credential's signed-assertion callback once and returns its result.
+// It is the only caller of that callback: everything else goes through JWT, which replays whatever
+// AssertionCallback yields. Callers must not invoke both for one token request.
+func (c *Credential) SignedAssertion(ctx context.Context, authParams authority.AuthParams) (exported.SignedAssertion, error) {
+	if c.SignedAssertionCallback == nil {
+		return exported.SignedAssertion{}, errors.New("credential has no signed-assertion callback")
+	}
+	return c.SignedAssertionCallback(ctx, assertionRequestOptions(authParams))
+}
+
 // JWT gets the jwt assertion when the credential is not using a secret.
 func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (string, error) {
 	if c.AssertionCallback != nil {
-		options := exported.AssertionRequestOptions{
-			ClientID:      authParams.ClientID,
-			TokenEndpoint: authParams.Endpoints.TokenEndpoint,
-			FMIPath:       authParams.ExtraBodyParameters["fmi_path"],
-		}
-		return c.AssertionCallback(ctx, options)
+		return c.AssertionCallback(ctx, assertionRequestOptions(authParams))
 	}
 	claims := jwt.MapClaims{
 		"aud": authParams.Endpoints.TokenEndpoint,
@@ -386,7 +408,30 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 		return TokenResponse{}, err
 	}
 	qv.Set(grantType, grant.ClientCredential)
-	qv.Set("client_assertion_type", grant.ClientAssertion)
+	// A certificate-bound client assertion is signalled with the jwt-pop assertion type and the
+	// binding certificate is presented on the TLS handshake (see doTokenResp).
+	//
+	// The trigger is the assertion being bound to a certificate the application handed over together
+	// with it (via the signed-assertion callback), not merely the presence of a binding certificate
+	// on the request. MSAL .NET draws the same line across its two client credentials:
+	//
+	//   - ClientAssertionDelegateCredential.cs:63-66 (the FIC/callback credential, equivalent to
+	//     confidential.NewCredFromSignedAssertionCallback) selects JwtPop when the transport is mTLS
+	//     *or* the ClientSignedAssertion carried a token-binding certificate, and JwtBearer otherwise.
+	//   - CertificateAndClaimsClientCredential.cs:117 (the plain certificate credential, equivalent
+	//     to NewCredFromCert/NewCredFromTLSCertificate) sets JwtBearer *unconditionally*, and still
+	//     returns CredentialMaterial carrying the certificate: it hands a binding certificate to the
+	//     transport while keeping the assertion jwt-bearer.
+	//
+	// FromAssertion is shared by both credential kinds, so keying this on MtlsBindingCert != nil would
+	// wrongly catch the second one: a Bearer-over-mTLS request from a certificate credential sets a
+	// binding certificate without requesting an mtls_pop token, and must stay jwt-bearer. That is why
+	// this keys on AssertionBoundToCallbackCert, which only the callback path sets.
+	assertionType := grant.ClientAssertion
+	if authParameters.IsMtlsPoP || authParameters.AssertionBoundToCallbackCert {
+		assertionType = grant.ClientAssertionPoP
+	}
+	qv.Set("client_assertion_type", assertionType)
 	qv.Set("client_assertion", assertion)
 	qv.Set(clientID, authParameters.ClientID)
 	qv.Set(clientInfo, clientInfoVal)

@@ -119,6 +119,112 @@ func main() {
 }
 ```
 
+## mTLS Proof-of-Possession (both legs)
+
+The two-leg flow above returns Bearer tokens by default. To bind the tokens to the SN/I certificate
+over mutual TLS, opt into mTLS proof-of-possession on **each** leg. The credential is unchanged — only
+the mechanism changes from signing an assertion to presenting the certificate as the client TLS
+certificate. Both legs return `token_type=mtls_pop`.
+
+```go
+// Leg 1 (inside your RMA helper): SN/I cert -> cert-bound federated assertion, itself mTLS PoP.
+// The exchange audience is caller-supplied: api://AzureADTokenExchange for generic S2S FIC, or
+// api://AzureFMITokenExchange (+ WithFMIPath) for the FMI variant.
+leg1, err := rmaClient.AcquireTokenByCredential(
+    ctx,
+    []string{"api://AzureFMITokenExchange/.default"},
+    confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+    confidential.WithMtlsProofOfPossession(),
+)
+// leg1.Metadata.TokenType == "mtls_pop"; leg1.BindingCertificate is a *tls.Certificate carrying the
+// parsed leaf and the private key (which may be a non-exportable crypto.Signer).
+
+// Leg 2: the federated assertion is presented as a jwt-pop client assertion, and the same binding
+// certificate is presented on the TLS handshake. Because the leg-2 credential is an assertion that
+// has no certificate of its own, use NewCredFromSignedAssertionCallback: one callback returns leg 1's
+// assertion and the certificate it is bound to, so the two can never drift apart. There is no
+// call-site option for the certificate — see below.
+cred := confidential.NewCredFromSignedAssertionCallback(
+    func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        return confidential.SignedAssertion{
+            Assertion:          leg1.AccessToken,
+            BindingCertificate: leg1.BindingCertificate,
+        }, nil
+    })
+
+app, err := confidential.New(authority, clientID, cred)
+result, err := app.AcquireTokenByCredential(
+    ctx,
+    []string{"your-resource/.default"},
+    confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+    confidential.WithMtlsProofOfPossession(),
+)
+// result.Metadata.TokenType == "mtls_pop", bound to the leg-1 certificate thumbprint.
+```
+
+### Keeping the assertion and its binding certificate together
+
+Pairing the assertion and the certificate in one callback is the only supported form, and that is
+deliberate. Passing the assertion through the credential and the certificate through a separate
+call-site option would let the two drift apart — a certificate rotation between leg 1 and leg 2 could
+pair one leg's assertion with another leg's certificate. MSAL .NET takes the same position: the
+certificate comes solely from `ClientSignedAssertion.TokenBindingCertificate`, returned by the
+`WithClientAssertion` callback.
+
+Running leg 1 inside the callback keeps the pair fresh, rather than capturing a single leg-1 result:
+
+```go
+cred := confidential.NewCredFromSignedAssertionCallback(
+    func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        leg1, err := rmaClient.AcquireTokenByCredential(
+            ctx,
+            []string{"api://AzureFMITokenExchange/.default"},
+            confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+            confidential.WithMtlsProofOfPossession(),
+        )
+        if err != nil {
+            return confidential.SignedAssertion{}, err
+        }
+        return confidential.SignedAssertion{
+            Assertion:          leg1.AccessToken,
+            BindingCertificate: leg1.BindingCertificate,
+        }, nil
+    })
+
+app, err := confidential.New(authority, clientID, cred)
+// No binding-certificate option needed: the credential supplies it with the assertion.
+result, err := app.AcquireTokenByCredential(
+    ctx,
+    []string{"your-resource/.default"},
+    confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+    confidential.WithMtlsProofOfPossession(),
+)
+```
+
+MSAL invokes the callback at most once per token request. Because the binding certificate partitions
+the token cache and selects the mutual-TLS connection, an mTLS PoP request resolves the callback
+before the cache is consulted; requests that don't need the certificate invoke it only when a token
+request is actually sent, exactly like `NewCredFromAssertionCallback`.
+
+Notes:
+
+- A **tenanted authority** is required (not `/common`, `/organizations`, or `/consumers`).
+- The token endpoint is rewritten from `login.*` to `mtlsauth.*`; region is optional (global
+  `mtlsauth.microsoft.com` is used when no region is configured).
+- A binding certificate is only needed on the assertion-authenticated leg (leg 2). For a leg
+  created with `NewCredFromCert` (leg 1) it is inferred from the credential. For leg 2 it comes from
+  the `SignedAssertion.BindingCertificate` returned by `NewCredFromSignedAssertionCallback`, which is
+  the only way to supply it: MSAL exposes no call-site option that would let the assertion and the
+  certificate be sourced separately.
+- Results expose the binding certificate as `BindingCertificate` (a `*tls.Certificate` carrying the
+  parsed leaf and the private key, ready for `tls.Config.Certificates`) and its thumbprint as
+  `BindingCertificateThumbprint()`.
+- The private key may be non-exportable (Windows KeyGuard, CNG, an HSM); MSAL only requires that it
+  implement `crypto.Signer`.
+- Sovereign clouds are supported via `login.microsoftonline.us` (US Gov) and
+  `login.partner.microsoftonline.cn` (China); the legacy hosts `login.usgovcloudapi.net` and
+  `login.chinacloudapi.cn` are rejected with guidance toward the supported host.
+
 ## Cache Behavior
 
 Tokens acquired with FMI are **automatically isolated** in the cache. This means:

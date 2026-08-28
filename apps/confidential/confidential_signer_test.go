@@ -156,7 +156,9 @@ func TestNewCredFromTLSCertificateBindingCert(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bindingCert, err := client.resolveMtlsBindingCert()
+	// nil: this credential has no signed-assertion callback, so the binding certificate is derived
+	// from the certificate credential itself.
+	bindingCert, err := client.resolveMtlsBindingCert(nil)
 	if err != nil {
 		t.Fatal(err)
 	}
