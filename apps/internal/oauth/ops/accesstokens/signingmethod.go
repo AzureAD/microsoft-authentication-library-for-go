@@ -17,9 +17,12 @@ import (
 // requiring an *rsa.PrivateKey. That's the only way to sign with a key whose private material can't
 // be exported, such as a Windows KeyGuard (VBS-isolated) or other CNG/HSM-backed key.
 //
-// Everything except signing delegates to the wrapped method, so the assertion is byte-for-byte what
-// an exportable key would produce: Alg() feeds both the "alg" header and thumbprint(), and Verify
-// needs only the public key.
+// Everything except signing delegates to the wrapped method, so the assertion is indistinguishable
+// to the service from one an exportable key would produce: the same "alg" header, the same
+// thumbprint header carrying the same hash, the same signature format, and the same verification
+// semantics. Alg() feeds both the "alg" header and thumbprint(), and Verify needs only the public
+// key. The bytes aren't identical, and can't be: PS256 salts are random, and every assertion carries
+// a freshly generated jti along with nbf and exp taken from the clock.
 //
 // Instances are constructed on demand rather than registered with jwt.RegisterSigningMethod because
 // that would mutate a package-level map shared with every other user of the JWT library in the

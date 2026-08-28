@@ -272,8 +272,12 @@ Notes:
 - **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
   TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
   `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
-- **The signer lives in your code**: MSAL adds no platform-specific dependencies. Implement
-  `crypto.Signer` over your key provider (NCrypt, TPM 2.0, PKCS#11, KMS, ...) and hand it to MSAL.
+- **The signer lives in your code**: MSAL adds no platform-specific dependencies and ships no signer
+  implementation. Implement `crypto.Signer` over your key provider (NCrypt, TPM 2.0, PKCS#11, KMS,
+  ...) and hand it to MSAL. Obtaining that signer is the platform-specific part, and it's the part
+  MSAL can't do for you: [apps/tests/devapps/keyguard](apps/tests/devapps/keyguard) is a worked
+  example — not a supported API — showing a Windows NCrypt `crypto.Signer` over a KeyGuard
+  (VBS-isolated) key, along with the steps to provision one.
 - `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`.
 
 ## Community Help and Support

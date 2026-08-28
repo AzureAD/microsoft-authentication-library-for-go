@@ -285,8 +285,11 @@ func TestJWTSignerOnlyRS256(t *testing.T) {
 	}
 }
 
-// TestJWTSignerOnlyWireFormat is the regression guard: for the same input, a signer-only credential
-// must produce exactly the header an *rsa.PrivateKey credential does, byte for byte.
+// TestJWTSignerOnlyWireFormat is the regression guard: for the same input, a signer-backed credential
+// must produce exactly the header an *rsa.PrivateKey credential does, byte for byte. Only the header
+// can be compared that way. The claims carry a fresh jti and clock-derived nbf/exp, and a PS256
+// signature is salted with random bytes, so two assertions never have identical bytes even from the
+// same key.
 func TestJWTSignerOnlyWireFormat(t *testing.T) {
 	for _, authorityType := range []string{authority.AAD, authority.ADFS, authority.DSTS} {
 		for _, sendX5C := range []bool{false, true} {
