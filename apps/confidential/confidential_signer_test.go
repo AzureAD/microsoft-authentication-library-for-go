@@ -117,10 +117,10 @@ func TestNewCredFromTLSCertificate(t *testing.T) {
 	}
 }
 
-// TestNewCredFromTLSCertificateChainOrder verifies a chain that isn't leaf first is rejected rather
-// than silently producing a credential whose x5c and binding certificate disagree with the leaf
-// actually presented on the handshake.
-func TestNewCredFromTLSCertificateChainOrder(t *testing.T) {
+// TestNewCredFromTLSCertificateRejectsNonLeafFirstChain verifies a chain that isn't leaf first is
+// rejected rather than silently producing a credential whose x5c and binding certificate disagree
+// with the leaf actually presented on the handshake.
+func TestNewCredFromTLSCertificateRejectsNonLeafFirstChain(t *testing.T) {
 	certs, k := loadTestCertFile(t, "../testdata/test-cert-chain-reverse.pem")
 	if k.PublicKey.Equal(certs[0].PublicKey) {
 		t.Fatal("expected the reverse fixture to lead with a cert that isn't the signer's leaf")
@@ -205,6 +205,97 @@ func TestNewCredFromTLSCertificateError(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			if _, err := NewCredFromTLSCertificate(test.cert); err == nil {
 				t.Fatal("expected an error")
+			}
+		})
+	}
+}
+
+// nilSigner models the typed nil a caller produces by handing over an uninitialized pointer, e.g.
+//
+//	var s *nilSigner
+//	tls.Certificate{PrivateKey: s}
+//
+// The interface value is non-nil, so a crypto.Signer type assertion succeeds, and Public dereferences
+// the receiver. Anything calling Public without a nil check therefore panics instead of erroring.
+type nilSigner struct {
+	key *rsa.PrivateKey
+}
+
+func (s *nilSigner) Public() crypto.PublicKey {
+	return &s.key.PublicKey
+}
+
+func (s *nilSigner) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	return s.key.Sign(r, digest, opts)
+}
+
+// TestNewCredFromTypedNilSigner is a regression test: a typed-nil crypto.Signer satisfies the type
+// assertion in both constructors because the interface value is non-nil, so calling Public on it
+// panics with a nil pointer dereference. Both constructors must return an error instead.
+func TestNewCredFromTypedNilSigner(t *testing.T) {
+	_, certs, _ := testSignerCert(t)
+	der := make([][]byte, 0, len(certs))
+	for _, cert := range certs {
+		der = append(der, cert.Raw)
+	}
+	var typedNil *nilSigner
+	// the premise of the test: a typed nil pointer still satisfies the crypto.Signer assertion both
+	// constructors make, so it reaches the code that calls Public
+	if _, ok := crypto.PrivateKey(typedNil).(crypto.Signer); !ok {
+		t.Fatal("expected a typed nil pointer to satisfy crypto.Signer")
+	}
+	for _, test := range []struct {
+		name    string
+		newCred func() (Credential, error)
+	}{
+		{"NewCredFromCert", func() (Credential, error) {
+			return NewCredFromCert(certs, typedNil)
+		}},
+		{"NewCredFromTLSCertificate", func() (Credential, error) {
+			return NewCredFromTLSCertificate(tls.Certificate{Certificate: der, PrivateKey: typedNil})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("a typed-nil signer panicked instead of returning an error: %v", r)
+				}
+			}()
+			if _, err := test.newCred(); err == nil {
+				t.Fatal("expected an error because the signer is a nil pointer")
+			}
+		})
+	}
+}
+
+// TestNewCredFromTypedNilRSAKey covers the *rsa.PrivateKey branch of the type switch. A typed nil
+// reaches it before the crypto.Signer case isNilSigner guards, so it needs its own nil check.
+func TestNewCredFromTypedNilRSAKey(t *testing.T) {
+	_, certs, _ := testSignerCert(t)
+	der := make([][]byte, 0, len(certs))
+	for _, cert := range certs {
+		der = append(der, cert.Raw)
+	}
+	var typedNil *rsa.PrivateKey
+	for _, test := range []struct {
+		name    string
+		newCred func() (Credential, error)
+	}{
+		{"NewCredFromCert", func() (Credential, error) {
+			return NewCredFromCert(certs, typedNil)
+		}},
+		{"NewCredFromTLSCertificate", func() (Credential, error) {
+			return NewCredFromTLSCertificate(tls.Certificate{Certificate: der, PrivateKey: typedNil})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("a typed-nil *rsa.PrivateKey panicked instead of returning an error: %v", r)
+				}
+			}()
+			if _, err := test.newCred(); err == nil {
+				t.Fatal("expected an error because the key is a nil pointer")
 			}
 		})
 	}

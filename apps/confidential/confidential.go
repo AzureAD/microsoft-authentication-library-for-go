@@ -10,7 +10,6 @@ Confidential clients can hold configuration-time secrets.
 package confidential
 
 import (
-	"bytes"
 	"context"
 	"crypto"
 	"crypto/rsa"
@@ -22,6 +21,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"reflect"
 	"strings"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
@@ -206,20 +206,48 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 	return Credential{assertionCallback: callback}
 }
 
+// isNilSigner reports whether s is unusable: either an untyped nil interface, or an interface
+// wrapping a nil pointer. The second case is what a caller written as
+//
+//	var s *myKeySigner
+//	return tls.Certificate{PrivateKey: s}
+//
+// produces: s == nil is false because the interface carries a type, and the crypto.Signer type
+// assertion succeeds, so without this check calling Public would panic instead of returning an error.
+func isNilSigner(s crypto.Signer) bool {
+	if s == nil {
+		return true
+	}
+	v := reflect.ValueOf(s)
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface, reflect.UnsafePointer:
+		return v.IsNil()
+	default:
+		return false
+	}
+}
+
 // NewCredFromCert creates a Credential from a certificate or chain of certificates and an RSA private key
 // as returned by [CertFromPEM].
 //
 // key may also be a [crypto.Signer] whose public key is an *rsa.PublicKey. That's how a non-exportable
 // key such as a Windows KeyGuard (VBS-isolated) or other CNG/HSM-backed key surfaces in Go. MSAL signs
-// client assertions through the signer, so such a credential works in every flow.
-// [NewCredFromTLSCertificate] is the more direct constructor for these keys.
+// client assertions through the signer, so such a credential works in every flow. The credential
+// retains the signer under the lifetime and concurrency requirements documented on
+// [NewCredFromTLSCertificate], which is the more direct constructor for these keys.
 func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
 	var k *rsa.PublicKey
 	switch t := key.(type) {
 	case *rsa.PrivateKey:
+		if t == nil {
+			return cred, errors.New("key must not be a nil *rsa.PrivateKey")
+		}
 		k = &t.PublicKey
 	case crypto.Signer:
+		if isNilSigner(t) {
+			return cred, errors.New("key must not be a nil crypto.Signer")
+		}
 		pub, ok := t.Public().(*rsa.PublicKey)
 		if !ok {
 			return cred, errors.New("key must be an RSA key")
@@ -260,8 +288,16 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 // the signer sign the assertion. Because the service accepts only RSA client assertions, a signer
 // whose public key isn't an *rsa.PublicKey is limited to mTLS proof-of-possession.
 //
-// cert.Certificate must hold the DER-encoded chain leaf first, as [tls.Certificate] requires. cert.Leaf
-// is used when it matches that leaf; otherwise the leaf is parsed from cert.Certificate[0].
+// The Credential retains the signer for its lifetime; it never copies it or extracts private material.
+// Sign may be called concurrently: MSAL caches one mTLS client per confidential client and several TLS
+// handshakes can be in flight at once, so the signer must be safe for concurrent use. The signer must
+// stay usable at least as long as the [Client], and in practice longer, because
+// AuthResult.BindingCertificate hands the same key back for the caller's own mTLS call to the resource;
+// closing the signer once a token is acquired breaks that call.
+//
+// cert.Certificate must hold the DER-encoded chain leaf first, as [tls.Certificate] requires. The leaf
+// is always parsed from cert.Certificate[0] and cert.Leaf is ignored, so every field of the
+// credential's certificate derives from the DER presented on the handshake.
 func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 	if len(cert.Certificate) == 0 || len(cert.Certificate[0]) == 0 {
 		return Credential{}, errors.New("tls.Certificate must contain at least one certificate")
@@ -270,13 +306,12 @@ func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 	if !ok {
 		return Credential{}, errors.New("tls.Certificate.PrivateKey must implement crypto.Signer")
 	}
-	leaf := cert.Leaf
-	if leaf == nil || !bytes.Equal(leaf.Raw, cert.Certificate[0]) {
-		var err error
-		leaf, err = x509.ParseCertificate(cert.Certificate[0])
-		if err != nil {
-			return Credential{}, fmt.Errorf("could not parse the leaf certificate: %v", err)
-		}
+	if isNilSigner(signer) {
+		return Credential{}, errors.New("tls.Certificate.PrivateKey must not be a nil crypto.Signer")
+	}
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		return Credential{}, fmt.Errorf("could not parse the leaf certificate: %w", err)
 	}
 	// every public key type x509 can parse implements Equal, added in Go 1.15
 	pub, ok := leaf.PublicKey.(interface{ Equal(crypto.PublicKey) bool })
