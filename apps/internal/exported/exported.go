@@ -15,9 +15,8 @@ type SignedAssertion struct {
 
 	// BindingCertificate is the certificate the assertion is bound to, presented as the client
 	// certificate on the mutual-TLS handshake when the request is an mTLS proof-of-possession
-	// request. It may be nil, in which case the binding certificate is resolved as it is for a
-	// plain assertion credential. Its PrivateKey may be any crypto.Signer, including a
-	// non-exportable platform key.
+	// request. It is required for such a request and unused for any other. Its PrivateKey may be
+	// any crypto.Signer, including a non-exportable platform key.
 	BindingCertificate *tls.Certificate
 }
 

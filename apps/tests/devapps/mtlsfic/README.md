@@ -20,8 +20,9 @@ The points the demo exists to make, each verifiable in this branch's source:
   cannot supply separately are values you cannot mismatch. `Client.resolveMtlsBindingCert` in
   `apps/confidential/confidential.go` takes a callback certificate from nowhere else. This mirrors
   MSAL .NET's `ClientSignedAssertion.TokenBindingCertificate`.
-- **`BindingCertificate` may be nil**, in which case MSAL falls back to the client's own certificate
-  credential, and fails with guidance if it has none.
+- **`BindingCertificate` is required for an mTLS PoP request.** A callback that returns none fails
+  the acquisition with an error naming the callback. It is not optional: a signed-assertion
+  credential carries no certificate of its own to fall back to.
 - **Leg 1 belongs *inside* the callback, not captured before it.** Under mTLS PoP the binding
   certificate partitions the token cache and selects the TLS connection, so MSAL resolves the
   callback *before* consulting the cache — meaning it is re-invoked on later acquisitions. A callback

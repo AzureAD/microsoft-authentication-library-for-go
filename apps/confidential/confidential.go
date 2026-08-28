@@ -152,9 +152,9 @@ type AssertionRequestOptions = exported.AssertionRequestOptions
 // It is returned by the callback given to [NewCredFromSignedAssertionCallback], which keeps the two
 // paired: nothing can mismatch an assertion with a certificate it isn't bound to.
 //
-// BindingCertificate may be nil, in which case the binding certificate for an mTLS
-// proof-of-possession request is resolved from the client's own certificate credential, if it has
-// one. This callback is the only way to supply a binding certificate for an assertion credential:
+// BindingCertificate is required for an mTLS proof-of-possession request: it is the certificate
+// presented on the handshake, and a callback that returns none fails the request. This callback is
+// the only way to supply a binding certificate for an assertion credential:
 // MSAL deliberately offers no call-site option for it, so an assertion and the certificate it is
 // bound to can never be sourced separately and left free to disagree. MSAL .NET is the same — the
 // certificate comes solely from ClientSignedAssertion.TokenBindingCertificate.
@@ -267,16 +267,15 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 // [NewCredFromAssertionCallback].
 //
 // On an mTLS proof-of-possession request ([WithMtlsProofOfPossession]) the callback must return a
-// non-empty assertion; an empty or whitespace-only one is rejected locally rather than sent as a
-// malformed token request. On every other request the assertion is forwarded without local
-// validation, exactly like [NewCredFromAssertionCallback].
+// non-empty assertion and a binding certificate; an empty or whitespace-only assertion, or a nil
+// certificate, is rejected locally rather than sent as a malformed token request. On every other
+// request the assertion is forwarded without local validation, exactly like
+// [NewCredFromAssertionCallback], and the binding certificate is unused.
 //
 // This is the only way to supply a binding certificate for an assertion credential. MSAL offers no
 // call-site option that would let the assertion and the certificate be sourced separately, because
 // that is precisely the mismatch this credential exists to prevent; MSAL .NET takes the same
-// position, sourcing the certificate solely from ClientSignedAssertion.TokenBindingCertificate. A
-// SignedAssertion whose BindingCertificate is nil falls back to the client's own certificate
-// credential, if it has one, and otherwise fails with guidance.
+// position, sourcing the certificate solely from ClientSignedAssertion.TokenBindingCertificate.
 func NewCredFromSignedAssertionCallback(callback func(context.Context, AssertionRequestOptions) (SignedAssertion, error)) Credential {
 	return Credential{signedAssertionCallback: callback}
 }
@@ -1349,6 +1348,10 @@ func validBindingCertificate(cert *tls.Certificate) (*tls.Certificate, error) {
 // otherwise one derived from a certificate credential (NewCredFromCert). callbackCert can only
 // originate from [NewCredFromSignedAssertionCallback]; there is no call-site option that supplies a
 // binding certificate.
+//
+// The certificate-credential branch is not a fallback for a signed-assertion credential: the two
+// credential kinds are mutually exclusive, so prepareMtlsPoP requires the callback to return a
+// certificate and never reaches here with a nil callbackCert for that credential.
 func (cca Client) resolveMtlsBindingCert(callbackCert *tls.Certificate) (*tls.Certificate, error) {
 	if callbackCert != nil {
 		return callbackCert, nil
@@ -1423,13 +1426,20 @@ func (cca Client) prepareMtlsPoP(ctx context.Context, authParams authority.AuthP
 			return assertion, nil
 		}
 		cred = &perRequest
-		// A nil BindingCertificate is not an error: the request falls back to the ordinary
-		// resolution path below, which either finds a certificate credential or fails with guidance.
-		if signed.BindingCertificate != nil {
-			callbackCert, err = validBindingCertificate(signed.BindingCertificate)
-			if err != nil {
-				return nil, nil, false, fmt.Errorf("signed-assertion callback returned an unusable binding certificate: %w", err)
-			}
+		// The callback is required to return the certificate. A Credential is either
+		// certificate-backed (NewCredFromCert) or signed-assertion-callback-backed
+		// (NewCredFromSignedAssertionCallback) and never both — no constructor sets both, and the
+		// fields are unexported — so a signed-assertion client has no certificate credential of its
+		// own to fall back to. Letting a nil certificate reach resolveMtlsBindingCert would
+		// therefore always end at its generic message, which offers NewCredFromCert as an
+		// alternative this credential cannot take. Naming the callback instead points at the only
+		// thing that can fix it.
+		if signed.BindingCertificate == nil {
+			return nil, nil, false, errors.New("signed-assertion callback returned no binding certificate: an mTLS proof-of-possession request presents the certificate the assertion is bound to, so the callback must set SignedAssertion.BindingCertificate")
+		}
+		callbackCert, err = validBindingCertificate(signed.BindingCertificate)
+		if err != nil {
+			return nil, nil, false, fmt.Errorf("signed-assertion callback returned an unusable binding certificate: %w", err)
 		}
 	}
 	bindingCert, err := cca.resolveMtlsBindingCert(callbackCert)

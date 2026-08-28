@@ -262,8 +262,8 @@ func TestMtlsPoPTenantedAuthorityAccepted(t *testing.T) {
 func unusableBindingCertCred(invoked *int32) Credential {
 	return NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
 		atomic.AddInt32(invoked, 1)
-		// Non-nil, so resolution reaches validBindingCertificate rather than falling through to the
-		// "no certificate credential" path, but empty, so it is rejected there.
+		// Non-nil, so resolution reaches validBindingCertificate rather than the "callback returned
+		// no binding certificate" error, but empty, so it is rejected there.
 		return SignedAssertion{Assertion: "assertion", BindingCertificate: &tls.Certificate{}}, nil
 	})
 }

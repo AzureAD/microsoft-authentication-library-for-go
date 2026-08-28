@@ -210,7 +210,7 @@ func handshakeTestClient(t *testing.T, cred Credential, srv *mtlsHandshakeServer
 // TestSignedAssertionCallbackRejectsUnusableCerts covers the guardrails on the certificate the
 // callback returns: one that can't complete a handshake must fail with a clear error before any
 // network call, not panic and not produce a broken handshake. A nil BindingCertificate is not in
-// this table because it is not an error — it falls back to the client's own certificate credential;
+// this table because it is rejected before validBindingCertificate runs, with a different message;
 // see TestSignedAssertionNilBindingCertificateErrors.
 func TestSignedAssertionCallbackRejectsUnusableCerts(t *testing.T) {
 	leaf, key := newSelfSignedCert(t, "binding-cert")
@@ -782,24 +782,63 @@ func TestSignedAssertionEmptyAssertionForwardedWithoutMtls(t *testing.T) {
 	}
 }
 
-// TestSignedAssertionNilBindingCertificateErrors covers a SignedAssertion that carries no
-// certificate on a client that has none of its own: it must degrade to an actionable error rather
-// than crash. There is no call-site option that could supply the missing certificate, so the
-// callback has to return one.
+// TestSignedAssertionNilBindingCertificateIgnoredWithoutMtls is the same scoping argument for the
+// binding certificate: it is required only for an mTLS proof-of-possession request. Without
+// WithMtlsProofOfPossession the certificate is never consulted, so a callback that returns none
+// must still produce a bearer token.
+func TestSignedAssertionNilBindingCertificateIgnoredWithoutMtls(t *testing.T) {
+	tenant := "tenant"
+	lmo := "login.microsoftonline.com"
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+		return SignedAssertion{Assertion: "bearer-assertion"}, nil
+	})
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("bearer-token", "", "", "", 3600, 0)))
+
+	res, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+	if err != nil {
+		t.Fatalf("AcquireTokenByCredential = %v, want a nil binding certificate to be irrelevant off the mTLS PoP path", err)
+	}
+	if res.AccessToken != "bearer-token" {
+		t.Errorf("AccessToken = %q, want bearer-token", res.AccessToken)
+	}
+	if res.BindingCertificate != nil {
+		t.Error("a bearer token must not report a binding certificate")
+	}
+}
+
+// TestSignedAssertionNilBindingCertificateErrors pins that the callback's binding certificate is
+// required, and that the error names the callback.
+//
+// The certificate is not optional and there is nothing to fall back to: a Credential is either
+// certificate-backed (NewCredFromCert) or signed-assertion-callback-backed, never both, so
+// resolveMtlsBindingCert's certificate-credential branch is unreachable from here. Falling through
+// to its generic message would offer NewCredFromCert as an alternative this credential cannot take,
+// which is why the second assertion below is as important as the first.
 func TestSignedAssertionNilBindingCertificateErrors(t *testing.T) {
 	srv := newMtlsHandshakeServer(t, mtlsPoPTokenBody("final-mtls-token", 3600))
 	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
 		return SignedAssertion{Assertion: "assertion"}, nil
 	})
 	client := handshakeTestClient(t, cred, srv)
-	// The client's credential has no certificate, so the nil binding certificate must surface as
-	// the ordinary "no certificate available" error, not a panic.
 	_, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithMtlsProofOfPossession())
 	if err == nil {
-		t.Fatal("expected an error when neither the callback nor the client supplies a certificate")
+		t.Fatal("expected an error when the callback returns no binding certificate")
 	}
-	if !strings.Contains(err.Error(), "mTLS proof-of-possession requires") {
-		t.Errorf("error %q does not explain how to supply a binding certificate", err)
+	if !strings.Contains(err.Error(), "signed-assertion callback returned no binding certificate") {
+		t.Errorf("error %q does not say the callback returned no binding certificate", err)
+	}
+	if !strings.Contains(err.Error(), "SignedAssertion.BindingCertificate") {
+		t.Errorf("error %q does not name the field the callback must set", err)
+	}
+	if strings.Contains(err.Error(), "NewCredFromCert") {
+		t.Errorf("error %q offers NewCredFromCert, which this credential cannot switch to without abandoning its assertion", err)
 	}
 	if got := srv.tokenCalls(); got != 0 {
 		t.Errorf("token endpoint called %d times, want 0", got)
