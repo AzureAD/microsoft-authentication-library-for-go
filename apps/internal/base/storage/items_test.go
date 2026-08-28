@@ -419,6 +419,13 @@ func TestKeyForIDToken(t *testing.T) {
 	}
 }
 
+func TestNewIDToken(t *testing.T) {
+	got := NewIDToken(idHid, idEnv, idRealm, idClient, idTokSecret)
+	if diff := pretty.Compare(idToken, got); diff != "" {
+		t.Errorf("TestNewIDToken: -want/+got:\n%s", diff)
+	}
+}
+
 func TestIDTokenUnmarshal(t *testing.T) {
 	jsonMap := map[string]interface{}{
 		"home_account_id": "HID",

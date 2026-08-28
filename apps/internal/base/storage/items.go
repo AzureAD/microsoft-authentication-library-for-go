@@ -192,7 +192,7 @@ func NewIDToken(homeID, env, realm, clientID, idToken string) IDToken {
 		HomeAccountID:  homeID,
 		Environment:    env,
 		Realm:          realm,
-		CredentialType: "IDToken",
+		CredentialType: "IdToken",
 		ClientID:       clientID,
 		Secret:         idToken,
 	}

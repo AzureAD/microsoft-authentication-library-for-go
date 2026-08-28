@@ -178,6 +178,7 @@ type Client struct {
 	httpClient         ops.HTTPClient
 	miType             ID
 	source             Source
+	serviceFabricURL   string
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	canRefresh         *atomic.Value
@@ -199,7 +200,8 @@ func WithClaims(claims string) AcquireTokenOption {
 	}
 }
 
-// WithHTTPClient allows for a custom HTTP client to be set.
+// WithHTTPClient allows for a custom HTTP client to be set. Service Fabric requires a standard
+// *http.Client with a *http.Transport and does not support custom TLS dialing or verification.
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
@@ -269,6 +271,14 @@ func New(id ID, options ...ClientOption) (Client, error) {
 	}
 	for _, option := range options {
 		option(&client)
+	}
+	if source == ServiceFabric {
+		serviceFabricClient, serviceFabricURL, err := serviceFabricCertificateVerifiedHTTPClient(client.httpClient)
+		if err != nil {
+			return Client{}, err
+		}
+		client.httpClient = serviceFabricClient
+		client.serviceFabricURL = serviceFabricURL
 	}
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)
 	if err != nil {
@@ -410,7 +420,7 @@ func (c Client) acquireTokenForAzureML(ctx context.Context, resource string) (Au
 }
 
 func (c Client) acquireTokenForServiceFabric(ctx context.Context, resource string) (AuthResult, error) {
-	req, err := createServiceFabricAuthRequest(ctx, resource)
+	req, err := createServiceFabricAuthRequest(ctx, c.serviceFabricURL, resource)
 	if err != nil {
 		return AuthResult{}, err
 	}
