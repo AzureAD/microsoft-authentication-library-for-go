@@ -20,27 +20,55 @@ import (
 const maxMtlsClients = 1000
 
 // MtlsClientFactory optionally builds an HTTPClient whose transport presents cert as the client
-// certificate during the mutual-TLS handshake. It is the documented override hook
-// (confidential.WithMtlsHTTPClient) for callers who must own the TLS handshake themselves. When
-// unset, MSAL auto-builds and caches a client per certificate.
+// certificate during the mutual-TLS handshake. It is the public override hook
+// (confidential.WithMtlsHTTPClient), which is required whenever the client passed to
+// confidential.WithHTTPClient is not an *http.Client - notably for callers reaching MSAL through
+// Azure's azidentity, whose wrapper type satisfies the HTTPClient interface but cannot have a
+// client certificate installed on it. When unset, MSAL auto-builds and caches a client per
+// certificate.
+//
+// The clients a factory returns belong to the caller. A factory may memoize and hand back one
+// shared client for every certificate; MSAL therefore never closes their idle connections during
+// its own cache housekeeping. See mtlsCacheEntry.
 type MtlsClientFactory func(cert tls.Certificate) HTTPClient
+
+// mtlsCacheEntry is one cached per-certificate mTLS client plus the provenance that decides whether
+// MSAL may close its idle connections.
+type mtlsCacheEntry struct {
+	client HTTPClient
+	// owned reports whether BuildMtlsClient produced client, in which case MSAL created its
+	// connection pool and may tear it down when the entry is discarded. A client that came from a
+	// caller-supplied MtlsClientFactory is never owned: that factory is free to memoize, so the
+	// same *http.Client can be the value under several keys, the value the caller uses elsewhere,
+	// and - on the paths below - the very client being returned to the caller. Closing it during
+	// MSAL's own cache housekeeping would reach into application state MSAL does not own.
+	owned bool
+}
 
 // SetMtlsClientFactory installs a custom factory for building mTLS clients. It is intended to be
 // called during construction, before any concurrent token calls. The assignment is guarded by mtlsMu
 // (paired with the read in mtlsClient) and resets the per-certificate client cache so cached clients
-// can't mix factories. The discarded clients are asked to close their idle connections, because Go's
-// http.Transport holds keep-alive sockets that nothing else will reclaim.
+// can't mix factories. Bumping mtlsGeneration lets an mtlsClient call that is building outside the
+// lock notice the swap instead of publishing a client from the previous factory into the fresh map.
+//
+// The discarded clients are asked to close their idle connections, because Go's http.Transport holds
+// keep-alive sockets that nothing else will reclaim. Unlike mtlsClient's eviction paths, this one
+// closes caller-supplied clients too, and deliberately so: it is an explicit caller-initiated
+// lifecycle event - the application is retiring the factory that produced them - rather than MSAL's
+// own invisible cache housekeeping, and nothing is published afterwards, so this can never close a
+// client it is about to hand back.
 func (c *Client) SetMtlsClientFactory(factory MtlsClientFactory) {
 	c.mtlsMu.Lock()
 	discarded := c.mtlsClients
 	c.mtlsFactory = factory
 	c.mtlsClients = nil
+	c.mtlsGeneration++
 	c.mtlsMu.Unlock()
 
 	// Outside the lock: CloseIdleConnections on a caller-supplied client is arbitrary code that may
 	// call back into this Client, and mtlsMu is a plain sync.Mutex.
-	for _, client := range discarded {
-		closeIdleConnections(client)
+	for _, entry := range discarded {
+		closeIdleConnections(entry.client)
 	}
 }
 
@@ -237,56 +265,83 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 	sum := sha256.Sum256(cert.Certificate[0])
 	key := base64.RawURLEncoding.EncodeToString(sum[:])
 
-	c.mtlsMu.Lock()
-	if existing, ok := c.mtlsClients[key]; ok {
-		c.mtlsMu.Unlock()
-		return existing, nil
-	}
-	factory, base := c.mtlsFactory, c.client
-	c.mtlsMu.Unlock()
-
-	// Build outside the lock. mtlsMu is a plain sync.Mutex, so a factory that calls back into this
-	// Client would deadlock permanently, and a merely slow factory would serialize creation for
-	// every other certificate. MSAL .NET builds outside its lock too: SimpleHttpClientFactory
-	// evaluates CreateMtlsHttpClient(cert) before GetOrAdd is entered.
-	var client HTTPClient
-	if factory != nil {
-		client = factory(*cert)
-	} else {
-		built, err := BuildMtlsClient(*cert, base)
-		if err != nil {
-			return nil, err
+	// The loop exists for the SetMtlsClientFactory race below, which discards what it built and
+	// starts over with the factory that is actually installed. SetMtlsClientFactory is documented
+	// as a construction-time call, so an iteration past the first is already unusual and a second
+	// one requires a caller swapping factories in a tight loop while token requests run.
+	for {
+		c.mtlsMu.Lock()
+		if existing, ok := c.mtlsClients[key]; ok {
+			c.mtlsMu.Unlock()
+			return existing.client, nil
 		}
-		client = built
-	}
-	if isNilClient(client) {
-		return nil, fmt.Errorf("mTLS proof-of-possession client factory returned a nil client")
-	}
-
-	var discarded []HTTPClient
-	c.mtlsMu.Lock()
-	if existing, ok := c.mtlsClients[key]; ok {
-		// Another goroutine won the race while we were building. Keep the published client so
-		// callers share one connection pool, and drop ours.
+		factory, base, generation := c.mtlsFactory, c.client, c.mtlsGeneration
 		c.mtlsMu.Unlock()
-		closeIdleConnections(client)
-		return existing, nil
-	}
-	if c.mtlsClients == nil {
-		c.mtlsClients = map[string]HTTPClient{}
-	} else if len(c.mtlsClients) >= maxMtlsClients {
-		for _, dropped := range c.mtlsClients {
-			discarded = append(discarded, dropped)
-		}
-		c.mtlsClients = map[string]HTTPClient{}
-	}
-	c.mtlsClients[key] = client
-	c.mtlsMu.Unlock()
 
-	for _, dropped := range discarded {
-		closeIdleConnections(dropped)
+		// Build outside the lock. mtlsMu is a plain sync.Mutex, so a factory that calls back into
+		// this Client would deadlock permanently, and a merely slow factory would serialize creation
+		// for every other certificate. MSAL .NET builds outside its lock too: SimpleHttpClientFactory
+		// evaluates CreateMtlsHttpClient(cert) before GetOrAdd is entered.
+		entry := mtlsCacheEntry{owned: factory == nil}
+		if factory != nil {
+			entry.client = factory(*cert)
+		} else {
+			built, err := BuildMtlsClient(*cert, base)
+			if err != nil {
+				return nil, err
+			}
+			entry.client = built
+		}
+		if isNilClient(entry.client) {
+			return nil, fmt.Errorf("mTLS proof-of-possession client factory returned a nil client")
+		}
+
+		var discarded []HTTPClient
+		c.mtlsMu.Lock()
+		if c.mtlsGeneration != generation {
+			// SetMtlsClientFactory ran while we were building. It cleared the cache precisely so
+			// clients can't mix factories, so publishing ours - built by the factory that was just
+			// retired - would seed the fresh map with a stale client and serve it indefinitely.
+			// Drop it and build again with the factory that is actually installed.
+			c.mtlsMu.Unlock()
+			discardMtlsClient(entry)
+			continue
+		}
+		if existing, ok := c.mtlsClients[key]; ok {
+			// Another goroutine won the race while we were building. Keep the published client so
+			// callers share one connection pool, and drop ours.
+			c.mtlsMu.Unlock()
+			discardMtlsClient(entry)
+			return existing.client, nil
+		}
+		if c.mtlsClients == nil {
+			c.mtlsClients = map[string]mtlsCacheEntry{}
+		} else if len(c.mtlsClients) >= maxMtlsClients {
+			for _, dropped := range c.mtlsClients {
+				if dropped.owned {
+					discarded = append(discarded, dropped.client)
+				}
+			}
+			c.mtlsClients = map[string]mtlsCacheEntry{}
+		}
+		c.mtlsClients[key] = entry
+		c.mtlsMu.Unlock()
+
+		for _, dropped := range discarded {
+			closeIdleConnections(dropped)
+		}
+		return entry.client, nil
 	}
-	return client, nil
+}
+
+// discardMtlsClient releases a client mtlsClient built but will not publish. Only a client MSAL
+// built is closed: a caller-supplied factory may memoize, in which case the client being discarded
+// here is the same object as the one already cached and about to be returned, so closing it would
+// tear down the pool of the client the caller is handed. See mtlsCacheEntry.
+func discardMtlsClient(entry mtlsCacheEntry) {
+	if entry.owned {
+		closeIdleConnections(entry.client)
+	}
 }
 
 // closeIdleConnections releases the keep-alive sockets a discarded mTLS client holds. Go's
