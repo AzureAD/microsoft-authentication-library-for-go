@@ -32,6 +32,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -104,7 +105,37 @@ func parseConfig() (config, error) {
 		return c, fmt.Errorf("missing required configuration: %s\nrun with -h for the full list of options",
 			strings.Join(missing, ", "))
 	}
+	// Checked here so the run stops before a token is ever minted for a resource that can't
+	// receive it safely.
+	if c.resourceURL != "" {
+		if err := requireHTTPS(c.resourceURL); err != nil {
+			return c, err
+		}
+	}
 	return c, nil
+}
+
+// requireHTTPS rejects a resource URL that isn't https.
+//
+// Proof-of-possession binds the token to a certificate, but the token is still a credential: over
+// http:// the Authorization header would cross the network in cleartext, and the mTLS handshake that
+// proves possession of the key would not happen at all, so the binding would buy nothing.
+func requireHTTPS(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("resource URL %q isn't a valid URL: %w", rawURL, err)
+	}
+	if u.Scheme == "" {
+		return fmt.Errorf("resource URL %q has no scheme; it must be an absolute https:// URL", rawURL)
+	}
+	// url.Parse already lower-cases the scheme (RFC 3986 treats it as case-insensitive), so an
+	// exact comparison here still accepts HTTPS:// and mixed-case spellings.
+	if u.Scheme != "https" {
+		return fmt.Errorf("resource URL %q uses the %q scheme; this sample sends the bound token only "+
+			"over https, because any other scheme would put the Authorization header on the network in "+
+			"cleartext and skip the mTLS handshake that proves possession of the key", rawURL, u.Scheme)
+	}
+	return nil
 }
 
 func main() {
@@ -247,7 +278,12 @@ func printChain(signer *ncryptsigner.Signer) error {
 	return nil
 }
 
-func callResource(ctx context.Context, url, token string, bindingCert *tls.Certificate) error {
+func callResource(ctx context.Context, resourceURL, token string, bindingCert *tls.Certificate) error {
+	// Re-checked here, not just in parseConfig: this function is the unit a reader lifts into their
+	// own program, and it is what actually puts the token on the network.
+	if err := requireHTTPS(resourceURL); err != nil {
+		return err
+	}
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
@@ -260,7 +296,7 @@ func callResource(ctx context.Context, url, token string, bindingCert *tls.Certi
 		},
 	}
 
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, resourceURL, nil)
 	if err != nil {
 		return fmt.Errorf("building the resource request failed: %w", err)
 	}
@@ -268,13 +304,13 @@ func callResource(ctx context.Context, url, token string, bindingCert *tls.Certi
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return fmt.Errorf("calling %s over mTLS failed: %w", url, err)
+		return fmt.Errorf("calling %s over mTLS failed: %w", resourceURL, err)
 	}
 	defer resp.Body.Close()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	fmt.Println("\n== resource ==")
-	fmt.Printf("url         : %s\n", url)
+	fmt.Printf("url         : %s\n", resourceURL)
 	fmt.Printf("status      : %s\n", resp.Status)
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("the resource rejected the bound token (HTTP %d). A 401 or 403 usually means "+

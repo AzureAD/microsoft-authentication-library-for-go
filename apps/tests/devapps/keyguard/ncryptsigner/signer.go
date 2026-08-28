@@ -25,12 +25,15 @@ import (
 	"crypto"
 	"crypto/rsa"
 	"crypto/x509"
+	"encoding/binary"
 	"encoding/hex"
 	"fmt"
 	"io"
+	"math/big"
 	"runtime"
 	"strings"
 	"sync"
+	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -40,12 +43,23 @@ import (
 // already wrapped with typed signatures by golang.org/x/sys/windows, so only the NCrypt* functions
 // need lazy binding here. NewLazySystemDLL resolves out of %SystemRoot%\System32 only, which avoids
 // DLL preloading attacks.
+//
+// Every one of these that is handed a pointer is invoked through syscall.SyscallN rather than
+// LazyProc.Call. Converting unsafe.Pointer to uintptr is only defined when the conversion appears in
+// the argument list of an assembly-implemented call: the compiler and runtime recognize that shape
+// and keep the referent valid for the call. LazyProc.Call is ordinary Go, so the operands would be
+// spilled into a variadic []uintptr and carried across further Go calls, each of which can grow --
+// and therefore move -- the stack while only a bare integer refers to the object. runtime.KeepAlive
+// does not close that gap: it guarantees liveness, not a fixed address. runtime.Pinner would, but it
+// requires Go 1.21 and this module declares 1.18. SyscallN puts the conversions directly in the
+// assembly call's own argument list, which is the shape the rule is written for.
 var (
 	ncrypt = windows.NewLazySystemDLL("ncrypt.dll")
 
 	procNCryptSignHash    = ncrypt.NewProc("NCryptSignHash")
 	procNCryptFreeObject  = ncrypt.NewProc("NCryptFreeObject")
 	procNCryptGetProperty = ncrypt.NewProc("NCryptGetProperty")
+	procNCryptExportKey   = ncrypt.NewProc("NCryptExportKey")
 )
 
 const (
@@ -83,6 +97,19 @@ const (
 	nteNotFound          = 0x80090011
 	nteInvalidParameter  = 0x80090027
 	nteNotSupported      = 0x80090029
+
+	// rsaPublicBlobType is BCRYPT_RSAPUBLIC_BLOB. It is the one blob type a VBS-isolated key will
+	// export: CNG refuses every blob carrying private material for such a key, but places no
+	// restriction on the public half.
+	rsaPublicBlobType = "RSAPUBLICBLOB"
+
+	// bcryptRSAPublicMagic is BCRYPT_RSAPUBLIC_MAGIC, the first ULONG of a BCRYPT_RSAKEY_BLOB that
+	// carries only a public key. It reads "RSA1" in little-endian bytes.
+	bcryptRSAPublicMagic = 0x31415352
+
+	// rsaKeyBlobHeaderLen is sizeof(BCRYPT_RSAKEY_BLOB): six ULONGs, namely Magic, BitLength,
+	// cbPublicExp, cbModulus, cbPrime1 and cbPrime2.
+	rsaKeyBlobHeaderLen = 24
 )
 
 // cryptHashBlob is CRYPT_HASH_BLOB, the findPara CertFindCertificateInStore expects for a hash
@@ -113,7 +140,9 @@ type Signer struct {
 	cert     *x509.Certificate
 	chain    [][]byte
 	chainErr error
-	pub      *rsa.PublicKey
+	// pub is the certificate's public key. Open verifies it against the CNG key handle's own
+	// public key, so it is also the key hKey signs with.
+	pub *rsa.PublicKey
 
 	// mu guards hKey against use-after-free if Close races a TLS handshake.
 	mu      sync.RWMutex
@@ -140,6 +169,13 @@ func (s *Signer) Chain() [][]byte { return s.chain }
 func (s *Signer) ChainError() error { return s.chainErr }
 
 // Public implements crypto.Signer.
+//
+// It returns the public key parsed from the certificate, which is cheap and allocation-free. That is
+// only sound because [Open] proves the CNG key handle's public key is this same key before returning
+// a Signer, so the certificate is not merely asserting the association -- see the check there. A
+// signer that reported its certificate's key without that proof would make
+// confidential.NewCredFromTLSCertificate's leaf/key identity check compare the certificate against
+// itself, so it could never fail.
 func (s *Signer) Public() crypto.PublicKey { return s.pub }
 
 // Close releases the CNG key handle, the certificate context and the store handle. It is idempotent.
@@ -215,7 +251,7 @@ func (s *Signer) signHash(padInfo unsafe.Pointer, digest []byte, flags uintptr) 
 	}
 
 	var size uint32
-	status, _, _ := procNCryptSignHash.Call(
+	status, _, _ := syscall.SyscallN(procNCryptSignHash.Addr(),
 		uintptr(s.hKey), uintptr(padInfo),
 		uintptr(unsafe.Pointer(&digest[0])), uintptr(len(digest)),
 		0, 0, uintptr(unsafe.Pointer(&size)), flags,
@@ -225,7 +261,7 @@ func (s *Signer) signHash(padInfo unsafe.Pointer, digest []byte, flags uintptr) 
 	}
 
 	sig := make([]byte, size)
-	status, _, _ = procNCryptSignHash.Call(
+	status, _, _ = syscall.SyscallN(procNCryptSignHash.Addr(),
 		uintptr(s.hKey), uintptr(padInfo),
 		uintptr(unsafe.Pointer(&digest[0])), uintptr(len(digest)),
 		uintptr(unsafe.Pointer(&sig[0])), uintptr(size),
@@ -234,6 +270,10 @@ func (s *Signer) signHash(padInfo unsafe.Pointer, digest []byte, flags uintptr) 
 	runtime.KeepAlive(digest)
 	if status != errorSuccessSecurity {
 		return nil, ncryptError("NCryptSignHash", status)
+	}
+	if int(size) > len(sig) {
+		return nil, fmt.Errorf("ncryptsigner: NCryptSignHash reported %d signature bytes into a %d-byte buffer",
+			size, len(sig))
 	}
 	return sig[:size], nil
 }
@@ -258,7 +298,7 @@ func (s *Signer) IsVirtualIsolated() (bool, error) {
 	prop := windows.StringToUTF16Ptr(virtualIsoProperty)
 	var val uint32
 	var got uint32
-	status, _, _ := procNCryptGetProperty.Call(
+	status, _, _ := syscall.SyscallN(procNCryptGetProperty.Addr(),
 		uintptr(s.hKey), uintptr(unsafe.Pointer(prop)),
 		uintptr(unsafe.Pointer(&val)), unsafe.Sizeof(val),
 		uintptr(unsafe.Pointer(&got)), 0,
@@ -362,19 +402,127 @@ func Open(storeLocation, storeName, thumbprint string) (*Signer, error) {
 		return nil, fmt.Errorf("ncryptsigner: CryptAcquireCertificatePrivateKey failed "+
 			"(the certificate has no CNG private key, or this process can't reach it): %w", err)
 	}
+	// Fold the key handle into cleanup now rather than at the end, so every failure between here
+	// and the return releases it. NCryptFreeObject takes no pointer, so LazyProc.Call is fine.
+	if callerFree {
+		releaseRest := cleanup
+		cleanup = func() {
+			_, _, _ = procNCryptFreeObject.Call(uintptr(hKey))
+			releaseRest()
+		}
+	}
+
+	// Prove the key actually belongs to the certificate. CryptAcquireCertificatePrivateKey follows
+	// CERT_KEY_PROV_INFO_PROP_ID, a mutable Windows store property, so the certificate-to-key
+	// association is metadata that nothing has cryptographically verified. Exporting the public half
+	// and comparing it is what turns that claim into proof; CNG allows it even for a VBS-isolated
+	// key, because only the private half is protected.
+	//
+	// Without this, Signer.Public would report a key the handle might not hold, and every consumer
+	// that checks a certificate against its signer -- including
+	// confidential.NewCredFromTLSCertificate -- would be comparing the certificate's key against
+	// itself and could never detect the mismatch. It would instead surface as an unexplained TLS
+	// handshake failure against Entra.
+	cngPub, err := exportRSAPublicKey(hKey)
+	if err != nil {
+		return nil, err
+	}
+	if !pub.Equal(cngPub) {
+		return nil, fmt.Errorf("ncryptsigner: the CNG key reached through certificate %s holds a "+
+			"different public key than the certificate does, so the store's key association is wrong",
+			thumbprint)
+	}
 
 	chain, chainErr := buildChain(ctx, hStore, der)
 
-	owned := cleanup
 	s := &Signer{cert: leaf, chain: chain, chainErr: chainErr, pub: pub, hKey: hKey}
-	s.release = func() {
-		if callerFree {
-			_, _, _ = procNCryptFreeObject.Call(uintptr(hKey))
-		}
-		owned()
-	}
+	s.release = cleanup
 	cleanup = nil
 	return s, nil
+}
+
+// exportRSAPublicKey returns the public half of a CNG key handle. It performs the usual two-call
+// NCryptExportKey sequence: ask for the blob size, then fill a buffer of that size.
+func exportRSAPublicKey(hKey windows.Handle) (*rsa.PublicKey, error) {
+	blobType, err := windows.UTF16PtrFromString(rsaPublicBlobType)
+	if err != nil {
+		return nil, fmt.Errorf("ncryptsigner: %w", err)
+	}
+
+	var size uint32
+	status, _, _ := syscall.SyscallN(procNCryptExportKey.Addr(),
+		uintptr(hKey), 0, uintptr(unsafe.Pointer(blobType)), 0,
+		0, 0, uintptr(unsafe.Pointer(&size)), 0,
+	)
+	runtime.KeepAlive(blobType)
+	if status != errorSuccessSecurity {
+		return nil, ncryptError("NCryptExportKey(size)", status)
+	}
+	if size == 0 {
+		return nil, fmt.Errorf("ncryptsigner: NCryptExportKey reported an empty key blob")
+	}
+
+	blob := make([]byte, size)
+	status, _, _ = syscall.SyscallN(procNCryptExportKey.Addr(),
+		uintptr(hKey), 0, uintptr(unsafe.Pointer(blobType)), 0,
+		uintptr(unsafe.Pointer(&blob[0])), uintptr(size),
+		uintptr(unsafe.Pointer(&size)), 0,
+	)
+	runtime.KeepAlive(blobType)
+	if status != errorSuccessSecurity {
+		return nil, ncryptError("NCryptExportKey", status)
+	}
+	// The second call rewrites size with the number of bytes it actually wrote, which must not
+	// exceed the buffer it was given.
+	if int(size) > len(blob) {
+		return nil, fmt.Errorf("ncryptsigner: NCryptExportKey reported %d bytes written into a %d-byte buffer",
+			size, len(blob))
+	}
+	return parseRSAPublicBlob(blob[:size])
+}
+
+// parseRSAPublicBlob decodes a BCRYPT_RSAKEY_BLOB that carries a public key. The layout is a
+// six-ULONG little-endian header --
+//
+//	Magic, BitLength, cbPublicExp, cbModulus, cbPrime1, cbPrime2
+//
+// -- followed by the public exponent and then the modulus, both big-endian. A public blob leaves
+// cbPrime1 and cbPrime2 zero and carries neither prime.
+//
+// Every declared length is checked against the buffer before it is used to slice it. The blob is
+// data produced by another component, so treating its length fields as trustworthy would turn a
+// provider bug into an out-of-range panic inside a TLS handshake.
+func parseRSAPublicBlob(blob []byte) (*rsa.PublicKey, error) {
+	if len(blob) < rsaKeyBlobHeaderLen {
+		return nil, fmt.Errorf("ncryptsigner: key blob is %d bytes, too short for a BCRYPT_RSAKEY_BLOB",
+			len(blob))
+	}
+	if magic := binary.LittleEndian.Uint32(blob[0:4]); magic != bcryptRSAPublicMagic {
+		return nil, fmt.Errorf("ncryptsigner: key blob magic 0x%08X is not BCRYPT_RSAPUBLIC_MAGIC (0x%08X)",
+			magic, uint32(bcryptRSAPublicMagic))
+	}
+	cbPublicExp := binary.LittleEndian.Uint32(blob[8:12])
+	cbModulus := binary.LittleEndian.Uint32(blob[12:16])
+	if cbPublicExp == 0 || cbModulus == 0 {
+		return nil, fmt.Errorf("ncryptsigner: key blob declares a %d-byte public exponent and a %d-byte modulus",
+			cbPublicExp, cbModulus)
+	}
+	// computed in uint64 so the sum can't wrap before it is compared, including on a 32-bit build
+	end := uint64(rsaKeyBlobHeaderLen) + uint64(cbPublicExp) + uint64(cbModulus)
+	if end > uint64(len(blob)) {
+		return nil, fmt.Errorf("ncryptsigner: key blob declares %d bytes of key material but is only %d bytes",
+			end, len(blob))
+	}
+	expStart := uint64(rsaKeyBlobHeaderLen)
+	modStart := expStart + uint64(cbPublicExp)
+	e := new(big.Int).SetBytes(blob[expStart:modStart])
+	// rsa.PublicKey.E is an int, so reject anything that wouldn't survive the conversion. 31 bits
+	// keeps it positive and in range on a 32-bit build too.
+	if e.BitLen() == 0 || e.BitLen() > 31 {
+		return nil, fmt.Errorf("ncryptsigner: key blob's public exponent is %d bits, which doesn't fit an int",
+			e.BitLen())
+	}
+	return &rsa.PublicKey{N: new(big.Int).SetBytes(blob[modStart:end]), E: int(e.Int64())}, nil
 }
 
 func storeLocationFlag(storeLocation string) (uint32, error) {
