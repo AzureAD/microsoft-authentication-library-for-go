@@ -228,8 +228,9 @@ func isNilSigner(s crypto.Signer) bool {
 //
 // key may also be a [crypto.Signer] whose public key is an *rsa.PublicKey. That's how a non-exportable
 // key such as a Windows KeyGuard (VBS-isolated) or other CNG/HSM-backed key surfaces in Go. MSAL signs
-// client assertions through the signer, so such a credential works in every flow. The credential
-// retains the signer under the lifetime and concurrency requirements documented on
+// client assertions through the signer, so such a credential works in every flow that authenticates
+// with a client assertion; see [NewCredFromTLSCertificate] for the two flows that send none. The
+// credential retains the signer under the lifetime and concurrency requirements documented on
 // [NewCredFromTLSCertificate], which is the more direct constructor for these keys.
 func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
@@ -278,10 +279,13 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 // such as Windows KeyGuard (VBS-isolated) keys imported with PKCS12_VIRTUAL_ISOLATION_KEY, or other
 // CNG/HSM-backed keys: the signer stays in its protected store and is invoked only to sign.
 //
-// The credential works in every flow. mTLS proof-of-possession (see [WithMtlsProofOfPossession])
-// presents the certificate on the TLS handshake and sends no client_assertion; every other flow has
-// the signer sign the assertion. Because the service accepts only RSA client assertions, a signer
-// whose public key isn't an *rsa.PublicKey is limited to mTLS proof-of-possession.
+// The credential works in every flow that authenticates with a client assertion: client credentials,
+// on-behalf-of, authorization code, refresh token, user federated identity credential, and ADFS/dSTS.
+// Two flows send no client_assertion, so the signer doesn't authenticate the client in them: mTLS
+// proof-of-possession (see [WithMtlsProofOfPossession]) presents the certificate on the TLS handshake
+// instead, and [Client.AcquireTokenByUsernamePassword] sends no client credential at all. Because the
+// service accepts only RSA client assertions, a signer whose public key isn't an *rsa.PublicKey is
+// limited to mTLS proof-of-possession.
 //
 // The Credential retains the signer for its lifetime; it never copies it or extracts private material.
 // Sign may be called concurrently: MSAL caches one mTLS client per confidential client and several TLS

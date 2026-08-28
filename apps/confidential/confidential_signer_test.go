@@ -490,3 +490,216 @@ func TestSignerCredentialMtlsPoP(t *testing.T) {
 		t.Error("BindingCertificate.PrivateKey is nil; the non-exportable signer must survive to the caller")
 	}
 }
+
+// countingSigner is a signerBackedKey that records how many assertions it signed, so a test can
+// prove an assertion came from the non-exportable key rather than from anything else the credential
+// holds.
+type countingSigner struct {
+	key   *rsa.PrivateKey
+	calls int
+}
+
+func (s *countingSigner) Public() crypto.PublicKey { return &s.key.PublicKey }
+
+func (s *countingSigner) Sign(r io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	s.calls++
+	return s.key.Sign(r, digest, opts)
+}
+
+// countingSignerCert is testSignerCert with a signer that counts its calls.
+func countingSignerCert(t *testing.T) (tls.Certificate, []*x509.Certificate, *countingSigner) {
+	t.Helper()
+	tlsCert, certs, key := testSignerCert(t)
+	signer := &countingSigner{key: key.key}
+	tlsCert.PrivateKey = signer
+	return tlsCert, certs, signer
+}
+
+// TestSignerCredentialAllFlows drives one signer-backed credential through every confidential-client
+// flow that authenticates with a client_assertion, which is the claim the package documentation
+// makes when it says such a credential "works in every flow".
+//
+// The flows share Credential.JWT() but reach it by different routes -- oauth.Credential,
+// oauth.OnBehalfOf, accesstokens.FromAuthCode, accesstokens.FromRefreshToken and
+// accesstokens.FromUserFederatedIdentityCredential -- and each of those routes is reachable from the
+// public API, so every case here is driven through it rather than through an internal type.
+//
+// Two flows are deliberately absent. mTLS proof-of-possession sends no client_assertion at all and
+// is covered by TestSignerCredentialMtlsPoP. A confidential client's username/password flow sends no
+// client credential of any kind, so there's no assertion to sign.
+//
+// ADFS and dSTS authorities aren't a flow but change how the assertion is built, and a mock endpoint
+// can't stand in for their token endpoints here; they're covered one layer down by
+// TestJWTSignerNoFallbackForADFSOrDSTS in the accesstokens package.
+func TestSignerCredentialAllFlows(t *testing.T) {
+	const jwtBearerAssertionType = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	authority := fmt.Sprintf(authorityFmt, lmo, tenant)
+	idToken := mock.GetIDToken(tenant, authority)
+	clientInfo := fakeClientInfo("uid", tenant)
+
+	for _, test := range []struct {
+		name string
+		// grantType is the grant the measured request must use, so a case can't silently pass by
+		// exercising a flow it didn't mean to.
+		grantType string
+		// tokens are the token endpoint responses the case needs, in order. The last one answers the
+		// request whose body is inspected.
+		tokens [][]byte
+		// acquire performs the case's calls, ending with the one being measured.
+		acquire func(t *testing.T, client Client) error
+	}{
+		{
+			name:      "client credentials",
+			grantType: "client_credentials",
+			tokens:    [][]byte{mock.GetAccessTokenBody("at", "", "", "", 3600, 0)},
+			acquire: func(t *testing.T, client Client) error {
+				_, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+				return err
+			},
+		},
+		{
+			name:      "on behalf of",
+			grantType: "urn:ietf:params:oauth:grant-type:jwt-bearer",
+			tokens:    [][]byte{mock.GetAccessTokenBody("at", idToken, "rt", clientInfo, 3600, 0)},
+			acquire: func(t *testing.T, client Client) error {
+				_, err := client.AcquireTokenOnBehalfOf(context.Background(), "user-assertion", tokenScope)
+				return err
+			},
+		},
+		{
+			name:      "authorization code",
+			grantType: "authorization_code",
+			tokens:    [][]byte{mock.GetAccessTokenBody("at", idToken, "rt", clientInfo, 3600, 0)},
+			acquire: func(t *testing.T, client Client) error {
+				_, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+				return err
+			},
+		},
+		{
+			name:      "refresh token",
+			grantType: "refresh_token",
+			// the first token expires immediately, so the silent call has to redeem the refresh token
+			tokens: [][]byte{
+				mock.GetAccessTokenBody("at", idToken, "rt", clientInfo, 0, 0),
+				mock.GetAccessTokenBody("refreshed-at", idToken, "rt", clientInfo, 3600, 0),
+			},
+			acquire: func(t *testing.T, client Client) error {
+				ctx := context.Background()
+				ar, err := client.AcquireTokenByAuthCode(ctx, "code", "https://localhost", tokenScope)
+				if err != nil {
+					return err
+				}
+				ar, err = client.AcquireTokenSilent(ctx, tokenScope, WithSilentAccount(ar.Account))
+				if err != nil {
+					return err
+				}
+				if ar.AccessToken != "refreshed-at" {
+					t.Fatalf("AccessToken = %q, want the refreshed token: the cached one should have expired", ar.AccessToken)
+				}
+				return nil
+			},
+		},
+		{
+			name:      "user federated identity credential",
+			grantType: "user_fic",
+			tokens:    [][]byte{mock.GetAccessTokenBody("at", idToken, "rt", clientInfo, 3600, 0)},
+			acquire: func(t *testing.T, client Client) error {
+				_, err := client.AcquireTokenByUserFederatedIdentityCredential(
+					context.Background(), tokenScope, "fic-assertion", WithUserObjectID("uid"))
+				return err
+			},
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			tlsCert, certs, signer := countingSignerCert(t)
+			cred, err := NewCredFromTLSCertificate(tlsCert)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			var bodies []url.Values
+			mockClient := mock.NewClient()
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			for _, body := range test.tokens {
+				mockClient.AppendResponse(
+					mock.WithBody(body),
+					mock.WithCallback(func(r *http.Request) {
+						b, _ := io.ReadAll(r.Body)
+						v, _ := url.ParseQuery(string(b))
+						bodies = append(bodies, v)
+					}),
+				)
+			}
+
+			client, err := New(authority, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := test.acquire(t, client); err != nil {
+				t.Fatal(err)
+			}
+
+			if len(bodies) == 0 {
+				t.Fatal("no token request reached the endpoint")
+			}
+			body := bodies[len(bodies)-1]
+			if got := body.Get("grant_type"); got != test.grantType {
+				t.Fatalf("grant_type = %q, want %q: this case didn't exercise the flow it claims to", got, test.grantType)
+			}
+
+			// the signer, and only the signer, produced the credential's authentication
+			if signer.calls != len(bodies) {
+				t.Errorf("the signer signed %d times for %d token requests", signer.calls, len(bodies))
+			}
+			if body.Get("client_secret") != "" {
+				t.Error("a certificate credential must never send client_secret")
+			}
+			if got := body.Get("client_assertion_type"); got != jwtBearerAssertionType {
+				t.Errorf("client_assertion_type = %q, want %q", got, jwtBearerAssertionType)
+			}
+			assertion := body.Get("client_assertion")
+			if assertion == "" {
+				t.Fatal("the request must carry a client_assertion signed by the non-exportable key")
+			}
+
+			parts := strings.Split(assertion, ".")
+			if len(parts) != 3 {
+				t.Fatalf("client_assertion has %d segments, want 3", len(parts))
+			}
+			rawHeader, err := base64.RawURLEncoding.DecodeString(parts[0])
+			if err != nil {
+				t.Fatal(err)
+			}
+			header := map[string]interface{}{}
+			if err := json.Unmarshal(rawHeader, &header); err != nil {
+				t.Fatal(err)
+			}
+			if header["alg"] != "PS256" {
+				t.Errorf(`alg = %v, want "PS256"`, header["alg"])
+			}
+			thumbprint := sha256.Sum256(certs[0].Raw)
+			if got := header["x5t#S256"]; got != base64.StdEncoding.EncodeToString(thumbprint[:]) {
+				t.Errorf("x5t#S256 = %v, want the SHA-256 thumbprint of the leaf certificate", got)
+			}
+
+			// verify against the signer's own public key, not the certificate's, so the assertion is
+			// tied to the key the caller kept in its store
+			pub, ok := signer.Public().(*rsa.PublicKey)
+			if !ok {
+				t.Fatalf("the signer's public key is %T, want *rsa.PublicKey", signer.Public())
+			}
+			sig, err := base64.RawURLEncoding.DecodeString(parts[2])
+			if err != nil {
+				t.Fatal(err)
+			}
+			digest := sha256.Sum256([]byte(parts[0] + "." + parts[1]))
+			// verify with the salt length PS256 mandates rather than PSSSaltLengthAuto, which accepts any
+			opts := &rsa.PSSOptions{SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256}
+			if err := rsa.VerifyPSS(pub, crypto.SHA256, digest[:], sig, opts); err != nil {
+				t.Fatalf("the client_assertion doesn't verify against the signer's public key: %v", err)
+			}
+		})
+	}
+}

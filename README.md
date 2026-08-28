@@ -265,10 +265,11 @@ Notes:
 
 - **Every flow is supported**: MSAL signs the `client_assertion` through the signer, so
   `private_key_jwt`/SN/I works for client credentials, on-behalf-of, authorization code, refresh
-  token, and ADFS/dSTS. `WithMtlsProofOfPossession()` is the one flow that sends no
-  `client_assertion` at all — the key is used solely for the TLS handshake and the token is bound to
-  the certificate. The signer's public key must be an `*rsa.PublicKey` to sign an assertion, because
-  the service accepts only RSA assertions; a non-RSA signer is limited to mTLS PoP.
+  token, user federated identity credential, and ADFS/dSTS. Two flows send no `client_assertion` at
+  all: `WithMtlsProofOfPossession()`, where the key is used solely for the TLS handshake and the token
+  is bound to the certificate, and a confidential client's username/password flow, which sends no
+  client credential of any kind. The signer's public key must be an `*rsa.PublicKey` to sign an
+  assertion, because the service accepts only RSA assertions; a non-RSA signer is limited to mTLS PoP.
 - **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
   TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
   `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
