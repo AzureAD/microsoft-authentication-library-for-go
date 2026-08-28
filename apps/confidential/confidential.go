@@ -243,6 +243,9 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 	var k *rsa.PublicKey
 	switch t := key.(type) {
 	case *rsa.PrivateKey:
+		if t == nil {
+			return cred, errors.New("key must not be a nil *rsa.PrivateKey")
+		}
 		k = &t.PublicKey
 	case crypto.Signer:
 		if isNilSigner(t) {

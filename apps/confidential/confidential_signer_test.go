@@ -267,6 +267,39 @@ func TestNewCredFromTypedNilSigner(t *testing.T) {
 	}
 }
 
+// TestNewCredFromTypedNilRSAKey covers the *rsa.PrivateKey branch of the type switch. A typed nil
+// reaches it before the crypto.Signer case isNilSigner guards, so it needs its own nil check.
+func TestNewCredFromTypedNilRSAKey(t *testing.T) {
+	_, certs, _ := testSignerCert(t)
+	der := make([][]byte, 0, len(certs))
+	for _, cert := range certs {
+		der = append(der, cert.Raw)
+	}
+	var typedNil *rsa.PrivateKey
+	for _, test := range []struct {
+		name    string
+		newCred func() (Credential, error)
+	}{
+		{"NewCredFromCert", func() (Credential, error) {
+			return NewCredFromCert(certs, typedNil)
+		}},
+		{"NewCredFromTLSCertificate", func() (Credential, error) {
+			return NewCredFromTLSCertificate(tls.Certificate{Certificate: der, PrivateKey: typedNil})
+		}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			defer func() {
+				if r := recover(); r != nil {
+					t.Fatalf("a typed-nil *rsa.PrivateKey panicked instead of returning an error: %v", r)
+				}
+			}()
+			if _, err := test.newCred(); err == nil {
+				t.Fatal("expected an error because the key is a nil pointer")
+			}
+		})
+	}
+}
+
 // TestNewCredFromCertWithSigner covers the same non-exportable key arriving through NewCredFromCert.
 func TestNewCredFromCertWithSigner(t *testing.T) {
 	_, certs, signer := testSignerCert(t)
