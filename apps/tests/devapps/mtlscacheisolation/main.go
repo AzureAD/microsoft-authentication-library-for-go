@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 // Command mtlscacheisolation demonstrates that mTLS proof-of-possession tokens and Bearer tokens do

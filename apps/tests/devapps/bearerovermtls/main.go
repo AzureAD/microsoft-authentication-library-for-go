@@ -1,4 +1,4 @@
-﻿// Copyright (c) Microsoft Corporation.
+// Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
 // Command bearerovermtls is a runnable demo of [confidential.WithSendCertificateOverMtls].
