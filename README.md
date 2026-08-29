@@ -351,6 +351,53 @@ be non-exportable (Windows KeyGuard, CNG, an HSM); MSAL only requires that it im
 See [docs/federated_managed_identity.md](docs/federated_managed_identity.md) for the full FIC/FMI
 walkthrough.
 
+### Bearer tokens over mTLS (no token binding)
+
+`WithSendCertificateOverMtls()` uses the certificate credential to authenticate the *transport*: the
+certificate is presented on the mutual-TLS handshake and the request is routed to the `mtlsauth.*`
+endpoint. The token that comes back, however, is an **ordinary bearer token**. Unlike
+`WithMtlsProofOfPossession()` it is **not** bound to the certificate — `token_type` stays `Bearer`,
+there is no `cnf` claim, and it is cached under the normal bearer key.
+
+Use it to replace a client secret with a certificate on the wire when the resource does not need to
+understand `mtls_pop`. Nothing changes for the resource.
+
+```go
+certs, key, _ := confidential.CertFromPEM(pem, "")
+cred, _ := confidential.NewCredFromCert(certs, key)
+
+// App-level: unlike WithMtlsProofOfPossession, this is set at construction rather than per call.
+app, _ := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred,
+    confidential.WithSendCertificateOverMtls())
+
+result, err := app.AcquireTokenByCredential(context.TODO(),
+    []string{"https://vault.azure.net/.default"})
+if err != nil {
+    // TODO: handle error
+}
+_ = result.Metadata.TokenType   // "Bearer"
+_ = result.BindingCertificate   // nil — the token is not bound to the certificate
+```
+
+Notes:
+
+- **Using the token**: send `Authorization: Bearer <token>` over an ordinary TLS connection. Do not
+  present a client certificate to the resource; the token carries no binding for it to validate.
+- **Which flows**: client credentials, on-behalf-of, authorization code and silent refresh. It is
+  not applied to `AcquireTokenByUsernamePassword` (which sends no client credential at all) or
+  `AcquireTokenByUserFederatedIdentityCredential`; those two continue to use the regular token
+  endpoint. This matches MSAL .NET, whose `SendCertificateOverMtls` covers the same four flows.
+- **A per-request `WithMtlsProofOfPossession()` always takes precedence.** Setting both is well
+  defined: that call returns a certificate-bound `mtls_pop` token instead. Bound and unbound tokens
+  occupy separate cache partitions, so neither is ever served in place of the other.
+- **A certificate credential is required**; `New` returns an error for any other kind. That includes
+  `NewCredFromSignedAssertionCallback`, even though its callback returns a binding certificate: that
+  certificate is produced at request time, and only an mTLS proof-of-possession request resolves the
+  callback early enough to present it on the handshake.
+- The **authority requirements and transport rules** above apply here too, because the request still
+  goes to `mtlsauth.*`: it needs a tenanted AAD authority on a known `login.*` host, and a
+  `WithHTTPClient` value that is not an `*http.Client` still requires `WithMtlsHTTPClient`.
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.
