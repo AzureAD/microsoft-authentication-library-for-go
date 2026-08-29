@@ -89,6 +89,15 @@ func TestSendCertificateOverMtls_RequiresCertificateCredential(t *testing.T) {
 	tokenProviderCred := NewCredFromTokenProvider(func(context.Context, TokenProviderParameters) (TokenProviderResult, error) {
 		return TokenProviderResult{AccessToken: "x", ExpiresInSeconds: 3600}, nil
 	})
+	// A signed-assertion callback credential is the one rejected kind that can still produce a
+	// certificate, so it is the case most likely to be assumed supported. Its certificate arrives
+	// from the callback at request time, which only the mTLS proof-of-possession path pulls forward
+	// (prepareMtlsPoP); the Bearer-over-mTLS flows resolve the binding certificate straight from the
+	// credential and would find none. New rejects it rather than failing later on the handshake.
+	signedAssertionCred := NewCredFromSignedAssertionCallback(
+		func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+			return SignedAssertion{Assertion: "assertion"}, nil
+		})
 
 	tests := []struct {
 		name    string
@@ -97,6 +106,7 @@ func TestSendCertificateOverMtls_RequiresCertificateCredential(t *testing.T) {
 	}{
 		{"certificate credential accepted", certCred, false},
 		{"secret credential rejected", secretCred, true},
+		{"signed-assertion callback credential rejected", signedAssertionCred, true},
 		{"assertion credential rejected", assertionCred, true},
 		{"token provider credential rejected", tokenProviderCred, true},
 	}

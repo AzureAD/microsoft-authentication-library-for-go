@@ -598,7 +598,10 @@ func WithX5C() Option {
 // those two flows continue to use the regular token endpoint. This matches MSAL .NET, whose
 // SendCertificateOverMtls covers the same four flows. A per-request [WithMtlsProofOfPossession]
 // always takes precedence over it. It requires a certificate credential, such as one from
-// [NewCredFromCert]; New returns an error for any other credential kind.
+// [NewCredFromCert]; New returns an error for any other credential kind. That includes
+// [NewCredFromSignedAssertionCallback], even though its callback returns a binding certificate: that
+// certificate is produced at request time, and only an mTLS proof-of-possession request resolves the
+// callback early enough to present it on the handshake.
 func WithSendCertificateOverMtls() Option {
 	return func(o *clientOptions) {
 		o.sendCertOverMtls = true
