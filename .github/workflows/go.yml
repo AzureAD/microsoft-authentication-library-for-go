@@ -7,6 +7,10 @@ on:
     # No `branches:` filter, so this runs on ALL pull requests regardless of the
     # target branch (defaults to opened, synchronize, reopened).
 
+# Every job here only reads the repository: check out, build, and test. None writes a
+# comment, status, package, or release, so the token needs nothing beyond contents: read.
+permissions:
+  contents: read
 
 jobs:
   build:

@@ -9,6 +9,12 @@ on:
     # No `branches:` filter, so this runs on ALL pull requests regardless of the
     # target branch (defaults to opened, synchronize, reopened).
 
+# golangci-lint reports findings as workflow log annotations rather than through the Checks
+# API, and only-new-issues (which would need pull-requests: read) is not enabled, so both
+# lint jobs need nothing beyond contents: read.
+permissions:
+  contents: read
+
 jobs:
   golangci:
     name: lint
