@@ -207,18 +207,37 @@ func run(cfg config) error {
 // the token goes in the Authorization header under the mtls_pop scheme rather than Bearer. A
 // resource that receives the token without the matching handshake rejects it, which is the point.
 //
-// BindingCertificate drops straight into tls.Config.Certificates. It is deliberately not
-// reassembled from the PEM file here, because MSAL handing back a directly usable certificate is
-// itself the feature.
+// The certificate is used exactly as MSAL returns it, and is deliberately not reassembled from the
+// PEM file here, because MSAL handing back a directly usable certificate is itself the feature.
+// Getting it onto the wire, however, takes two settings that are easy to miss, because a resource
+// is free to ask for a client certificate later than the handshake:
+//
+//   - GetClientCertificate rather than Certificates. Go filters Certificates against the
+//     certificate authorities the server advertises and silently sends nothing when none match.
+//     GetClientCertificate is not filtered.
+//   - TLS 1.2 with client renegotiation allowed. Azure Key Vault, for one, completes the handshake,
+//     reads the request, sees the mtls_pop scheme, and only then asks for the certificate by
+//     renegotiating. Go declines renegotiation by default and does not implement the TLS 1.3
+//     equivalent, post-handshake authentication, so without these the connection is torn down and
+//     the only symptom is a bare connection reset.
 func useToken(cfg config, result confidential.AuthResult) error {
 	section("using the token")
 
 	client := &http.Client{
 		Timeout: 30 * time.Second,
 		Transport: &http.Transport{
+			// #nosec G402 -- MaxVersion is pinned to TLS 1.2 deliberately. Go
+			// implements renegotiation only for TLS 1.2 and does not implement
+			// the TLS 1.3 equivalent, post-handshake authentication, so pinning
+			// here is what lets Key Vault ask for the client certificate after
+			// reading the request. See the comment above.
 			TLSClientConfig: &tls.Config{
-				Certificates: []tls.Certificate{*result.BindingCertificate},
-				MinVersion:   tls.VersionTLS12,
+				GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+					return result.BindingCertificate, nil
+				},
+				MinVersion:    tls.VersionTLS12,
+				MaxVersion:    tls.VersionTLS12,
+				Renegotiation: tls.RenegotiateOnceAsClient,
 			},
 		},
 	}
@@ -234,7 +253,8 @@ func useToken(cfg config, result confidential.AuthResult) error {
 	// Not "Bearer". A resource expecting proof-of-possession rejects the Bearer scheme.
 	req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
 
-	kv("tls.Config.Certificates", "[]tls.Certificate{*result.BindingCertificate}")
+	kv("tls.Config.GetClientCertificate", "returns result.BindingCertificate")
+	kv("tls.Config.Renegotiation", "RenegotiateOnceAsClient (TLS 1.2)")
 	kv("Authorization header", `"mtls_pop " + result.AccessToken`)
 	kv("resource", target)
 
