@@ -4,6 +4,22 @@
 // package exported contains internal types that are re-exported from a public package
 package exported
 
+import "crypto/tls"
+
+// SignedAssertion is a client assertion together with the certificate that assertion is bound to.
+// Returning both from one callback keeps them paired: the assertion and the certificate that proves
+// possession of it can't be mismatched across a certificate rotation.
+type SignedAssertion struct {
+	// Assertion is the client assertion, the same value a plain assertion callback returns.
+	Assertion string
+
+	// BindingCertificate is the certificate the assertion is bound to, presented as the client
+	// certificate on the mutual-TLS handshake when the request is an mTLS proof-of-possession
+	// request. It is required for such a request and unused for any other. Its PrivateKey may be
+	// any crypto.Signer, including a non-exportable platform key.
+	BindingCertificate *tls.Certificate
+}
+
 // AssertionRequestOptions has information required to generate a client assertion
 type AssertionRequestOptions struct {
 	// ClientID identifies the application for which an assertion is requested. Used as the assertion's "iss" and "sub" claims.
