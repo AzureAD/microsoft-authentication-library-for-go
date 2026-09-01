@@ -215,9 +215,10 @@ Notes:
 - **`WithMtlsHTTPClient` is required when the value you pass to `WithHTTPClient` is not an
   `*http.Client`.** `WithHTTPClient` takes an interface (`Do` + `CloseIdleConnections`), but a TLS
   client certificate can only be installed through `*http.Transport`, so any other implementation is
-  rejected before the request is sent. Azure's `azidentity` is the concrete case: it passes its own
-  `*confidentialClient` wrapper, so applications reaching MSAL through `azidentity` must supply
-  `WithMtlsHTTPClient` to use mTLS PoP at all. It is not an escape hatch for exotic setups.
+  rejected before the request is sent. It is not an escape hatch for exotic setups: a wrapper type
+  that satisfies the interface without being an `*http.Client` reaches this error on the first mTLS
+  request. Note that a caller who reaches MSAL through a library that constructs the confidential
+  client itself cannot supply either option unless that library forwards them.
 - **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. For the
   mTLS token endpoint the legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are
@@ -229,12 +230,14 @@ Notes:
   un-normalized alias — tracked by
   [#654](https://github.com/AzureAD/microsoft-authentication-library-for-go/issues/654). Prefer the
   modern hostname when you configure a region.
-- **Authority requirements**: mTLS PoP is AAD-only and tenanted. ADFS and dSTS authorities are
-  rejected, including when they are hosted on a `login.*` host, as are `/common`, `/organizations`
-  and `/consumers`. The `login.*` host must belong to a known Microsoft cloud; a private cloud opts
-  in with `WithInstanceDiscovery(false)`, because the derived `mtlsauth.*` host receives the binding
-  certificate. Note that `WithInstanceDiscovery(false)` therefore also disables this allowlist for
-  every authority, not just a private cloud one.
+- **Authority requirements**: mTLS PoP requires a tenanted AAD or dSTS authority. ADFS is rejected,
+  including when it is hosted on a `login.*` host, as are `/common`, `/organizations` and
+  `/consumers`. For an AAD authority the `login.*` host must belong to a known Microsoft cloud; a
+  private cloud opts in with `WithInstanceDiscovery(false)`, because the derived `mtlsauth.*` host
+  receives the binding certificate. Note that `WithInstanceDiscovery(false)` therefore also disables
+  this allowlist for every AAD authority, not just a private cloud one. A dSTS authority is not
+  rewritten to `mtlsauth.*` — it keeps its resolved token endpoint, so the binding certificate goes
+  to the host you configured and no allowlist applies.
 
 ### Non-exportable keys (KeyGuard, CNG, HSM)
 

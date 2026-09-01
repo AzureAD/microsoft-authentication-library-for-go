@@ -84,9 +84,9 @@ func isPublicMtlsEnvironment(host string) bool {
 }
 
 // ValidateMtlsPoP reports whether this authority can serve mTLS proof-of-possession tokens. mTLS PoP
-// requires an AAD authority (AuthorityType == AAD), tenanted (not /common, /organizations or
-// /consumers), on a login.* host that is either a known Microsoft cloud or a private cloud the
-// caller has explicitly chosen to trust.
+// requires a tenanted AAD or dSTS authority. An AAD authority must additionally sit on a login.* host
+// that is either a known Microsoft cloud or a private cloud the caller has explicitly chosen to
+// trust, because only AAD has its host rewritten to mtlsauth.*; see MtlsTokenEndpoint.
 //
 // It is called both early in the acquisition, before any credential resolution result is used or any
 // network work happens, and again from MtlsTokenEndpoint so the network path is never left
@@ -94,29 +94,48 @@ func isPublicMtlsEnvironment(host string) bool {
 // MtlsPopParametersInitializer during parameter initialization, before cache or discovery work.
 func (i Info) ValidateMtlsPoP() error {
 	// The authority type is checked first because it depends on nothing else here and it is the
-	// categorical answer: mTLS PoP is an AAD protocol, so a non-AAD authority can never serve it no
-	// matter what its tenant or host look like. Checking the host first would be both wrong and
-	// misleading. Wrong, because AuthorityType is decided by the authority's first path segment and
-	// never by its host (see NewInfoFromAuthorityURI), so a non-AAD authority can sit on a login.*
-	// host and satisfy every other check here - https://login.microsoftonline.com/adfs and
-	// https://login.microsoftonline.com/dstsv2/<tenant> both do. Misleading, because it would tell
-	// an ADFS or dSTS caller to bring a login.* host, which would not help.
+	// categorical answer. Checking the host first would be both wrong and misleading. Wrong, because
+	// AuthorityType is decided by the authority's first path segment and never by its host (see
+	// NewInfoFromAuthorityURI), so a non-AAD authority can sit on a login.* host and satisfy every
+	// other check here - https://login.microsoftonline.com/adfs does. Misleading, because it would
+	// tell an ADFS caller to bring a login.* host, which would not help.
 	//
-	// AAD's value is "MSSTS", so the zero value of Info is not an AAD authority and this guard fails
+	// dSTS is accepted alongside AAD to match MSAL .NET, whose ValidateAadAuthorityForPop returns
+	// early for any non-AAD authority rather than rejecting it, leaving tenanted dSTS supported
+	// (MtlsPopTests covers a tenanted dSTS mTLS PoP request). MSAL .NET's dedicated
+	// MtlsNonTenantedAuthorityNotAllowedMessage sibling string about AAD-only support is defined and
+	// never thrown.
+	//
+	// ADFS stays out: it is not tenanted at all (NewAuthParams rejects a tenant for it), so it can
+	// never produce the tenant-bound token this API promises.
+	//
+	// AAD's value is "MSSTS", so the zero value of Info is neither AAD nor dSTS and this guard fails
 	// closed for any Info that was assembled by hand rather than parsed from an authority URL.
-	if i.AuthorityType != AAD {
-		return fmt.Errorf("mTLS proof-of-possession is not supported for authority type %q; an AAD (%s) authority is required", i.AuthorityType, AAD)
+	if i.AuthorityType != AAD && i.AuthorityType != DSTS {
+		return fmt.Errorf("mTLS proof-of-possession is not supported for authority type %q; an AAD (%s) or dSTS (%s) authority is required", i.AuthorityType, AAD, DSTS)
 	}
 	// Go rejects a wider set of non-tenanted authorities than MSAL .NET's
 	// AadAuthority.IsCommonOrOrganizationsTenant does. That superset is intentional: none of these
 	// can produce a tenant-bound mTLS PoP token, so catching them all here is better than letting
 	// ESTS reject the request on the network. The comparison is case-insensitive so the guard holds
 	// on its own rather than depending on the authority URL having been lowercased at parse time.
+	//
+	// A parsed dSTS authority always carries DSTSTenant, so in practice only the empty check can
+	// fire for one, and only for a hand-assembled Info.
 	if i.Tenant == "" ||
 		strings.EqualFold(i.Tenant, "common") ||
 		strings.EqualFold(i.Tenant, "organizations") ||
 		strings.EqualFold(i.Tenant, "consumers") {
 		return fmt.Errorf("mTLS proof-of-possession requires a tenanted authority; %q is not a specific tenant", i.Tenant)
+	}
+	// The remaining two guards exist only to make the login.* -> mtlsauth.* rewrite safe, so they
+	// are scoped to the authorities that get rewritten. A dSTS authority keeps its own token
+	// endpoint host (see MtlsTokenEndpoint), so there is no derived host to constrain: its binding
+	// certificate goes to the same host the caller already configured and already sends a client
+	// credential to on the bearer path. Applying these to dSTS would reject it for the shape of a
+	// rewrite that never happens to it.
+	if i.AuthorityType != AAD {
+		return nil
 	}
 	// AuthorityInfo.Host can carry an explicit port (it comes from url.URL.Host, and private cloud
 	// deployments rely on that), so split it off before matching against known hosts.
@@ -169,13 +188,17 @@ func (i Info) ValidateMtlsPoP() error {
 // production-ready). Callers who asked for auto-detection get a concrete region here because
 // Info.ResolveRegion replaces the sentinel earlier in the request, during endpoint resolution.
 //
-// ADFS and dSTS are out of scope for mTLS PoP, and ValidateMtlsPoP refuses them by authority type.
-// The login.-prefix host check does not catch them: AuthorityType comes from the authority's first
-// path segment and never from its host, so https://login.microsoftonline.com/adfs and
-// https://login.microsoftonline.com/dstsv2/<tenant> are both served from a login.* host and, before
-// the type check existed, derived an mtlsauth.* endpoint. MSAL .NET's dedicated dSTS rejection
-// message is dead code and dSTS is in practice refused there by its login.-prefix guard, because its
-// authorities are not login.*-hosted; Go does not rely on that.
+// ADFS is out of scope for mTLS PoP, and ValidateMtlsPoP refuses it by authority type. The
+// login.-prefix host check does not catch it: AuthorityType comes from the authority's first path
+// segment and never from its host, so https://login.microsoftonline.com/adfs is served from a
+// login.* host and, before the type check existed, derived an mtlsauth.* endpoint.
+//
+// A tenanted dSTS authority is supported but is never rewritten: its resolved token endpoint is
+// returned as-is, because dSTS deployments serve their own token endpoint and have no mtlsauth.*
+// counterpart to derive. This is also what makes dSTS safe without the host allowlist AAD needs -
+// there is no derived host, so the binding certificate goes to the host the caller configured. MSAL
+// .NET reaches the same result from the other direction: its rewrite in RegionAndMtlsDiscoveryProvider
+// is conditional on a login.-prefixed host, which dSTS authorities are not.
 //
 // A login.* host that is not a known Microsoft cloud is rewritten only when the caller has made an
 // explicit private-cloud trust decision, because this host receives the binding certificate. See
@@ -190,6 +213,18 @@ func (i Info) ValidateMtlsPoP() error {
 func (p AuthParams) MtlsTokenEndpoint() (string, error) {
 	if err := p.AuthorityInfo.ValidateMtlsPoP(); err != nil {
 		return "", err
+	}
+	// dSTS keeps its own endpoint. There is no host to derive and no AAD-shaped path to fall back
+	// to, so an unresolved token endpoint is an error rather than a fabricated URL: the fallback
+	// below would otherwise send the binding certificate to a guessed dSTS path.
+	if p.AuthorityInfo.AuthorityType == DSTS {
+		u, err := url.Parse(p.Endpoints.TokenEndpoint)
+		if err != nil || u.Host == "" {
+			return "", fmt.Errorf("mTLS proof-of-possession requires a resolved token endpoint for dSTS authority %q", p.AuthorityInfo.Host)
+		}
+		u.Scheme = "https"
+		u.User = nil
+		return u.String(), nil
 	}
 	// The port is preserved so a private cloud deployment on a non-default port still reaches its
 	// own endpoint. MSAL .NET can't hit this because it reads Uri.Host, which excludes the port by

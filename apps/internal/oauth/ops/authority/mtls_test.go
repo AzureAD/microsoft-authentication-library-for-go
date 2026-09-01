@@ -313,88 +313,60 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 	}
 }
 
-// TestMtlsTokenEndpointRequiresAnAADAuthority pins that mTLS PoP refuses a non-AAD authority because
-// of its AuthorityType, not because of its host.
+// TestMtlsTokenEndpointRejectsADFSByAuthorityType pins that mTLS PoP refuses an ADFS authority
+// because of its AuthorityType, not because of its host.
 //
-// Its predecessor used https://dsts.core.windows.net/dstsv2/<tenant> and https://fs.contoso.com/adfs,
-// neither of which is login.*-hosted, so the host check refused both and the test passed identically
-// with no type check at all. AuthorityType is decided by the authority's first path segment and never
-// by its host (see NewInfoFromAuthorityURI), so a non-AAD authority can be login.*-hosted:
-// https://login.microsoftonline.com/adfs and https://login.microsoftonline.com/dstsv2/<tenant> both
-// derived an mtlsauth.* endpoint before this guard existed.
+// Its predecessor used https://fs.contoso.com/adfs, which is not login.*-hosted, so the host check
+// refused it and the test passed identically with no type check at all. AuthorityType is decided by
+// the authority's first path segment and never by its host (see NewInfoFromAuthorityURI), so a
+// non-AAD authority can be login.*-hosted: https://login.microsoftonline.com/adfs derived an
+// mtlsauth.* endpoint before this guard existed.
 //
-// Each case holds the host and the tenant fixed and varies exactly one thing, the authority type, by
+// The case holds the host and the tenant fixed and varies exactly one thing, the authority type, by
 // running the same parsed Info twice with only AuthorityType changed. The control must be accepted,
 // which proves every other guard passes for these params, so the rejection can only be the type
 // check; the message assertions prove which guard fired.
-func TestMtlsTokenEndpointRequiresAnAADAuthority(t *testing.T) {
-	for _, test := range []struct {
-		desc      string
-		authority string
-		wantType  string
-		// wantEndpoint is what the control derives, which is also what this authority reached
-		// before the type check existed.
-		wantEndpoint string
-	}{
-		{
-			desc:         "ADFS on the public cloud login host",
-			authority:    "https://login.microsoftonline.com/adfs",
-			wantType:     ADFS,
-			wantEndpoint: "https://mtlsauth.microsoft.com/adfs/oauth2/v2.0/token",
-		},
-		{
-			desc:         "dSTS on the public cloud login host",
-			authority:    "https://login.microsoftonline.com/dstsv2/" + DSTSTenant,
-			wantType:     DSTS,
-			wantEndpoint: "https://mtlsauth.microsoft.com/" + DSTSTenant + "/oauth2/v2.0/token",
-		},
-		{
-			desc:         "dSTS on the US Gov login host",
-			authority:    "https://login.microsoftonline.us/dstsv2/" + DSTSTenant,
-			wantType:     DSTS,
-			wantEndpoint: "https://mtlsauth.microsoftonline.us/" + DSTSTenant + "/oauth2/v2.0/token",
-		},
-	} {
-		t.Run(test.desc, func(t *testing.T) {
-			info, err := NewInfoFromAuthorityURI(test.authority, true, false)
-			if err != nil {
-				t.Fatalf("NewInfoFromAuthorityURI(%q): %v", test.authority, err)
-			}
-			if info.AuthorityType != test.wantType {
-				t.Fatalf("AuthorityType = %q, want %q; this case no longer tests what it claims to", info.AuthorityType, test.wantType)
-			}
+//
+// dSTS is deliberately absent: it is supported, and TestMtlsTokenEndpointAcceptsTenantedDSTS covers
+// it.
+func TestMtlsTokenEndpointRejectsADFSByAuthorityType(t *testing.T) {
+	const authority = "https://login.microsoftonline.com/adfs"
+	const wantEndpoint = "https://mtlsauth.microsoft.com/adfs/oauth2/v2.0/token"
 
-			// The control runs first. With AuthorityType relabelled AAD and nothing else touched,
-			// the authority is accepted, so no other guard can explain the rejection below.
-			control := info
-			control.AuthorityType = AAD
-			got, err := (AuthParams{AuthorityInfo: control}).MtlsTokenEndpoint()
-			if err != nil {
-				t.Fatalf("the control (identical Info, AuthorityType=%s) was rejected: %v; this case can no longer isolate the authority type", AAD, err)
-			}
-			if got != test.wantEndpoint {
-				t.Fatalf("the control derived %q, want %q", got, test.wantEndpoint)
-			}
-
-			got, err = (AuthParams{AuthorityInfo: info}).MtlsTokenEndpoint()
-			if err == nil {
-				t.Fatalf("MtlsTokenEndpoint() = %q, want a %s authority to be rejected", got, test.wantType)
-			}
-			msg := err.Error()
-			if !strings.Contains(msg, test.wantType) {
-				t.Errorf("error %q does not name the offending authority type %q", msg, test.wantType)
-			}
-			if !strings.Contains(msg, AAD) {
-				t.Errorf("error %q does not say an AAD (%s) authority is required", msg, AAD)
-			}
-			if strings.Contains(msg, "a login.* host is required") || strings.Contains(msg, "tenanted authority") {
-				t.Errorf("error %q came from the host or tenant guard, not the authority-type guard", msg)
-			}
-		})
+	info, err := NewInfoFromAuthorityURI(authority, true, false)
+	if err != nil {
+		t.Fatalf("NewInfoFromAuthorityURI(%q): %v", authority, err)
+	}
+	if info.AuthorityType != ADFS {
+		t.Fatalf("AuthorityType = %q, want %q; this test no longer tests what it claims to", info.AuthorityType, ADFS)
 	}
 
-	// A non-AAD authority that is not login.*-hosted stays rejected too. It has no control, because
-	// relabelling it AAD leaves it refused by the host guard, so it lives outside the table.
+	// The control runs first. With AuthorityType relabelled AAD and nothing else touched, the
+	// authority is accepted, so no other guard can explain the rejection below.
+	control := info
+	control.AuthorityType = AAD
+	got, err := (AuthParams{AuthorityInfo: control}).MtlsTokenEndpoint()
+	if err != nil {
+		t.Fatalf("the control (identical Info, AuthorityType=%s) was rejected: %v; this test can no longer isolate the authority type", AAD, err)
+	}
+	if got != wantEndpoint {
+		t.Fatalf("the control derived %q, want %q", got, wantEndpoint)
+	}
+
+	got, err = (AuthParams{AuthorityInfo: info}).MtlsTokenEndpoint()
+	if err == nil {
+		t.Fatalf("MtlsTokenEndpoint() = %q, want an %s authority to be rejected", got, ADFS)
+	}
+	msg := err.Error()
+	if !strings.Contains(msg, ADFS) {
+		t.Errorf("error %q does not name the offending authority type %q", msg, ADFS)
+	}
+	if strings.Contains(msg, "a login.* host is required") || strings.Contains(msg, "tenanted authority") {
+		t.Errorf("error %q came from the host or tenant guard, not the authority-type guard", msg)
+	}
+
+	// An ADFS authority that is not login.*-hosted stays rejected too. It has no control, because
+	// relabelling it AAD leaves it refused by the host guard.
 	t.Run("ADFS on its own host", func(t *testing.T) {
 		info, err := NewInfoFromAuthorityURI("https://fs.contoso.com/adfs", true, false)
 		if err != nil {
@@ -402,6 +374,88 @@ func TestMtlsTokenEndpointRequiresAnAADAuthority(t *testing.T) {
 		}
 		if got, err := (AuthParams{AuthorityInfo: info}).MtlsTokenEndpoint(); err == nil {
 			t.Fatalf("MtlsTokenEndpoint() = %q, want an ADFS authority to be rejected", got)
+		}
+	})
+}
+
+// TestMtlsTokenEndpointAcceptsTenantedDSTS pins that a tenanted dSTS authority is supported for mTLS
+// PoP and keeps its own resolved token endpoint rather than being rewritten to mtlsauth.*.
+//
+// MSAL .NET supports it: ValidateAadAuthorityForPop returns early for any non-AAD authority instead
+// of rejecting it, and the login. -> mtlsauth rewrite in RegionAndMtlsDiscoveryProvider is
+// conditional on a login.-prefixed host, which a real dSTS authority is not.
+//
+// The "keeps its own host" assertions are the security-relevant half. dSTS is exempt from the
+// login.* and trusted-host guards precisely because nothing is derived from its host; if a rewrite
+// were ever introduced, that exemption would start handing the binding certificate to a derived host
+// that no allowlist covers. These assertions fail if that happens.
+func TestMtlsTokenEndpointAcceptsTenantedDSTS(t *testing.T) {
+	for _, test := range []struct {
+		desc          string
+		authority     string
+		tokenEndpoint string
+		want          string
+	}{
+		{
+			desc:          "dSTS on its own host",
+			authority:     "https://dsts.core.windows.net/dstsv2/" + DSTSTenant,
+			tokenEndpoint: "https://dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+			want:          "https://dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+		},
+		{
+			// A login.*-hosted dSTS authority is still not rewritten. The rewrite is scoped to the
+			// authority type, not to the host shape, so this cannot become mtlsauth.microsoft.com.
+			desc:          "dSTS on the public cloud login host is still not rewritten",
+			authority:     "https://login.microsoftonline.com/dstsv2/" + DSTSTenant,
+			tokenEndpoint: "https://login.microsoftonline.com/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+			want:          "https://login.microsoftonline.com/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+		},
+		{
+			// An untrusted host is accepted for dSTS because no host is derived from it. This is
+			// the exemption from the trusted-host guard, stated as a test.
+			desc:          "dSTS on an untrusted host",
+			authority:     "https://dsts.contoso.example/dstsv2/" + DSTSTenant,
+			tokenEndpoint: "https://dsts.contoso.example/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+			want:          "https://dsts.contoso.example/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+		},
+		{
+			desc:          "the scheme is pinned to https and userinfo is stripped",
+			authority:     "https://dsts.core.windows.net/dstsv2/" + DSTSTenant,
+			tokenEndpoint: "http://attacker:pw@dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+			want:          "https://dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+		},
+	} {
+		t.Run(test.desc, func(t *testing.T) {
+			info, err := NewInfoFromAuthorityURI(test.authority, true, false)
+			if err != nil {
+				t.Fatalf("NewInfoFromAuthorityURI(%q): %v", test.authority, err)
+			}
+			if info.AuthorityType != DSTS {
+				t.Fatalf("AuthorityType = %q, want %q; this case no longer tests what it claims to", info.AuthorityType, DSTS)
+			}
+			p := AuthParams{AuthorityInfo: info, Endpoints: Endpoints{TokenEndpoint: test.tokenEndpoint}}
+			got, err := p.MtlsTokenEndpoint()
+			if err != nil {
+				t.Fatalf("MtlsTokenEndpoint() unexpected error: %v", err)
+			}
+			if got != test.want {
+				t.Errorf("MtlsTokenEndpoint() = %q, want %q", got, test.want)
+			}
+			if strings.Contains(got, mtlsAuthPrefix) {
+				t.Errorf("MtlsTokenEndpoint() = %q, a dSTS authority must not be rewritten to %s.*", got, mtlsAuthPrefix)
+			}
+		})
+	}
+
+	// Without a resolved token endpoint there is nothing to keep and no AAD-shaped path to fall back
+	// to, so this fails closed rather than sending the binding certificate to a guessed URL.
+	t.Run("an unresolved token endpoint is an error", func(t *testing.T) {
+		info, err := NewInfoFromAuthorityURI("https://dsts.core.windows.net/dstsv2/"+DSTSTenant, true, false)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got, err := (AuthParams{AuthorityInfo: info}).MtlsTokenEndpoint(); err == nil {
+			t.Fatalf("MtlsTokenEndpoint() = %q, want an error when the token endpoint is unresolved", got)
 		}
 	})
 }

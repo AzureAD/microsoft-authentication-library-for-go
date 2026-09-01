@@ -12,8 +12,6 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
-
-	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
 
 // countingClient records every request it is asked to make and refuses to make any, so a test can
@@ -73,11 +71,6 @@ func TestMtlsPoPValidatesAuthorityBeforeNetwork(t *testing.T) {
 			desc:      "ADFS on a login.* host",
 			authority: "https://login.microsoftonline.com/adfs",
 			wantErr:   `authority type "ADFS"`,
-		},
-		{
-			desc:      "dSTS on a login.* host",
-			authority: "https://login.microsoftonline.com/dstsv2/" + authority.DSTSTenant,
-			wantErr:   `authority type "DSTS"`,
 		},
 		{
 			// The derived mtlsauth host receives the binding certificate and a live client

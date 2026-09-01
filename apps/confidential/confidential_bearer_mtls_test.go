@@ -89,11 +89,12 @@ func TestSendCertificateOverMtls_RequiresCertificateCredential(t *testing.T) {
 	tokenProviderCred := NewCredFromTokenProvider(func(context.Context, TokenProviderParameters) (TokenProviderResult, error) {
 		return TokenProviderResult{AccessToken: "x", ExpiresInSeconds: 3600}, nil
 	})
-	// A signed-assertion callback credential is the one rejected kind that can still produce a
-	// certificate, so it is the case most likely to be assumed supported. Its certificate arrives
-	// from the callback at request time, which only the mTLS proof-of-possession path pulls forward
-	// (prepareMtlsPoP); the Bearer-over-mTLS flows resolve the binding certificate straight from the
-	// credential and would find none. New rejects it rather than failing later on the handshake.
+	// A signed-assertion callback credential is accepted: its certificate arrives from the callback
+	// at request time, and the Bearer-over-mTLS flows pull that callback forward
+	// (prepareBearerOverMtls) exactly as the mTLS proof-of-possession path does. A callback that
+	// returns no certificate is not rejected here — New cannot know what it will return — but the
+	// request fails rather than silently downgrading; TestSendCertificateOverMtls_SignedAssertion
+	// covers both outcomes.
 	signedAssertionCred := NewCredFromSignedAssertionCallback(
 		func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
 			return SignedAssertion{Assertion: "assertion"}, nil
@@ -106,7 +107,7 @@ func TestSendCertificateOverMtls_RequiresCertificateCredential(t *testing.T) {
 	}{
 		{"certificate credential accepted", certCred, false},
 		{"secret credential rejected", secretCred, true},
-		{"signed-assertion callback credential rejected", signedAssertionCred, true},
+		{"signed-assertion callback credential accepted", signedAssertionCred, false},
 		{"assertion credential rejected", assertionCred, true},
 		{"token provider credential rejected", tokenProviderCred, true},
 	}
@@ -115,7 +116,7 @@ func TestSendCertificateOverMtls_RequiresCertificateCredential(t *testing.T) {
 			_, err := New(fakeAuthority, fakeClientID, test.cred, WithSendCertificateOverMtls())
 			if test.wantErr {
 				if err == nil {
-					t.Fatal("expected an error for a non-certificate credential, got nil")
+					t.Fatal("expected an error for a credential that cannot present a certificate, got nil")
 				}
 				if !strings.Contains(err.Error(), "SendCertificateOverMtls") &&
 					!strings.Contains(strings.ToLower(err.Error()), "certificate") {
@@ -124,7 +125,7 @@ func TestSendCertificateOverMtls_RequiresCertificateCredential(t *testing.T) {
 				return
 			}
 			if err != nil {
-				t.Fatalf("unexpected error for a certificate credential: %v", err)
+				t.Fatalf("unexpected error for a certificate-capable credential: %v", err)
 			}
 		})
 	}
