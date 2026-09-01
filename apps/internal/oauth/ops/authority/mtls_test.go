@@ -394,12 +394,24 @@ func TestMtlsTokenEndpointAcceptsTenantedDSTS(t *testing.T) {
 		desc          string
 		authority     string
 		tokenEndpoint string
+		region        string
 		want          string
 	}{
 		{
 			desc:          "dSTS on its own host",
 			authority:     "https://dsts.core.windows.net/dstsv2/" + DSTSTenant,
 			tokenEndpoint: "https://dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+			want:          "https://dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+		},
+		{
+			// Region is an AAD concept: RegionAndMtlsDiscoveryProvider builds <region>.<host> only
+			// on the AAD path. Configuring one must not regionalize a dSTS endpoint, because the
+			// resulting host would not exist and the failure would surface as a DNS or TLS error
+			// far from its cause.
+			desc:          "a configured region does not alter the dSTS endpoint",
+			authority:     "https://dsts.core.windows.net/dstsv2/" + DSTSTenant,
+			tokenEndpoint: "https://dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
+			region:        "westus",
 			want:          "https://dsts.core.windows.net/dstsv2/" + DSTSTenant + "/oauth2/v2.0/token",
 		},
 		{
@@ -434,6 +446,9 @@ func TestMtlsTokenEndpointAcceptsTenantedDSTS(t *testing.T) {
 				t.Fatalf("AuthorityType = %q, want %q; this case no longer tests what it claims to", info.AuthorityType, DSTS)
 			}
 			p := AuthParams{AuthorityInfo: info, Endpoints: Endpoints{TokenEndpoint: test.tokenEndpoint}}
+			if test.region != "" {
+				p.AuthorityInfo.Region = test.region
+			}
 			got, err := p.MtlsTokenEndpoint()
 			if err != nil {
 				t.Fatalf("MtlsTokenEndpoint() unexpected error: %v", err)

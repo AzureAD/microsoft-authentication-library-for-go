@@ -6,9 +6,12 @@ package confidential
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"strings"
 	"sync/atomic"
 	"testing"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
 // bearerMtlsCallbackCred builds a signed-assertion credential whose callback returns the test
@@ -203,6 +206,65 @@ func TestSendCertificateOverMtls_SignedAssertion_CertificateCredentialUnaffected
 	}
 	if !strings.HasPrefix(got.Host, "mtlsauth.") {
 		t.Errorf("token request went to %q, want the mtlsauth.* endpoint", got.Host)
+	}
+}
+
+// TestSendCertificateOverMtls_SignedAssertion_RealHandshake is the loopback-TLS proof for this
+// flow: an actual TLS 1.2+ handshake against a server that requires a client certificate, so the
+// certificate assertion comes from the TLS layer rather than from a mock that was handed the value
+// it is asked to confirm.
+//
+// It pins all three properties together, which is the combination that matters: the callback runs
+// once, the certificate it returned is the one presented on the wire, and the access token that
+// comes back is still Bearer. Any two of those without the third would describe a different flow —
+// mTLS PoP, or a plain bearer request that never reached mutual TLS.
+func TestSendCertificateOverMtls_SignedAssertion_RealHandshake(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "bearer-over-mtls-binding-cert")
+	var calls int32
+	srv := newMtlsHandshakeServer(t, mock.GetAccessTokenBody("bearer-over-mtls-token", "", "", "", 3600, 0))
+
+	cred := NewCredFromSignedAssertionCallback(
+		func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+			atomic.AddInt32(&calls, 1)
+			return SignedAssertion{Assertion: "handshake-assertion", BindingCertificate: tlsCertFor(leaf, key)}, nil
+		})
+
+	tenant, lmo := "tenant", "login.microsoftonline.com"
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
+		WithMtlsHTTPClient(srv.clientFactory()),
+		WithSendCertificateOverMtls(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// presented also asserts the endpoint was called exactly once.
+	if got := srv.presented(t); !got.Equal(leaf) {
+		t.Error("the certificate presented on the handshake is not the one the callback returned")
+	}
+	if n := atomic.LoadInt32(&calls); n != 1 {
+		t.Errorf("the signed-assertion callback ran %d times, want exactly 1", n)
+	}
+	if got := srv.form(t).Get("client_assertion"); got != "handshake-assertion" {
+		t.Errorf("client_assertion = %q, want the assertion returned with the certificate", got)
+	}
+	// The request went to the mutual-TLS endpoint, not the plain one. srv answers whatever host it
+	// is dialed with, so this is read from the Host header MSAL sent.
+	if got := srv.host(t); !strings.HasPrefix(got, "mtlsauth.") {
+		t.Errorf("token request Host = %q, want the mtlsauth.* endpoint", got)
+	}
+	// Bearer, not PoP: only the transport changed.
+	if res.BindingCertificate != nil {
+		t.Error("AuthResult.BindingCertificate is set; a Bearer-over-mTLS result must not advertise a bound token")
+	}
+	if res.AccessToken != "bearer-over-mtls-token" {
+		t.Errorf("AccessToken = %q, want the token the endpoint returned", res.AccessToken)
 	}
 }
 
