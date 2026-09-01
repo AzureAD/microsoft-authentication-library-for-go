@@ -143,8 +143,11 @@ type AuthResult struct {
 	// It is excluded from JSON: encoding/json walks into an *rsa.PrivateKey's exported fields, so
 	// marshalling an AuthResult would otherwise emit the private exponent and primes into whatever
 	// consumes the output (a log, a trace, a cache file). That tag covers this struct only.
-	// Marshalling, logging or %+v-formatting the *tls.Certificate itself still reaches the key, so
-	// treat the value as secret-bearing and never serialize it on its own.
+	// Marshalling the *tls.Certificate on its own still reaches the key, so treat the value as
+	// secret-bearing and never serialize it separately. Formatting it with fmt is not equivalent
+	// protection by design: %v, %+v and %#v happen not to reach the key only because fmt prints a
+	// nested pointer as an address, which any logger that serializes structs instead of formatting
+	// them will not do.
 	BindingCertificate *tls.Certificate `json:"-"`
 }
 
