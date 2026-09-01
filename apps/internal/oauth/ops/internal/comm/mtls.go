@@ -114,11 +114,17 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error
 	// certificates would then share tickets, and a client holding certificate B could resume a
 	// session the server authenticated under certificate A. The TLS peer identity would silently
 	// disagree with the certificate this client is bound to, with the assertion that certificate
-	// signed, and with the KeyID the resulting token is cached under. Give every client a private
-	// cache instead. mtlsClient keeps one client per certificate thumbprint, so the cache stays
-	// scoped to a single identity while resumption still works for repeated calls on that identity.
-	// A capacity of 0 selects Go's default.
-	transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0)
+	// signed, and with the KeyID the resulting token is cached under. Give every client that shares
+	// a cache a private one instead. mtlsClient keeps one client per certificate thumbprint, so the
+	// cache stays scoped to a single identity while resumption still works for repeated calls on
+	// that identity. A capacity of 0 selects Go's default.
+	//
+	// A nil cache is left alone. There is no cache object to share, so nothing can leak between
+	// identities, and crypto/tls treats nil as "no session resumption": installing one here would
+	// instead opt a caller who deliberately disabled resumption back into it on the mTLS leg.
+	if transport.TLSClientConfig.ClientSessionCache != nil {
+		transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0)
+	}
 	return &http.Client{
 		Transport:     transport,
 		CheckRedirect: mtlsCheckRedirect(base),
@@ -190,7 +196,11 @@ func refuseMtlsRedirect(req *http.Request, via []*http.Request) error {
 // hooks too. http.DefaultTransport is an exported package-level variable, so tracing,
 // proxy-injection and test libraries can and do patch a hook onto it process-wide; cloning it
 // unchecked would drop the binding certificate through a path that never touches the caller's
-// transport at all. Every transport that reaches Clone here has been checked.
+// transport at all. Every transport that reaches Clone here has been checked. If something replaced
+// http.DefaultTransport with a type that is not an *http.Transport at all, that is an error for the
+// same reason a caller-supplied wrapper is: the replacement's proxy, pinning, auditing and egress
+// behavior cannot be carried onto a certificate-bearing request, and substituting a bare transport
+// would discard it silently.
 //
 // Dropping the caller's transport unconditionally was a real parity gap with MSAL .NET, whose
 // HttpManager routes through the configured IMsalHttpClientFactory on every branch.
@@ -217,8 +227,16 @@ func cloneBaseTransport(base HTTPClient) (*http.Transport, error) {
 		}
 		return t.Clone(), nil
 	}
-	// Freshly constructed and never handed out, so it cannot carry a hook.
-	return &http.Transport{}, nil
+	// http.DefaultTransport is not an *http.Transport, so something in this process replaced the
+	// package-level variable outright. Returning a freshly constructed transport here would look
+	// safe -- it cannot carry a hook -- but it fails open in exactly the way the two caller-supplied
+	// branches above refuse to: it silently discards whatever the replacement enforces (proxy
+	// routing, certificate pinning, auditing, egress control) for a credential-bearing token
+	// request. A bare &http.Transport{} also has no Proxy function at all, so unlike
+	// http.DefaultTransport it ignores HTTP_PROXY, HTTPS_PROXY and NO_PROXY, which in a
+	// proxy-required environment turns a security fallback into a connectivity failure with no
+	// explanation. Fail closed and name the remedy instead.
+	return nil, fmt.Errorf("mTLS proof-of-possession cannot use http.DefaultTransport because it is a %T, not an *http.Transport: something in this process replaced the package-level variable, and falling back to a freshly constructed transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls it enforces, and would ignore HTTP_PROXY, HTTPS_PROXY and NO_PROXY. %s", http.DefaultTransport, defaultHookRemedy)
 }
 
 // Remedies for rejectTLSDialHooks. Both point at WithMtlsHTTPClient, but only the caller-transport
@@ -262,7 +280,24 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 	if cert.PrivateKey == nil {
 		return nil, fmt.Errorf("mTLS proof-of-possession binding certificate is missing its private key")
 	}
-	sum := sha256.Sum256(cert.Certificate[0])
+	// Everything below works from a private deep copy of the DER chain. The cache key is a digest of
+	// Certificate[0], and the certificate is then handed to a caller-supplied factory or to
+	// BuildMtlsClient, both of which take it by value -- a shallow copy that shares the backing
+	// arrays. Anything still holding those arrays could rewrite them after the key was computed,
+	// leaving the cached client presenting bytes that no longer match the thumbprint it is filed
+	// under, and the token bound to a certificate MSAL never saw. Copying first makes the key and
+	// the presented bytes derive from the same immutable snapshot.
+	//
+	// PrivateKey is deliberately shared rather than copied: it is the live signer that performs the
+	// handshake, and a non-exportable key cannot be copied at all. Leaf is carried over as-is; it is
+	// already a private re-parse, because every certificate reaching here has been through
+	// confidential.validBindingCertificate.
+	pinned := *cert
+	pinned.Certificate = make([][]byte, len(cert.Certificate))
+	for i, der := range cert.Certificate {
+		pinned.Certificate[i] = append([]byte(nil), der...)
+	}
+	sum := sha256.Sum256(pinned.Certificate[0])
 	key := base64.RawURLEncoding.EncodeToString(sum[:])
 
 	// The loop exists for the SetMtlsClientFactory race below, which discards what it built and
@@ -284,9 +319,9 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 		// evaluates CreateMtlsHttpClient(cert) before GetOrAdd is entered.
 		entry := mtlsCacheEntry{owned: factory == nil}
 		if factory != nil {
-			entry.client = factory(*cert)
+			entry.client = factory(pinned)
 		} else {
-			built, err := BuildMtlsClient(*cert, base)
+			built, err := BuildMtlsClient(pinned, base)
 			if err != nil {
 				return nil, err
 			}

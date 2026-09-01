@@ -65,7 +65,7 @@ func (s *signerMethod) Verify(signingString string, sig []byte, key interface{})
 	return s.method.Verify(signingString, sig, key)
 }
 
-// Sign hashes signingString and has key, which must be a crypto.Signer, sign the digest.
+// Sign hashes signingString and asks key, which must be a crypto.Signer, to sign the digest.
 func (s *signerMethod) Sign(signingString string, key interface{}) ([]byte, error) {
 	signer, ok := key.(crypto.Signer)
 	if !ok {

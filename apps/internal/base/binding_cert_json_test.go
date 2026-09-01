@@ -12,6 +12,7 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/json"
+	"fmt"
 	"math/big"
 	"strconv"
 	"strings"
@@ -187,5 +188,55 @@ func TestBindingCertWithLeafDeepCopiesDER(t *testing.T) {
 				t.Error("PrivateKey must remain the live signer MSAL used for the token request")
 			}
 		})
+	}
+}
+
+// TestBindingCertificateDirectSerializationLeaks pins the limit of the json:"-" tag, which protects
+// AuthResult and nothing else.
+//
+// Marshalling the *tls.Certificate on its own reaches the private key, so the field is
+// secret-bearing in its own right and the doc comment says so. This test exists to keep that
+// statement true: if encoding/json ever stopped walking into the key, the tag would still be correct
+// but the warning would be stale.
+//
+// It also records that fmt is not equivalent protection. %v, %+v and %#v do not reach the key, but
+// only because fmt prints a nested pointer as an address -- a logger that serializes structs rather
+// than formatting them gets the marshalling behavior instead.
+func TestBindingCertificateDirectSerializationLeaks(t *testing.T) {
+	cert, key := rsaBindingCert(t)
+	indicators := keyMaterialIndicators(key)
+
+	b, err := json.Marshal(cert)
+	if err != nil {
+		t.Fatalf("json.Marshal failed: %s", err)
+	}
+	direct := string(b)
+	for name, needle := range indicators {
+		if !strings.Contains(direct, needle) {
+			t.Errorf("marshalling the certificate directly no longer emits %s; the doc comment warning on AuthResult.BindingCertificate is now stale", name)
+		}
+	}
+
+	// The same certificate reached through an AuthResult stays protected, so the tag is doing its job.
+	ar := AuthResult{AccessToken: "at", BindingCertificate: cert}
+	b, err = json.Marshal(ar)
+	if err != nil {
+		t.Fatalf("json.Marshal(AuthResult) failed: %s", err)
+	}
+	for name, needle := range indicators {
+		if strings.Contains(string(b), needle) {
+			t.Errorf("marshalling the AuthResult leaks %s", name)
+		}
+	}
+
+	// fmt does not reach the key. Asserted so a change in that behavior is noticed rather than
+	// discovered in a log.
+	for _, verb := range []string{"%v", "%+v", "%#v"} {
+		formatted := fmt.Sprintf(verb, cert)
+		for name, needle := range indicators {
+			if strings.Contains(formatted, needle) {
+				t.Errorf("fmt %s on the certificate now emits %s; the doc comment should be updated to warn about formatting too", verb, name)
+			}
+		}
 	}
 }
