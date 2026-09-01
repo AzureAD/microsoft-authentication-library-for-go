@@ -169,6 +169,12 @@ type Credential struct {
 	key  crypto.PrivateKey
 	x5c  []string
 
+	// tlsFields carries the handshake-only fields of a tls.Certificate supplied to
+	// NewCredFromTLSCertificate, so the binding certificate MSAL rebuilds for an mTLS
+	// proof-of-possession request presents what the caller configured. See
+	// accesstokens.TLSCertFields.
+	tlsFields accesstokens.TLSCertFields
+
 	assertionCallback func(context.Context, AssertionRequestOptions) (string, error)
 
 	signedAssertionCallback func(context.Context, AssertionRequestOptions) (SignedAssertion, error)
@@ -188,7 +194,7 @@ func (c Credential) toInternal() (*accesstokens.Credential, error) {
 		if c.key == nil {
 			return nil, errors.New("missing private key for certificate")
 		}
-		return &accesstokens.Credential{Cert: c.cert, Key: c.key, X5c: c.x5c}, nil
+		return &accesstokens.Credential{Cert: c.cert, Key: c.key, X5c: c.x5c, TLSFields: c.tlsFields}, nil
 	}
 	if c.key != nil {
 		return nil, errors.New("missing certificate for private key")
@@ -346,8 +352,23 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 		if ok && k.E == certKey.E && k.N.Cmp(certKey.N) == 0 {
 			// We know this is the signing cert because its public key matches the given private key.
 			// This cert must be first in x5c.
-			cred.cert = cert
-			cred.x5c = append([]string{base64.StdEncoding.EncodeToString(cert.Raw)}, cred.x5c...)
+			//
+			// The leaf is re-parsed from a private copy of the DER rather than retained by pointer.
+			// x509.ParseCertificate aliases the DER it is handed instead of copying it, so the
+			// caller's cert.Raw stays live memory the caller still owns, while the x5c entry here is
+			// a snapshot. MSAL derives the x5t/x5t#S256 thumbprint from cert.Raw, so a caller
+			// mutating its own certificate afterwards would silently change the thumbprint and leave
+			// it disagreeing with x5c and with the bytes presented on the wire. Encoding x5c from
+			// the same copy makes the two impossible to separate.
+			// NewCredFromTLSCertificate does this for the same reason.
+			der := make([]byte, len(cert.Raw))
+			copy(der, cert.Raw)
+			leaf, err := x509.ParseCertificate(der)
+			if err != nil {
+				return cred, fmt.Errorf("could not parse the certificate matching the private key: %w", err)
+			}
+			cred.cert = leaf
+			cred.x5c = append([]string{base64.StdEncoding.EncodeToString(der)}, cred.x5c...)
 		} else {
 			cred.x5c = append(cred.x5c, base64.StdEncoding.EncodeToString(cert.Raw))
 		}
@@ -382,6 +403,13 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 // is always parsed from cert.Certificate[0] and cert.Leaf is ignored, so every field of the
 // credential's certificate derives from the DER presented on the handshake. That DER is copied, so
 // mutating cert.Certificate afterwards can't change the credential.
+//
+// SupportedSignatureAlgorithms, OCSPStaple and SignedCertificateTimestamps are preserved and set on
+// the certificate MSAL presents for an mTLS proof-of-possession handshake. Set
+// SupportedSignatureAlgorithms when the signer cannot produce every scheme the certificate allows: a
+// key that has no RSA-PSS support should advertise only the PKCS #1 v1.5 schemes, which keeps the
+// connection on TLS 1.2, because TLS 1.3 mandates RSA-PSS. Leaving it unset lets crypto/tls assume
+// the key can do everything, and the handshake then fails when the signer refuses PSS.
 //
 // Unlike [NewCredFromCert], which requires an RSA key, this constructor accepts a signer of any key
 // type the leaf certificate carries and the TLS handshake can use, because a signer-only credential
@@ -434,11 +462,37 @@ func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 		return Credential{}, errors.New("key doesn't match the leaf certificate")
 	}
 	cred := Credential{cert: leaf, key: cert.PrivateKey}
+	// Preserve the fields that only matter on the handshake. MSAL rebuilds a *tls.Certificate from
+	// this credential for an mTLS PoP request, and SupportedSignatureAlgorithms in particular is how
+	// a signer that cannot do RSA-PSS keeps the connection on TLS 1.2 and PKCS #1 v1.5. They are
+	// copied for the same reason the DER above is: the credential must not alias memory the caller
+	// can still write to. Copying a nil slice yields nil, so an unset field stays unset.
+	cred.tlsFields = accesstokens.TLSCertFields{
+		SupportedSignatureAlgorithms: append([]tls.SignatureScheme(nil), cert.SupportedSignatureAlgorithms...),
+		OCSPStaple:                   append([]byte(nil), cert.OCSPStaple...),
+		SignedCertificateTimestamps:  copyByteSlices(cert.SignedCertificateTimestamps),
+	}
 	// tls.Certificate stores the chain leaf first, which is the order x5c requires
 	for _, der := range cert.Certificate {
 		cred.x5c = append(cred.x5c, base64.StdEncoding.EncodeToString(der))
 	}
 	return cred, nil
+}
+
+// copyByteSlices deep-copies a slice of byte slices so the result shares no backing array with the
+// caller's. It returns nil for a nil input so an unset field stays unset.
+func copyByteSlices(in [][]byte) [][]byte {
+	if in == nil {
+		return nil
+	}
+	out := make([][]byte, len(in))
+	for i, b := range in {
+		if b == nil {
+			continue
+		}
+		out[i] = append([]byte(nil), b...)
+	}
+	return out
 }
 
 // TokenProviderParameters is the authentication parameters passed to token providers
@@ -556,7 +610,12 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 // When unset, MSAL auto-builds and caches an mTLS client per certificate thumbprint.
 //
 // A caller-supplied client belongs to the caller: MSAL never calls CloseIdleConnections on it during
-// its own cache housekeeping, so a factory is free to memoize and return one shared client.
+// its own cache housekeeping, so a factory is free to memoize the clients it returns. Memoize per
+// certificate, not globally. MSAL calls the factory once per binding certificate and then presents
+// whatever client it gets back for that certificate, so a factory that returned one shared client
+// for every certificate would offer the first certificate on a handshake for a token bound to a
+// different one. Key the memo on the certificate, for example the base64url SHA-256 of
+// Certificate[0], which is the same x5t#S256 the token is bound to.
 //
 // The binding certificate comes from whichever route supplied it: a [NewCredFromCert] or
 // [NewCredFromTLSCertificate] credential, or the BindingCertificate field of the [SignedAssertion]
@@ -1568,6 +1627,17 @@ func validBindingCertificate(cert *tls.Certificate) (*tls.Certificate, error) {
 	if !ok {
 		return nil, fmt.Errorf("binding certificate private key of type %T does not implement crypto.Signer", cert.PrivateKey)
 	}
+	// A typed-nil signer is non-nil as an interface, so the check above passes and the Public() call
+	// below panics. NewCredFromTLSCertificate rejects the same two shapes for the same reason.
+	if isNilPointer(signer) {
+		return nil, errors.New("binding certificate private key must not be a nil crypto.Signer")
+	}
+	signerPub := signer.Public()
+	// a typed-nil public key satisfies the type assertion every Equal implementation makes on its
+	// argument, which then dereferences it, so reject it before it reaches Equal below
+	if isNilPointer(signerPub) {
+		return nil, errors.New("binding certificate private key's public key must not be nil")
+	}
 	out := *cert
 	out.Certificate = make([][]byte, len(cert.Certificate))
 	for i, der := range cert.Certificate {
@@ -1584,7 +1654,7 @@ func validBindingCertificate(cert *tls.Certificate) (*tls.Certificate, error) {
 	if !ok {
 		return nil, fmt.Errorf("binding certificate public key of type %T cannot be compared with the private key", leaf.PublicKey)
 	}
-	if !certKey.Equal(signer.Public()) {
+	if !certKey.Equal(signerPub) {
 		return nil, errors.New("binding certificate private key does not match the public key of the certificate it would present")
 	}
 	out.Leaf = leaf
@@ -1620,7 +1690,18 @@ func (cca Client) resolveMtlsBindingCert(callbackCert *tls.Certificate) (*tls.Ce
 		if len(der) == 0 {
 			der = [][]byte{cca.cred.Cert.Raw}
 		}
-		return &tls.Certificate{Certificate: der, PrivateKey: cca.cred.Key, Leaf: cca.cred.Cert}, nil
+		return &tls.Certificate{
+			Certificate: der,
+			PrivateKey:  cca.cred.Key,
+			Leaf:        cca.cred.Cert,
+			// Carried through from the caller's tls.Certificate. Without
+			// SupportedSignatureAlgorithms crypto/tls assumes the key can produce every scheme the
+			// certificate allows, so a signer that cannot do RSA-PSS -- KeyGuard, CNG, an HSM --
+			// would be offered on TLS 1.3 and fail the handshake.
+			SupportedSignatureAlgorithms: cca.cred.TLSFields.SupportedSignatureAlgorithms,
+			OCSPStaple:                   cca.cred.TLSFields.OCSPStaple,
+			SignedCertificateTimestamps:  cca.cred.TLSFields.SignedCertificateTimestamps,
+		}, nil
 	}
 	return nil, errors.New("mTLS proof-of-possession requires a certificate credential (NewCredFromCert or NewCredFromTLSCertificate) or a signed-assertion callback (NewCredFromSignedAssertionCallback) that returns a binding certificate")
 }

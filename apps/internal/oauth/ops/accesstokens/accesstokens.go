@@ -117,6 +117,29 @@ type Credential struct {
 	// TokenProvider is a function provided by the application that implements custom authentication
 	// logic for a confidential client
 	TokenProvider func(context.Context, exported.TokenProviderParameters) (exported.TokenProviderResult, error)
+
+	// TLSFields carries the handshake-only tls.Certificate fields of a certificate credential. See
+	// TLSCertFields.
+	TLSFields TLSCertFields
+}
+
+// TLSCertFields carries the tls.Certificate fields that matter only on the TLS handshake and that a
+// certificate credential must therefore preserve. MSAL rebuilds a *tls.Certificate from the
+// credential for an mTLS proof-of-possession request
+// (confidential.Client.resolveMtlsBindingCert), and a rebuild that dropped these would silently
+// change how the handshake behaves.
+//
+// SupportedSignatureAlgorithms is the load-bearing one. crypto/tls consults it to decide which
+// signature schemes the certificate's key can actually produce. A hardware, HSM or KeyGuard signer
+// that cannot do RSA-PSS sets it to the PKCS #1 v1.5 schemes, and that is what keeps the connection
+// on TLS 1.2 and the signature on a padding the key supports, because TLS 1.3 mandates RSA-PSS.
+// Dropping it leaves crypto/tls assuming the key can do anything the certificate allows, so the
+// handshake selects PSS and the signer fails -- exactly the non-exportable-key case
+// NewCredFromTLSCertificate exists to serve.
+type TLSCertFields struct {
+	SupportedSignatureAlgorithms []tls.SignatureScheme
+	OCSPStaple                   []byte
+	SignedCertificateTimestamps  [][]byte
 }
 
 // assertionRequestOptions builds the options handed to an application-provided assertion callback.
@@ -642,6 +665,16 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 			Expected: authority.AccessTokenTypeMtlsPoP,
 			Actual:   resp.TokenType,
 		}
+	}
+	// The inverse is a mismatch too, and it is not harmless. Bearer-over-mTLS presents the
+	// certificate on the handshake but asks for an ordinary bearer token, so a mtls_pop response is
+	// certificate-bound when the caller did not ask for that: it would be cached under the bearer
+	// cache key, handed back with no BindingCertificate for the caller to present, and then rejected
+	// by the resource, which requires the bound certificate on the connection. Only the
+	// request/response pair can detect this, so reject it here rather than letting it surface as an
+	// opaque 401.
+	if !authParams.IsMtlsPoP && strings.EqualFold(resp.TokenType, authority.AccessTokenTypeMtlsPoP) {
+		return resp, fmt.Errorf("identity provider returned a %q access token for a request that did not ask for proof-of-possession: the token is bound to a certificate the caller has not been given and cannot present, so it would be rejected by the resource. Use WithMtlsProofOfPossession to request a certificate-bound token", resp.TokenType)
 	}
 	return resp, nil
 }

@@ -142,7 +142,9 @@ type AuthResult struct {
 	//
 	// It is excluded from JSON: encoding/json walks into an *rsa.PrivateKey's exported fields, so
 	// marshalling an AuthResult would otherwise emit the private exponent and primes into whatever
-	// consumes the output (a log, a trace, a cache file).
+	// consumes the output (a log, a trace, a cache file). That tag covers this struct only.
+	// Marshalling, logging or %+v-formatting the *tls.Certificate itself still reaches the key, so
+	// treat the value as secret-bearing and never serialize it on its own.
 	BindingCertificate *tls.Certificate `json:"-"`
 }
 
@@ -163,6 +165,12 @@ func (ar AuthResult) BindingCertificateThumbprint() string {
 	sum := sha256.Sum256(ar.BindingCertificate.Leaf.Raw)
 	return base64.RawURLEncoding.EncodeToString(sum[:])
 }
+
+// errBindingCertUnresolved is returned when an mTLS proof-of-possession request produced a token but
+// no usable binding certificate. Returning the AuthResult anyway would break the contract documented
+// on AuthResult.BindingCertificate and hand back a certificate-bound token the caller has no way to
+// present, which fails later against the resource as an opaque TLS or 401 error.
+var errBindingCertUnresolved = errors.New("mTLS proof-of-possession: the binding certificate could not be resolved, so the token cannot be presented to the resource; the certificate is nil, carries no DER chain, or its leaf could not be parsed")
 
 // bindingCertWithLeaf returns a binding certificate whose Leaf is guaranteed to be populated, or nil
 // when cert is nil, carries no DER chain, or carries no parsable leaf. It never writes to cert: the
@@ -484,7 +492,11 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			if authParams.IsMtlsPoP {
-				ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
+				bindingCert := bindingCertWithLeaf(authParams.MtlsBindingCert)
+				if bindingCert == nil {
+					return AuthResult{}, errBindingCertUnresolved
+				}
+				ar.BindingCertificate = bindingCert
 			}
 			if rt := storageTokenResponse.AccessToken.RefreshOn.T; !rt.IsZero() && Now().After(rt) {
 				b.canRefreshMu.Lock()
@@ -662,6 +674,16 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 			return AuthResult{}, err
 		}
 	}
+	// Resolved before the token is written to the cache. An mTLS PoP result with a nil
+	// BindingCertificate is unusable, so it has to be an error rather than a successful result with
+	// a missing field; doing that check after m.Write would leave the unusable token cached and
+	// every later acquisition would serve it from there without ever re-running this path.
+	var bindingCert *tls.Certificate
+	if authParams.IsMtlsPoP {
+		if bindingCert = bindingCertWithLeaf(authParams.MtlsBindingCert); bindingCert == nil {
+			return AuthResult{}, errBindingCertUnresolved
+		}
+	}
 	account, err := m.Write(authParams, token)
 	if err != nil {
 		return AuthResult{}, err
@@ -674,9 +696,7 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		return AuthResult{}, err
 	}
 
-	if authParams.IsMtlsPoP {
-		ar.BindingCertificate = bindingCertWithLeaf(authParams.MtlsBindingCert)
-	}
+	ar.BindingCertificate = bindingCert
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 	return ar, err
 }

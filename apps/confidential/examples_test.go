@@ -188,17 +188,26 @@ func ExampleClient_AcquireTokenByCredential_ficMtlsProofOfPossession() {
 	if err != nil {
 		// TODO: handle error
 	}
-	leg1, err := leg1App.AcquireTokenByCredential(context.TODO(),
-		[]string{"api://AzureADTokenExchange/.default"},
-		confidential.WithMtlsProofOfPossession())
-	if err != nil {
-		// TODO: handle error
-	}
 
 	// Leg 2: federated assertion (jwt-pop) + binding cert -> final mtls_pop token. One callback
 	// returns both, so the assertion and the certificate it is bound to can never drift apart.
+	//
+	// Leg 1 runs inside the callback rather than once outside it. MSAL resolves this callback on
+	// every token request, so a refreshed assertion or a rotated certificate is picked up
+	// automatically, and leg1App's own cache keeps the repeat call cheap. Closing over a single
+	// pre-computed result would instead pin an assertion that eventually expires, alongside a
+	// certificate that may since have rotated -- a bug a one-shot program never exposes but a
+	// long-running service does.
 	assertionCred := confidential.NewCredFromSignedAssertionCallback(
-		func(context.Context, confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+		func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+			// Use the callback's ctx, not the enclosing one, so cancellation and deadlines from the
+			// leg-2 acquisition propagate into leg 1.
+			leg1, err := leg1App.AcquireTokenByCredential(ctx,
+				[]string{"api://AzureADTokenExchange/.default"},
+				confidential.WithMtlsProofOfPossession())
+			if err != nil {
+				return confidential.SignedAssertion{}, err
+			}
 			return confidential.SignedAssertion{
 				Assertion:          leg1.AccessToken,
 				BindingCertificate: leg1.BindingCertificate,

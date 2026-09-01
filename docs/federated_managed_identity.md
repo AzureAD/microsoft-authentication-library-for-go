@@ -223,7 +223,8 @@ Notes:
   implement `crypto.Signer`.
 - Sovereign clouds are supported via `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China); the legacy hosts `login.usgovcloudapi.net` and
-  `login.chinacloudapi.cn` are rejected with guidance toward the supported host.
+  `login.chinacloudapi.cn` are treated as aliases, resolving to their preferred-network host first so
+  they reach the same mTLS endpoint as the modern hostname.
 
 ## Cache Behavior
 
