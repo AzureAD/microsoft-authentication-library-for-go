@@ -28,6 +28,13 @@ import (
 // It's usually an *http.Client from the standard library.
 type HTTPClient = comm.HTTPClient
 
+// MtlsClientFactory builds an HTTPClient whose transport presents the given certificate as the
+// client certificate during a mutual-TLS handshake. It is the internal type behind the documented
+// mTLS override hook (confidential.WithMtlsHTTPClient); that hook takes a concrete *http.Client,
+// because this type names an interface declared under apps/internal and Go function types are
+// invariant in their result type, so no external module could construct a value of this type.
+type MtlsClientFactory = comm.MtlsClientFactory
+
 // REST provides REST clients for communicating with various backends used by MSAL.
 type REST struct {
 	client *comm.Client
@@ -36,6 +43,13 @@ type REST struct {
 // New is the constructor for REST.
 func New(httpClient HTTPClient) *REST {
 	return &REST{client: comm.New(httpClient)}
+}
+
+// SetMtlsClientFactory installs a custom factory used to build the mutual-TLS client for mTLS
+// proof-of-possession token requests. When unset, MSAL auto-builds and caches a client per
+// certificate thumbprint.
+func (r *REST) SetMtlsClientFactory(factory MtlsClientFactory) {
+	r.client.SetMtlsClientFactory(factory)
 }
 
 // Authority returns a client for querying information about various authorities.

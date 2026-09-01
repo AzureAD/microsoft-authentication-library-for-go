@@ -5,6 +5,7 @@ package accesstokens
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/base64"
 	"errors"
 	"fmt"
@@ -43,6 +44,7 @@ type fakeURLCaller struct {
 	gotEndpoint string
 	gotQV       url.Values
 	gotResp     interface{}
+	gotCert     *tls.Certificate
 }
 
 func (f *fakeURLCaller) URLFormCall(ctx context.Context, endpoint string, qv url.Values, resp interface{}) error {
@@ -52,6 +54,18 @@ func (f *fakeURLCaller) URLFormCall(ctx context.Context, endpoint string, qv url
 	f.gotEndpoint = endpoint
 	f.gotQV = qv
 	f.gotResp = resp
+
+	return nil
+}
+
+func (f *fakeURLCaller) URLFormCallWithCertificate(ctx context.Context, endpoint string, qv url.Values, resp interface{}, cert *tls.Certificate) error {
+	if f.err {
+		return errors.New("error")
+	}
+	f.gotEndpoint = endpoint
+	f.gotQV = qv
+	f.gotResp = resp
+	f.gotCert = cert
 
 	return nil
 }
