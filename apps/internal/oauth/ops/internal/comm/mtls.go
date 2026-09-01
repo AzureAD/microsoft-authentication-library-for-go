@@ -22,10 +22,9 @@ const maxMtlsClients = 1000
 // MtlsClientFactory optionally builds an HTTPClient whose transport presents cert as the client
 // certificate during the mutual-TLS handshake. It is the public override hook
 // (confidential.WithMtlsHTTPClient), which is required whenever the client passed to
-// confidential.WithHTTPClient is not an *http.Client - notably for callers reaching MSAL through
-// Azure's azidentity, whose wrapper type satisfies the HTTPClient interface but cannot have a
-// client certificate installed on it. When unset, MSAL auto-builds and caches a client per
-// certificate.
+// confidential.WithHTTPClient is not an *http.Client - a wrapper type may satisfy the HTTPClient
+// interface without being able to have a client certificate installed on it. When unset, MSAL
+// auto-builds and caches a client per certificate.
 //
 // The clients a factory returns belong to the caller. A factory may memoize and hand back one
 // shared client for every certificate; MSAL therefore never closes their idle connections during

@@ -35,9 +35,10 @@ type bearerMtlsRouter struct {
 	host   string
 	tenant string
 
-	mu        sync.Mutex
-	reqs      int
-	tokenReqs []*url.URL
+	mu         sync.Mutex
+	reqs       int
+	tokenReqs  []*url.URL
+	tokenBodys []url.Values
 }
 
 func (r *bearerMtlsRouter) Do(req *http.Request) (*http.Response, error) {
@@ -51,8 +52,17 @@ func (r *bearerMtlsRouter) Do(req *http.Request) (*http.Response, error) {
 	case strings.Contains(path, ".well-known/openid-configuration"):
 		body = mock.GetTenantDiscoveryBody(r.host, r.tenant)
 	default:
+		// Read the form before recording, so a test can assert on what the token request actually
+		// carried and not only on where it was sent.
+		var form url.Values
+		if req.Body != nil {
+			if raw, err := io.ReadAll(req.Body); err == nil {
+				form, _ = url.ParseQuery(string(raw))
+			}
+		}
 		r.mu.Lock()
 		r.tokenReqs = append(r.tokenReqs, req.URL)
+		r.tokenBodys = append(r.tokenBodys, form)
 		r.mu.Unlock()
 		body = mock.GetAccessTokenBody("bearer-over-mtls-token", "", "", "", 3600, 0)
 	}
@@ -73,6 +83,16 @@ func (r *bearerMtlsRouter) tokenRequest() *url.URL {
 		return nil
 	}
 	return r.tokenReqs[0]
+}
+
+// tokenRequestBody returns the form of the first token request that was sent, or nil if none was.
+func (r *bearerMtlsRouter) tokenRequestBody() url.Values {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.tokenBodys) == 0 {
+		return nil
+	}
+	return r.tokenBodys[0]
 }
 
 // requestCount returns how many requests the client attempted in total, discovery included, so a
@@ -170,12 +190,6 @@ func TestSendCertificateOverMtls_ValidatesAuthority(t *testing.T) {
 			wantErr:   `authority type "ADFS"`,
 		},
 		{
-			// As above, only the first path segment differs from the control.
-			desc:      "dSTS on a login.* host",
-			authority: "https://login.microsoftonline.com/dstsv2/" + authority.DSTSTenant,
-			wantErr:   `authority type "DSTS"`,
-		},
-		{
 			// Varies from the control only in the host. Bearer-over-mTLS still presents the binding
 			// certificate to the derived mtlsauth.* host, and forces x5c onto the client assertion,
 			// so an untrusted host must not be rewritten here either.
@@ -205,9 +219,9 @@ func TestSendCertificateOverMtls_ValidatesAuthority(t *testing.T) {
 }
 
 // TestSendCertificateOverMtls_AuthorityTypeGuardNamesAAD pins the guard ae7f3c5 added, separately
-// from the "contains ADFS" assertion above: the rejection names the authority type that is required.
-// Built from the authority.AAD constant rather than its literal value, so the assertion keeps
-// meaning the same thing if that value ever changes.
+// from the "contains ADFS" assertion above: the rejection names the authority types that are
+// accepted. Built from the authority.AAD and authority.DSTS constants rather than their literal
+// values, so the assertion keeps meaning the same thing if those values ever change.
 func TestSendCertificateOverMtls_AuthorityTypeGuardNamesAAD(t *testing.T) {
 	certs, key := loadTestCert(t)
 	cred, err := NewCredFromCert(certs, key)
@@ -218,13 +232,13 @@ func TestSendCertificateOverMtls_AuthorityTypeGuardNamesAAD(t *testing.T) {
 
 	_, err = client.AcquireTokenByCredential(context.Background(), tokenScope)
 	if err == nil {
-		t.Fatal("AcquireTokenByCredential = nil error, want a non-AAD authority to be rejected")
+		t.Fatal("AcquireTokenByCredential = nil error, want an ADFS authority to be rejected")
 	}
-	if want := fmt.Sprintf("an AAD (%s) authority is required", authority.AAD); !strings.Contains(err.Error(), want) {
+	if want := fmt.Sprintf("an AAD (%s) or dSTS (%s) authority is required", authority.AAD, authority.DSTS); !strings.Contains(err.Error(), want) {
 		t.Errorf("error = %q, want it to contain %q", err, want)
 	}
 	if got := router.tokenRequest(); got != nil {
-		t.Errorf("a token request was sent to %s; a non-AAD authority must never reach the token endpoint", got)
+		t.Errorf("a token request was sent to %s; an unsupported authority type must never reach the token endpoint", got)
 	}
 }
 

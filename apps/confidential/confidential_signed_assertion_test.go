@@ -887,6 +887,12 @@ func TestSignedAssertionOpaqueSignerHandshake(t *testing.T) {
 // proof-of-possession, a signed-assertion credential behaves exactly like one from
 // NewCredFromAssertionCallback — a bearer client_assertion, the callback invoked lazily and only
 // once, its certificate ignored, and the same AssertionRequestOptions delivered.
+//
+// The certificate is ignored here because this client asked for no mutual TLS at all: neither
+// WithMtlsProofOfPossession nor WithSendCertificateOverMtls. That is the whole point of the case —
+// returning a certificate must not, by itself, change where the request goes or what it presents.
+// When either option is set the certificate is used; see
+// TestSendCertificateOverMtls_SignedAssertion_RealHandshake for the Bearer-over-mTLS side.
 func TestSignedAssertionCredentialWithoutMtls(t *testing.T) {
 	leaf, key := newSelfSignedCert(t, "ignored-binding-cert")
 	var calls int32
