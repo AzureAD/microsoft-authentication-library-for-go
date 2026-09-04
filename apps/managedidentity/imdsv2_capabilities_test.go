@@ -119,6 +119,12 @@ func TestCapabilitiesReportsNoneWhenMetadataUnavailable(t *testing.T) {
 	if capabilities.ErrorReason == "" {
 		t.Fatal("the reason discovery failed should be reported, it is what a caller acts on")
 	}
+	// A populated reason alongside a detected source is ordinary rather than a
+	// contradiction: managed identity works on this host, a bound token does
+	// not. Capabilities.ErrorReason documents exactly this case.
+	if capabilities.Source != DefaultToIMDS {
+		t.Fatalf("source = %q, want DefaultToIMDS: the v1 probe answered even though v2 did not", capabilities.Source)
+	}
 }
 
 // Discovery probes the metadata service and provisions a key. Neither changes

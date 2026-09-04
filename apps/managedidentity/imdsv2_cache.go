@@ -331,6 +331,20 @@ func (c *bindingCertCache) restore(key, clientID, tenantID string, provider keyP
 		TenantID:                   stored.TenantID,
 		MtlsAuthenticationEndpoint: stored.Endpoint,
 	})
+	// The endpoint travelled through the certificate store's friendly name, so
+	// it is the one field here that another writer could have rewritten into
+	// something this process would later dial. Parsing it now, rather than at
+	// the token leg, keeps a malformed or downgraded authority out of the
+	// in-memory cache entirely: reaching the token leg with one would fail the
+	// acquisition after the certificate had already been adopted, and every
+	// later caller would restore the same unusable entry from the store and
+	// fail the same way. Clearing the alias instead makes the next acquisition
+	// mint a certificate whose endpoint came straight from IMDS.
+	if _, err := cert.tokenEndpoint(); err != nil {
+		_ = cert.Close()
+		persisted.deleteAll(key)
+		return nil, false
+	}
 	c.adopt(key, cert)
 	return cert, true
 }
@@ -569,6 +583,17 @@ func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bind
 		return nil, "", fmt.Errorf(
 			"managedidentity: IMDS issued a binding certificate that expires at %s, which is inside the %s refresh window, so a token bound to it could outlive it",
 			notAfter, bindingCertRefreshWindow)
+	}
+	// The endpoint IMDS returned is parsed before the certificate is adopted or
+	// written to the operating system store. Leaving that to the token leg
+	// would mean a malformed or non-https authority is discovered only after
+	// the certificate is cached in memory and persisted, so every later
+	// acquisition in this process - and every process that restores the alias
+	// afterwards - would fail on the same unusable value. Rejecting it here
+	// keeps it out of both caches and names the real problem.
+	if _, err := cert.tokenEndpoint(); err != nil {
+		_ = cert.Close()
+		return nil, "", err
 	}
 	// The cache takes over the reference newBindingCertificate created; the
 	// caller gets one of its own.

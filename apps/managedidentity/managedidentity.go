@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -536,6 +537,75 @@ func tryAcquireMITokenGate() (func(), bool) {
 	}
 }
 
+// miAttemptTimeout bounds a single HTTP attempt made while the process-wide
+// managed identity gate is held.
+//
+// The gate is what keeps a cold-start stampede from becoming simultaneous
+// requests to one local endpoint, and it is process-wide, so whoever holds it
+// blocks every other identity and every other source too. That is safe only
+// while the holder is guaranteed to finish. It is not guaranteed by the caller:
+// a context without a deadline is ordinary, and the HTTP client is replaceable
+// through [WithHTTPClient] and [WithMtlsHTTPClient] with an implementation this
+// package cannot inspect and whose Timeout it therefore cannot see or set. A
+// single connection to a wedged endpoint that never answers and never resets
+// would otherwise hold the gate for the life of the process, and every later
+// acquisition would block until its own context expired.
+//
+// Bounding each attempt rather than the whole acquisition is what MSAL .NET
+// does: it sets no timeout on the clients it builds, so each call inherits
+// HttpClient's own default of 100 seconds while a multi-leg acquisition with
+// retries is free to take longer. Matching the number keeps a slow but
+// answering regional endpoint working here exactly as it does there, and still
+// leaves every hold on the gate finite.
+//
+// A caller's own deadline is never extended by this: the bound is derived from
+// the request's context, so a shorter caller deadline continues to win.
+//
+// It is a variable so tests can shrink it; nothing outside tests assigns to it.
+var miAttemptTimeout = 100 * time.Second
+
+// boundedBody ties an attempt's cancel to the lifetime of the response body, so
+// the deadline covers reading the response as well as receiving its header, and
+// is released as soon as the caller is done with it.
+//
+// Cancelling when Do returns instead would abort the caller's own read of a
+// response that had already succeeded, which is the failure this package
+// already hit once on the IMDSv1 retry path (see bufferResponseBody and issue
+// #634). Buffering the whole body would avoid that too, but it would read an
+// unbounded amount of an unauthenticated link-local response into memory, and
+// the IMDSv2 legs deliberately cap what they read instead.
+type boundedBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (b *boundedBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.cancel)
+	return err
+}
+
+// doBoundedAttempt sends req with a deadline no later than miAttemptTimeout,
+// returning a response whose body must be closed to release it.
+//
+// A caller that never closes the body loses nothing beyond a timer that fires
+// at the deadline, because the context is derived from the request's own.
+func doBoundedAttempt(client ops.HTTPClient, req *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), miAttemptTimeout)
+	resp, err := client.Do(req.Clone(ctx))
+	if err != nil || resp == nil {
+		cancel()
+		return resp, err
+	}
+	if resp.Body == nil {
+		cancel()
+		return resp, nil
+	}
+	resp.Body = &boundedBody{ReadCloser: resp.Body, cancel: cancel}
+	return resp, nil
+}
+
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
@@ -688,7 +758,11 @@ func (c Client) cachedAuthResult(ctx context.Context, o AcquireTokenOptions) (_ 
 	// certificate hands back a token that every resource rejects. The scheme
 	// lookup above already resolved that certificate.
 	if o.mtlsPoP {
-		ar.BindingCertificate = copyBindingCertificate(cachedBinding)
+		copied, err := copyBindingCertificate(cachedBinding)
+		if err != nil {
+			return AuthResult{}, false, false, err
+		}
+		ar.BindingCertificate = copied
 	}
 	return ar, refreshDue, true, nil
 }
@@ -784,7 +858,10 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (A
 		return AuthResult{}, err
 	}
 
-	response, err := c.httpClient.Do(req)
+	// Arc's challenge is the one request that does not go through
+	// getTokenForRequest, so it is bounded here for the same reason: it runs
+	// while the process-wide gate is held.
+	response, err := doBoundedAttempt(c.httpClient, req)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -987,7 +1064,9 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	if c.retryPolicyEnabled {
 		resp, err = c.retry(defaultRetryCount, req)
 	} else {
-		resp, err = c.httpClient.Do(req)
+		// retry() already bounds each of its attempts; this branch is the one
+		// that would otherwise hand an unbounded call the process-wide gate.
+		resp, err = doBoundedAttempt(c.httpClient, req)
 	}
 	if err != nil {
 		return r, err

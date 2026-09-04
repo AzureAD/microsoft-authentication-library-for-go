@@ -176,6 +176,9 @@ type imdsFake struct {
 	// acquisition asked for.
 	issueClientID string
 	issueTenantID string
+	// issueEndpoint, when set, replaces the mtls_authentication_endpoint leg 2
+	// advertises, so a test can drive a malformed or downgraded authority.
+	issueEndpoint string
 	// certSubjectCN, when set, replaces the common name on the issued leaf, so
 	// a test can drive a certificate that names an identity the issuance
 	// response does not.
@@ -494,12 +497,16 @@ func (f *imdsFake) handleIssue(w http.ResponseWriter, r *http.Request) {
 	if f.issueTenantID != "" {
 		issuedTenantID = f.issueTenantID
 	}
+	issuedEndpoint := f.tokenServer.Listener.Addr().String()
+	if f.issueEndpoint != "" {
+		issuedEndpoint = f.issueEndpoint
+	}
 	issued := map[string]string{
 		"client_id":                    issuedClientID,
 		"tenant_id":                    issuedTenantID,
 		"certificate":                  base64.StdEncoding.EncodeToString(certDER),
 		"identity_type":                "SAMI",
-		"mtls_authentication_endpoint": f.tokenServer.Listener.Addr().String(),
+		"mtls_authentication_endpoint": issuedEndpoint,
 	}
 	for _, field := range f.omitIssueFields {
 		delete(issued, field)

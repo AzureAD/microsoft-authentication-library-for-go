@@ -136,7 +136,7 @@ func sendIMDSRequest(ctx context.Context, client ops.HTTPClient, req *http.Reque
 	// forget the refusal.
 	client = imdsRedirectGuarded(client)
 	if !retryEnabled {
-		return client.Do(req)
+		return doBoundedAttempt(client, req)
 	}
 
 	// Both the retry count and the delay schedule are fixed by the first answer,
@@ -159,7 +159,7 @@ func sendIMDSRequest(ctx context.Context, client ops.HTTPClient, req *http.Reque
 			}
 		}
 
-		resp, err = client.Do(attempt)
+		resp, err = doBoundedAttempt(client, attempt)
 
 		retriable := false
 		switch {
@@ -247,7 +247,7 @@ func hasRetryAfter(resp *http.Response) bool {
 // certificate.
 func sendSTSRequest(ctx context.Context, client *http.Client, req *http.Request, retryEnabled bool) (*http.Response, error) {
 	if !retryEnabled {
-		return client.Do(req)
+		return doBoundedAttempt(client, req)
 	}
 
 	var resp *http.Response
@@ -261,7 +261,7 @@ func sendSTSRequest(ctx context.Context, client *http.Client, req *http.Request,
 			}
 		}
 
-		resp, err = client.Do(attempt)
+		resp, err = doBoundedAttempt(client, attempt)
 
 		retriable := false
 		if err != nil {
