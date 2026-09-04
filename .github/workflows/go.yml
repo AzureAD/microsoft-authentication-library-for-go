@@ -20,7 +20,11 @@ jobs:
 
     strategy:
       matrix:
-        go: ["1.21", "1.22"]
+        # 1.20 is here to compile the pre-1.21 side of the build tags. go.mod declares go 1.18, but
+        # imdsv2_alert_pre121.go is //go:build !go1.21, so a matrix that starts at 1.21 never parses
+        # it: the file could stop compiling and every job would still pass. 1.21 and 1.22 cover the
+        # go1.21 side and the toolchains the module actually targets.
+        go: ["1.20", "1.21", "1.22"]
 
     steps:
       - name: Set up Go 1.x
@@ -82,7 +86,17 @@ jobs:
         run: go build ./apps/...
 
       # ./apps/tests/devapps/... is what reaches the KeyGuard packages; the other dev apps report
-      # "no test files" and cost nothing. -race is omitted deliberately: it requires cgo and a C
-      # toolchain, and these are single-goroutine parsing and validation tests.
+      # "no test files" and cost nothing.
+      #
+      # -race matters specifically on this job. The Linux job above already races
+      # ./apps/managedidentity/..., but the Windows-only files in that package -- the CNG key
+      # provider, the certificate store, and the attestation interop -- are absent from the Linux
+      # package graph, so the binding-certificate cache, its reference counting, and the mint gate
+      # are never raced on the platform whose code they actually guard. The windows-latest image
+      # ships a C toolchain, so cgo and the race detector are available here. CGO_ENABLED is set
+      # explicitly so that a future image without gcc fails on this step with a clear cause rather
+      # than silently dropping to CGO_ENABLED=0.
       - name: Unit Tests
-        run: go test -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/... ./apps/tests/devapps/...
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/... ./apps/tests/devapps/...

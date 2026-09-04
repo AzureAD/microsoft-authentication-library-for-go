@@ -23,6 +23,33 @@ linters:
         linters:
           - gosec
         text: "G103"
+      # keyprovider_windows.go has the same shape: it is the CNG/NCrypt syscall
+      # surface for minting a KeyGuard binding key, and passing unsafe.Pointer to
+      # syscall.SyscallN is the only way to call NCrypt at all. Scope the exclusion
+      # to that one file rather than the whole managedidentity package, so G103
+      # still applies to the rest of it. Every other gosec rule still applies here.
+      - path: apps/managedidentity/keyprovider_windows\.go
+        linters:
+          - gosec
+        text: "G103"
+      # attestation_windows.go is the same case: the only way to call into
+      # AttestationClientLib.dll is to hand unsafe.Pointer values to
+      # syscall.SyscallN. Scoped to this one file so G103 still applies to the
+      # rest of the package, and every other gosec rule still applies here.
+      - path: apps/managedidentity/attestation_windows\.go
+        linters:
+          - gosec
+        text: "G103"
+      # imdsv2_persist_windows.go is the same case again: it is the crypt32
+      # certificate-store surface, and the two property calls it needs are not
+      # in x/sys, so they are invoked through syscall.SyscallN with
+      # unsafe.Pointer arguments. Scoped to this one file so G103 still applies
+      # to the rest of the package, and every other gosec rule still applies
+      # here.
+      - path: apps/managedidentity/imdsv2_persist_windows\.go
+        linters:
+          - gosec
+        text: "G103"
       # TODO: temporary suppressions to be addressed separately after the v2 upgrade.
       - linters:
           - gosec
