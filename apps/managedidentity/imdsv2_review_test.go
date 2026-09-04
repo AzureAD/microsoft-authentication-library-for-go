@@ -55,7 +55,7 @@ func TestRestoreNeverProvisionsAKey(t *testing.T) {
 
 	// The persisted cache is empty, so this returns immediately; the point is
 	// that nothing on the way there reached getOrCreateKey.
-	if _, ok := certCache.restore("alias", cert.ClientID, provider); ok {
+	if _, ok := certCache.restore("alias", cert.ClientID, cert.TenantID, provider); ok {
 		t.Fatal("restore found a certificate in an empty store")
 	}
 	if provider.creates != before {
@@ -486,16 +486,90 @@ func TestCachedCertificateClientIDComparisonFoldsCase(t *testing.T) {
 	certCache.adopt("alias", cert)
 	t.Cleanup(func() { certCache.clear() })
 
-	got, ok := certCache.usable("alias", strings.ToUpper(lower), provider)
+	got, ok := certCache.usable("alias", strings.ToUpper(lower), strings.ToUpper(cert.TenantID), provider)
 	if !ok {
 		t.Fatal("an upper-cased client ID did not match the cached certificate")
 	}
 	_ = got.Close()
 }
 
-// ---------------------------------------------------------------------------
-// Token type, both directions.
-// ---------------------------------------------------------------------------
+// An identity can be moved between tenants. The client ID does not change when
+// that happens, so a certificate issued for the old tenant still looks like this
+// machine's credential on a client-ID comparison alone - while naming an
+// authority the token endpoint will no longer honour. Both identifiers are
+// therefore compared, and a tenant change drops the entry.
+func TestCachedCertificateIsDroppedWhenTheTenantChanges(t *testing.T) {
+	withCleanCaches(t)
+	provider := newFakeKeyProvider()
+	const clientID = "8c8a1b0a-4d40-4d9e-9a4f-1f2a3b4c5d6e"
+	const oldTenant = "72f988bf-86f1-41af-91ab-2d7cd011db47"
+	const newTenant = "11111111-2222-3333-4444-555555555555"
+
+	cert := testBindingCertificate(t, provider, bindingKeyName, now().Add(30*24*time.Hour))
+	cert.ClientID = clientID
+	cert.TenantID = oldTenant
+	certCache.adopt("alias", cert)
+	t.Cleanup(func() { certCache.clear() })
+
+	// Same client ID, different tenant: not this machine's credential any more.
+	if got, ok := certCache.usable("alias", clientID, newTenant, provider); ok {
+		_ = got.Close()
+		t.Fatal("a certificate issued for another tenant was reused")
+	}
+	// And it is gone, so a later read cannot resurrect it.
+	if _, ok := certCache.get("alias"); ok {
+		t.Fatal("the mismatched certificate was left in the cache")
+	}
+}
+
+// The persisted store is checked the same way, and on a mismatch the alias is
+// removed so a cold start does not keep restoring a certificate for an identity
+// that has moved.
+func TestPersistedCertificateIsDroppedWhenTheTenantChanges(t *testing.T) {
+	persisted := withCleanCaches(t)
+	provider := newFakeKeyProvider()
+	const clientID = "8c8a1b0a-4d40-4d9e-9a4f-1f2a3b4c5d6e"
+	const oldTenant = "72f988bf-86f1-41af-91ab-2d7cd011db47"
+	const newTenant = "11111111-2222-3333-4444-555555555555"
+
+	cert := testBindingCertificate(t, provider, bindingKeyName, now().Add(30*24*time.Hour))
+	cert.ClientID = clientID
+	cert.TenantID = oldTenant
+	persisted.write("alias", cert)
+	if _, ok := persisted.read("alias"); !ok {
+		t.Fatal("the fixture did not persist a certificate")
+	}
+
+	if got, ok := certCache.restore("alias", clientID, newTenant, provider); ok {
+		_ = got.Close()
+		t.Fatal("a persisted certificate for another tenant was restored")
+	}
+	if _, ok := persisted.read("alias"); ok {
+		t.Fatal("the persisted alias was left behind after a tenant change")
+	}
+}
+
+// The tenant comparison folds case for the same reason the client ID one does:
+// both are GUIDs and IMDS is not consistent about how it renders them, so a
+// case-sensitive check would re-mint on every acquisition.
+func TestCachedCertificateTenantComparisonFoldsCase(t *testing.T) {
+	withCleanCaches(t)
+	provider := newFakeKeyProvider()
+	const clientID = "8c8a1b0a-4d40-4d9e-9a4f-1f2a3b4c5d6e"
+	const tenant = "72f988bf-86f1-41af-91ab-2d7cd011db47"
+
+	cert := testBindingCertificate(t, provider, bindingKeyName, now().Add(30*24*time.Hour))
+	cert.ClientID = clientID
+	cert.TenantID = tenant
+	certCache.adopt("alias", cert)
+	t.Cleanup(func() { certCache.clear() })
+
+	got, ok := certCache.usable("alias", strings.ToUpper(clientID), strings.ToUpper(tenant), provider)
+	if !ok {
+		t.Fatal("an upper-cased tenant did not match the cached certificate")
+	}
+	_ = got.Close()
+}
 
 // A bearer request answered with anything else has been given a credential the
 // caller does not know how to spend: WithRequestOverMtls promises a token any

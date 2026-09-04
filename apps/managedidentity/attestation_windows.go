@@ -327,6 +327,22 @@ func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
 	runtime.KeepAlive(endpointPtr)
 	runtime.KeepAlive(clientIDPtr)
 
+	// The native library allocates the token and hands ownership over, so it is
+	// freed on every path out of here - including the failure paths, where a
+	// non-zero status can still come back with a token allocated. This mirrors
+	// the finally block in MSAL .NET's AttestationClient, and is arranged before
+	// the status is looked at so no early return can skip it.
+	//
+	// The pointer is captured and cleared so the free happens exactly once even
+	// though the success path reads the string first.
+	freeToken := token
+	defer func() {
+		if freeToken != nil {
+			_, _, _ = syscall.SyscallN(lib.freeAttestationToken, uintptr(unsafe.Pointer(freeToken)))
+			freeToken = nil
+		}
+	}()
+
 	// #nosec G115 -- the native library returns a 32-bit status widened into a
 	// uintptr by the syscall ABI; narrowing it back to int32 restores the value
 	// the library actually returned, including negative failure codes.
@@ -338,7 +354,6 @@ func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
 		return "", fmt.Errorf("managedidentity: KeyGuard attestation failed with native code %d (%v): %s", code, callErr, detail)
 	}
 	jwt := windows.BytePtrToString(token)
-	_, _, _ = syscall.SyscallN(lib.freeAttestationToken, uintptr(unsafe.Pointer(token)))
 	if jwt == "" {
 		return "", fmt.Errorf("managedidentity: KeyGuard attestation produced an empty token: %s",
 			attestationDetail(drainAttestationLog()))

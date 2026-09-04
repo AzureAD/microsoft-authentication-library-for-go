@@ -246,17 +246,31 @@ func getDWORDProperty(h windows.Handle, property string) (uint32, bool, error) {
 	return binary.LittleEndian.Uint32(buf[:]), true, nil
 }
 
-// bindingKeyCreateFlags is what NCryptCreatePersistedKey is called with.
+// bindingKeyCreateFlags is what NCryptCreatePersistedKey is called with when the
+// name is expected to be free.
 //
-// NCRYPT_OVERWRITE_KEY_FLAG is deliberately absent. Passing it would make key
-// creation unconditionally destructive: it replaces whatever is under the name,
-// which on this shared container means discarding a key another process - or
-// MSAL .NET - is already using and has certificates issued against. Omitting it
-// is necessary but, on its own, not sufficient; see createPersistedKey.
+// NCRYPT_OVERWRITE_KEY_FLAG is absent here so that a create which races another
+// process loses cleanly with NTE_EXISTS and adopts the winner, rather than
+// destroying a key somebody is already using. It is added back, and only added
+// back, when recovering a key this caller has just observed to be unusable - see
+// bindingKeyReplaceFlags and resolveBindingKey.
 //
 // The flags are a named constant rather than an expression inlined at the call
 // site so the absence is checkable. See TestBindingKeyCreateFlagsDoNotOverwrite.
 const bindingKeyCreateFlags = ncryptUseVirtualIsolationFlag | ncryptUsePerBootKeyFlag
+
+// ncryptOverwriteKeyFlag is NCRYPT_OVERWRITE_KEY_FLAG.
+const ncryptOverwriteKeyFlag = 0x00000080
+
+// bindingKeyReplaceFlags recreates the key over a name that already exists.
+//
+// This is the flag set MSAL .NET always uses - CreateFresh passes
+// OverwriteExistingKey together with the virtual-isolation and per-boot flags -
+// and it is required on the recovery path: the stale name is still there, so a
+// create without overwrite returns NTE_EXISTS for ever, and the alternative of
+// deleting the name through the stale handle is the operation that destroys
+// another process's replacement. See resolveBindingKey.
+const bindingKeyReplaceFlags = bindingKeyCreateFlags | ncryptOverwriteKeyFlag
 
 // errBindingKeyExists reports that this process lost the race to create the
 // named key: somebody else has it. It is a signal to adopt the winner, not a
@@ -280,33 +294,36 @@ func bindingKeyCreateError(op string, status uintptr) error {
 	return fmt.Errorf("%w: %v", ErrCredentialGuardNotAvailable, ncryptStatusError(op, status))
 }
 
-// createPersistedKey mints a new VBS-isolated RSA key called name.
+// createPersistedKey mints a VBS-isolated RSA key called name.
 //
-// Creation is deliberately non-destructive - see bindingKeyCreateFlags - but
-// that does NOT make it atomic against another process, and this is the single
-// most important thing to understand about this function.
+// overwrite selects bindingKeyReplaceFlags, which replaces whatever is under the
+// name. Only the recovery path in resolveBindingKey passes it, and only after
+// observing that the persisted key cannot sign; everything else creates without
+// it so a lost race is reported as NTE_EXISTS instead of destroying a live key.
 //
-// NCryptCreatePersistedKey does not persist anything. It builds an in-memory key
-// object; the name is only written when NCryptFinalizeKey succeeds. Two
+// Creation is not atomic against another process either way, and this is the
+// single most important thing to understand about this function.
+// NCryptCreatePersistedKey does not persist anything: it builds an in-memory key
+// object, and the name is only written when NCryptFinalizeKey succeeds. Two
 // processes can therefore both create, because neither has written the name yet
 // and so neither is told NTE_EXISTS, and then both finalize successfully, with
 // the Microsoft Software KSP letting the later finalize silently replace the
 // earlier one. The observed sequence is: createA ok, createB ok, finalizeA ok,
 // finalizeB ok, and the persisted key is B - while A holds a perfectly valid
-// handle to a key that is no longer under the name and will never be found
-// again.
+// handle to a key that is no longer under the name.
 //
 // Nothing available here closes that window at the API level. What closes it is
 // checking afterwards: resolveBindingKey reopens the name and compares public
 // keys, and a caller that was replaced discards its candidate and adopts the
-// persisted winner. The named mutex in withBindingKeyLock narrows the window for
-// Go processes that use this package, and the check is what makes the result
-// correct when the mutex is unavailable or the other creator does not
-// participate in it.
-func createPersistedKey(provider windows.Handle, name *uint16) (windows.Handle, error) {
+// persisted winner.
+func createPersistedKey(provider windows.Handle, name *uint16, overwrite bool) (windows.Handle, error) {
 	algorithm, err := windows.UTF16PtrFromString(ncryptRSAAlgorithm)
 	if err != nil {
 		return 0, fmt.Errorf("managedidentity: encoding the algorithm name: %w", err)
+	}
+	flags := bindingKeyCreateFlags
+	if overwrite {
+		flags = bindingKeyReplaceFlags
 	}
 	var key windows.Handle
 	status, _, _ := syscall.SyscallN(procNCryptCreatePersistedKey.Addr(),
@@ -315,7 +332,7 @@ func createPersistedKey(provider windows.Handle, name *uint16) (windows.Handle, 
 		uintptr(unsafe.Pointer(algorithm)),
 		uintptr(unsafe.Pointer(name)),
 		0,
-		uintptr(bindingKeyCreateFlags),
+		uintptr(flags),
 	)
 	if status != 0 {
 		return 0, bindingKeyCreateError("NCryptCreatePersistedKey", status)
@@ -582,11 +599,14 @@ type bindingKeyContainer interface {
 	// usable reports whether an opened key can still perform a private-key
 	// operation.
 	usable(windows.Handle) bool
-	// remove deletes the key an opened handle refers to, consuming the handle.
-	remove(windows.Handle) error
 	// create makes the key, returning errBindingKeyExists when somebody else
 	// created it first.
-	create() (windows.Handle, error)
+	//
+	// overwrite replaces whatever is under the name instead of failing on it.
+	// It is passed only when this caller has just observed the persisted key to
+	// be unusable, because the name then already exists and a non-overwriting
+	// create can never succeed against it.
+	create(overwrite bool) (windows.Handle, error)
 	// persisted reports whether candidate is the key the name now resolves to.
 	//
 	// It is the check that makes creation correct, because create alone cannot
@@ -595,8 +615,10 @@ type bindingKeyContainer interface {
 	// finalize silently replaces the earlier. Only reopening the name and
 	// comparing tells a creator whether it is still the one under it.
 	persisted(candidate windows.Handle) (bool, error)
-	// discard releases a candidate handle that turned out not to be the
-	// persisted key.
+	// discard releases a handle without deleting the key behind it.
+	//
+	// This is how a stale handle is disposed of, and the distinction is the
+	// whole point: see resolveBindingKey.
 	discard(windows.Handle)
 	// adopt turns an opened or created handle into a binding key, taking
 	// ownership of it.
@@ -606,37 +628,59 @@ type bindingKeyContainer interface {
 // resolveBindingKey opens the container's key, or creates it, converging on
 // whichever key is actually persisted under the name.
 //
-// There are two distinct ways to lose the race, and only one of them is
-// reported by the API.
+// # Recovering a stale key
 //
-// The reported one is create-time: the rival finalized before this process
-// created, so NCryptCreatePersistedKey - or, depending on the provider,
-// NCryptFinalizeKey - answers NTE_EXISTS. That surfaces as errBindingKeyExists
-// and the loop goes round to adopt the winner.
+// A per-boot KeyGuard key leaves its metadata on disk when the machine reboots.
+// The name still opens and still reports Virtual Iso, but the isolated material
+// is gone, so the handle cannot sign. That handle must be released and the key
+// recreated - and it must NOT be deleted through.
 //
-// The silent one is finalize-time, and it is the case that actually bites.
-// Neither create writes the name, so with two processes interleaved as
-// createA, createB, finalizeA, finalizeB, neither create sees a collision,
-// both finalizes succeed, and the Microsoft Software KSP leaves B under the
-// name. A is told nothing at all: it holds a valid handle to a key that is no
-// longer the persisted one, and if it went on to request a certificate for that
-// key, the certificate would be bound to a key no later process could ever find.
-// Nothing in the CNG API prevents this. So every successful create is followed
-// by reopening the name and comparing public keys, and a creator that finds
-// itself replaced discards its candidate and goes round to adopt the winner.
+// Deleting through it is the trap. NCryptDeleteKey resolves the *name*, not the
+// object the stale handle was opened from, so if another process has already
+// replaced the key, deleting through the old handle destroys the replacement and
+// reports success. That was reproduced 3/3 against the Microsoft Software KSP on
+// a development machine: open handle A, replace the name with B, delete through
+// A, and B is gone. A process doing that during recovery silently removes a
+// working key another process is already using.
 //
-// A residual TOCTOU remains and cannot be removed from inside one library: a
-// third creator that does not take withBindingKeyLock - MSAL .NET, today - can
-// finalize between this process's check and its use of the key. The window is
-// tiny and the consequence is bounded, because the next acquisition re-reads the
-// name and finds the newer key. Closing it entirely needs both libraries to
-// agree on the lock; see withBindingKeyLock.
+// So recovery frees the handle and recreates with NCRYPT_OVERWRITE_KEY_FLAG,
+// which is what MSAL .NET does - WindowsCngKeyOperations.TryGetOrCreateKeyGuard
+// disposes the handle when its liveness probe fails and calls CreateFresh, whose
+// creation options are OverwriteExistingKey together with the virtual-isolation
+// and per-boot flags. Overwrite is required here rather than merely convenient:
+// the name exists, so a create without it returns NTE_EXISTS for ever.
 //
-// The loop is bounded. Every extra pass is driven by another process winning a
-// race this one just lost, which cannot repeat indefinitely without that process
-// also deleting the key it just created.
+// Before overwriting, the name is reopened once. Another process may have
+// replaced the dead key between this one's probe and its create, and adopting
+// that replacement is strictly better than overwriting it. That narrows the
+// window; it does not close it, and the residual case is described below.
+//
+// # Losing the race
+//
+// There are two ways to lose, and only one is reported. The reported one is
+// create-time NTE_EXISTS - from either NCryptCreatePersistedKey or
+// NCryptFinalizeKey - which means a rival already holds the name. The silent one
+// is finalize-time: neither create writes the name, so two processes can both
+// create, both finalize, and the later finalize replaces the earlier with
+// nothing said. Every successful create is therefore followed by reopening the
+// name and comparing public keys, and a creator that finds itself replaced
+// discards its candidate and goes round to adopt the winner.
+//
+// Both are retryable within the bound rather than failures: a lost race means
+// somebody else has a good key, which is the outcome this function wants.
+//
+// # What is not guaranteed
+//
+// withBindingKeyLock excludes other processes using this package. MSAL .NET
+// takes no equivalent lock, so a Go process and a .NET process can still both be
+// inside their create-finalize sequence, and the overwrite in the recovery path
+// above can still land on a key .NET created moments earlier. Closing that needs
+// a mutex convention both SDKs adopt; until then the reopen-and-compare check is
+// what keeps this library from *using* a key that was replaced, which is the part
+// it can guarantee alone.
 func resolveBindingKey(c bindingKeyContainer, name string) (bindingKey, error) {
 	for attempt := 0; attempt < bindingKeyCreateAttempts; attempt++ {
+		overwrite := false
 		key, existed, err := c.open()
 		if err != nil {
 			return bindingKey{}, err
@@ -645,18 +689,28 @@ func resolveBindingKey(c bindingKeyContainer, name string) (bindingKey, error) {
 			if c.usable(key) {
 				return c.adopt(key)
 			}
-			// The key survived a reboot in name only: it opens and still
-			// reports Virtual Iso, but the isolated material behind it is gone.
-			// It is deleted rather than overwritten so that a process holding a
-			// handle to the same dead key is not handed a live one underneath
-			// it; any certificate issued against it is worthless either way,
-			// and the caller discards its cache when the public key changes.
-			if err := c.remove(key); err != nil {
+			// Stale: release the handle, never delete through it.
+			c.discard(key)
+
+			// Somebody may have replaced it while this caller was probing.
+			// Reopening once turns "overwrite a dead key" into "adopt a live
+			// one" whenever the replacement has already landed.
+			replacement, stillThere, err := c.open()
+			if err != nil {
 				return bindingKey{}, err
 			}
+			if stillThere {
+				if c.usable(replacement) {
+					return c.adopt(replacement)
+				}
+				c.discard(replacement)
+				overwrite = true
+			}
+			// If the name has gone entirely, another process deleted it and an
+			// ordinary create is both sufficient and safer.
 		}
 
-		key, err = c.create()
+		key, err = c.create(overwrite)
 		if err == nil {
 			won, err := c.persisted(key)
 			if err != nil {
@@ -699,10 +753,8 @@ func (c cngBindingKeyContainer) open() (windows.Handle, bool, error) {
 
 func (c cngBindingKeyContainer) usable(key windows.Handle) bool { return keyCanSign(key) }
 
-func (c cngBindingKeyContainer) remove(key windows.Handle) error { return deleteKeyHandle(key) }
-
-func (c cngBindingKeyContainer) create() (windows.Handle, error) {
-	return createPersistedKey(c.provider, c.name)
+func (c cngBindingKeyContainer) create(overwrite bool) (windows.Handle, error) {
+	return createPersistedKey(c.provider, c.name, overwrite)
 }
 
 // persisted reopens the name and compares public keys, so a creator learns
@@ -869,6 +921,14 @@ func finishBindingKey(key, provider windows.Handle) (bindingKey, error) {
 
 // deleteKeyHandle deletes the persisted key an open handle refers to. CNG frees
 // the handle on success, so the caller must not free it again.
+//
+// NCryptDeleteKey resolves the *name*, not the object the handle was opened
+// from, so a handle that has gone stale deletes whatever now holds the name -
+// including a replacement another process just created, and it reports success
+// while doing it. That is why the stale-key recovery path in resolveBindingKey
+// never routes through here: it frees the handle and recreates with overwrite
+// instead. The only caller is deleteKey, which opens the name and deletes it in
+// the same breath because deleting is what it was asked to do.
 func deleteKeyHandle(key windows.Handle) error {
 	status, _, _ := syscall.SyscallN(procNCryptDeleteKey.Addr(), uintptr(key), uintptr(ncryptSilentFlag))
 	if status != 0 {
@@ -984,6 +1044,48 @@ func (s *ncryptSigner) Close() error {
 	return nil
 }
 
+// pssSaltLength resolves the salt length a PSS signature should use, in bytes.
+//
+// crypto.Signer's contract gives the two sentinels different meanings, and
+// treating them as the same value - which this did - makes rsa.PSSSaltLengthAuto
+// produce a signature a strict verifier can reject, because a caller asking for
+// Auto is asking for the largest salt the modulus allows, not for the hash size.
+//
+//   - PSSSaltLengthEqualsHash is exactly the hash length.
+//   - PSSSaltLengthAuto is the maximum the encoding permits. RFC 8017 section
+//     9.1.1 puts an EMSA-PSS encoding in emLen = ceil((modBits-1)/8) bytes and
+//     spends hLen on the hash and one byte on the trailer, plus the 0x01
+//     separator, leaving emLen - hLen - 2 for the salt. This is what
+//     crypto/rsa's own signPSSWithSalt computes for the same sentinel.
+//   - Any other value is an explicit request and is used as given.
+//
+// A modulus too small to carry the hash at all yields a negative maximum, which
+// is refused rather than wrapped into an enormous unsigned salt.
+func pssSaltLength(requested int, hash crypto.Hash, public *rsa.PublicKey) (int, error) {
+	hashLen := hash.Size()
+	switch requested {
+	case rsa.PSSSaltLengthEqualsHash:
+		return hashLen, nil
+	case rsa.PSSSaltLengthAuto:
+		if public == nil || public.N == nil {
+			return 0, fmt.Errorf("managedidentity: the maximum PSS salt length cannot be derived without the public key")
+		}
+		// emBits is one less than the modulus bit length; emLen rounds it up to
+		// whole bytes.
+		emLen := (public.N.BitLen() - 1 + 7) / 8
+		maxSalt := emLen - hashLen - 2
+		if maxSalt < 0 {
+			return 0, fmt.Errorf("managedidentity: a %d bit key is too small to carry a %v PSS signature", public.N.BitLen(), hash)
+		}
+		return maxSalt, nil
+	default:
+		if requested < 0 {
+			return 0, fmt.Errorf("managedidentity: invalid PSS salt length %d", requested)
+		}
+		return requested, nil
+	}
+}
+
 // algorithmIdentifier maps a hash to the BCRYPT algorithm string CNG expects.
 func algorithmIdentifier(h crypto.Hash) (*uint16, error) {
 	var name string
@@ -1027,16 +1129,12 @@ func (s *ncryptSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) 
 	pssInfo := bcryptPSSPaddingInfo{}
 	pkcs1Info := bcryptPKCS1PaddingInfo{}
 	if pss, ok := opts.(*rsa.PSSOptions); ok {
-		saltLength := pss.SaltLength
-		switch saltLength {
-		case rsa.PSSSaltLengthAuto, rsa.PSSSaltLengthEqualsHash:
-			saltLength = hash.Size()
+		saltLength, err := pssSaltLength(pss.SaltLength, hash, s.public)
+		if err != nil {
+			return nil, err
 		}
-		if saltLength < 0 {
-			return nil, fmt.Errorf("managedidentity: invalid PSS salt length %d", pss.SaltLength)
-		}
-		// #nosec G115 -- the guard above makes saltLength non-negative, and a PSS
-		// salt is bounded by the modulus size, so it cannot overflow uint32.
+		// #nosec G115 -- pssSaltLength bounds the value to [0, emLen), which is
+		// derived from the modulus size and cannot reach uint32's range.
 		pssInfo = bcryptPSSPaddingInfo{pszAlgID: algID, cbSalt: uint32(saltLength)}
 		padInfo = unsafe.Pointer(&pssInfo)
 		flags = bcryptPadPSSFlag
@@ -1059,6 +1157,12 @@ func (s *ncryptSigner) Sign(_ io.Reader, digest []byte, opts crypto.SignerOpts) 
 	)
 	if status != 0 {
 		return nil, fmt.Errorf("%s: %w", bindingKeySignFailureMarker, ncryptStatusError("NCryptSignHash(size)", status))
+	}
+	// A successful size query that asks for nothing is not something CNG should
+	// ever do, but believing it would index an empty slice below and panic
+	// inside a signing path that crypto/tls calls on every handshake.
+	if needed == 0 {
+		return nil, fmt.Errorf("%s: NCryptSignHash reported a zero-length signature", bindingKeySignFailureMarker)
 	}
 	signature := make([]byte, needed)
 	status, _, _ = syscall.SyscallN(procNCryptSignHash.Addr(),

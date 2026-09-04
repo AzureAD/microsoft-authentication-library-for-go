@@ -277,7 +277,7 @@ func TestIMDSv2EvictionClearsPersistedCertificate(t *testing.T) {
 	if _, ok := certCache.get(key); ok {
 		t.Fatal("the in-memory cache still served an evicted certificate")
 	}
-	if _, ok := certCache.restore(key, "", provider); ok {
+	if _, ok := certCache.restore(key, "", "", provider); ok {
 		t.Fatal("the store was consulted for an identity marked for re-issue")
 	}
 }

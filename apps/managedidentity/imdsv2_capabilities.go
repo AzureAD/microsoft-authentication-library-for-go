@@ -128,10 +128,15 @@ type Capabilities struct {
 	//
 	// It is not limited to "no source was detected". On a host that does have a
 	// managed identity source it carries the reason binding is unavailable
-	// there: the platform has no key provider, or the IMDSv2 probe failed and
-	// the compute document did not describe a host that could bind either. A
-	// populated ErrorReason with Source set to [DefaultToIMDS] is therefore
+	// there: the IMDSv2 probe failed and the compute document did not describe
+	// a host that could bind either, or that document could not be read at all.
+	// A populated ErrorReason with Source set to [DefaultToIMDS] is therefore
 	// normal, and says managed identity works here but a bound token does not.
+	//
+	// It does not report whether this build can mint a KeyGuard key. That is a
+	// property of the process rather than of the host, it does not change what
+	// the host supports, and it surfaces as the error from an actual
+	// acquisition - [ErrMtlsNotSupportedForPlatform] - not here.
 	ErrorReason string
 }
 
@@ -184,10 +189,10 @@ func (c Capabilities) IsMtlsPoPSupportedByHost() bool {
 // answer, independently constructed clients never do.
 //
 // expires separates the two kinds of negative answer. A definitive one - "this
-// host serves IMDSv1 only", "this platform has no key provider" - is a fact
-// about the host that cannot change while the process runs, so it is stored
-// with a zero expires and never revisited. A transient failure is not an answer
-// at all, so it is only reused until expires.
+// host serves IMDSv1 only", "this process is configured for an environment
+// source that cannot bind" - is a fact that cannot change while the process
+// runs, so it is stored with a zero expires and never revisited. A transient
+// failure is not an answer at all, so it is only reused until expires.
 type capabilitiesState struct {
 	// gate makes discovery single-flight. Concurrent callers at startup wait
 	// for the first probe rather than each issuing their own, which is what
@@ -267,6 +272,14 @@ const capabilitiesRetryInterval = 30 * time.Second
 // only probes the metadata service when no environment-based source is
 // configured.
 //
+// Discovery follows the order MSAL .NET uses, in
+// ManagedIdentityClient.GetManagedIdentitySourceAsync: an environment-configured
+// source settles it, otherwise IMDSv2 is probed, and if that fails IMDSv1 is
+// probed too. Source is reported as [DefaultToIMDS] only once one of those
+// probes has answered; when neither does it is left empty, because nothing has
+// shown the host serves managed identity. The instance compute document is read
+// only after the v1 probe succeeds, and only to decide that host's tier.
+//
 // Discovery is not purely a read. On a host that serves IMDSv2 it asks the
 // platform for the binding key, which creates and persists that key if it does
 // not already exist: a CNG container under a fixed name, shared with MSAL .NET
@@ -280,18 +293,23 @@ const capabilitiesRetryInterval = 30 * time.Second
 // managed identity at all is not an error: it is reported as a Capabilities
 // with an empty Source and a populated ErrorReason, because "there is no
 // managed identity here" is an answer a credential chain acts on rather than a
-// failure.
+// failure. A cancelled call caches nothing.
 //
-// The two negative answers are cached differently, and the difference is
-// visible to a caller that retries. A definitive one - this platform has no key
-// provider, or the host answered that it serves IMDSv1 only - is a fact that
-// cannot change under a running process, so it is kept for the life of the
-// client and a later call returns it without touching the network. A transient
-// failure to reach the metadata service is reported the same way but kept for
-// at most capabilitiesRetryInterval, currently 30 seconds, after which the next
-// call probes again. A host that was briefly unreachable is therefore not
-// written off, and a caller that saw MtlsBindingStrengthNone for that reason can
-// get a different answer half a minute later.
+// How long an answer lasts depends on how settled it is, and the difference is
+// visible to a caller that retries. A settled answer - an environment source, a
+// successful v2 probe, or a definitive v2 absence followed by a successful v1
+// probe whose compute document was read and parsed - cannot change under a
+// running process and is kept for this client's lifetime. Anything unresolved is
+// kept for at most capabilitiesRetryInterval, currently 30 seconds: a probe that
+// could not be completed, a compute document that could not be read or parsed,
+// or a v2 failure that was not a definitive 404, because v2 may recover and a
+// client that remembered the weaker v1 answer for good would never notice.
+//
+// This is deliberately unlike MSAL .NET, which caches every outcome statically
+// for the life of the process; there, one transient failure disables managed
+// identity until restart. The per-client state is deliberate too: clients can
+// carry different HTTP clients, key providers and metadata endpoints, so one
+// client's answer is not generally valid for another.
 func (c Client) Capabilities(ctx context.Context) (Capabilities, error) {
 	state := c.hostCapabilityState()
 	if result, ok := state.cached(); ok {
@@ -326,29 +344,31 @@ func (c Client) Capabilities(ctx context.Context) (Capabilities, error) {
 
 // discoverCapabilities works out what this host supports. The second return
 // reports whether the answer is definitive: a fact about the host rather than a
-// failure that may not repeat. Only a definitive answer is cached for the life
-// of the process.
+// failure that may not repeat. Only a definitive answer is kept for the life of
+// the client; anything else expires after capabilitiesRetryInterval.
+//
+// The order is MSAL .NET's, from ManagedIdentityClient.GetManagedIdentitySourceAsync:
+// an environment-configured source settles it, otherwise probe IMDSv2, and if
+// that fails probe IMDSv1. Only once a probe has answered is the host known to
+// serve managed identity at all.
+//
+// The instance compute document is deliberately not part of establishing that.
+// It describes the machine's security profile and answers on hosts with no
+// managed identity endpoint whatsoever, so treating it as evidence of IMDSv1
+// would report DefaultToIMDS for a host that has none. .NET reads it only after
+// its v1 probe succeeds, and only to decide the tier; so does this.
+//
+// The probes run on every platform. Whether Go can mint a KeyGuard key is a
+// separate question from whether the host serves managed identity, and
+// conflating them would report "no source" on, say, a Linux VM that plainly has
+// one. The platform limit shows up as the binding tier and as the error an
+// actual acquisition returns, not as an absent source.
 func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 	// An environment-configured source is authoritative and costs nothing to
 	// read, so it settles the question without a probe. None of these sources
 	// issues a binding certificate, so none of them can bind a token.
 	if c.source != DefaultToIMDS {
 		return Capabilities{Source: c.source, MaxSupportedBindingStrength: MtlsBindingStrengthNone}, true
-	}
-
-	// IMDSv2 is probed before falling back to v1. The v2 endpoint only exists
-	// on hosts that serve it, whereas v1 answers a malformed request with 400,
-	// so probing v1 first would report success on a host that also serves v2
-	// and mask its stronger binding.
-	if !platformSupportsMtlsPoP() {
-		// The v2 flow needs a platform key. Without one there is nothing to
-		// bind to, and the probe would only prove IMDS is reachable, which the
-		// v1 answer below already covers.
-		return Capabilities{
-			Source:                      DefaultToIMDS,
-			MaxSupportedBindingStrength: MtlsBindingStrengthNone,
-			ErrorReason:                 ErrMtlsNotSupportedForPlatform.Error(),
-		}, true
 	}
 
 	v := imdsV2{
@@ -358,66 +378,76 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 		retryEnabled: c.retryPolicyEnabled,
 		baseEndpoint: imdsV2BaseEndpoint(),
 	}
-	if err := v.probeEndpoint(ctx, newCorrelationID()); err != nil {
-		// MSAL .NET falls through to the IMDSv1 question on any v2 probe
-		// failure, not only on the one that says "no such endpoint"
-		// (ManagedIdentityClient.GetManagedIdentitySourceAsync: "If v2 fails,
-		// fall back to probing IMDS v1"), so a host that is briefly unwell on
-		// the v2 route still gets described from its compute document rather
-		// than reported as having no managed identity at all.
-		//
-		// Whether that description is worth remembering is a separate question.
-		// A 404 is the host answering that it has no v2 route, which is settled
-		// and cannot change under a running process. Anything else - a 5xx, a
-		// throttle, a timeout - is a failure to obtain an answer rather than an
-		// answer, and the retries above have already given it every chance, so
-		// the answer below is used but not cached. (.NET caches either outcome
-		// for the life of the process; a transient 500 there disables managed
-		// identity permanently.)
-		definitive := errors.Is(err, ErrMtlsPoPNotSupportedInIMDSv1)
-		return capabilitiesForIMDSv1(v, ctx, err), definitive
-	}
 
-	return Capabilities{
-		Source:                      DefaultToIMDS,
-		MaxSupportedBindingStrength: bindingStrengthFor(v.keyProvider),
-	}, true
-}
-
-// capabilitiesForIMDSv1 describes a host that has answered that it serves
-// IMDSv1 only.
-//
-// Such a host cannot run the v2 CSR flow, so this library will not mint a
-// binding certificate on it. The tier is still reported from the instance
-// compute document, because Capabilities describes the host rather than what
-// this library will do with it: a credential chain uses it to decide whether
-// managed identity is worth attempting at all, and MSAL .NET reports the same
-// tier for the same machine from the same document
-// (ManagedIdentityClient.DetermineImdsV1BindingStrengthAsync). Reporting None
-// where .NET reports Software would make the two libraries disagree about a
-// machine.
-//
-// Software is the ceiling here, deliberately. A security profile is a statement
-// about the platform, not a successful VBS attestation, so claiming the attested
-// KeyGuard tier from it would overclaim; .NET makes the same choice and says so.
-//
-// Any failure to read the document reports no binding, matching .NET's
-// treatment of a null response. The v2 failure is reported as the reason only
-// when the answer is that nothing can bind, because a host that did produce a
-// tier has been described successfully and has no error to report.
-func capabilitiesForIMDSv1(v imdsV2, ctx context.Context, v2Err error) Capabilities {
-	compute, err := v.getComputeMetadata(ctx, newCorrelationID())
-	if err == nil && compute.supportsMtlsPoP() {
+	v2Err := v.probeEndpoint(ctx, newCorrelationID())
+	if v2Err == nil {
+		// The host speaks the key-bound CSR protocol, so it can bind at least
+		// at software strength; the platform key decides whether it can do
+		// better. This is a settled fact about the host.
 		return Capabilities{
 			Source:                      DefaultToIMDS,
-			MaxSupportedBindingStrength: MtlsBindingStrengthSoftware,
+			MaxSupportedBindingStrength: bindingStrengthFor(v.keyProvider),
+		}, true
+	}
+	if ctx.Err() != nil {
+		return Capabilities{}, false
+	}
+
+	// v2 answered 404, which is the host saying it has no v2 route. Anything
+	// else is a failure to get an answer, and v2 may recover, so an answer
+	// reached after one is not kept for the life of the client.
+	v2Definitive := errors.Is(v2Err, ErrMtlsPoPNotSupportedInIMDSv1)
+
+	if v1Err := v.probeV1Endpoint(ctx, newCorrelationID()); v1Err != nil {
+		if ctx.Err() != nil {
+			return Capabilities{}, false
 		}
+		// Neither probe established IMDS. Source stays empty: reporting
+		// DefaultToIMDS here would tell a credential chain there is an identity
+		// endpoint when nothing has answered like one.
+		return Capabilities{
+			MaxSupportedBindingStrength: MtlsBindingStrengthNone,
+			ErrorReason:                 fmt.Sprintf("%s; %s", v2Err, v1Err),
+		}, false
 	}
-	return Capabilities{
+
+	// v1 is there. Its tier comes from the compute document, which is the same
+	// source .NET reads in DetermineImdsV1BindingStrengthAsync, and Software is
+	// the ceiling: a security profile is a statement about the platform, not a
+	// successful VBS attestation.
+	strength, computeErr := imdsV1BindingStrength(ctx, v)
+	result := Capabilities{
 		Source:                      DefaultToIMDS,
-		MaxSupportedBindingStrength: MtlsBindingStrengthNone,
-		ErrorReason:                 v2Err.Error(),
+		MaxSupportedBindingStrength: strength,
 	}
+	if computeErr != nil {
+		// The source is established either way; only the tier is unknown, and
+		// the reason has to say so rather than repeating the v2 failure.
+		result.ErrorReason = computeErr.Error()
+		return result, false
+	}
+	if strength == MtlsBindingStrengthNone {
+		result.ErrorReason = v2Err.Error()
+	}
+	// Permanent only when v2's absence was itself settled. A transient v2
+	// failure means v2 may come back, and a client that cached this answer for
+	// good would keep reporting the weaker v1 tier for a host that had
+	// recovered.
+	return result, v2Definitive
+}
+
+// imdsV1BindingStrength reads the tier for a host that has answered the IMDSv1
+// probe. A failure to read or parse the compute document is reported, so the
+// caller can tell "this host cannot bind" from "this host's tier is unknown".
+func imdsV1BindingStrength(ctx context.Context, v imdsV2) (MtlsBindingStrength, error) {
+	compute, err := v.getComputeMetadata(ctx, newCorrelationID())
+	if err != nil {
+		return MtlsBindingStrengthNone, fmt.Errorf("managedidentity: IMDSv1 is available but its binding strength could not be determined: %w", err)
+	}
+	if compute.supportsMtlsPoP() {
+		return MtlsBindingStrengthSoftware, nil
+	}
+	return MtlsBindingStrengthNone, nil
 }
 
 // bindingStrengthFor reports the strongest binding a host that already answered
