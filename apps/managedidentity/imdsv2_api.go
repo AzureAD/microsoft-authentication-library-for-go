@@ -1,0 +1,519 @@
+// Copyright (c) Microsoft Corporation.
+// Licensed under the MIT license.
+
+package managedidentity
+
+import (
+	"context"
+	"crypto"
+	"crypto/tls"
+	"crypto/x509"
+	"errors"
+	"fmt"
+	"io"
+	"net/http"
+	"os"
+	"runtime"
+	"strings"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+)
+
+// WithMtlsHTTPClient overrides how the mutual-TLS client is built for the
+// IMDSv2 token leg.
+//
+// The default client presents the binding certificate over TLS 1.2 or later,
+// which is what almost every application wants. Supply a factory only when the
+// TLS handshake has to be owned by the caller, for example to add a proxy or a
+// custom root store. The factory receives the binding certificate and must
+// return a client that presents it, otherwise the token request is rejected.
+//
+// This does not affect the two plain-HTTP calls to the metadata service, which
+// use the client given to [WithHTTPClient].
+//
+// Redirects: the returned client is copied before use, and if it states no
+// CheckRedirect this library installs one that refuses to follow, because a 307
+// or 308 on this leg replays the client credential at the redirect target and
+// offers the binding certificate on the cloned handshake. A factory that returns
+// a client with its own non-nil CheckRedirect keeps it untouched - the copy is
+// never mutated either way - which means that caller has taken on
+// redirect-replay safety for this leg.
+func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) ClientOption {
+	return func(c *Client) {
+		c.mtlsClientFactory = factory
+	}
+}
+
+// WithMtlsProofOfPossession requests a certificate-bound access token
+// (token_type=mtls_pop) instead of a bearer token.
+//
+// The token is bound to a short-lived certificate that Azure Instance Metadata
+// Service issues to this virtual machine, whose private key is created inside
+// Virtualization-based Security and never leaves it. A resource that supports
+// bound tokens will reject the token if it is presented on a connection that
+// does not use that certificate, so a stolen token is not usable elsewhere.
+//
+// The returned token must be sent over a connection authenticated with the same
+// certificate. [AuthResult.BindingCertificate] carries that certificate together
+// with a live handle to its private key: install it on the transport - through
+// tls.Config.GetClientCertificate rather than Certificates, which Go filters
+// against the authorities the server advertises - and present the token with the
+// "mtls_pop" scheme rather than "Bearer". The package README shows the complete
+// client, including the TLS 1.2 renegotiation settings a resource that enforces
+// token binding needs.
+//
+// This requires Windows with Credential Guard enabled and a host that serves
+// IMDSv2. It cannot be combined with [WithRequestOverMtls].
+func WithMtlsProofOfPossession() AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.mtlsPoP = true
+	}
+}
+
+// WithRequestOverMtls requests an ordinary bearer token, but obtains it over a
+// mutually authenticated connection using the certificate IMDS issues to this
+// virtual machine.
+//
+// This hardens acquisition without changing how the token is used: the result
+// is a normal bearer token that any resource accepts. Use it when the resource
+// does not support certificate-bound tokens but the acquisition path should
+// still be bound to this machine.
+//
+// This requires Windows with Credential Guard enabled and a host that serves
+// IMDSv2. It cannot be combined with [WithMtlsProofOfPossession].
+func WithRequestOverMtls() AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.overMtls = true
+	}
+}
+
+// usesIMDSv2 reports whether the options select the IMDSv2 certificate path.
+func (o AcquireTokenOptions) usesIMDSv2() bool {
+	return o.mtlsPoP || o.overMtls
+}
+
+// stampCacheComponents records the options that change what a token is, so two
+// requests that differ in them do not share a cache entry.
+//
+// Scope and identity alone do not describe these tokens. A bearer token
+// obtained over mTLS is issued under a different policy than one obtained over
+// plain HTTP; a token bound to an attested key carries a guarantee one bound to
+// an unattested key does not; and a token acquired under a binding-strength
+// floor was checked against a guarantee a token acquired without one was not.
+// Serving any of these in place of another would silently weaken what the
+// caller asked for.
+//
+// The component names and their values are MSAL .NET's, from
+// AcquireTokenForManagedIdentityParameterBuilder, so a shared cache written by
+// either library partitions the same way.
+func (o AcquireTokenOptions) stampCacheComponents(params *authority.AuthParams) {
+	if params.CacheKeyComponents == nil {
+		params.CacheKeyComponents = map[string]string{}
+	}
+	// .NET records whether an attestation provider was supplied as "1" or "0".
+	// Go's attestation opt-in is the same statement: WithAttestationSupport is
+	// what makes the credential request carry an attestation token.
+	attested := "0"
+	if o.attestation {
+		attested = "1"
+	}
+	// A proof-of-possession token bound to an attested key is not
+	// interchangeable with one bound to an unattested key, even though both are
+	// bound to a certificate for the same identity and scope.
+	if o.mtlsPoP {
+		params.CacheKeyComponents["mi_att"] = attested
+	} else {
+		delete(params.CacheKeyComponents, "mi_att")
+	}
+	// The mTLS-bearer marker carries the attestation mode as its value rather
+	// than a bare flag. These tokens are ordinary bearer tokens, so the
+	// authentication scheme contributes no key ID to the cache key: without the
+	// mode here, nothing at all would separate an attested acquisition from an
+	// unattested one.
+	//
+	// Its presence also puts these tokens in their own partition, separate from
+	// tokens acquired over plain HTTP for the same identity and resource. That
+	// is deliberate rather than incidental: a bearer token obtained over mTLS is
+	// issued under a different policy than one obtained without it, so serving
+	// either in place of the other would silently change what the caller was
+	// given. A caller using WithRequestOverMtls therefore does not share a cache
+	// entry with a caller using no option at all.
+	if o.overMtls {
+		params.CacheKeyComponents["mtls_bearer"] = attested
+	} else {
+		delete(params.CacheKeyComponents, "mtls_bearer")
+	}
+	// A floor is only recorded when one was set. Writing a zero would change
+	// the key shape for every caller that never asked for a floor, orphaning
+	// tokens cached before this option existed.
+	//
+	// The value is the strength's name, not its number, because .NET stamps
+	// MtlsBindingStrength.ToString() and a C# enum renders as its member name.
+	if o.minStrength > MtlsBindingStrengthNone {
+		params.CacheKeyComponents["mi_minstrength"] = o.minStrength.String()
+	} else {
+		delete(params.CacheKeyComponents, "mi_minstrength")
+	}
+}
+
+// validate rejects option combinations that cannot be satisfied.
+func (o AcquireTokenOptions) validate(source Source) error {
+	if o.mtlsPoP && o.overMtls {
+		return ErrMtlsPoPAndBearerExclusive
+	}
+	// The floor is checked for being a real tier before anything else looks at
+	// it, so a value that is not one is refused for both mTLS and non-mTLS
+	// requests rather than only where it would have been enforced.
+	if !o.minStrength.isDeclared() {
+		return fmt.Errorf("%w: got %d", ErrInvalidMtlsBindingStrength, int(o.minStrength))
+	}
+	if !o.usesIMDSv2() {
+		// Attestation applies to the binding key, which only the IMDSv2 path
+		// mints. Ignoring the option here would route the request to the
+		// ordinary bearer path and hand back a token with none of the
+		// protection the caller asked for.
+		if o.attestation {
+			return ErrAttestationRequiresMtls
+		}
+		// A binding-strength floor is a statement about the key a token is
+		// bound to. A request that binds no key cannot meet it, and accepting
+		// the option silently would hand back a bearer token to a caller who
+		// asked for a guarantee about binding.
+		if o.minStrength > MtlsBindingStrengthNone {
+			return ErrMinStrengthRequiresMtls
+		}
+		return nil
+	}
+	// Only the IMDS source issues binding certificates. The other sources have
+	// no equivalent, and silently returning an ordinary bearer token would give
+	// the caller a token with none of the protection they asked for.
+	if source != DefaultToIMDS {
+		return fmt.Errorf("%w: the source is %s", ErrMtlsPoPNotSupportedForSource, source)
+	}
+	if !platformSupportsMtlsPoP() {
+		return ErrMtlsNotSupportedForPlatform
+	}
+	return nil
+}
+
+// acquireTokenForIMDSv2 runs the certificate-bound acquisition path.
+//
+// A cached certificate can be rejected by Entra without any local signal that
+// it went stale, so a single re-mint and retry is attempted. The retry is
+// bounded to one attempt: a second failure is a real error rather than a stale
+// certificate, and retrying further would turn a misconfiguration into a loop
+// against a rate-limited service.
+func (c Client) acquireTokenForIMDSv2(ctx context.Context, resource string, o AcquireTokenOptions) (AuthResult, error) {
+	// The floor is checked before anything is minted. Discovering afterwards
+	// that the host cannot meet it would mean IMDS had already issued a
+	// credential the caller was always going to refuse.
+	if err := c.enforceMinStrength(ctx, o.minStrength); err != nil {
+		return AuthResult{}, err
+	}
+	v := imdsV2{
+		httpClient:   c.httpClient,
+		keyProvider:  c.bindingKeyProvider(),
+		miType:       c.miType,
+		retryEnabled: c.retryPolicyEnabled,
+		baseEndpoint: imdsV2BaseEndpoint(),
+	}
+
+	// Client capabilities travel in the same "claims" parameter as a
+	// server-issued challenge, merged rather than concatenated, so they are
+	// resolved once here and used for both attempts below. MSAL .NET performs
+	// the identical merge on this leg through TokenClient's
+	// ClaimsAndClientCapabilities.
+	claims, err := c.claimsAndCapabilities(o)
+	if err != nil {
+		return AuthResult{}, err
+	}
+
+	binding, key, err := v.getBindingCertificate(ctx, o.attestation)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	// binding is reassigned by the re-mint below, so the release reads the
+	// variable rather than capturing the first value.
+	defer func() { _ = binding.Close() }()
+
+	client, err := c.mtlsClient(binding)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	tr, err := requestEntraToken(ctx, client, binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
+	if err != nil {
+		if !shouldRemintCertificate(err) {
+			return AuthResult{}, err
+		}
+		certCache.evict(key)
+		reminted, _, err := v.getBindingCertificate(ctx, o.attestation)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		_ = binding.Close()
+		binding = reminted
+		client, err = c.mtlsClient(binding)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		tr, err = requestEntraToken(ctx, client, binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
+		if err != nil {
+			return AuthResult{}, err
+		}
+	}
+
+	if err := verifyTokenType(tr, o.mtlsPoP); err != nil {
+		return AuthResult{}, err
+	}
+	return c.authResultForIMDSv2(tr, binding, o)
+}
+
+// claimsAndCapabilities produces the value of the token request's claims
+// parameter.
+//
+// Client capabilities and a server-issued challenge share that one parameter,
+// so when both are present they have to be merged into a single JSON object;
+// sending either alone would drop the other. authority.AuthParams already
+// implements that merge for every other flow in this library, and reusing it
+// keeps managed identity's spelling identical to theirs.
+func (c Client) claimsAndCapabilities(o AcquireTokenOptions) (string, error) {
+	// With no capabilities configured, MergeCapabilitiesAndClaims returns
+	// Claims verbatim without parsing it, which is exactly the pass-through
+	// this leg did before capabilities existed.
+	p := c.authParams
+	p.Claims = o.claims
+	return p.MergeCapabilitiesAndClaims()
+}
+
+// verifyTokenType checks that the service returned the kind of token that was
+// requested.
+//
+// Both directions matter. Entra can answer a token_type=mtls_pop request with a
+// bearer token, for example when the tenant has not enabled bound tokens;
+// returning that would hand the caller an unbound credential while the call site
+// believes it is bound. The other direction is just as wrong: a request that
+// asked for a bearer token and is answered with anything else has been given a
+// credential the caller does not know how to spend. WithRequestOverMtls
+// specifically promises "a normal bearer token that any resource accepts", and a
+// caller relying on that will send it with the Bearer scheme whatever the type
+// says, so a bound token coming back there fails at the resource with nothing to
+// explain it.
+//
+// The comparison is case-insensitive because RFC 6749 section 7.1 declares
+// token_type case-insensitive and services do vary the spelling; it is otherwise
+// exact, so an unknown type is refused rather than assumed to be a bearer token.
+func verifyTokenType(tr accesstokens.TokenResponse, popRequested bool) error {
+	if popRequested {
+		if !strings.EqualFold(tr.TokenType, authority.AccessTokenTypeMtlsPoP) {
+			return fmt.Errorf(
+				"managedidentity: a certificate-bound token was requested but the service returned a %q token; the tenant or resource may not support bound tokens",
+				tr.TokenType)
+		}
+		return nil
+	}
+	if !strings.EqualFold(tr.TokenType, authority.AccessTokenTypeBearer) {
+		return fmt.Errorf(
+			"managedidentity: a bearer token was requested but the service returned a %q token",
+			tr.TokenType)
+	}
+	return nil
+}
+
+// authResultForIMDSv2 converts the token response, caching bound tokens under a
+// scheme keyed by the binding certificate so they cannot be confused with
+// bearer tokens for the same resource.
+func (c Client) authResultForIMDSv2(tr accesstokens.TokenResponse, binding *bindingCertificate, o AcquireTokenOptions) (AuthResult, error) {
+	params := c.authParams
+	if o.mtlsPoP {
+		params.AuthnScheme = authority.NewMtlsPoPAuthenticationScheme(binding.Leaf)
+	}
+	res, err := authResultFromToken(params, tr)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	if o.mtlsPoP {
+		// The caller has to present this certificate when calling the resource,
+		// otherwise the bound token is rejected. A copy is handed out so a
+		// caller mutating it cannot corrupt the cached certificate that future
+		// handshakes rely on.
+		copied, err := copyBindingCertificate(binding)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		res.BindingCertificate = copied
+	}
+	return res, nil
+}
+
+// copyBindingCertificate returns a certificate the caller can hold and mutate
+// without affecting the cached one. The DER chain is deep-copied and the leaf is
+// re-parsed from that copy, so the result shares no backing array and no
+// *x509.Certificate with the cached certificate.
+//
+// That isolation is the whole point, so a leaf that cannot be re-parsed is an
+// error rather than a reason to hand back the cached one. Sharing the cached
+// leaf would silently reintroduce exactly the aliasing this function exists to
+// prevent: the recipient would be free to mutate a certificate the cache is
+// still serving to every other acquisition in the process. The cached chain
+// already parsed once, so this cannot happen for a certificate this package
+// issued; if it ever does, something is wrong enough that guessing is worse
+// than saying so.
+//
+// The private key is necessarily backed by the same object, because it is a
+// handle to one operating system key. The copy therefore takes a reference on
+// the binding certificate so that evicting the cache entry cannot release a key
+// this certificate still needs, and drops it once the caller lets the key go.
+// The reference is taken only after the parse has succeeded, so the error path
+// has nothing to release.
+func copyBindingCertificate(binding *bindingCertificate) (*tls.Certificate, error) {
+	if len(binding.TLS.Certificate) == 0 {
+		return nil, errors.New("managedidentity: the binding certificate has no DER chain to copy")
+	}
+	chain := make([][]byte, len(binding.TLS.Certificate))
+	for i, der := range binding.TLS.Certificate {
+		chain[i] = append([]byte(nil), der...)
+	}
+	leaf, err := x509.ParseCertificate(chain[0])
+	if err != nil {
+		return nil, fmt.Errorf("managedidentity: the binding certificate could not be re-parsed from its own DER: %w", err)
+	}
+	out := &tls.Certificate{
+		Certificate: chain,
+		PrivateKey:  binding.TLS.PrivateKey,
+		Leaf:        leaf,
+	}
+	if signer, ok := binding.TLS.PrivateKey.(crypto.Signer); ok {
+		binding.retain()
+		out.PrivateKey = newRetainedSigner(signer, binding.Close)
+	}
+	return out, nil
+}
+
+// retainedSigner is the private key handed to a caller. It holds a reference on
+// the cached binding certificate for exactly as long as the caller can still
+// sign with it.
+//
+// The reference is attached to the signer rather than to the *tls.Certificate
+// because callers routinely copy the certificate by value, as in
+// cert := *result.BindingCertificate. A finalizer on the certificate pointer
+// would then see that pointer become unreachable while the value copy is still
+// in use, and release the key underneath the caller. The private key survives
+// every such copy, so it is the only place the reference can safely live. This
+// mirrors what SafeHandle does for the same certificate in MSAL .NET.
+//
+// Sign and Public are written out rather than promoted from the embedded
+// Signer, and that is load-bearing. A promoted method is called on the embedded
+// field, so the last use of the *retainedSigner ends when the field is read -
+// before the native operation runs. The garbage collector may then finalize the
+// wrapper and release the binding key while the trustlet is still signing with
+// it. Forwarding explicitly, storing the result, and keeping the wrapper alive
+// across the delegated call closes that window: the finalizer cannot run until
+// after the operation has produced its result.
+type retainedSigner struct {
+	crypto.Signer
+	release func() error
+}
+
+// Public returns the public half of the binding key, keeping the wrapper alive
+// until the delegated call has returned.
+func (r *retainedSigner) Public() crypto.PublicKey {
+	pub := r.Signer.Public()
+	runtime.KeepAlive(r)
+	return pub
+}
+
+// Sign signs digest with the binding key, keeping the wrapper alive until the
+// delegated call has returned so the finalizer cannot free the key mid-signature.
+func (r *retainedSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	signature, err := r.Signer.Sign(rand, digest, opts)
+	runtime.KeepAlive(r)
+	return signature, err
+}
+
+func newRetainedSigner(signer crypto.Signer, release func() error) *retainedSigner {
+	held := &retainedSigner{Signer: signer, release: release}
+	runtime.SetFinalizer(held, func(h *retainedSigner) { _ = h.release() })
+	return held
+}
+
+// ErrMtlsClientFactoryReturnedNil is returned when a factory supplied to
+// [WithMtlsHTTPClient] returns a nil client. There is nothing to send the token
+// request on, so the request fails here rather than panicking inside net/http.
+//
+// Match it with errors.Is.
+var ErrMtlsClientFactoryReturnedNil = errors.New(
+	"managedidentity: the WithMtlsHTTPClient factory returned a nil *http.Client")
+
+// mtlsClient builds the client used for the IMDSv2 token leg, honouring
+// [WithMtlsHTTPClient] when the caller supplied a factory.
+//
+// A caller-supplied client is copied before it is used, and a redirect refusal
+// is installed on the copy when the caller stated no policy of their own. A nil
+// CheckRedirect is not "no policy": it is Go's default, which follows up to ten
+// redirects. This leg posts a form and presents the binding certificate, so a
+// 307 or 308 would replay the client credential at whatever host the Location
+// header names and offer the certificate on the cloned handshake, and the
+// https-only check tokenEndpoint performs cannot see where a redirect leads. The
+// copy is what keeps this from mutating a client the caller may share with
+// unrelated code; a caller who did set CheckRedirect has stated a policy and is
+// left alone, exactly as imdsRedirectGuarded treats the plain-HTTP legs.
+//
+// The certificate handed to a factory is a deep copy, for the same reason the
+// one handed to the caller in [AuthResult] is. A tls.Certificate passed by value
+// still shares its DER slices and its *x509.Certificate leaf with the cached
+// original, so a factory that rewrote cert.Certificate[0] or annotated
+// cert.Leaf would be mutating process-wide cached state that every other
+// acquisition reads, without any lock and while other goroutines are using it.
+// Copying first makes the factory's certificate its own. The copy also carries a
+// retained signer, so a factory that keeps its client - the usual case, since
+// building one per request is expensive - still has a live key after this
+// acquisition has released its own reference.
+//
+// The default client is built from the cached certificate directly. It is this
+// package's own code, it only reads the value, and it does not outlive the
+// acquisition.
+func (c Client) mtlsClient(binding *bindingCertificate) (*http.Client, error) {
+	if c.mtlsClientFactory == nil {
+		return mtlsHTTPClient(binding.TLS), nil
+	}
+	isolated, err := copyBindingCertificate(binding)
+	if err != nil {
+		return nil, err
+	}
+	client := c.mtlsClientFactory(*isolated)
+	if client == nil {
+		return nil, ErrMtlsClientFactoryReturnedNil
+	}
+	if client.CheckRedirect != nil {
+		return client, nil
+	}
+	guarded := *client
+	guarded.CheckRedirect = refuseIMDSv2Redirect
+	return &guarded, nil
+}
+
+// imdsV2BaseEndpoint returns the metadata service root.
+//
+// AZURE_POD_IDENTITY_AUTHORITY_HOST redirects the metadata calls at a pod
+// identity sidecar, which is how AKS presents a managed identity to a
+// container. MSAL .NET reads the same variable when it builds the IMDSv2
+// endpoint. It is deliberately scoped to this path: the IMDSv1 request this
+// package sends is built from a fixed address (see createIMDSAuthRequest), and
+// making it follow the variable would change a shipped flow that no part of
+// this feature depends on.
+func imdsV2BaseEndpoint() string {
+	if host := os.Getenv(azurePodIdentityAuthorityHostEnvVar); host != "" {
+		return strings.TrimSuffix(host, "/")
+	}
+	return imdsV2DefaultBaseEndpoint
+}
+
+// bindingKeyProvider returns the key provider for this client. It is
+// indirected through a field so the flow tests can supply a software key.
+func (c Client) bindingKeyProvider() keyProvider {
+	if c.keyProvider != nil {
+		return c.keyProvider
+	}
+	return newKeyProvider()
+}

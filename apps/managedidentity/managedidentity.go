@@ -12,6 +12,7 @@ package managedidentity
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -144,7 +146,11 @@ var getAzureArcPlatformPath = func(platform string) string {
 var getAzureArcHimdsFilePath = func(platform string) string {
 	switch platform {
 	case "windows":
-		return filepath.Join(os.Getenv("ProgramData"), azureConnectedMachine, himdsExecutableName)
+		// The agent's binaries install under Program Files; ProgramData holds
+		// only its runtime state (the token directory above). MSAL .NET probes
+		// %Programfiles%\AzureConnectedMachineAgent\himds.exe
+		// (ManagedIdentityClient.WindowsHimdsFilePath).
+		return filepath.Join(os.Getenv("ProgramFiles"), azureConnectedMachine, himdsExecutableName)
 	case "linux":
 		return linuxHimdsPath
 	default:
@@ -182,10 +188,41 @@ type Client struct {
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	canRefresh         *atomic.Value
+	mtlsClientFactory  func(cert tls.Certificate) *http.Client
+	// capabilities are the client capabilities set by WithClientCapabilities.
+	// They are held here rather than on authParams because options run before
+	// New builds authParams.
+	capabilities []string
+	// keyProvider overrides how the IMDSv2 binding key is produced. It is only
+	// set by tests; production always uses the platform provider.
+	keyProvider keyProvider
+	// hostCapabilities caches what Capabilities discovered for this client.
+	//
+	// It is a pointer so that copies of a Client - which callers make freely,
+	// since Client is a value type and every method takes it by value - share
+	// one discovery result, while two independently constructed clients never
+	// do. That matters because the answer depends on this client's HTTP client,
+	// key provider and metadata endpoint, so one client's answer is not
+	// generally valid for another. New always populates it; see
+	// capabilitiesState for why this is held here rather than in a
+	// process-wide map.
+	hostCapabilities *capabilitiesState
 }
 
 type AcquireTokenOptions struct {
 	claims string
+	// mtlsPoP requests a certificate-bound token.
+	mtlsPoP bool
+	// overMtls requests a bearer token acquired over a mutually authenticated
+	// connection.
+	overMtls bool
+	// attestation requests that the binding key be attested before IMDS issues
+	// a certificate for it.
+	attestation bool
+	// minStrength is the weakest key binding the caller will accept.
+	minStrength MtlsBindingStrength
+	// forceRefresh bypasses the token cache for this request.
+	forceRefresh bool
 }
 
 type ClientOption func(*Client)
@@ -200,11 +237,134 @@ func WithClaims(claims string) AcquireTokenOption {
 	}
 }
 
+// WithAttestationSupport requests that the IMDSv2 binding key be attested before
+// IMDS issues a certificate for it, so the issued certificate carries proof that
+// the private key lives in a KeyGuard trustlet. Use it when the resource requires
+// an attested credential.
+//
+// Attestation needs AttestationClientLib.dll, a native Windows component that is
+// distributed separately and is not part of this module. Deploy it alongside the
+// host executable or install it into System32. The load is restricted to the
+// application directory, System32 and any directory the process itself added
+// with AddDllDirectory, so a DLL dropped into the working directory or found on
+// %PATH% is not picked up. It is published in the
+// Microsoft.Azure.Security.KeyGuardAttestation package, under
+// runtimes/win-x64/native.
+//
+// Without this option no attestation is attempted and the credential request goes
+// out non-attested, which mirrors MSAL .NET when its optional
+// Microsoft.Identity.Client.KeyAttestation package is not referenced. With it, a
+// failure to attest is an error rather than a downgrade: a caller that asked for
+// attestation is never silently given a credential that lacks it.
+//
+// Attestation is only meaningful for the IMDSv2 mTLS flow, which is what mints
+// the binding key, so this option requires either [WithMtlsProofOfPossession] or
+// [WithRequestOverMtls]. Used on its own, or with a plain bearer-token request,
+// it returns [ErrAttestationRequiresMtls] rather than being quietly ignored.
+func WithAttestationSupport() AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.attestation = true
+	}
+}
+
+// WithMtlsPoPMinStrength requires the host to be able to bind a token at least
+// as strongly as the given tier, and fails the request if it cannot.
+//
+// Without it, a request takes whatever binding the host offers. That is the
+// right default for most callers, but it means a workload that must run on
+// attested hardware has no way to say so: it would receive a token bound to a
+// weaker key and never learn the difference. Setting a floor turns that into an
+// error, [ErrMinStrengthNotMet], raised before any credential is issued.
+//
+// Note what the floor does not do. It cannot cause a weaker key to be accepted,
+// because this library binds only to a KeyGuard key in the first place: a host
+// that can offer nothing stronger than [MtlsBindingStrengthSoftware] fails with
+// [ErrCredentialGuardNotAvailable] whether a floor was set or not. What the
+// floor changes is when and how that host is refused. Without one the failure
+// comes from the key provider, after discovery, and describes the key rather
+// than the requirement; with one it comes from
+// [ErrMinStrengthNotMet] before anything is minted, and names the tier that was
+// asked for and the tier the host has. Setting
+// [MtlsBindingStrengthKeyGuard] is therefore a way to state the requirement
+// explicitly and get a typed answer, not a way to relax or tighten what is
+// accepted.
+//
+// The check runs host capability discovery, whose result is cached on this
+// client and shared by copies of it made by value; independently constructed
+// clients discover independently. A settled answer is kept for that client's
+// lifetime, while a transient failure to reach the metadata service is retried
+// after 30 seconds. Passing [MtlsBindingStrengthNone] imposes no floor and skips
+// discovery entirely, which is the same as not using this option. Any value that
+// is not one of the three declared tiers is rejected with
+// [ErrInvalidMtlsBindingStrength].
+//
+// Tokens acquired under a floor are cached separately from tokens acquired
+// without one, so raising the floor cannot be satisfied by a token that was
+// issued before it was set.
+func WithMtlsPoPMinStrength(strength MtlsBindingStrength) AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.minStrength = strength
+	}
+}
+
+// WithForceRefresh skips the token cache and acquires a new token from the
+// service.
+//
+// The cache already refreshes a token before it expires, so this is not needed
+// to keep a token fresh. Use it when something outside this library has changed
+// what a token should contain, for example after a role assignment, where a
+// cached token is still valid but no longer carries the right authorization.
+//
+// It does not discard the binding certificate: the certificate identifies the
+// machine and is unaffected by the token becoming stale, and re-minting one per
+// call would be throttled by the metadata service.
+func WithForceRefresh() AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.forceRefresh = true
+	}
+}
+
 // WithHTTPClient allows for a custom HTTP client to be set. Service Fabric requires a standard
 // *http.Client with a *http.Transport and does not support custom TLS dialing or verification.
+//
+// Redirects on the plain-HTTP metadata legs are the caller's to own here. This
+// library refuses to follow one by default, because a 307 or 308 replays the
+// request body - which on the credential leg carries the CSR and the attestation
+// statement - at whatever host the Location header names. It can only install
+// that refusal on a plain *http.Client that has stated no CheckRedirect of its
+// own: an arbitrary [ops.HTTPClient] implementation cannot be inspected or
+// overridden, so a caller supplying one takes on redirect behaviour entirely,
+// and a caller supplying an *http.Client with its own CheckRedirect keeps it.
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
+	}
+}
+
+// WithClientCapabilities allows configuring one or more client capabilities
+// such as "CP1".
+//
+// Capabilities are sent to Entra as part of the token request's claims
+// parameter, and are the way a caller tells Entra it can handle a claims
+// challenge. They only travel on the IMDSv2 mTLS flows -
+// [WithMtlsProofOfPossession] and [WithRequestOverMtls] - because those are the
+// only managed identity requests in this package that reach Entra directly. An
+// ordinary IMDS, App Service, Cloud Shell, Azure ML or Azure Arc token request
+// goes to a local endpoint that has no parameter to carry them, so setting this
+// option changes nothing for those requests. MSAL .NET applies the same
+// restriction, listing only Service Fabric as additionally able to forward them
+// (ManagedIdentitySourceExtensions.s_supportsClaimsAndCaps).
+//
+// This is a client option rather than a per-request one because a capability is
+// a statement about the calling application, which does not vary by request.
+// MSAL .NET places it on the application builder for the same reason
+// (ManagedIdentityApplicationBuilder.WithClientCapabilities).
+func WithClientCapabilities(capabilities []string) ClientOption {
+	return func(c *Client) {
+		// The slice is not copied here: New passes it to
+		// authority.NewClientCapabilities, which builds its own
+		// representations and does not retain it.
+		c.capabilities = capabilities
 	}
 }
 
@@ -268,6 +428,10 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		retryPolicyEnabled: true,
 		source:             source,
 		canRefresh:         &zero,
+		// Each client discovers host capabilities for itself. Allocating here,
+		// before the options run, means every client New returns has one and
+		// every copy of that client shares it.
+		hostCapabilities: newCapabilitiesState(),
 	}
 	for _, option := range options {
 		option(&client)
@@ -285,6 +449,13 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		return Client{}, err
 	}
 	client.authParams = authority.NewAuthParams(client.miType.value(), fakeAuthInfo)
+	if len(client.capabilities) > 0 {
+		cc, err := authority.NewClientCapabilities(client.capabilities)
+		if err != nil {
+			return Client{}, err
+		}
+		client.authParams.Capabilities = cc
+	}
 	return client, nil
 }
 
@@ -319,6 +490,122 @@ func GetSource() (Source, error) {
 // was created to test the function against refreshin
 var now = time.Now
 
+// miTokenGate serializes every managed identity token acquisition in the
+// process.
+//
+// The managed identity endpoints are per-machine services with their own
+// throttling, and a service that takes a token per inbound request will fan out
+// concurrent acquisitions for the same identity and resource on a cold cache.
+// Left unserialized those become simultaneous requests to a single local
+// endpoint, which answers 429; serialized, the first one populates the cache and
+// the rest read it. MSAL .NET holds the same process-wide gate for the same
+// reason (ManagedIdentityAuthRequest.s_semaphoreSlim: "Requests to a managed
+// identity endpoint must be throttled; otherwise, the endpoint will throw a HTTP
+// 429.").
+//
+// It is a buffered channel rather than a mutex so the wait can be abandoned when
+// the caller's context is cancelled. Ordering among waiters is not guaranteed
+// and does not need to be.
+var miTokenGate = make(chan struct{}, 1)
+
+// acquireMITokenGate blocks until this goroutine holds the gate, and returns the
+// function that releases it.
+func acquireMITokenGate(ctx context.Context) (func(), error) {
+	select {
+	case miTokenGate <- struct{}{}:
+		return func() { <-miTokenGate }, nil
+	case <-ctx.Done():
+		return nil, ctx.Err()
+	}
+}
+
+// tryAcquireMITokenGate takes the gate only if it is free right now, reporting
+// whether it did.
+//
+// It exists for the proactive refresh, which runs on behalf of a caller that
+// already has a usable token. Such a caller must never be made to wait: queueing
+// it behind another acquisition would turn a cache hit into an arbitrarily long
+// call - up to the full length of an IMDSv2 acquisition, which is two IMDS legs,
+// an attestation and a token request - purely to refresh a token it was not
+// going to use yet.
+func tryAcquireMITokenGate() (func(), bool) {
+	select {
+	case miTokenGate <- struct{}{}:
+		return func() { <-miTokenGate }, true
+	default:
+		return nil, false
+	}
+}
+
+// miAttemptTimeout bounds a single HTTP attempt made while the process-wide
+// managed identity gate is held.
+//
+// The gate is what keeps a cold-start stampede from becoming simultaneous
+// requests to one local endpoint, and it is process-wide, so whoever holds it
+// blocks every other identity and every other source too. That is safe only
+// while the holder is guaranteed to finish. It is not guaranteed by the caller:
+// a context without a deadline is ordinary, and the HTTP client is replaceable
+// through [WithHTTPClient] and [WithMtlsHTTPClient] with an implementation this
+// package cannot inspect and whose Timeout it therefore cannot see or set. A
+// single connection to a wedged endpoint that never answers and never resets
+// would otherwise hold the gate for the life of the process, and every later
+// acquisition would block until its own context expired.
+//
+// Bounding each attempt rather than the whole acquisition is what MSAL .NET
+// does: it sets no timeout on the clients it builds, so each call inherits
+// HttpClient's own default of 100 seconds while a multi-leg acquisition with
+// retries is free to take longer. Matching the number keeps a slow but
+// answering regional endpoint working here exactly as it does there, and still
+// leaves every hold on the gate finite.
+//
+// A caller's own deadline is never extended by this: the bound is derived from
+// the request's context, so a shorter caller deadline continues to win.
+//
+// It is a variable so tests can shrink it; nothing outside tests assigns to it.
+var miAttemptTimeout = 100 * time.Second
+
+// boundedBody ties an attempt's cancel to the lifetime of the response body, so
+// the deadline covers reading the response as well as receiving its header, and
+// is released as soon as the caller is done with it.
+//
+// Cancelling when Do returns instead would abort the caller's own read of a
+// response that had already succeeded, which is the failure this package
+// already hit once on the IMDSv1 retry path (see bufferResponseBody and issue
+// #634). Buffering the whole body would avoid that too, but it would read an
+// unbounded amount of an unauthenticated link-local response into memory, and
+// the IMDSv2 legs deliberately cap what they read instead.
+type boundedBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (b *boundedBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.cancel)
+	return err
+}
+
+// doBoundedAttempt sends req with a deadline no later than miAttemptTimeout,
+// returning a response whose body must be closed to release it.
+//
+// A caller that never closes the body loses nothing beyond a timer that fires
+// at the deadline, because the context is derived from the request's own.
+func doBoundedAttempt(client ops.HTTPClient, req *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), miAttemptTimeout)
+	resp, err := client.Do(req.Clone(ctx))
+	if err != nil || resp == nil {
+		cancel()
+		return resp, err
+	}
+	if resp.Body == nil {
+		cancel()
+		return resp, nil
+	}
+	resp.Body = &boundedBody{ReadCloser: resp.Body, cancel: cancel}
+	return resp, nil
+}
+
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
@@ -329,30 +616,164 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	for _, option := range options {
 		option(&o)
 	}
+	if err := o.validate(c.source); err != nil {
+		return AuthResult{}, err
+	}
 	c.authParams.Scopes = []string{resource}
+	o.stampCacheComponents(&c.authParams)
 
-	// ignore cached access tokens when given claims
-	if o.claims == "" {
-		stResp, err := cacheManager.Read(ctx, c.authParams)
+	// Claims and an explicit force-refresh both mean the caller has said the
+	// cached token is not acceptable, so the cache is skipped in both
+	// directions: not read here, and not re-read under the gate below. MSAL
+	// .NET draws the same line (ManagedIdentityAuthRequest.GetAccessTokenAsync).
+	useCache := o.claims == "" && !o.forceRefresh
+
+	if useCache {
+		ar, refreshDue, hit, err := c.cachedAuthResult(ctx, o)
 		if err != nil {
 			return AuthResult{}, err
 		}
-		ar, err := base.AuthResultFromStorage(stResp)
-		if err == nil {
-			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
+		if hit {
+			// A token inside its refresh window is still usable, so this
+			// refresh runs on behalf of a caller that already has an answer.
+			// It goes straight to the network: re-reading the cache under the
+			// gate would find the very token that asked to be refreshed and
+			// return it unchanged. .NET makes the same exception for
+			// CacheRefreshReason.ProactivelyRefreshed.
+			if refreshDue && c.canRefresh.CompareAndSwap(false, true) {
 				defer c.canRefresh.Store(false)
-				if tr, er := c.getToken(ctx, resource); er == nil {
+				if tr, ok := c.refreshWithoutWaiting(ctx, resource, o); ok {
 					return tr, nil
 				}
 			}
-			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
-			return ar, err
+			return ar, nil
 		}
 	}
-	return c.getToken(ctx, resource)
+	return c.serializedToken(ctx, resource, o, useCache)
 }
 
-func (c Client) getToken(ctx context.Context, resource string) (AuthResult, error) {
+// refreshWithoutWaiting performs a proactive refresh for a caller that already
+// holds a usable token, reporting whether it produced one.
+//
+// The gate is taken without waiting. The caller has an answer already, so this
+// refresh is speculative and must not cost it anything: if another acquisition
+// holds the gate, this returns immediately and the refresh is left to whichever
+// call next finds the window open. Blocking would make a cache hit wait out a
+// full cold acquisition - two IMDS legs, an attestation and a token request -
+// to refresh a token the caller could have used straight away.
+//
+// It exists as its own function so the release can be deferred. miTokenGate is
+// process-wide and nothing else ever drains it, so a release skipped by a panic
+// unwinding through this code would not be a lost refresh but a permanent,
+// process-wide stall: every later acquisition would block in
+// acquireMITokenGate until its own context expired. Releasing on the way out of
+// a scope that ends here is what makes that impossible.
+func (c Client) refreshWithoutWaiting(ctx context.Context, resource string, o AcquireTokenOptions) (AuthResult, bool) {
+	release, ok := tryAcquireMITokenGate()
+	if !ok {
+		return AuthResult{}, false
+	}
+	defer release()
+	ar, err := c.getToken(ctx, resource, o)
+	if err != nil {
+		// The caller still has its cached token, so a failed refresh is not an
+		// error: it simply does not replace what the caller already has.
+		return AuthResult{}, false
+	}
+	return ar, true
+}
+
+// serializedToken acquires a token while holding the process-wide managed
+// identity gate.
+//
+// recheckCache asks for one more cache read after the gate is held. A caller
+// that queued behind a cold-start stampede was told the cache was empty before
+// it began waiting, and by the time it is admitted the holder has usually
+// filled it; without the re-read every waiter would go on to make the request
+// the gate exists to prevent. .NET re-reads at the same point and for the same
+// stated reason ("in case the previous request cached a new token").
+func (c Client) serializedToken(ctx context.Context, resource string, o AcquireTokenOptions, recheckCache bool) (AuthResult, error) {
+	release, err := acquireMITokenGate(ctx)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	defer release()
+
+	if recheckCache {
+		if ar, _, hit, err := c.cachedAuthResult(ctx, o); err == nil && hit {
+			return ar, nil
+		}
+	}
+	return c.getToken(ctx, resource, o)
+}
+
+// cachedAuthResult reports the token this request would be served from the
+// cache, if any.
+//
+// It resolves the binding certificate first because a certificate-bound token
+// is cached under a scheme keyed by that certificate, so the cache cannot be
+// consulted until it is known. When none has been issued yet no bound token can
+// have been cached either, and reading with the default scheme would match a
+// bearer token and hand back an unbound credential to a request that explicitly
+// asked for a bound one.
+//
+// refreshDue reports that a hit is inside its proactive-refresh window. c is
+// taken by value so the resolved scheme does not escape to the caller.
+func (c Client) cachedAuthResult(ctx context.Context, o AcquireTokenOptions) (_ AuthResult, refreshDue bool, hit bool, _ error) {
+	var cachedBinding *bindingCertificate
+	if o.mtlsPoP {
+		binding, ok := certCache.get(cacheKey(c.miType, o.attestation))
+		if !ok {
+			return AuthResult{}, false, false, nil
+		}
+		// Serving a bound token straight from the cache skips leg 1, so the
+		// validation a normal acquisition performs has to happen here too. A
+		// certificate whose key was lost to a container reset still parses and
+		// still has the same thumbprint, so without this the caller would get a
+		// cached token plus a certificate it can no longer prove possession of.
+		if needsRefresh(binding.Leaf) || isOrphaned(binding, c.bindingKeyProvider()) {
+			_ = binding.Close()
+			return AuthResult{}, false, false, nil
+		}
+		cachedBinding = binding
+		defer func() { _ = binding.Close() }()
+		c.authParams.AuthnScheme = authority.NewMtlsPoPAuthenticationScheme(binding.Leaf)
+	}
+
+	stResp, err := cacheManager.Read(ctx, c.authParams)
+	if err != nil {
+		return AuthResult{}, false, false, err
+	}
+	ar, err := base.AuthResultFromStorage(stResp)
+	if err != nil {
+		return AuthResult{}, false, false, nil
+	}
+	refreshDue = !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now())
+	ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
+	if err != nil {
+		return AuthResult{}, false, false, err
+	}
+	// A bound token is only usable by a caller that can also present the
+	// certificate it is bound to, so serving one from the cache without the
+	// certificate hands back a token that every resource rejects. The scheme
+	// lookup above already resolved that certificate.
+	if o.mtlsPoP {
+		copied, err := copyBindingCertificate(cachedBinding)
+		if err != nil {
+			return AuthResult{}, false, false, err
+		}
+		ar.BindingCertificate = copied
+	}
+	return ar, refreshDue, true, nil
+}
+
+func (c Client) getToken(ctx context.Context, resource string, o AcquireTokenOptions) (AuthResult, error) {
+	// The IMDSv2 certificate path replaces the ordinary IMDS request entirely.
+	// There is deliberately no fallback to IMDSv1 here: quietly returning an
+	// unbound token would defeat the protection the caller asked for.
+	if o.usesIMDSv2() {
+		return c.acquireTokenForIMDSv2(ctx, resource, o)
+	}
 	switch c.source {
 	case AzureArc:
 		return c.acquireTokenForAzureArc(ctx, resource)
@@ -437,7 +858,10 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (A
 		return AuthResult{}, err
 	}
 
-	response, err := c.httpClient.Do(req)
+	// Arc's challenge is the one request that does not go through
+	// getTokenForRequest, so it is bounded here for the same reason: it runs
+	// while the process-wide gate is held.
+	response, err := doBoundedAttempt(c.httpClient, req)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -640,7 +1064,9 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	if c.retryPolicyEnabled {
 		resp, err = c.retry(defaultRetryCount, req)
 	} else {
-		resp, err = c.httpClient.Do(req)
+		// retry() already bounds each of its attempts; this branch is the one
+		// that would otherwise hand an unbounded call the process-wide gate.
+		resp, err = doBoundedAttempt(c.httpClient, req)
 	}
 	if err != nil {
 		return r, err

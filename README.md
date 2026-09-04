@@ -401,6 +401,285 @@ Notes:
   goes to `mtlsauth.*`: it needs a tenanted AAD authority on a known `login.*` host, and a
   `WithHTTPClient` value that is not an `*http.Client` still requires `WithMtlsHTTPClient`.
 
+## Managed identity with mTLS proof-of-possession (IMDSv2)
+
+On an Azure VM whose IMDS endpoint serves the **v2 credential API**, a managed identity can acquire a
+**certificate-bound** token. MSAL mints an RSA key inside **Virtualization-Based Security (KeyGuard)**,
+has IMDS issue a short-lived certificate for it, and exchanges that certificate for the token over
+mutual TLS. The private key never leaves the VBS trustlet, so possession of the token cannot be
+transferred by copying key bytes out of process memory.
+
+```go
+client, err := mi.New(mi.SystemAssigned())
+if err != nil {
+    // TODO: handle error
+}
+
+result, err := client.AcquireToken(context.TODO(), "https://vault.azure.net",
+    mi.WithMtlsProofOfPossession())
+if err != nil {
+    // TODO: handle error
+}
+_ = result.Metadata.TokenType   // "mtls_pop"
+_ = result.BindingCertificate   // the certificate the token is bound to
+```
+
+`BindingCertificate` is non-nil only for `WithMtlsProofOfPossession()`, where the token is bound to
+the certificate and the caller has to present it. It is `nil` for an ordinary managed identity call
+**and for `WithRequestOverMtls()`**, which returns an unbound bearer token — mutual TLS there
+hardens how the token was obtained, not how it is used. The example below dereferences it, so guard
+it first:
+
+```go
+if result.BindingCertificate == nil {
+    // Not a bound token: send result.AccessToken with the Bearer scheme instead.
+}
+```
+
+### Calling the resource
+
+An `mtls_pop` token is only accepted when the same certificate is presented on the TLS handshake.
+Drop `result.BindingCertificate` into the transport and send the token with the `mtls_pop` scheme:
+
+```go
+cert := *result.BindingCertificate
+httpClient := &http.Client{
+    Transport: &http.Transport{
+        TLSClientConfig: &tls.Config{
+            GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+                return &cert, nil
+            },
+            MinVersion: tls.VersionTLS12,
+            // Azure resources that enforce token binding ask for the client
+            // certificate by TLS renegotiation, after they have read the
+            // request. Go refuses renegotiation by default and TLS 1.3 has no
+            // post-handshake client auth in crypto/tls, so without these two
+            // settings the connection is reset instead of authenticated.
+            MaxVersion:    tls.VersionTLS12,
+            Renegotiation: tls.RenegotiateOnceAsClient,
+        },
+    },
+}
+
+req, _ := http.NewRequest(http.MethodGet, "https://myvault.vault.azure.net/secrets/s?api-version=7.4", nil)
+req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
+req.Header.Set("x-ms-tokenboundauth", "true")
+resp, err := httpClient.Do(req)
+```
+
+`GetClientCertificate` is used rather than `Certificates` because the certificate must still be
+offered on the renegotiated handshake. Reuse one client across calls so the connection — and the
+certificate bound to it — is pooled.
+
+Sending the token as `Bearer`, or over a connection without the certificate, is rejected by a
+resource that enforces token binding — that is the point of the feature.
+
+### Bearer over mTLS
+
+`WithRequestOverMtls()` performs the same certificate-authenticated exchange but asks for an
+**ordinary bearer token**. Use it when you want the hardened credential path without requiring the
+resource to understand `mtls_pop`; nothing changes for the resource. Because the token is not bound
+to the certificate, `result.BindingCertificate` is `nil` — the caller does not need to present
+anything to spend the token.
+
+The two options are mutually exclusive; combining them returns `ErrMtlsPoPAndBearerExclusive`.
+
+### Attestation
+
+`WithAttestationSupport()` asks IMDS to attest the binding key before it issues a certificate, so
+the certificate carries proof that the private key lives in a KeyGuard trustlet. Use it when the
+resource requires an attested credential:
+
+```go
+result, err := client.AcquireToken(ctx, scope,
+    managedidentity.WithMtlsProofOfPossession(),
+    managedidentity.WithAttestationSupport(),
+)
+```
+
+Attestation needs `AttestationClientLib.dll`, a native Windows component published in the
+`Microsoft.Azure.Security.KeyGuardAttestation` package under `runtimes/win-x64/native`. It is not
+part of this module — deploy it next to the host executable or install it into `System32`. Those are
+the only two locations searched. MSAL .NET has the same deployment requirement; it just gets the
+file automatically through NuGet's native-asset convention, which Go has no equivalent for.
+
+Without the option nothing is attested and the credential request goes out non-attested, matching
+MSAL .NET when its optional `Microsoft.Identity.Client.KeyAttestation` package is not referenced.
+With it, a failure to attest is an **error, not a downgrade** — a caller that asked for attestation
+is never silently given a credential that lacks it. MSAL .NET does the same, raising
+`attestation_failed` rather than falling back.
+
+Attested and non-attested certificates are cached separately, so opting in never reuses a
+certificate that was issued without attestation.
+
+### Binding strength and host capabilities
+
+`Client.Capabilities` reports what the host's IMDS can do, without requesting a certificate or a
+token:
+
+```go
+caps, err := client.Capabilities(ctx)
+if err == nil && caps.MaxSupportedBindingStrength == managedidentity.MtlsBindingStrengthKeyGuard {
+    // this host can complete the flow: it serves the v2 credential API and produces a KeyGuard key
+}
+_ = caps.MaxSupportedBindingStrength // None, Software, or KeyGuard
+```
+
+Discovery follows the order MSAL .NET uses. An environment-configured source settles the question
+outright. Otherwise IMDSv2 is probed, and if that fails IMDSv1 is probed as well — both with the
+same headerless request whose HTTP 400 answer is what proves the endpoint is there. `Source` is only
+reported as `DefaultToIMDS` once one of those probes has answered; if neither does, it is left empty,
+because nothing has shown the host serves managed identity at all. The instance compute document is
+read only *after* the v1 probe succeeds, and only to decide that host's tier — it describes the
+machine rather than an identity endpoint, so it is never used to establish that IMDS exists.
+
+Discovery is not purely a read. On a host that serves IMDSv2 it asks the platform for the binding
+key, which **creates and persists that key** if it is not already there — a CNG container under a
+fixed name, shared with MSAL .NET, surviving process restarts. That is what makes the reported tier
+trustworthy: it describes a key the host really produced rather than a guess from a document. No
+certificate and no token is minted, so nothing is requested from IMDS beyond the probe itself.
+
+The result is cached on the client — copies of a client made by value share it, independently
+constructed clients discover independently — and answers are kept for different lengths of time.
+A settled one, such as the host answering that it serves IMDSv1 only and then describing its tier,
+cannot change under a running process and is kept for that client's lifetime. Anything unresolved is
+kept for only 30 seconds: a probe that could not be completed, a compute document that could not be
+read or parsed, or a v2 failure that was not a definitive 404 — because v2 may come back, and a
+client that remembered the weaker v1 answer for good would never notice. A caller that saw `None`
+for one of those reasons can get a different answer half a minute later. A cancelled call is never
+cached at all.
+
+`MtlsBindingStrength` describes how well the host can protect a binding key:
+
+| Value | Meaning |
+|---|---|
+| `MtlsBindingStrengthNone` | No binding is available here. Either no probe established IMDS at all (in which case `Source` is empty too), or the host serves IMDSv1 only and its compute document does not describe a bindable machine, or the tier could not be determined — see `ErrorReason`, and note that everything except a settled answer is retried after 30 seconds. |
+| `MtlsBindingStrengthSoftware` | The host speaks the protocol, but the key would not be VBS-isolated. |
+| `MtlsBindingStrengthKeyGuard` | The key is isolated in a KeyGuard trustlet. |
+
+`WithMtlsPoPMinStrength` sets a floor. The acquisition fails with `ErrMinStrengthNotMet` rather than
+proceeding on a host that cannot meet it:
+
+```go
+result, err := client.AcquireToken(ctx, scope,
+    managedidentity.WithMtlsProofOfPossession(),
+    managedidentity.WithMtlsPoPMinStrength(managedidentity.MtlsBindingStrengthKeyGuard),
+)
+```
+
+The floor participates in the token cache key, so a token acquired under a lower floor is never
+served to a caller that demanded a higher one.
+
+Note that msal-go's IMDSv2 flow requires KeyGuard regardless of the floor, so a host reporting
+`MtlsBindingStrengthSoftware` is telling you it speaks the protocol, not that this library will bind
+to its key — and `IsMtlsPoPSupportedByHost()` returns `true` there for the same reason. Branch on
+`MaxSupportedBindingStrength == MtlsBindingStrengthKeyGuard` when what you want to know is whether
+an acquisition will succeed. The weaker tier is reported faithfully because it describes the host
+and matches what MSAL .NET reports for the same machine: .NET's Windows key provider falls back to a
+hardware or in-memory key when KeyGuard is unavailable, but its IMDSv2 source then **rejects any key
+that is not KeyGuard** and raises `credential_guard_not_available`. Neither library will bind to a
+software key; the extra tiers change the diagnostics, not the outcome.
+
+### Refreshing
+
+`WithForceRefresh` skips the token cache and goes to the STS:
+
+```go
+result, err := client.AcquireToken(ctx, scope,
+    managedidentity.WithMtlsProofOfPossession(),
+    managedidentity.WithForceRefresh(),
+)
+```
+
+It deliberately does **not** re-mint the binding certificate. The certificate identifies the machine
+and is unaffected by a token going stale, and re-minting on every forced call would be throttled by
+IMDS.
+
+### Client capabilities
+
+`WithClientCapabilities` declares capabilities such as `CP1`, which tell Entra the application can
+handle a claims challenge:
+
+```go
+client, err := managedidentity.New(managedidentity.SystemAssigned(),
+    managedidentity.WithClientCapabilities([]string{"CP1"}),
+)
+```
+
+Capabilities are a property of the application rather than of a request, so this is a client option.
+They reach Entra on the IMDSv2 mTLS flows, which are the only managed identity flows in this package
+that talk to Entra directly; the other sources exchange tokens through a local endpoint that has no
+parameter to carry them. MSAL .NET applies the same restriction. When a call also passes
+`WithClaims`, the two are merged into the single `claims` parameter rather than one replacing the
+other.
+
+### Concurrency
+
+Token acquisitions are serialized process-wide. The managed identity endpoints are per-machine
+services with their own throttling, so a service taking a token per inbound request would otherwise
+fan out simultaneous requests on a cold cache and be answered with HTTP 429. The first caller
+populates the cache and the rest read it. MSAL .NET holds the same process-wide gate for the same
+reason.
+
+### Requirements and errors
+
+Both options require Windows with Credential Guard/VBS enabled and a host whose IMDS serves the v2
+credential API. This matches MSAL .NET, which also restricts IMDSv2 to KeyGuard-capable Windows
+hosts. Failures are typed so you can branch on them with `errors.Is`:
+
+| Error | Meaning |
+|---|---|
+| `ErrMtlsNotSupportedForPlatform` | Not Windows — no KeyGuard is available. |
+| `ErrCredentialGuardNotAvailable` | Windows, but VBS/Credential Guard is off, so no isolated key can be minted. |
+| `ErrMtlsPoPNotSupportedInIMDSv1` | The host serves IMDSv1 only. There is **no silent downgrade** to an unbound token. |
+| `ErrMtlsPoPNotSupportedForSource` | The identity source (App Service, Cloud Shell, Azure Arc, …) has no v2 credential endpoint. |
+| `ErrMtlsPoPAndBearerExclusive` | `WithMtlsProofOfPossession()` and `WithRequestOverMtls()` were both set. |
+| `ErrAttestationRequiresMtls` | `WithAttestationSupport()` was set without one of the two mTLS options, where it would have no effect. |
+| `ErrAttestationUnavailable` | Attestation was requested but `AttestationClientLib.dll` could not be loaded. |
+| `ErrMinStrengthNotMet` | The host's binding strength is below the floor set by `WithMtlsPoPMinStrength()`. |
+| `ErrMinStrengthRequiresMtls` | `WithMtlsPoPMinStrength()` was set without one of the two mTLS options, where it would have no effect. |
+
+Notes:
+
+- **No fallback by design.** If you ask for a bound token and the host cannot produce one, the call
+  fails rather than returning an unbound token that looks equivalent but is not.
+- **Caching.** Certificates are cached per identity and reused across calls. Bound tokens are cached
+  under a partition keyed by the certificate thumbprint, so a bound token is never served for an
+  unbound request or vice versa. A bearer token acquired with `WithRequestOverMtls()` also gets its
+  own partition, separate from one acquired over plain HTTP for the same identity and resource: the
+  two are issued under different policies, so neither is served in place of the other. Attestation
+  mode and any `WithMtlsPoPMinStrength` floor partition the cache too. A warm call makes no IMDS
+  round trips.
+- **Endpoint trust (optional).** The attestation endpoint and the mTLS token endpoint are both named
+  by IMDS over unauthenticated plain HTTP. They are always required to be `https`, with no userinfo
+  and no ambiguous authority, and only the origin is taken — the rest of each URL is built locally.
+  Their hostnames are not checked against a built-in list, because this package has no cloud
+  metadata to derive one from and a public-cloud list would break sovereign, Arc-connected and
+  private deployments. A deployment that wants a narrower boundary sets
+  `MSAL_MI_IMDSV2_ALLOWED_HOSTS` to a comma-separated list of hosts or `*.suffix` patterns; an
+  endpoint outside the list is then refused before anything is sent to it. Unset, which is the
+  default, nothing changes.
+- **Persistent certificate cache (Windows).** The issued certificate is also written to the
+  `CurrentUser\My` certificate store, so a certificate survives process restarts instead of costing
+  two IMDS round trips on every cold start. Only the certificate is stored — the private key stays
+  in its CNG container and is never exported. The store is shared with MSAL .NET, which uses the same
+  key container and naming scheme, so both libraries on one machine reuse one certificate. A reboot
+  replaces the VBS key and orphans the stored certificates, which are detected and cleaned up on the
+  next read. Set `MSAL_MI_DISABLE_PERSISTENT_CERT_CACHE=1` to keep everything in memory.
+- **Concurrency.** Every managed identity acquisition in the process is serialized by one gate, so
+  a cold-start stampede makes one request and the rest read the cache — which is what stops the
+  per-machine metadata endpoint answering 429. That gate is process-wide, not per identity, so two
+  identities acquiring at once do take turns. Within it, certificate minting has its own per-identity
+  gate, and a caller waiting on either stays cancellable through its context. A caller holding a
+  usable token that is due a proactive refresh never waits: if the gate is busy it is handed the
+  cached token immediately and the refresh is left to a later call.
+- **Custom transport.** `WithMtlsHTTPClient` supplies a factory that builds the `*http.Client` used
+  for the certificate-authenticated leg, for callers who must own the TLS handshake themselves.
+- **All managed identity kinds** are supported: `SystemAssigned()`, and user-assigned by client ID,
+  object ID, or resource ID.
+
+
+
 ## Community Help and Support
 
 We use [Stack Overflow](http://stackoverflow.com/questions/tagged/msal) to work with the community on supporting Azure Active Directory and its SDKs, including this one! We highly recommend you ask your questions on Stack Overflow (we're all on there!) Also browse existing issues to see if someone has had your question before. Please use the "msal" tag when asking your questions.

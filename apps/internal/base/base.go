@@ -136,9 +136,27 @@ type AuthResult struct {
 	// the parsed public leaf certificate. PrivateKey is the key MSAL used for the token request; it
 	// only has to implement crypto.Signer, so besides an exportable *rsa.PrivateKey it may be a
 	// non-exportable key backed by KeyGuard, CNG or an HSM, and callers must not assume the key
-	// material can be exported. The value drops directly into tls.Config.Certificates, so present it
-	// as the client certificate when calling the resource and the connection will match the token
-	// binding.
+	// material can be exported. Its concrete type is not part of the contract and will not
+	// necessarily be the key MSAL obtained from the platform: MSAL wraps it so the underlying
+	// handle stays open for as long as any copy of this certificate is reachable. Use it through
+	// crypto.Signer and do not type-assert it to a concrete type.
+	//
+	// The certificate may be copied by value; every copy shares the one key and stays valid.
+	//
+	// Present it as the client certificate when calling the resource, or the resource rejects the
+	// bound token. Two properties of Go's TLS stack make that harder than assigning it to
+	// tls.Config.Certificates, and neither one fails in a way that names the real cause:
+	//
+	//   - Certificates is filtered against the certificate authorities the server advertises, and
+	//     Go silently sends nothing when none match. A binding certificate is issued by an internal
+	//     CA the resource need not advertise, so supply it from GetClientCertificate instead, which
+	//     is not filtered.
+	//   - A resource may not ask for the certificate during the handshake at all. Azure Key Vault
+	//     completes the handshake, reads the request, sees the mtls_pop scheme, and only then asks
+	//     by renegotiating. Go declines renegotiation by default and does not implement the TLS 1.3
+	//     equivalent, post-handshake authentication, so the connection is torn down and the caller
+	//     sees a bare connection reset. Set MaxVersion to tls.VersionTLS12 and Renegotiation to
+	//     tls.RenegotiateOnceAsClient to answer it.
 	//
 	// It is excluded from JSON: encoding/json walks into an *rsa.PrivateKey's exported fields, so
 	// marshalling an AuthResult would otherwise emit the private exponent and primes into whatever
