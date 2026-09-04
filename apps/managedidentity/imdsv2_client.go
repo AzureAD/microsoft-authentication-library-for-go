@@ -137,6 +137,32 @@ func setIMDSHeaders(req *http.Request, correlationID string) {
 	req.Header.Set(imdsV2ClientRequestIDHeader, correlationID)
 }
 
+// imdsMaxResponseBody bounds how much of an IMDS or Entra response is read. It
+// is generous next to the largest legitimate body - an issued certificate is a
+// few kilobytes and a token a few more - so a body that reaches it is not a
+// large answer but a wrong one.
+const imdsMaxResponseBody = 1 << 20
+
+// readBoundedBody reads at most imdsMaxResponseBody bytes and refuses a body
+// that is longer.
+//
+// The limit is read plus one byte so that "exactly at the limit" and "longer
+// than the limit" can be told apart. Reading only the limit would silently hand
+// back a truncated body, which JSON would then reject with a parse error that
+// names a syntax problem rather than an oversized response - or, worse, would
+// parse if the truncation happened to land after the last field this package
+// reads.
+func readBoundedBody(r io.Reader, what string) ([]byte, error) {
+	body, err := io.ReadAll(io.LimitReader(r, imdsMaxResponseBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("managedidentity: reading %s: %w", what, err)
+	}
+	if len(body) > imdsMaxResponseBody {
+		return nil, fmt.Errorf("managedidentity: %s is larger than the %d byte limit", what, imdsMaxResponseBody)
+	}
+	return body, nil
+}
+
 // readIMDSResponse reads and closes an IMDS response body, turning a non-200
 // into an error that carries the service's own description.
 func readIMDSResponse(resp *http.Response) ([]byte, error) {
@@ -144,9 +170,9 @@ func readIMDSResponse(resp *http.Response) ([]byte, error) {
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
 	}()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readBoundedBody(resp.Body, "the IMDS response")
 	if err != nil {
-		return nil, fmt.Errorf("managedidentity: reading the IMDS response: %w", err)
+		return nil, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("managedidentity: IMDS returned %d: %s", resp.StatusCode, parseIMDSError(body))
@@ -365,6 +391,18 @@ func certificateMatchesKey(leaf *x509.Certificate, key bindingKey) error {
 // is taken from IMDS rather than derived locally, and is required to be https
 // so a compromised or spoofed IMDS response cannot downgrade the token leg to
 // plaintext or point it at a non-TLS listener.
+//
+// As with the attestation endpoint, the host is not compared against a built-in
+// list of known Entra hosts. This package has no cloud metadata to build one
+// from - a managed identity Client is constructed against a fixed placeholder
+// authority regardless of which cloud it runs in - and a public-cloud suffix
+// list would refuse every sovereign, Arc-connected and private deployment, as
+// well as any new regional host added after the list was written. What is
+// enforced instead is the operator's own list, when one is configured in
+// MSAL_MI_IMDSV2_ALLOWED_HOSTS. Beyond that, the credential's safety does not
+// rest on the hostname: the token has to be signed by Entra to be accepted by a
+// resource, and a bound token is additionally useless without the private key
+// that never leaves the trustlet.
 func (b *bindingCertificate) tokenEndpoint() (string, error) {
 	raw := strings.TrimSuffix(b.Endpoint, "/")
 	// The same authority guards csrMetadata.attestationURL applies, for the same
@@ -396,6 +434,9 @@ func (b *bindingCertificate) tokenEndpoint() (string, error) {
 	// endpoint has it, so its presence is only ever an attempt to disguise one.
 	if u.User != nil {
 		return "", fmt.Errorf("managedidentity: IMDS returned an mTLS endpoint with userinfo in it %q", b.Endpoint)
+	}
+	if err := checkIMDSv2HostAllowed("mTLS token endpoint", u.Hostname()); err != nil {
+		return "", err
 	}
 	// Anything the service put in the path, query or fragment is discarded: only
 	// the origin is taken from IMDS, and the rest of the URL is built here.
@@ -662,9 +703,9 @@ func requestEntraToken(ctx context.Context, client *http.Client, binding *bindin
 		_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
 		resp.Body.Close()
 	}()
-	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	body, err := readBoundedBody(resp.Body, "the token response")
 	if err != nil {
-		return accesstokens.TokenResponse{}, fmt.Errorf("managedidentity: reading the token response: %w", err)
+		return accesstokens.TokenResponse{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
 		return accesstokens.TokenResponse{}, newEntraTokenError(resp.StatusCode, body)
@@ -673,6 +714,21 @@ func requestEntraToken(ctx context.Context, client *http.Client, binding *bindin
 	var tr accesstokens.TokenResponse
 	if err := json.Unmarshal(body, &tr); err != nil {
 		return accesstokens.TokenResponse{}, fmt.Errorf("managedidentity: parsing the token response: %w", err)
+	}
+	// A 200 is not on its own an answer. A response that parses as JSON but
+	// carries no access token, or no type to interpret it with, would otherwise
+	// be written to the cache and handed back: the caller would receive an empty
+	// AccessToken, send it, and be rejected by the resource with nothing here to
+	// explain why - and every later request would be served the same empty token
+	// from the cache until it expired.
+	if tr.AccessToken == "" {
+		return accesstokens.TokenResponse{}, errors.New("managedidentity: the token endpoint returned 200 with no access_token")
+	}
+	if tr.TokenType == "" {
+		return accesstokens.TokenResponse{}, errors.New("managedidentity: the token endpoint returned 200 with no token_type")
+	}
+	if tr.ExpiresOn.IsZero() {
+		return accesstokens.TokenResponse{}, errors.New("managedidentity: the token endpoint returned 200 with no usable expires_in")
 	}
 	// The token endpoint does not echo a scope for a managed identity, so the
 	// requested resource is recorded as the granted scope. Without this the

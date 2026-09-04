@@ -42,6 +42,10 @@ type fakeKeyProvider struct {
 	typ     keyType
 	err     error
 	creates int
+	// opensWithoutKey counts open-only calls made when no key exists, which is
+	// what a cache read on a fresh host does. It is how a test asserts that a
+	// read did not provision anything.
+	opensWithoutKey int
 }
 
 func newFakeKeyProvider() *fakeKeyProvider {
@@ -72,6 +76,22 @@ func (f *fakeKeyProvider) deleteKey(name string) error {
 	defer f.mu.Unlock()
 	delete(f.keys, name)
 	return nil
+}
+
+// openKey returns the stored key without creating one, so a test can tell a
+// cache read that provisions a key apart from one that does not.
+func (f *fakeKeyProvider) openKey(name string) (bindingKey, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.err != nil {
+		return bindingKey{}, f.err
+	}
+	key, ok := f.keys[name]
+	if !ok {
+		f.opensWithoutKey++
+		return bindingKey{}, errBindingKeyNotFound
+	}
+	return bindingKey{Signer: key, Type: f.typ, Close: func() error { return nil }}, nil
 }
 
 // rotate replaces the stored key without deleting the name, simulating a VBS
@@ -125,8 +145,11 @@ type imdsFake struct {
 	tokenFailureCode int
 	tokenFailureBody string
 
-	// tokenType is what the token endpoint claims it issued.
-	tokenType string
+	// tokenTypeOverride makes the token endpoint claim it issued a type other
+	// than the one that was requested. Left empty the fake echoes the request,
+	// which is what ESTS does; setting it is the only way to drive a mismatch,
+	// in either direction.
+	tokenTypeOverride string
 	// lastTokenForm is the form body of the most recent token request.
 	lastTokenForm url.Values
 	// sawClientCert records whether the token request presented a certificate.
@@ -147,6 +170,23 @@ type imdsFake struct {
 	// omitIssueFields names fields to drop from the leg 2 response, so a test
 	// can prove an incomplete issuance is rejected.
 	omitIssueFields []string
+	// issueClientID and issueTenantID, when set, replace the identifiers in the
+	// leg 2 response without changing what leg 1 reported. They exist so a test
+	// can drive a credential issued for an identity other than the one the
+	// acquisition asked for.
+	issueClientID string
+	issueTenantID string
+	// certSubjectCN, when set, replaces the common name on the issued leaf, so
+	// a test can drive a certificate that names an identity the issuance
+	// response does not.
+	certSubjectCN string
+	// certExtKeyUsage and certKeyUsage, when set, replace the usage extensions
+	// on the issued leaf. A test uses them to prove a certificate that cannot
+	// authenticate a client handshake is refused before it reaches one.
+	certExtKeyUsage []x509.ExtKeyUsage
+	certKeyUsage    *x509.KeyUsage
+	// tokenBody, when set, replaces the whole leg 3 success body verbatim.
+	tokenBody string
 }
 
 func newIMDSFake(t *testing.T) *imdsFake {
@@ -182,7 +222,6 @@ func newIMDSFake(t *testing.T) *imdsFake {
 		serverHeader:   "IMDS/150.870.65.2153",
 		metadataStatus: http.StatusOK,
 		issueStatus:    http.StatusOK,
-		tokenType:      "mtls_pop",
 
 		// Comfortably outside bindingCertRefreshWindow, so the default fixture
 		// certificate is cacheable and reusable. A test that wants to drive the
@@ -397,13 +436,29 @@ func (f *imdsFake) handleIssue(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Dated from now() rather than time.Now() so a test that moves the package
+	// clock gets a certificate that is fresh relative to that clock, which is
+	// what a real service would have issued at that moment.
+	issuedAt := now()
+	subject := csr.Subject
+	if f.certSubjectCN != "" {
+		subject.CommonName = f.certSubjectCN
+	}
+	extKeyUsage := []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth}
+	if f.certExtKeyUsage != nil {
+		extKeyUsage = f.certExtKeyUsage
+	}
+	keyUsage := x509.KeyUsageDigitalSignature
+	if f.certKeyUsage != nil {
+		keyUsage = *f.certKeyUsage
+	}
 	leaf := &x509.Certificate{
 		SerialNumber: big.NewInt(time.Now().UnixNano()),
-		Subject:      csr.Subject,
-		NotBefore:    time.Now().Add(-time.Minute),
-		NotAfter:     time.Now().Add(f.certLifetime),
-		KeyUsage:     x509.KeyUsageDigitalSignature,
-		ExtKeyUsage:  []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		Subject:      subject,
+		NotBefore:    issuedAt.Add(-time.Minute),
+		NotAfter:     issuedAt.Add(f.certLifetime),
+		KeyUsage:     keyUsage,
+		ExtKeyUsage:  extKeyUsage,
 	}
 	certDER, err := x509.CreateCertificate(rand.Reader, leaf, f.caCert, csr.PublicKey, f.caKey)
 	if err != nil {
@@ -412,9 +467,17 @@ func (f *imdsFake) handleIssue(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/json")
+	issuedClientID := f.clientID
+	if f.issueClientID != "" {
+		issuedClientID = f.issueClientID
+	}
+	issuedTenantID := f.tenantID
+	if f.issueTenantID != "" {
+		issuedTenantID = f.issueTenantID
+	}
 	issued := map[string]string{
-		"client_id":                    f.clientID,
-		"tenant_id":                    f.tenantID,
+		"client_id":                    issuedClientID,
+		"tenant_id":                    issuedTenantID,
 		"certificate":                  base64.StdEncoding.EncodeToString(certDER),
 		"identity_type":                "SAMI",
 		"mtls_authentication_endpoint": f.tokenServer.Listener.Addr().String(),
@@ -473,13 +536,24 @@ func (f *imdsFake) handleToken(w http.ResponseWriter, r *http.Request) {
 
 	// ESTS answers with the type that was asked for, so the fake echoes it too.
 	// A test that wants the service to answer with something other than what
-	// was requested sets tokenType, which is how the bound-request-answered-with
-	// -a-bearer-token case is driven.
-	tokenType := f.tokenType
-	if requested := r.Form.Get("token_type"); requested == "" || strings.EqualFold(requested, "bearer") {
-		tokenType = "Bearer"
+	// was requested sets tokenTypeOverride, and that override wins: it is the
+	// only way to drive either mismatch direction, including a bearer request
+	// answered with a bound token, which verifyTokenType has to reject just as
+	// it rejects a bound request answered with a bearer token.
+	tokenType := f.tokenTypeOverride
+	if tokenType == "" {
+		requested := r.Form.Get("token_type")
+		if requested == "" || strings.EqualFold(requested, "bearer") {
+			tokenType = "Bearer"
+		} else {
+			tokenType = requested
+		}
 	}
 	w.Header().Set("Content-Type", "application/json")
+	if f.tokenBody != "" {
+		_, _ = w.Write([]byte(f.tokenBody))
+		return
+	}
 	_ = json.NewEncoder(w).Encode(map[string]any{
 		"access_token": "test-access-token",
 		"token_type":   tokenType,
@@ -523,13 +597,17 @@ func (f *imdsFake) newTestClient(t *testing.T, id ID, provider keyProvider, opts
 }
 
 // withCleanCaches isolates a test from certificates and tokens another test
-// cached, since both caches are process-wide.
+// cached, since those caches are process-wide.
+//
+// Host-capability discovery is deliberately absent from this list. It is no
+// longer process-wide: each Client carries its own result, so a client built by
+// a test cannot see, or be seen by, any other test's client and there is nothing
+// global to reset.
 func withCleanCaches(t *testing.T) *fakePersistentCertCache {
 	t.Helper()
 	certCache.clear()
 	clearAttestationCache()
 	clearMtlsClientCache()
-	clearCapabilitiesCache()
 	cacheManager = storage.New(nil)
 	platformSupportsMtlsPoP = func() bool { return true }
 	// The real persistent cache is the user's own certificate store. A test
@@ -546,7 +624,6 @@ func withCleanCaches(t *testing.T) *fakePersistentCertCache {
 		certCache.clear()
 		clearAttestationCache()
 		clearMtlsClientCache()
-		clearCapabilitiesCache()
 		cacheManager = storage.New(nil)
 		platformSupportsMtlsPoP = func() bool { return runtime.GOOS == "windows" }
 		retryWait = realWait
@@ -761,7 +838,9 @@ func TestAttestationCollapsesConcurrentMisses(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	key := bindingKey{Signer: signer, Type: keyTypeKeyGuard}
+	key := bindingKey{Signer: signer, Type: keyTypeKeyGuard, Close: func() error { return nil }}
+	holder := shareKey(&key)
+	t.Cleanup(func() { _ = holder.release() })
 	token := stubAttestationJWT(t, time.Now().Add(time.Hour))
 
 	var calls int32
@@ -790,7 +869,7 @@ func TestAttestationCollapsesConcurrentMisses(t *testing.T) {
 			ready <- struct{}{}
 			<-start
 			got[i], errs[i] = attestKeyGuardCached(
-				context.Background(), "https://attestation.example", "client", key)
+				context.Background(), "https://attestation.example", "client", key, holder)
 		}(i)
 	}
 	for i := 0; i < callers; i++ {
@@ -857,7 +936,10 @@ func TestIMDSv2ReattestsWhenTheAttestationTokenNearsExpiry(t *testing.T) {
 	now = func() time.Time { return current }
 	t.Cleanup(func() { now = realNow })
 
-	calls := withCountedAttestation(t, func() string { return stubAttestationJWT(t, base.Add(10*time.Minute)) })
+	// The stub dates each statement from the moment it is produced, so the
+	// second attestation returns a genuinely fresh token rather than another
+	// copy of the one that just aged out.
+	calls := withCountedAttestation(t, func() string { return stubAttestationJWT(t, current.Add(10*time.Minute)) })
 	fake := newIMDSFake(t)
 	provider := newFakeKeyProvider()
 
@@ -1296,7 +1378,7 @@ func TestIMDSv2RejectsBearerTokenForBoundRequest(t *testing.T) {
 	fake := newIMDSFake(t)
 	// The service answers a bound-token request with a bearer token, which is
 	// what happens when the tenant has not enabled bound tokens.
-	fake.tokenType = "Bearer"
+	fake.tokenTypeOverride = "Bearer"
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 	_, err := client.AcquireToken(context.Background(), "https://vault.azure.net", WithMtlsProofOfPossession())

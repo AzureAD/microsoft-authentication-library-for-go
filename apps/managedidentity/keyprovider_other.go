@@ -18,6 +18,13 @@ func (unsupportedKeyProvider) getOrCreateKey(string) (bindingKey, error) {
 	return bindingKey{}, ErrMtlsNotSupportedForPlatform
 }
 
+// openKey has nothing to open: this build never creates a binding key, so there
+// is never one to find. It reports the platform error rather than
+// errBindingKeyNotFound so a caller that reaches it by mistake learns why.
+func (unsupportedKeyProvider) openKey(string) (bindingKey, error) {
+	return bindingKey{}, ErrMtlsNotSupportedForPlatform
+}
+
 func (unsupportedKeyProvider) deleteKey(string) error {
 	return ErrMtlsNotSupportedForPlatform
 }

@@ -41,6 +41,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"runtime"
 	"strings"
@@ -209,12 +210,17 @@ func reportCapabilities(ctx context.Context, client managedidentity.Client) erro
 	}
 
 	switch {
-	case caps.IsMtlsPoPSupportedByHost():
+	// KeyGuard is checked before the broader predicate. IsMtlsPoPSupportedByHost
+	// is true for a host that can only manage a software key, so testing it
+	// first would report "-mode pop should succeed" on a host where this library
+	// refuses to bind at all.
+	case caps.MaxSupportedBindingStrength == managedidentity.MtlsBindingStrengthKeyGuard:
 		fmt.Println("  This host can mint a KeyGuard-bound credential, so -mode pop should succeed.")
-	case caps.MaxSupportedBindingStrength == managedidentity.MtlsBindingStrengthSoftware:
-		fmt.Println("  This host reports a software key only. Capabilities reports what the platform")
-		fmt.Println("  offers; an mTLS PoP acquisition still fails, because IMDSv2 accepts nothing")
-		fmt.Println("  weaker than KeyGuard rather than issuing a token that only looks bound.")
+	case caps.IsMtlsPoPSupportedByHost():
+		fmt.Println("  This host reports a key it can bind to, but not a KeyGuard one. Capabilities")
+		fmt.Println("  reports what the platform offers; an mTLS PoP acquisition still fails, because")
+		fmt.Println("  IMDSv2 accepts nothing weaker than KeyGuard rather than issuing a token that")
+		fmt.Println("  only looks bound.")
 	default:
 		fmt.Println("  This host cannot bind a token. -mode plain still works; -mode pop will fail")
 		fmt.Println("  with a specific error explaining what is missing.")
@@ -282,7 +288,15 @@ func reportResult(cfg config, result managedidentity.AuthResult) error {
 		if result.BindingCertificate != nil {
 			return fmt.Errorf("expected no binding certificate for -mode %s, got one", mode)
 		}
-		fmt.Println("  OK: an ordinary bearer token, with no binding certificate, as expected.")
+		// The type is checked as well as the certificate. A nil certificate on its own does not
+		// prove the token is a bearer token, and a caller here will send it with the Bearer scheme
+		// whatever the service said, so anything else has to fail loudly rather than at the
+		// resource. The comparison folds case because RFC 6749 declares token_type
+		// case-insensitive, and is otherwise exact so an unknown type is not assumed to be bearer.
+		if !strings.EqualFold(result.Metadata.TokenType, "Bearer") {
+			return fmt.Errorf("expected token_type Bearer for -mode %s, got %q", mode, result.Metadata.TokenType)
+		}
+		fmt.Println("  OK: an ordinary Bearer token, with no binding certificate, as expected.")
 		if mode == "bearer-mtls" {
 			fmt.Println("  The hardening here is in how the token was acquired, not in the token itself.")
 		}
@@ -370,6 +384,23 @@ func useToken(cfg config, result managedidentity.AuthResult) error {
 		return nil
 	}
 	kv("resource", cfg.call)
+
+	target, err := url.Parse(cfg.call)
+	if err != nil {
+		return fmt.Errorf("-call %q is not a usable URL: %w", cfg.call, err)
+	}
+	// The access token goes into the Authorization header of this request, so
+	// the target has to be one that cannot read it in the clear. http:// would
+	// put a live credential on the wire in plaintext, and the binding
+	// certificate would never be presented anyway because there is no
+	// handshake. Refusing is the only safe reading of an http target here.
+	if !strings.EqualFold(target.Scheme, "https") {
+		return fmt.Errorf("-call must be an https URL, got %q: sending the access token over %s would put the credential on the wire in plaintext",
+			cfg.call, label(target.Scheme != "", target.Scheme, "no scheme"))
+	}
+	if target.Host == "" {
+		return fmt.Errorf("-call %q has no host", cfg.call)
+	}
 
 	req, err := http.NewRequest(http.MethodGet, cfg.call, nil)
 	if err != nil {

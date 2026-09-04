@@ -20,11 +20,13 @@ jobs:
 
     strategy:
       matrix:
-        # 1.20 is here to compile the pre-1.21 side of the build tags. go.mod declares go 1.18, but
-        # imdsv2_alert_pre121.go is //go:build !go1.21, so a matrix that starts at 1.21 never parses
-        # it: the file could stop compiling and every job would still pass. 1.21 and 1.22 cover the
-        # go1.21 side and the toolchains the module actually targets.
-        go: ["1.20", "1.21", "1.22"]
+        # 1.18 is the version go.mod declares, so it is the version the module promises to compile
+        # under. Nothing else in this matrix proves that: a stdlib API added after 1.18 compiles
+        # fine everywhere else here and breaks every consumer pinned to the declared minimum.
+        # 1.20 covers the pre-1.21 side of the build tags, because imdsv2_alert_pre121.go is
+        # //go:build !go1.21 and a matrix that starts at 1.21 never parses it. 1.21 and 1.22 cover
+        # the go1.21 side and the toolchains the module actually targets.
+        go: ["1.18", "1.20", "1.21", "1.22"]
 
     steps:
       - name: Set up Go 1.x
@@ -46,7 +48,11 @@ jobs:
       - name: Build
         run: go build ./apps/...
 
+      # The test suite needs a newer toolchain than the library does: test code in this repo uses
+      # sync/atomic types added in Go 1.19. That is a property of the tests, not of the module, so
+      # 1.18 verifies the build -- which is the contract go.mod states -- and the rest run the tests.
       - name: Unit Tests
+        if: matrix.go != '1.18'
         run: go test -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/...
       # Intergration tests runs on ADO
       # - name: Integration Tests
@@ -69,11 +75,19 @@ jobs:
 
     runs-on: windows-latest
 
+    strategy:
+      matrix:
+        # The Windows-only files are the least portable code in the repo and the most likely to
+        # reach for a newer stdlib API by accident, so the declared minimum is covered here too
+        # rather than only on Linux. As on the Linux job, 1.18 builds but does not test, because
+        # test code in this repo needs 1.19.
+        go: ["1.18", "1.22"]
+
     steps:
       - name: Set up Go 1.x
         uses: actions/setup-go@v6
         with:
-          go-version: "1.22"
+          go-version: ${{ matrix.go }}
         id: go
 
       - name: Check out code into the Go module directory
@@ -97,6 +111,7 @@ jobs:
       # explicitly so that a future image without gcc fails on this step with a clear cause rather
       # than silently dropping to CGO_ENABLED=0.
       - name: Unit Tests
+        if: matrix.go != '1.18'
         env:
           CGO_ENABLED: "1"
         run: go test -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/... ./apps/tests/devapps/...

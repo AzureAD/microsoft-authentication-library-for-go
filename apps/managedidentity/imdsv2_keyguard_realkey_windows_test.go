@@ -16,8 +16,13 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
+	"errors"
+	"fmt"
 	"math/big"
 	"os"
+	"os/exec"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -81,6 +86,249 @@ func TestRealKeyGuardKeyIsIsolated(t *testing.T) {
 	pub := rsaPublic(t, key)
 	if pub.N.BitLen() < 2048 {
 		t.Errorf("key is %d bits, want at least 2048", pub.N.BitLen())
+	}
+	// The size is an interoperability invariant, not a floor: MSAL .NET creates
+	// this same container at 2048 bits, and createCSR refuses anything else.
+	if pub.N.BitLen() != csrKeyBits {
+		t.Errorf("key is %d bits, want exactly %d to match the key MSAL .NET creates in this container",
+			pub.N.BitLen(), csrKeyBits)
+	}
+}
+
+// realKeyGuardRaceChildEnvVar makes a test binary act as one racer in
+// TestRealKeyGuardCrossProcessCreationConverges rather than as the parent. Its
+// value is the container name to provision.
+const realKeyGuardRaceChildEnvVar = "MSAL_TEST_KEYGUARD_RACE_CONTAINER"
+
+// TestRealKeyGuardCrossProcessCreationConverges races real, separate processes
+// for one container.
+//
+// This is the only test here that can reach the race that matters. bindingKeyGate
+// serializes goroutines inside one process, so an in-process test can never have
+// two callers inside their create-finalize sequence at once - which is precisely
+// the window in which NCryptCreatePersistedKey succeeds for both and the later
+// NCryptFinalizeKey silently replaces the earlier. Separate processes share
+// nothing but the container and the named mutex, so they can.
+//
+// The assertion is convergence: however the race resolves, every process must
+// end up reporting the same public key, and the key persisted afterwards must be
+// that one. That holds whether the named mutex serialized them - the intended
+// path - or the mutex was unavailable and the persisted-winner check in
+// resolveBindingKey caught a silent replace. A process that adopted a stranded
+// key would report a modulus nobody else saw and fail here.
+//
+// It runs on a throwaway container, never the shared bindingKeyName, and deletes
+// it afterwards.
+func TestRealKeyGuardCrossProcessCreationConverges(t *testing.T) {
+	if container := os.Getenv(realKeyGuardRaceChildEnvVar); container != "" {
+		runKeyGuardRaceChild(t, container)
+		return
+	}
+	provider := requireRealKeyGuard(t)
+
+	name := fmt.Sprintf("msalgo-xproc-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = provider.deleteKey(name) })
+	if _, err := provider.openKey(name); !errors.Is(err, errBindingKeyNotFound) {
+		t.Fatalf("the throwaway container already exists: %v", err)
+	}
+
+	const racers = 4
+	type result struct {
+		out string
+		err error
+	}
+	results := make(chan result, racers)
+	var wg sync.WaitGroup
+	for i := 0; i < racers; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			// #nosec G204 -- the command is this test binary and the arguments
+			// are constants; nothing here comes from outside the test.
+			cmd := exec.Command(os.Args[0],
+				"-test.run=^TestRealKeyGuardCrossProcessCreationConverges$",
+				"-test.v")
+			cmd.Env = append(os.Environ(),
+				realKeyGuardEnvVar+"=1",
+				realKeyGuardRaceChildEnvVar+"="+name,
+			)
+			out, err := cmd.CombinedOutput()
+			results <- result{out: string(out), err: err}
+		}()
+	}
+	wg.Wait()
+	close(results)
+
+	moduli := map[string]int{}
+	for r := range results {
+		if r.err != nil {
+			t.Fatalf("a racer failed: %v\n%s", r.err, r.out)
+		}
+		mod := keyGuardRaceModulus(r.out)
+		if mod == "" {
+			t.Fatalf("a racer reported no modulus:\n%s", r.out)
+		}
+		moduli[mod]++
+	}
+	if len(moduli) != 1 {
+		t.Fatalf("racers ended up on %d different keys, want 1: a creator adopted a key that was replaced (%v)", len(moduli), moduli)
+	}
+
+	// The key everyone reported must be the one actually persisted, not one
+	// that was replaced after the last racer looked.
+	final, err := provider.openKey(name)
+	if err != nil {
+		t.Fatalf("openKey after the race: %v", err)
+	}
+	defer func() { _ = final.Close() }()
+	var agreed string
+	for mod := range moduli {
+		agreed = mod
+	}
+	if got := rsaPublic(t, final).N.Text(16); got != agreed {
+		t.Fatalf("the persisted key is %s but every racer reported %s", got, agreed)
+	}
+}
+
+// runKeyGuardRaceChild is the child half: provision the container and print the
+// public modulus for the parent to compare.
+func runKeyGuardRaceChild(t *testing.T, container string) {
+	t.Helper()
+	provider := requireRealKeyGuard(t)
+	key, err := provider.getOrCreateKey(container)
+	if err != nil {
+		t.Fatalf("getOrCreateKey: %v", err)
+	}
+	defer func() { _ = key.Close() }()
+	fmt.Printf("%s%s\n", keyGuardRaceModulusPrefix, rsaPublic(t, key).N.Text(16))
+}
+
+const keyGuardRaceModulusPrefix = "KEYGUARD_RACE_MODULUS="
+
+func keyGuardRaceModulus(out string) string {
+	for _, line := range strings.Split(out, "\n") {
+		line = strings.TrimSpace(line)
+		if strings.HasPrefix(line, keyGuardRaceModulusPrefix) {
+			return strings.TrimPrefix(line, keyGuardRaceModulusPrefix)
+		}
+	}
+	return ""
+}
+
+// TestRealKeyGuardConcurrentCreationConvergesOnOneKey checks that concurrent
+// callers in one process end up bound to a single real VBS key.
+//
+// Be clear about what this does and does not prove. bindingKeyGate serializes
+// these goroutines before any of them reaches the container, so exactly one
+// takes the create branch and the rest open what it made. Neither the NTE_EXISTS
+// branch nor the silent-replace branch is exercised here, and neither can be
+// from one process. Those are covered deterministically through the
+// bindingKeyContainer seam - see
+// TestResolveBindingKeyAdoptsThePersistedWinnerAfterASilentReplace - and against
+// real processes by TestRealKeyGuardCrossProcessCreationConverges above.
+//
+// What this test does prove, against real CNG rather than a script: that the
+// serialized callers converge on one key rather than each replacing the last,
+// that a second call adopts the existing key instead of creating a new one, and
+// that the open-only path sees the same key. Those are the properties that break
+// first if NCRYPT_OVERWRITE_KEY_FLAG is reintroduced.
+//
+// It uses a container of its own rather than the shared one, so the create path
+// runs at all: against bindingKeyName the key almost always already exists. The
+// throwaway container is deleted afterwards; the shared one never is, because
+// MSAL .NET has certificates persisted against it.
+func TestRealKeyGuardConcurrentCreationConvergesOnOneKey(t *testing.T) {
+	provider := requireRealKeyGuard(t)
+
+	name := fmt.Sprintf("msalgo-race-%d", time.Now().UnixNano())
+	t.Cleanup(func() { _ = provider.deleteKey(name) })
+
+	// Nothing has created it yet, so the first caller through the gate creates
+	// and the rest must adopt what it made.
+	if _, err := provider.openKey(name); !errors.Is(err, errBindingKeyNotFound) {
+		t.Fatalf("the throwaway container already exists: %v", err)
+	}
+
+	const callers = 8
+	var wg sync.WaitGroup
+	pubs := make([]*rsa.PublicKey, callers)
+	errs := make([]error, callers)
+	start := make(chan struct{})
+	for i := 0; i < callers; i++ {
+		wg.Add(1)
+		go func(i int) {
+			defer wg.Done()
+			<-start
+			key, err := provider.getOrCreateKey(name)
+			if err != nil {
+				errs[i] = err
+				return
+			}
+			defer func() { _ = key.Close() }()
+			pub, ok := key.Signer.Public().(*rsa.PublicKey)
+			if !ok {
+				errs[i] = fmt.Errorf("public key is %T", key.Signer.Public())
+				return
+			}
+			pubs[i] = pub
+		}(i)
+	}
+	close(start)
+	wg.Wait()
+
+	for i, err := range errs {
+		if err != nil {
+			t.Fatalf("caller %d: %v", i, err)
+		}
+	}
+	for i := 1; i < callers; i++ {
+		if pubs[i].N.Cmp(pubs[0].N) != 0 {
+			t.Fatalf("caller %d got a different key from caller 0: concurrent creation replaced a key instead of adopting it", i)
+		}
+	}
+
+	// A key that exists is reopened, not recreated, so an open-only caller sees
+	// the same one.
+	opened, err := provider.openKey(name)
+	if err != nil {
+		t.Fatalf("openKey after concurrent creation: %v", err)
+	}
+	defer func() { _ = opened.Close() }()
+	if rsaPublic(t, opened).N.Cmp(pubs[0].N) != 0 {
+		t.Fatal("openKey returned a different key from the one getOrCreateKey settled on")
+	}
+
+	// And a later getOrCreateKey adopts that key rather than making another,
+	// which is the property NCRYPT_OVERWRITE_KEY_FLAG would destroy: with the
+	// flag restored this call would replace a key the handles above still name.
+	again, err := provider.getOrCreateKey(name)
+	if err != nil {
+		t.Fatalf("getOrCreateKey on an existing key: %v", err)
+	}
+	defer func() { _ = again.Close() }()
+	if rsaPublic(t, again).N.Cmp(pubs[0].N) != 0 {
+		t.Fatal("getOrCreateKey replaced an existing usable key instead of adopting it")
+	}
+}
+
+// TestRealKeyGuardOpenKeyDoesNotCreate proves the open-only path really is
+// open-only: asked for a container that does not exist, it reports that rather
+// than provisioning one.
+func TestRealKeyGuardOpenKeyDoesNotCreate(t *testing.T) {
+	provider := requireRealKeyGuard(t)
+
+	// A name nothing else uses, so a failure here cannot be a key some other
+	// library left behind.
+	name := fmt.Sprintf("msalgo-openonly-%d", time.Now().UnixNano())
+	if _, err := provider.openKey(name); !errors.Is(err, errBindingKeyNotFound) {
+		// Clean up in the impossible case that it did create one.
+		_ = provider.deleteKey(name)
+		t.Fatalf("openKey(%q) = %v, want errBindingKeyNotFound", name, err)
+	}
+	// If openKey had created the container, a second open would now succeed.
+	if _, err := provider.openKey(name); !errors.Is(err, errBindingKeyNotFound) {
+		_ = provider.deleteKey(name)
+		t.Fatalf("openKey provisioned a key as a side effect of being asked about one: %v", err)
 	}
 }
 

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 )
 
 // ErrMtlsNotSupportedForPlatform is returned when mTLS proof-of-possession or a
@@ -104,16 +105,107 @@ type bindingKey struct {
 	Close func() error
 }
 
+// errBindingKeyNotFound reports that no usable binding key is present, so an
+// open-only caller has nothing to work with. It is deliberately not exported:
+// a cache read that raises it has already answered "nothing cached", which is
+// not a condition an application acts on.
+//
+// A key that exists but can no longer sign is reported this way too. Such a key
+// is what a reboot leaves behind - the container name and the public half
+// survive while the isolated private material does not - so treating it as
+// present would let a certificate issued against the dead key look healthy.
+//
+// Match it with errors.Is.
+var errBindingKeyNotFound = errors.New("managedidentity: no usable binding key is present")
+
 // keyProvider produces the binding key for the IMDSv2 flow. It is an interface
 // so tests can substitute a software key without a VBS-capable host, and so the
 // Windows implementation can be compiled out elsewhere.
 type keyProvider interface {
 	// getOrCreateKey returns the binding key for name, creating it if it does
 	// not already exist. Callers must call bindingKey.Close when finished.
+	//
+	// Only a caller that is about to mint a credential, or that is deliberately
+	// probing what this host can provision, may use it. Everything that merely
+	// reads existing state uses openKey.
 	getOrCreateKey(name string) (bindingKey, error)
+	// openKey returns the binding key for name without creating one, reporting
+	// errBindingKeyNotFound when there is no usable key. Callers must call
+	// bindingKey.Close when finished.
+	//
+	// It exists because reading a cache must not change the machine. The cache
+	// paths - restoring a persisted certificate, and checking whether a cached
+	// certificate has been orphaned - only ever ask whether the key a
+	// certificate was issued against is still there. Asking that through
+	// getOrCreateKey would provision a brand new key on a host that has none,
+	// which cannot possibly match the certificate being checked: the answer is
+	// unchanged, and a persistent key has been created as a side effect of a
+	// read.
+	openKey(name string) (bindingKey, error)
 	// deleteKey removes the persisted key called name, so a caller can recover
 	// from a key that IMDS or Entra will no longer accept.
 	deleteKey(name string) error
+}
+
+// sharedKeyCloser lets more than one owner hold the operating system handle
+// behind a binding key, so releasing it waits for the last of them.
+//
+// It exists for attestation. The native attestation call cannot be interrupted,
+// so a caller whose context ends walks away from work that is still running
+// inside the trustlet. Closing the key at that point would free the handle the
+// native library is still using. Reference counting the release instead lets the
+// caller give up immediately - which is what releases the process-wide token
+// gate it is holding - while the abandoned call keeps the handle alive until it
+// returns and drops its own reference.
+type sharedKeyCloser struct {
+	mu     sync.Mutex
+	refs   int
+	closed bool
+	close  func() error
+}
+
+// shareKey rewires key so its Close is reference counted, and returns the
+// holder that a second owner retains against. The caller keeps the reference
+// shareKey starts with, so nothing changes for a flow that never shares.
+func shareKey(key *bindingKey) *sharedKeyCloser {
+	holder := &sharedKeyCloser{refs: 1, close: key.Close}
+	key.Close = holder.release
+	return holder
+}
+
+// retain records an additional holder. It reports false once the handle has
+// been released, so a late caller cannot resurrect a closed key.
+func (s *sharedKeyCloser) retain() bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.closed || s.refs <= 0 {
+		return false
+	}
+	s.refs++
+	return true
+}
+
+// release drops one holder and closes the handle once the last one is gone.
+func (s *sharedKeyCloser) release() error {
+	s.mu.Lock()
+	if s.closed {
+		s.mu.Unlock()
+		return nil
+	}
+	if s.refs > 0 {
+		s.refs--
+	}
+	if s.refs > 0 {
+		s.mu.Unlock()
+		return nil
+	}
+	s.closed = true
+	closeFn := s.close
+	s.mu.Unlock()
+	if closeFn == nil {
+		return nil
+	}
+	return closeFn()
 }
 
 // requireKeyGuard enforces the same rule MSAL .NET applies: a token bound by

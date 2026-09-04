@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"crypto/tls"
 	"crypto/x509"
+	"errors"
 	"fmt"
 	"net/http"
 	"os"
@@ -45,8 +46,13 @@ func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) ClientO
 // does not use that certificate, so a stolen token is not usable elsewhere.
 //
 // The returned token must be sent over a connection authenticated with the same
-// certificate. Use [AuthResult.MtlsHTTPClient] to obtain a client that does
-// this, and present the token with the "mtls_pop" scheme rather than "Bearer".
+// certificate. [AuthResult.BindingCertificate] carries that certificate together
+// with a live handle to its private key: install it on the transport - through
+// tls.Config.GetClientCertificate rather than Certificates, which Go filters
+// against the authorities the server advertises - and present the token with the
+// "mtls_pop" scheme rather than "Bearer". The package README shows the complete
+// client, including the TLS 1.2 renegotiation settings a resource that enforces
+// token binding needs.
 //
 // This requires Windows with Credential Guard enabled and a host that serves
 // IMDSv2. It cannot be combined with [WithRequestOverMtls].
@@ -116,6 +122,14 @@ func (o AcquireTokenOptions) stampCacheComponents(params *authority.AuthParams) 
 	// authentication scheme contributes no key ID to the cache key: without the
 	// mode here, nothing at all would separate an attested acquisition from an
 	// unattested one.
+	//
+	// Its presence also puts these tokens in their own partition, separate from
+	// tokens acquired over plain HTTP for the same identity and resource. That
+	// is deliberate rather than incidental: a bearer token obtained over mTLS is
+	// issued under a different policy than one obtained without it, so serving
+	// either in place of the other would silently change what the caller was
+	// given. A caller using WithRequestOverMtls therefore does not share a cache
+	// entry with a caller using no option at all.
 	if o.overMtls {
 		params.CacheKeyComponents["mtls_bearer"] = attested
 	} else {
@@ -138,6 +152,12 @@ func (o AcquireTokenOptions) stampCacheComponents(params *authority.AuthParams) 
 func (o AcquireTokenOptions) validate(source Source) error {
 	if o.mtlsPoP && o.overMtls {
 		return ErrMtlsPoPAndBearerExclusive
+	}
+	// The floor is checked for being a real tier before anything else looks at
+	// it, so a value that is not one is refused for both mTLS and non-mTLS
+	// requests rather than only where it would have been enforced.
+	if !o.minStrength.isDeclared() {
+		return fmt.Errorf("%w: got %d", ErrInvalidMtlsBindingStrength, int(o.minStrength))
 	}
 	if !o.usesIMDSv2() {
 		// Attestation applies to the binding key, which only the IMDSv2 path
@@ -208,7 +228,11 @@ func (c Client) acquireTokenForIMDSv2(ctx context.Context, resource string, o Ac
 	// variable rather than capturing the first value.
 	defer func() { _ = binding.Close() }()
 
-	tr, err := requestEntraToken(ctx, c.mtlsClient(binding.TLS), binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
+	client, err := c.mtlsClient(binding.TLS)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	tr, err := requestEntraToken(ctx, client, binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
 	if err != nil {
 		if !shouldRemintCertificate(err) {
 			return AuthResult{}, err
@@ -220,7 +244,11 @@ func (c Client) acquireTokenForIMDSv2(ctx context.Context, resource string, o Ac
 		}
 		_ = binding.Close()
 		binding = reminted
-		tr, err = requestEntraToken(ctx, c.mtlsClient(binding.TLS), binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
+		client, err = c.mtlsClient(binding.TLS)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		tr, err = requestEntraToken(ctx, client, binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
 		if err != nil {
 			return AuthResult{}, err
 		}
@@ -252,17 +280,32 @@ func (c Client) claimsAndCapabilities(o AcquireTokenOptions) (string, error) {
 // verifyTokenType checks that the service returned the kind of token that was
 // requested.
 //
-// Entra can answer a token_type=mtls_pop request with a bearer token, for
-// example when the tenant has not enabled bound tokens. Returning that token
-// would hand the caller an unbound credential while the call site believes it
-// is bound, so it is rejected instead.
+// Both directions matter. Entra can answer a token_type=mtls_pop request with a
+// bearer token, for example when the tenant has not enabled bound tokens;
+// returning that would hand the caller an unbound credential while the call site
+// believes it is bound. The other direction is just as wrong: a request that
+// asked for a bearer token and is answered with anything else has been given a
+// credential the caller does not know how to spend. WithRequestOverMtls
+// specifically promises "a normal bearer token that any resource accepts", and a
+// caller relying on that will send it with the Bearer scheme whatever the type
+// says, so a bound token coming back there fails at the resource with nothing to
+// explain it.
+//
+// The comparison is case-insensitive because RFC 6749 section 7.1 declares
+// token_type case-insensitive and services do vary the spelling; it is otherwise
+// exact, so an unknown type is refused rather than assumed to be a bearer token.
 func verifyTokenType(tr accesstokens.TokenResponse, popRequested bool) error {
-	if !popRequested {
+	if popRequested {
+		if !strings.EqualFold(tr.TokenType, authority.AccessTokenTypeMtlsPoP) {
+			return fmt.Errorf(
+				"managedidentity: a certificate-bound token was requested but the service returned a %q token; the tenant or resource may not support bound tokens",
+				tr.TokenType)
+		}
 		return nil
 	}
-	if !strings.EqualFold(tr.TokenType, authority.AccessTokenTypeMtlsPoP) {
+	if !strings.EqualFold(tr.TokenType, authority.AccessTokenTypeBearer) {
 		return fmt.Errorf(
-			"managedidentity: a certificate-bound token was requested but the service returned a %q token; the tenant or resource may not support bound tokens",
+			"managedidentity: a bearer token was requested but the service returned a %q token",
 			tr.TokenType)
 	}
 	return nil
@@ -347,13 +390,41 @@ func newRetainedSigner(signer crypto.Signer, release func() error) *retainedSign
 	return held
 }
 
+// ErrMtlsClientFactoryReturnedNil is returned when a factory supplied to
+// [WithMtlsHTTPClient] returns a nil client. There is nothing to send the token
+// request on, so the request fails here rather than panicking inside net/http.
+//
+// Match it with errors.Is.
+var ErrMtlsClientFactoryReturnedNil = errors.New(
+	"managedidentity: the WithMtlsHTTPClient factory returned a nil *http.Client")
+
 // mtlsClient builds the client used for the IMDSv2 token leg, honouring
 // [WithMtlsHTTPClient] when the caller supplied a factory.
-func (c Client) mtlsClient(cert tls.Certificate) *http.Client {
-	if c.mtlsClientFactory != nil {
-		return c.mtlsClientFactory(cert)
+//
+// A caller-supplied client is copied before it is used, and a redirect refusal
+// is installed on the copy when the caller stated no policy of their own. A nil
+// CheckRedirect is not "no policy": it is Go's default, which follows up to ten
+// redirects. This leg posts a form and presents the binding certificate, so a
+// 307 or 308 would replay the client credential at whatever host the Location
+// header names and offer the certificate on the cloned handshake, and the
+// https-only check tokenEndpoint performs cannot see where a redirect leads. The
+// copy is what keeps this from mutating a client the caller may share with
+// unrelated code; a caller who did set CheckRedirect has stated a policy and is
+// left alone, exactly as imdsRedirectGuarded treats the plain-HTTP legs.
+func (c Client) mtlsClient(cert tls.Certificate) (*http.Client, error) {
+	if c.mtlsClientFactory == nil {
+		return mtlsHTTPClient(cert), nil
 	}
-	return mtlsHTTPClient(cert)
+	client := c.mtlsClientFactory(cert)
+	if client == nil {
+		return nil, ErrMtlsClientFactoryReturnedNil
+	}
+	if client.CheckRedirect != nil {
+		return client, nil
+	}
+	guarded := *client
+	guarded.CheckRedirect = refuseIMDSv2Redirect
+	return &guarded, nil
 }
 
 // imdsV2BaseEndpoint returns the metadata service root.

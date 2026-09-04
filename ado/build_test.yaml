@@ -214,6 +214,32 @@ stages:
                 if (-not (Test-Path "$native\AttestationClientLib.dll")) {
                   throw "AttestationClientLib.dll was not found in the package"
                 }
+                # Every native file staged below has to carry a valid Microsoft
+                # Authenticode signature. This is the one check that needs no
+                # setup outside this file - no pinned digest, no variable group,
+                # no queue-time flag - and it is worth having on its own: what is
+                # being assembled here is native code that will be loaded into a
+                # process holding a live managed identity token and a KeyGuard
+                # key handle, and a signature is something an attacker cannot
+                # forge for a file they substituted.
+                #
+                # It is not a supply-chain guarantee. It says the file came from
+                # Microsoft, not that it is the exact build this package intended,
+                # so it does not replace pinning the package by digest - that
+                # would need a trustworthy expected hash supplied from outside the
+                # repository, which is deliberately not required here.
+                function Assert-MicrosoftSigned([string]$path) {
+                  $sig = Get-AuthenticodeSignature -LiteralPath $path
+                  if ($sig.Status -ne "Valid") {
+                    throw "$path is not validly signed (status $($sig.Status))"
+                  }
+                  if ($sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+                    throw "$path is signed by $($sig.SignerCertificate.Subject), not Microsoft"
+                  }
+                  Write-Host "  signature OK: $([IO.Path]::GetFileName($path))"
+                }
+                Write-Host "signatures:"
+                Assert-MicrosoftSigned "$native\AttestationClientLib.dll"
                 # Assemble everything the test step must place next to the test
                 # binary. The library is loaded with LoadLibraryEx and
                 # LOAD_LIBRARY_SEARCH_* flags, which replace the standard search
@@ -269,6 +295,14 @@ stages:
                     }
                   }
                   if ($src) {
+                    # Verified wherever it came from. The discovery order is left
+                    # exactly as it was, including the %PATH% tier, because that
+                    # tier is what keeps this step fast and is what the stage has
+                    # been finding the runtime through; dropping it could fail a
+                    # build for a file that is genuinely present. The signature
+                    # check is what makes taking a file from a writable directory
+                    # acceptable, and it applies to every source equally.
+                    Assert-MicrosoftSigned $src
                     Copy-Item -LiteralPath $src -Destination $payload -Force
                     Write-Host "  $name -> staged from $src"
                   } else {

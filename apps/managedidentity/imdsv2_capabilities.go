@@ -83,6 +83,29 @@ var ErrMinStrengthNotMet = errors.New(
 var ErrMinStrengthRequiresMtls = errors.New(
 	"managedidentity: WithMtlsPoPMinStrength requires WithMtlsProofOfPossession or WithRequestOverMtls")
 
+// ErrInvalidMtlsBindingStrength is returned when [WithMtlsPoPMinStrength] is
+// given a value that is not one of the declared tiers.
+//
+// MtlsBindingStrength is an exported integer type, so nothing in the type system
+// stops a caller passing 2 - the value reserved for a future tier - or an
+// arbitrary number. Such a value cannot be a floor: no host reports it, so it
+// would either be silently rounded down to a weaker requirement than the caller
+// wrote, or reject every host including ones that can bind at the strongest tier
+// available. Refusing it names the mistake instead.
+//
+// Match it with errors.Is.
+var ErrInvalidMtlsBindingStrength = errors.New(
+	"managedidentity: the requested MtlsBindingStrength is not one of MtlsBindingStrengthNone, MtlsBindingStrengthSoftware or MtlsBindingStrengthKeyGuard")
+
+// isDeclaredStrength reports whether s is one of the tiers this package defines.
+func (s MtlsBindingStrength) isDeclared() bool {
+	switch s {
+	case MtlsBindingStrengthNone, MtlsBindingStrengthSoftware, MtlsBindingStrengthKeyGuard:
+		return true
+	}
+	return false
+}
+
 // Capabilities describes what the current host can do for managed identity.
 //
 // It is meant for credential chains, which have to decide whether to use
@@ -100,46 +123,129 @@ type Capabilities struct {
 	// produce. This is the signal to branch on rather than the source label.
 	MaxSupportedBindingStrength MtlsBindingStrength
 
-	// ErrorReason describes why no source was detected, and is empty when one
-	// was.
+	// ErrorReason describes why the host cannot bind a token, and is empty when
+	// it can.
+	//
+	// It is not limited to "no source was detected". On a host that does have a
+	// managed identity source it carries the reason binding is unavailable
+	// there: the platform has no key provider, or the IMDSv2 probe failed and
+	// the compute document did not describe a host that could bind either. A
+	// populated ErrorReason with Source set to [DefaultToIMDS] is therefore
+	// normal, and says managed identity works here but a bound token does not.
 	ErrorReason string
 }
 
 // IsMtlsPoPSupportedByHost reports whether the host can bind a token to a key.
 //
-// It does not imply attestation. A caller that requires an attested credential
-// must check that MaxSupportedBindingStrength is
-// [MtlsBindingStrengthKeyGuard].
+// It describes the host, not what an acquisition here will do with it. Two
+// things follow from that, and both matter to a caller branching on this value:
+//
+// It does not imply attestation. Only [MtlsBindingStrengthKeyGuard] means the
+// key is VBS-isolated, which is the tier an attested credential needs.
+//
+// It does not imply that an mTLS acquisition will succeed. This library binds
+// only to a KeyGuard key, so a host reporting [MtlsBindingStrengthSoftware]
+// returns true here - it does speak the protocol, and MSAL .NET reports the same
+// tier for the same machine - while [WithMtlsProofOfPossession] on it fails with
+// [ErrCredentialGuardNotAvailable]. A caller deciding whether to attempt an
+// acquisition should compare MaxSupportedBindingStrength against
+// [MtlsBindingStrengthKeyGuard] rather than calling this.
 func (c Capabilities) IsMtlsPoPSupportedByHost() bool {
 	return c.MaxSupportedBindingStrength > MtlsBindingStrengthNone
 }
 
-// capabilitiesCache holds the discovery result for the process.
+// capabilitiesState holds one client's host-capability discovery result.
 //
-// Discovery probes the metadata service and provisions a binding key, neither
-// of which is cheap and neither of which changes while the process runs, so it
-// is done once. gate makes it single-flight: concurrent callers at startup wait
-// for the first probe rather than each issuing their own, which is what would
-// otherwise happen in a service that resolves credentials on many goroutines at
-// once. MSAL .NET does the same with a static field and a semaphore.
+// It hangs off the Client rather than off a process-wide map, and that is the
+// whole design. The answer depends on the client: a Client can carry its own
+// HTTP client, its own key provider and its own metadata endpoint, all of which
+// decide what discovery finds. A single shared entry would let the first client
+// to call Capabilities publish its answer to every other client in the process -
+// a real problem for an application that builds one client against a
+// pod-identity sidecar and another against real IMDS, and for a test whose fake
+// would become reachable from unrelated code.
 //
-// gate is a channel rather than the mutex because discovery makes network calls
-// and a failing metadata service can hold a probe for a minute of retries.
-// Waiting behind the mutex would make every queued caller ignore its own
-// deadline; a channel lets one give up. mu therefore only ever covers the two
-// field accesses.
+// A keyed process-wide map was the obvious alternative and is worse, for two
+// reasons that cannot be engineered around. It would have to identify an
+// ops.HTTPClient and a keyProvider, which are arbitrary caller-supplied
+// interface values: their dynamic types need not be comparable, so they cannot
+// be part of a map key directly, and identifying them by the address behind the
+// interface is unsound because Go reuses an address once the object it named is
+// collected. A later, unrelated client could then be handed a definitive answer
+// - one cached for the life of the process - that was discovered for an object
+// that no longer exists. Such a map also never shrinks, so a process that builds
+// clients over time accumulates an entry per client forever.
+//
+// Holding the state by reference from the Client removes both questions. The
+// state lives exactly as long as the clients that share it and is collected with
+// them, so nothing accumulates and no address is ever reused underneath a live
+// entry. New gives each Client a state of its own, and because Client is a value
+// type the pointer travels with every copy: copies of one client share an
+// answer, independently constructed clients never do.
 //
 // expires separates the two kinds of negative answer. A definitive one - "this
 // host serves IMDSv1 only", "this platform has no key provider" - is a fact
 // about the host that cannot change while the process runs, so it is stored
 // with a zero expires and never revisited. A transient failure is not an answer
 // at all, so it is only reused until expires.
-var capabilitiesCache = struct {
+type capabilitiesState struct {
+	// gate makes discovery single-flight. Concurrent callers at startup wait
+	// for the first probe rather than each issuing their own, which is what
+	// would otherwise happen in a service that resolves credentials on many
+	// goroutines at once. MSAL .NET does the same with a static field and a
+	// semaphore.
+	//
+	// It is a channel rather than a mutex because discovery makes network calls
+	// and a failing metadata service can hold a probe for a minute of retries.
+	// Waiting behind a mutex would make every queued caller ignore its own
+	// deadline; a channel lets one give up.
+	gate chan struct{}
+
+	// mu only ever covers the two fields below, never a network call.
 	mu      sync.Mutex
-	gate    chan struct{}
 	result  *Capabilities
 	expires time.Time
-}{gate: make(chan struct{}, 1)}
+}
+
+func newCapabilitiesState() *capabilitiesState {
+	return &capabilitiesState{gate: make(chan struct{}, 1)}
+}
+
+// cached returns a stored answer that is still good.
+func (s *capabilitiesState) cached() (Capabilities, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.result != nil && (s.expires.IsZero() || now().Before(s.expires)) {
+		return *s.result, true
+	}
+	return Capabilities{}, false
+}
+
+// store records an answer, keeping a definitive one for the life of the process
+// and a transient one only until it expires.
+func (s *capabilitiesState) store(result Capabilities, definitive bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.result = &result
+	if definitive {
+		s.expires = time.Time{}
+	} else {
+		s.expires = now().Add(capabilitiesRetryInterval)
+	}
+}
+
+// hostCapabilityState returns the discovery state for this client.
+//
+// A Client built by New always has one. A zero-value Client does not, and gets a
+// throwaway state so that Capabilities still answers correctly; it simply does
+// not cache, because there is nowhere on a value receiver to put the result that
+// the caller would ever see again. Only tests construct a Client that way.
+func (c Client) hostCapabilityState() *capabilitiesState {
+	if c.hostCapabilities != nil {
+		return c.hostCapabilities
+	}
+	return newCapabilitiesState()
+}
 
 // capabilitiesRetryInterval is how long a transient discovery failure is reused
 // before the host is probed again.
@@ -151,18 +257,24 @@ var capabilitiesCache = struct {
 // is already failing, which is the worst moment to add load to it.
 const capabilitiesRetryInterval = 30 * time.Second
 
-func clearCapabilitiesCache() {
-	capabilitiesCache.mu.Lock()
-	defer capabilitiesCache.mu.Unlock()
-	capabilitiesCache.result = nil
-	capabilitiesCache.expires = time.Time{}
-}
-
 // Capabilities reports what this host can do for managed identity.
 //
-// The result is discovered once and reused for the lifetime of the process.
-// Discovery reads the environment first, and only probes the metadata service
-// when no environment-based source is configured.
+// The result is discovered once per client and reused for the lifetime of that
+// client. Copies of a client made by value share the result; independently
+// constructed clients each discover their own, because each can be configured
+// with a different HTTP client, key provider or metadata endpoint and would not
+// necessarily get the same answer. Discovery reads the environment first, and
+// only probes the metadata service when no environment-based source is
+// configured.
+//
+// Discovery is not purely a read. On a host that serves IMDSv2 it asks the
+// platform for the binding key, which creates and persists that key if it does
+// not already exist: a CNG container under a fixed name, shared with MSAL .NET
+// and surviving process restarts. That is what makes the answer trustworthy -
+// the tier reported is the tier of a key this host really produced, not a guess
+// from a document - but it does mean calling Capabilities on a capable host
+// leaves a key behind. No certificate and no token is minted, so nothing is
+// requested from IMDS beyond the probe itself.
 //
 // An error is returned only when the context is cancelled. A host with no
 // managed identity at all is not an error: it is reported as a Capabilities
@@ -170,27 +282,34 @@ func clearCapabilitiesCache() {
 // managed identity here" is an answer a credential chain acts on rather than a
 // failure.
 //
-// A transient failure to reach the metadata service is reported the same way,
-// but is not taken as the host's settled answer: it is reused for at most
-// capabilitiesRetryInterval and then re-probed, so a host that was briefly
-// unreachable is not written off for the life of the process.
+// The two negative answers are cached differently, and the difference is
+// visible to a caller that retries. A definitive one - this platform has no key
+// provider, or the host answered that it serves IMDSv1 only - is a fact that
+// cannot change under a running process, so it is kept for the life of the
+// client and a later call returns it without touching the network. A transient
+// failure to reach the metadata service is reported the same way but kept for
+// at most capabilitiesRetryInterval, currently 30 seconds, after which the next
+// call probes again. A host that was briefly unreachable is therefore not
+// written off, and a caller that saw MtlsBindingStrengthNone for that reason can
+// get a different answer half a minute later.
 func (c Client) Capabilities(ctx context.Context) (Capabilities, error) {
-	if result, ok := cachedCapabilities(); ok {
+	state := c.hostCapabilityState()
+	if result, ok := state.cached(); ok {
 		return result, nil
 	}
 	if err := ctx.Err(); err != nil {
 		return Capabilities{}, err
 	}
 	select {
-	case capabilitiesCache.gate <- struct{}{}:
+	case state.gate <- struct{}{}:
 	case <-ctx.Done():
 		return Capabilities{}, ctx.Err()
 	}
-	defer func() { <-capabilitiesCache.gate }()
+	defer func() { <-state.gate }()
 
 	// Whoever held the gate may have answered the question while this caller
 	// was queued behind it.
-	if result, ok := cachedCapabilities(); ok {
+	if result, ok := state.cached(); ok {
 		return result, nil
 	}
 
@@ -201,29 +320,8 @@ func (c Client) Capabilities(ctx context.Context) (Capabilities, error) {
 		// cancelled call poison every later one.
 		return Capabilities{}, ctxErr
 	}
-	storeCapabilities(result, definitive)
+	state.store(result, definitive)
 	return result, nil
-}
-
-func cachedCapabilities() (Capabilities, bool) {
-	capabilitiesCache.mu.Lock()
-	defer capabilitiesCache.mu.Unlock()
-	if capabilitiesCache.result != nil &&
-		(capabilitiesCache.expires.IsZero() || now().Before(capabilitiesCache.expires)) {
-		return *capabilitiesCache.result, true
-	}
-	return Capabilities{}, false
-}
-
-func storeCapabilities(result Capabilities, definitive bool) {
-	capabilitiesCache.mu.Lock()
-	defer capabilitiesCache.mu.Unlock()
-	capabilitiesCache.result = &result
-	if definitive {
-		capabilitiesCache.expires = time.Time{}
-	} else {
-		capabilitiesCache.expires = now().Add(capabilitiesRetryInterval)
-	}
 }
 
 // discoverCapabilities works out what this host supports. The second return
@@ -329,6 +427,12 @@ func capabilitiesForIMDSv1(v imdsV2, ctx context.Context, v2Err error) Capabilit
 // can bind at least at software strength. Whether it can do better depends on
 // the key the platform hands back: only a VBS-isolated key justifies claiming
 // the attested tier.
+//
+// This is the one place a key may be created outside an acquisition, and it is
+// deliberate: the tier has to describe a key the host actually produced. Opening
+// an existing key would answer for a host that has one and say nothing about a
+// host that has never run this flow, which is exactly the host a credential
+// chain is asking about. Capabilities documents the side effect.
 //
 // A key provider that fails leaves the software floor in place rather than
 // reporting no binding at all. The host demonstrably speaks the protocol; a key

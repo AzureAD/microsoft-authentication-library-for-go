@@ -291,26 +291,6 @@ func clientIDFromSubject(leaf *x509.Certificate) (string, bool) {
 	return strings.ToLower(cn), true
 }
 
-func looksLikeGUID(s string) bool {
-	if len(s) != 36 {
-		return false
-	}
-	for i, r := range s {
-		switch i {
-		case 8, 13, 18, 23:
-			if r != '-' {
-				return false
-			}
-		default:
-			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
-			if !isHex {
-				return false
-			}
-		}
-	}
-	return true
-}
-
 func (w windowsPersistentCertCache) write(alias string, cert *bindingCertificate) {
 	if cert == nil || cert.Leaf == nil || len(cert.TLS.Certificate) == 0 {
 		return
@@ -520,6 +500,15 @@ func withAliasLock(alias string, fn func()) {
 	_, _ = tryAliasLock(`Local\`+suffix, fn)
 }
 
+// tryAliasLock takes the named mutex and runs fn under it, reporting whether fn
+// ran and whether the name was refused outright.
+//
+// The wait, the work and the release all happen on one pinned OS thread; see
+// awaitNamedMutex for why that is not optional. Getting it wrong here would be
+// quiet and lasting: the release would fail with ERROR_NOT_OWNER, the mutex
+// would stay held for the life of the process, and every later write - in this
+// process and every other one - would time out and silently skip persistence,
+// so certificates would stop being reused and nothing would say why.
 func tryAliasLock(name string, fn func()) (ran bool, accessDenied bool) {
 	encoded, err := windows.UTF16PtrFromString(name)
 	if err != nil {
@@ -529,23 +518,12 @@ func tryAliasLock(name string, fn func()) (ran bool, accessDenied bool) {
 	if err != nil && handle == 0 {
 		return false, err == windows.ERROR_ACCESS_DENIED
 	}
+	// Registered before the wait so it runs after the release and the unpin.
 	defer func() { _ = windows.CloseHandle(handle) }()
 
-	event, err := windows.WaitForSingleObject(handle, uint32(persistLockTimeout/time.Millisecond))
-	switch {
-	case err != nil:
-		return false, false
-	case event == uint32(windows.WAIT_TIMEOUT):
-		return false, false
-	case event != windows.WAIT_OBJECT_0 && event != uint32(windows.WAIT_ABANDONED):
-		// WAIT_ABANDONED means the previous holder died without releasing.
-		// The lock is ours and the store is self-describing, so there is
-		// nothing to recover and the work proceeds.
-		return false, false
-	}
-	defer func() { _ = windows.ReleaseMutex(handle) }()
-	fn()
-	return true, false
+	// Busy is not retried and not escalated: persistence is an optimisation, so
+	// a lock somebody else holds skips the write rather than delaying a token.
+	return awaitNamedMutex(handle, persistLockTimeout, fn), false
 }
 
 // aliasLockSuffix derives a mutex name from the identity.

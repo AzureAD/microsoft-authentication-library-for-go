@@ -195,6 +195,17 @@ type Client struct {
 	// keyProvider overrides how the IMDSv2 binding key is produced. It is only
 	// set by tests; production always uses the platform provider.
 	keyProvider keyProvider
+	// hostCapabilities caches what Capabilities discovered for this client.
+	//
+	// It is a pointer so that copies of a Client - which callers make freely,
+	// since Client is a value type and every method takes it by value - share
+	// one discovery result, while two independently constructed clients never
+	// do. That matters because the answer depends on this client's HTTP client,
+	// key provider and metadata endpoint, so one client's answer is not
+	// generally valid for another. New always populates it; see
+	// capabilitiesState for why this is held here rather than in a
+	// process-wide map.
+	hostCapabilities *capabilitiesState
 }
 
 type AcquireTokenOptions struct {
@@ -245,9 +256,10 @@ func WithClaims(claims string) AcquireTokenOption {
 // failure to attest is an error rather than a downgrade: a caller that asked for
 // attestation is never silently given a credential that lacks it.
 //
-// Attestation is only meaningful for the IMDSv2 mTLS flow, so this option
-// requires [WithMtlsProofOfPossession]; pairing it with a plain bearer-token
-// request returns [ErrAttestationRequiresMtls] rather than quietly ignoring it.
+// Attestation is only meaningful for the IMDSv2 mTLS flow, which is what mints
+// the binding key, so this option requires either [WithMtlsProofOfPossession] or
+// [WithRequestOverMtls]. Used on its own, or with a plain bearer-token request,
+// it returns [ErrAttestationRequiresMtls] rather than being quietly ignored.
 func WithAttestationSupport() AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
 		o.attestation = true
@@ -263,9 +275,24 @@ func WithAttestationSupport() AcquireTokenOption {
 // weaker key and never learn the difference. Setting a floor turns that into an
 // error, [ErrMinStrengthNotMet], raised before any credential is issued.
 //
+// Note what the floor does not do. It cannot cause a weaker key to be accepted,
+// because this library binds only to a KeyGuard key in the first place: a host
+// that can offer nothing stronger than [MtlsBindingStrengthSoftware] fails with
+// [ErrCredentialGuardNotAvailable] whether a floor was set or not. What the
+// floor changes is when and how that host is refused. Without one the failure
+// comes from the key provider, after discovery, and describes the key rather
+// than the requirement; with one it comes from
+// [ErrMinStrengthNotMet] before anything is minted, and names the tier that was
+// asked for and the tier the host has. Setting
+// [MtlsBindingStrengthKeyGuard] is therefore a way to state the requirement
+// explicitly and get a typed answer, not a way to relax or tighten what is
+// accepted.
+//
 // The check runs host capability discovery, whose result is reused for the
 // lifetime of the process. Passing [MtlsBindingStrengthNone] imposes no floor
-// and skips discovery entirely, which is the same as not using this option.
+// and skips discovery entirely, which is the same as not using this option. Any
+// value that is not one of the three declared tiers is rejected with
+// [ErrInvalidMtlsBindingStrength].
 //
 // Tokens acquired under a floor are cached separately from tokens acquired
 // without one, so raising the floor cannot be satisfied by a token that was
@@ -304,13 +331,15 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 // WithClientCapabilities allows configuring one or more client capabilities
 // such as "CP1".
 //
-// Capabilities are sent to Entra with every token request, and are the way a
-// caller tells Entra it can handle a claims challenge. They are only observed
-// on the IMDSv2 mTLS proof-of-possession flow, which is the only managed
-// identity flow in this package that talks to Entra directly; the other sources
-// exchange tokens through a local endpoint that has no parameter to carry them.
-// MSAL .NET applies the same restriction, listing only Service Fabric as
-// additionally able to forward them
+// Capabilities are sent to Entra as part of the token request's claims
+// parameter, and are the way a caller tells Entra it can handle a claims
+// challenge. They only travel on the IMDSv2 mTLS flows -
+// [WithMtlsProofOfPossession] and [WithRequestOverMtls] - because those are the
+// only managed identity requests in this package that reach Entra directly. An
+// ordinary IMDS, App Service, Cloud Shell, Azure ML or Azure Arc token request
+// goes to a local endpoint that has no parameter to carry them, so setting this
+// option changes nothing for those requests. MSAL .NET applies the same
+// restriction, listing only Service Fabric as additionally able to forward them
 // (ManagedIdentitySourceExtensions.s_supportsClaimsAndCaps).
 //
 // This is a client option rather than a per-request one because a capability is
@@ -386,6 +415,10 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		retryPolicyEnabled: true,
 		source:             source,
 		canRefresh:         &zero,
+		// Each client discovers host capabilities for itself. Allocating here,
+		// before the options run, means every client New returns has one and
+		// every copy of that client shares it.
+		hostCapabilities: newCapabilitiesState(),
 	}
 	for _, option := range options {
 		option(&client)
@@ -473,6 +506,24 @@ func acquireMITokenGate(ctx context.Context) (func(), error) {
 	}
 }
 
+// tryAcquireMITokenGate takes the gate only if it is free right now, reporting
+// whether it did.
+//
+// It exists for the proactive refresh, which runs on behalf of a caller that
+// already has a usable token. Such a caller must never be made to wait: queueing
+// it behind another acquisition would turn a cache hit into an arbitrarily long
+// call - up to the full length of an IMDSv2 acquisition, which is two IMDS legs,
+// an attestation and a token request - purely to refresh a token it was not
+// going to use yet.
+func tryAcquireMITokenGate() (func(), bool) {
+	select {
+	case miTokenGate <- struct{}{}:
+		return func() { <-miTokenGate }, true
+	default:
+		return nil, false
+	}
+}
+
 // Acquires tokens from the configured managed identity on an azure resource.
 //
 // Resource: scopes application is requesting access to
@@ -509,7 +560,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 			// CacheRefreshReason.ProactivelyRefreshed.
 			if refreshDue && c.canRefresh.CompareAndSwap(false, true) {
 				defer c.canRefresh.Store(false)
-				if tr, er := c.serializedToken(ctx, resource, o, false); er == nil {
+				if tr, ok := c.refreshWithoutWaiting(ctx, resource, o); ok {
 					return tr, nil
 				}
 			}
@@ -517,6 +568,37 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 		}
 	}
 	return c.serializedToken(ctx, resource, o, useCache)
+}
+
+// refreshWithoutWaiting performs a proactive refresh for a caller that already
+// holds a usable token, reporting whether it produced one.
+//
+// The gate is taken without waiting. The caller has an answer already, so this
+// refresh is speculative and must not cost it anything: if another acquisition
+// holds the gate, this returns immediately and the refresh is left to whichever
+// call next finds the window open. Blocking would make a cache hit wait out a
+// full cold acquisition - two IMDS legs, an attestation and a token request -
+// to refresh a token the caller could have used straight away.
+//
+// It exists as its own function so the release can be deferred. miTokenGate is
+// process-wide and nothing else ever drains it, so a release skipped by a panic
+// unwinding through this code would not be a lost refresh but a permanent,
+// process-wide stall: every later acquisition would block in
+// acquireMITokenGate until its own context expired. Releasing on the way out of
+// a scope that ends here is what makes that impossible.
+func (c Client) refreshWithoutWaiting(ctx context.Context, resource string, o AcquireTokenOptions) (AuthResult, bool) {
+	release, ok := tryAcquireMITokenGate()
+	if !ok {
+		return AuthResult{}, false
+	}
+	defer release()
+	ar, err := c.getToken(ctx, resource, o)
+	if err != nil {
+		// The caller still has its cached token, so a failed refresh is not an
+		// error: it simply does not replace what the caller already has.
+		return AuthResult{}, false
+	}
+	return ar, true
 }
 
 // serializedToken acquires a token while holding the process-wide managed
@@ -567,7 +649,7 @@ func (c Client) cachedAuthResult(ctx context.Context, o AcquireTokenOptions) (_ 
 		// certificate whose key was lost to a container reset still parses and
 		// still has the same thumbprint, so without this the caller would get a
 		// cached token plus a certificate it can no longer prove possession of.
-		if needsRefresh(binding) || isOrphaned(binding, c.bindingKeyProvider()) {
+		if needsRefresh(binding.Leaf) || isOrphaned(binding, c.bindingKeyProvider()) {
 			_ = binding.Close()
 			return AuthResult{}, false, false, nil
 		}
