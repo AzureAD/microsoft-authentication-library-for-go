@@ -139,9 +139,11 @@ func sendIMDSRequest(ctx context.Context, client ops.HTTPClient, req *http.Reque
 		return client.Do(req)
 	}
 
-	// The number of retries is fixed by the first answer, as MSAL .NET does:
-	// a request that starts out as 410 keeps the longer schedule even if a
-	// later attempt fails differently.
+	// The retry count is fixed by the first answer, as MSAL .NET does: a request
+	// that starts out as 410 keeps the longer budget even if a later attempt
+	// fails differently. Each delay is selected from the current answer, so a
+	// later 410 waits ten seconds while any other retriable result uses the
+	// exponential schedule.
 	maxRetries := -1
 
 	var resp *http.Response
@@ -179,7 +181,7 @@ func sendIMDSRequest(ctx context.Context, client ops.HTTPClient, req *http.Reque
 		}
 
 		delay := imdsRetryDelay(retry)
-		if resp != nil && resp.StatusCode == http.StatusGone {
+		if err == nil && resp.StatusCode == http.StatusGone {
 			delay = imdsGoneRetryAfter
 		}
 
@@ -276,7 +278,6 @@ func sendSTSRequest(ctx context.Context, client *http.Client, req *http.Request,
 	}
 }
 
-// rewindRequest clones req with a fresh body so it can be sent again.
 // rewindRequest clones req with a fresh body so it can be sent again.
 //
 // The clone shares req's body reader, which the previous attempt has already

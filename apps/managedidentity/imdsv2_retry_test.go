@@ -166,10 +166,12 @@ func TestSendIMDSRequestGoneUsesTheLinearSchedule(t *testing.T) {
 	}
 }
 
-// The retry budget is fixed by the first answer, as MSAL .NET does: a request
-// that opens with 410 keeps the longer schedule even once the status changes.
-func TestSendIMDSRequestKeepsTheBudgetFromTheFirstStatus(t *testing.T) {
-	recordRetryWaits(t)
+// The retry budget is fixed by the first answer, while each delay is selected
+// from the current answer. This is the split MSAL .NET's ImdsRetryPolicy makes:
+// a request that opens with 410 keeps seven retries, but a later 500 uses the
+// exponential delay rather than 410's flat ten seconds.
+func TestSendIMDSRequestKeepsTheBudgetButUsesTheCurrentStatusDelay(t *testing.T) {
+	waits := recordRetryWaits(t)
 	fake := &retryFake{statuses: []int{410, 500, 500, 500, 500, 500, 500, 500, 500}}
 	srv := httptest.NewServer(fake.handler())
 	defer srv.Close()
@@ -183,6 +185,52 @@ func TestSendIMDSRequestKeepsTheBudgetFromTheFirstStatus(t *testing.T) {
 
 	if fake.calls != 8 {
 		t.Errorf("calls = %d, want the 410 budget of 1 attempt plus 7 retries", fake.calls)
+	}
+	want := []time.Duration{
+		10 * time.Second,
+		2 * time.Second,
+		4 * time.Second,
+		4 * time.Second,
+		4 * time.Second,
+		4 * time.Second,
+		4 * time.Second,
+	}
+	if len(*waits) != len(want) {
+		t.Fatalf("waits = %v, want %v", *waits, want)
+	}
+	for i := range want {
+		if (*waits)[i] != want[i] {
+			t.Errorf("wait %d = %v, want %v", i, (*waits)[i], want[i])
+		}
+	}
+}
+
+// The inverse transition keeps the shorter retry budget but switches to the
+// flat 410 delay for the attempts whose current answer is Gone.
+func TestSendIMDSRequestUsesGoneDelayAfterAnotherFirstStatus(t *testing.T) {
+	waits := recordRetryWaits(t)
+	fake := &retryFake{statuses: []int{500, 410, 410, 410}}
+	srv := httptest.NewServer(fake.handler())
+	defer srv.Close()
+
+	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, srv.URL, nil)
+	resp, err := sendIMDSRequest(context.Background(), srv.Client(), req, true, imdsRetriableStatus)
+	if err != nil {
+		t.Fatalf("sendIMDSRequest: %v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if fake.calls != 4 {
+		t.Errorf("calls = %d, want the 500 budget of 1 attempt plus 3 retries", fake.calls)
+	}
+	want := []time.Duration{time.Second, 10 * time.Second, 10 * time.Second}
+	if len(*waits) != len(want) {
+		t.Fatalf("waits = %v, want %v", *waits, want)
+	}
+	for i := range want {
+		if (*waits)[i] != want[i] {
+			t.Errorf("wait %d = %v, want %v", i, (*waits)[i], want[i])
+		}
 	}
 }
 

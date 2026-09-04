@@ -6,7 +6,9 @@ package managedidentity
 import (
 	"context"
 	"crypto/x509"
+	"errors"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 )
@@ -40,11 +42,19 @@ type mintGate struct {
 type bindingCertCache struct {
 	mu      sync.Mutex
 	entries map[string]*certCacheEntry
-	// gates hold minting to one caller per identity. Two different identities
-	// do not block each other, which a single lock around issuance would make
-	// them do: minting is two network round trips, so an unrelated identity
-	// would wait out both. MSAL .NET keys its gates the same way, with
-	// KeyedSemaphorePool in MtlsCertificateCache.
+	// gates hold minting to one caller per identity. They are keyed rather than
+	// global because minting is two network round trips plus an attestation,
+	// and a caller for one identity should not queue behind another's. MSAL
+	// .NET keys its gates the same way, with KeyedSemaphorePool in
+	// MtlsCertificateCache.
+	//
+	// Note that this does not, on its own, make two identities mint in
+	// parallel: AcquireToken already holds the process-wide miTokenGate for the
+	// whole acquisition, so in the ordinary flow only one identity is minting
+	// at a time regardless of what this map allows. What the key buys is that
+	// the gate a caller waits on is the one its own identity is using, so a
+	// certificate minted for another identity never satisfies the double-check
+	// below and never has to be waited out twice.
 	gates map[string]*mintGate
 	// forceMint marks identities whose certificate the service rejected. It is
 	// what stops the caches from answering between the eviction and the next
@@ -221,12 +231,18 @@ func (c *bindingCertCache) releaseWaiter(key string) {
 // The validity checks run outside the lock because the orphan check talks to
 // the key provider, and holding the cache lock across an operating system call
 // would serialize every identity behind it.
+//
+// The client ID comparison is case-insensitive. Both sides are GUIDs that have
+// already been validated as such, and IMDS is not consistent about the case it
+// reports them in: a certificate persisted with a lower-cased common name is
+// compared against whatever leg 1 just returned. A case-sensitive comparison
+// would silently re-mint on every acquisition against a rate-limited service.
 func (c *bindingCertCache) usable(key, clientID string, provider keyProvider) (*bindingCertificate, bool) {
 	cert, ok := c.get(key)
 	if !ok {
 		return nil, false
 	}
-	if cert.ClientID == clientID && !needsRefresh(cert) && !isOrphaned(cert, provider) {
+	if strings.EqualFold(cert.ClientID, clientID) && !needsRefresh(cert.Leaf) && !isOrphaned(cert, provider) {
 		return cert, true
 	}
 	c.dropEntry(key, cert)
@@ -242,6 +258,10 @@ func (c *bindingCertCache) usable(key, clientID string, provider keyProvider) (*
 // certificate goes through. A certificate that fails that comparison outlived
 // the key it was issued for, which is what a reboot does to a per-boot VBS key,
 // so the whole alias is cleared rather than left to fail again next time.
+//
+// The key is opened, never created. This is a cache read: a host with no key has
+// nothing that could match the stored certificate, so creating one would change
+// the machine without changing the answer.
 func (c *bindingCertCache) restore(key, clientID string, provider keyProvider) (*bindingCertificate, bool) {
 	c.mu.Lock()
 	_, forced := c.forceMint[key]
@@ -256,13 +276,15 @@ func (c *bindingCertCache) restore(key, clientID string, provider keyProvider) (
 		return nil, false
 	}
 	// A certificate issued to a different identity than the one IMDS now
-	// reports is not this machine's credential any more.
-	if stored.ClientID != clientID {
+	// reports is not this machine's credential any more. The comparison folds
+	// case for the reason usable does: the stored value came back from a
+	// certificate subject, which is lower-cased on the way in.
+	if !strings.EqualFold(stored.ClientID, clientID) {
 		persisted.deleteAll(key)
 		return nil, false
 	}
 
-	bound, err := provider.getOrCreateKey(bindingKeyName)
+	bound, err := provider.openKey(bindingKeyName)
 	if err != nil {
 		return nil, false
 	}
@@ -271,6 +293,24 @@ func (c *bindingCertCache) restore(key, clientID string, provider keyProvider) (
 		return nil, false
 	}
 	if err := certificateMatchesKey(stored.Leaf, bound); err != nil {
+		_ = bound.Close()
+		persisted.deleteAll(key)
+		return nil, false
+	}
+	// A stored certificate has been outside this process's control since it was
+	// written, so it goes through the same checks a freshly issued one does
+	// before it is trusted to carry a token.
+	if err := certificateNamesIdentity(stored.Leaf, stored.ClientID); err != nil {
+		_ = bound.Close()
+		persisted.deleteAll(key)
+		return nil, false
+	}
+	if err := certificateUsableForClientMtls(stored.Leaf); err != nil {
+		_ = bound.Close()
+		persisted.deleteAll(key)
+		return nil, false
+	}
+	if needsRefresh(stored.Leaf) {
 		_ = bound.Close()
 		persisted.deleteAll(key)
 		return nil, false
@@ -307,6 +347,13 @@ func (c *bindingCertCache) adopt(key string, cert *bindingCertificate) {
 // private key behind it is gone, so the TLS handshake fails in a way that is
 // hard to attribute. Comparing the public keys detects it up front.
 //
+// The key is opened, never created. A cache read must leave the machine as it
+// found it: on a host whose key has gone, provisioning a replacement here would
+// both mint a persistent key as a side effect of a read and produce the same
+// answer, since a brand new key cannot match a certificate issued against the
+// old one. An absent key is reported as orphaned, which is what it means for the
+// certificate holding it.
+//
 // The check runs on every read rather than being cached for an interval. It is
 // not free - it opens the provider, opens the key, proves the key can sign with
 // a real RSA-2048 operation inside the VBS trustlet, and exports two public
@@ -319,7 +366,7 @@ func (c *bindingCertCache) adopt(key string, cert *bindingCertificate) {
 // vanished mid-window reach the handshake, which is exactly the failure this
 // function exists to prevent.
 func isOrphaned(cert *bindingCertificate, provider keyProvider) bool {
-	current, err := provider.getOrCreateKey(bindingKeyName)
+	current, err := provider.openKey(bindingKeyName)
 	if err != nil {
 		// The key cannot be reached at all, so the cached certificate is not
 		// usable either.
@@ -345,13 +392,93 @@ func isOrphaned(cert *bindingCertificate, provider keyProvider) bool {
 // CertificateCacheEntry.MinRemainingLifetime, for the same reason.
 const bindingCertRefreshWindow = 24 * time.Hour
 
-// needsRefresh reports whether a cached certificate is at or past its refresh
-// window and should be re-minted rather than reused.
-func needsRefresh(cert *bindingCertificate) bool {
-	if cert == nil || cert.Leaf == nil || cert.Leaf.NotAfter.IsZero() {
-		return false
+// needsRefresh reports whether a certificate is at or past its refresh window
+// and must be re-minted rather than reused.
+//
+// A certificate with no parsed leaf, or with a zero NotAfter, is treated as
+// needing refresh rather than as healthy. A zero NotAfter is not "no expiry": it
+// is a certificate whose validity could not be read, and binding a token that
+// outlives the request to a certificate whose expiry is unknown is precisely the
+// case this window exists to prevent. Reading it as healthy would make a
+// malformed or truncated stored certificate the one entry that never expires.
+func needsRefresh(leaf *x509.Certificate) bool {
+	if leaf == nil || leaf.NotAfter.IsZero() {
+		return true
 	}
-	return !cert.Leaf.NotAfter.After(now().Add(bindingCertRefreshWindow))
+	return !leaf.NotAfter.After(now().Add(bindingCertRefreshWindow))
+}
+
+// certificateNamesIdentity checks that the certificate was issued to the
+// identity the caller is about to present it as.
+//
+// The public key comparison in certificateMatchesKey proves only that the
+// certificate carries this machine's binding key. It says nothing about which
+// identity the certificate names, and the client ID sent on the token request
+// is taken from the issuance response rather than from the certificate, so
+// without this check a certificate for one identity could be presented while
+// claiming another. IMDS puts the managed identity's client ID in the common
+// name, which is where MSAL .NET reads it from too
+// (MsiCertificateHelper's subject parsing).
+func certificateNamesIdentity(leaf *x509.Certificate, clientID string) error {
+	if leaf == nil {
+		return errors.New("managedidentity: the issued certificate has no parsed leaf")
+	}
+	cn := strings.TrimSpace(leaf.Subject.CommonName)
+	if cn == "" {
+		return errors.New("managedidentity: the issued certificate has no subject common name to identify it")
+	}
+	// Case-folded because both sides are GUIDs and IMDS is not consistent about
+	// the case it renders them in.
+	if !strings.EqualFold(cn, strings.TrimSpace(clientID)) {
+		return fmt.Errorf("managedidentity: the issued certificate names %q but the credential was issued for %q", cn, clientID)
+	}
+	return nil
+}
+
+// certificateUsableForClientMtls checks that the certificate can actually be
+// presented as a client certificate, and that it is valid now.
+//
+// A certificate that fails any of these is refused before it is used or
+// persisted. Discovering it at the handshake instead produces a TLS alert with
+// no local explanation, and persisting it means every later process pays for the
+// same discovery.
+//
+// The extension rules follow RFC 5280. An absent extended key usage places no
+// restriction at all, so it is accepted; a present one has to name client
+// authentication or anyExtendedKeyUsage, because a certificate explicitly
+// scoped to something else is not a client credential. An absent key usage is
+// likewise unrestricted, while a present one has to include digitalSignature,
+// which is the bit every client-authentication handshake needs.
+func certificateUsableForClientMtls(leaf *x509.Certificate) error {
+	if leaf == nil {
+		return errors.New("managedidentity: the issued certificate has no parsed leaf")
+	}
+	at := now()
+	if !leaf.NotBefore.IsZero() && at.Before(leaf.NotBefore) {
+		return fmt.Errorf("managedidentity: the issued certificate is not valid until %s", leaf.NotBefore.UTC().Format(time.RFC3339))
+	}
+	if leaf.NotAfter.IsZero() {
+		return errors.New("managedidentity: the issued certificate carries no expiry")
+	}
+	if !at.Before(leaf.NotAfter) {
+		return fmt.Errorf("managedidentity: the issued certificate expired at %s", leaf.NotAfter.UTC().Format(time.RFC3339))
+	}
+	if len(leaf.ExtKeyUsage) > 0 || len(leaf.UnknownExtKeyUsage) > 0 {
+		ok := false
+		for _, usage := range leaf.ExtKeyUsage {
+			if usage == x509.ExtKeyUsageClientAuth || usage == x509.ExtKeyUsageAny {
+				ok = true
+				break
+			}
+		}
+		if !ok {
+			return errors.New("managedidentity: the issued certificate's extended key usage does not allow client authentication")
+		}
+	}
+	if leaf.KeyUsage != 0 && leaf.KeyUsage&x509.KeyUsageDigitalSignature == 0 {
+		return errors.New("managedidentity: the issued certificate's key usage does not allow digital signature, so it cannot authenticate a TLS handshake")
+	}
+	return nil
 }
 
 // getBindingCertificate returns a binding certificate for the identity IMDS
@@ -401,12 +528,23 @@ func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bind
 	if err != nil {
 		return nil, "", err
 	}
-	// A certificate that is already inside the refresh window is used for this
-	// request but not cached: a later caller would only reject it on read, so
-	// storing it would hold a key handle open for nothing. MSAL .NET applies
-	// the same rule on write, in InMemoryCertificateCache.Set.
-	if needsRefresh(cert) {
-		return cert, key, nil
+	// A certificate that is already inside the refresh window is refused rather
+	// than used once. The window is a day because Entra binds tokens with about
+	// a day of life to this certificate, so binding a token to a certificate
+	// that expires first hands the caller a token it cannot spend: the resource
+	// rejects the handshake and nothing in the token says why. Using it for this
+	// one request and not caching it would produce exactly that outcome, and
+	// would also re-mint on every subsequent call against a rate-limited
+	// service. Failing here names the real problem instead.
+	if needsRefresh(cert.Leaf) {
+		notAfter := "an unreadable time"
+		if cert.Leaf != nil && !cert.Leaf.NotAfter.IsZero() {
+			notAfter = cert.Leaf.NotAfter.UTC().Format(time.RFC3339)
+		}
+		_ = cert.Close()
+		return nil, "", fmt.Errorf(
+			"managedidentity: IMDS issued a binding certificate that expires at %s, which is inside the %s refresh window, so a token bound to it could outlive it",
+			notAfter, bindingCertRefreshWindow)
 	}
 	// The cache takes over the reference newBindingCertificate created; the
 	// caller gets one of its own.
@@ -432,6 +570,12 @@ func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID strin
 	if err != nil {
 		return nil, err
 	}
+	// The handle is reference counted from here on. Attestation runs the
+	// uninterruptible native call on a goroutine so this caller can give up on
+	// it, and that goroutine has to keep the handle alive after this function
+	// has released its own reference. Every `key.Close()` below is now a
+	// decrement, so nothing frees the handle while the trustlet is using it.
+	holder := shareKey(&key)
 	// A software key would produce a token shaped like a bound token while
 	// offering none of the guarantees, so this refuses rather than downgrades.
 	if err := requireKeyGuard(key); err != nil {
@@ -462,7 +606,7 @@ func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID strin
 			_ = key.Close()
 			return nil, err
 		}
-		attestationToken, err = attestKeyGuardCached(ctx, endpoint, metadata.ClientID, key)
+		attestationToken, err = attestKeyGuardCached(ctx, endpoint, metadata.ClientID, key, holder)
 		if err != nil {
 			_ = key.Close()
 			return nil, err
@@ -474,6 +618,12 @@ func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID strin
 		_ = key.Close()
 		return nil, err
 	}
+	// The identity the credential was issued for has to be the identity leg 1
+	// named, or the certificate is not the one this acquisition asked for.
+	if err := issued.validateAgainst(metadata); err != nil {
+		_ = key.Close()
+		return nil, err
+	}
 
 	leaf, der, err := parseIssuedCertificate(issued.Certificate)
 	if err != nil {
@@ -481,6 +631,17 @@ func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID strin
 		return nil, err
 	}
 	if err := certificateMatchesKey(leaf, key); err != nil {
+		_ = key.Close()
+		return nil, err
+	}
+	// Proving the certificate carries the binding key says nothing about which
+	// identity it names, nor about whether it can be presented on a client
+	// handshake at all. Both are checked before it is used or persisted.
+	if err := certificateNamesIdentity(leaf, issued.ClientID); err != nil {
+		_ = key.Close()
+		return nil, err
+	}
+	if err := certificateUsableForClientMtls(leaf); err != nil {
 		_ = key.Close()
 		return nil, err
 	}

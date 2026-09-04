@@ -216,10 +216,9 @@ func TestMinStrengthNoneSkipsDiscovery(t *testing.T) {
 		WithMtlsProofOfPossession(), WithMtlsPoPMinStrength(MtlsBindingStrengthNone)); err != nil {
 		t.Fatalf("AcquireToken: %v", err)
 	}
-	capabilitiesCache.mu.Lock()
-	cached := capabilitiesCache.result
-	capabilitiesCache.mu.Unlock()
-	if cached != nil {
+	// Discovery result now lives on the client, so a client that never probed
+	// simply has nothing stored.
+	if _, discovered := client.hostCapabilityState().cached(); discovered {
 		t.Fatal("discovery ran for a request that imposed no floor")
 	}
 }
@@ -796,6 +795,7 @@ func sameJSON(t *testing.T, a, b string) bool {
 	}
 	return reflect.DeepEqual(x, y)
 }
+
 // Concurrent acquisitions on a cold cache must not become concurrent requests
 // to the managed identity endpoint, which is a single per-machine service that
 // answers 429 when several arrive at once. MSAL .NET holds a process-wide

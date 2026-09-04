@@ -8,13 +8,18 @@ package managedidentity
 import (
 	"crypto"
 	"crypto/rsa"
+	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"math/big"
 	"runtime"
+	"strings"
 	"sync"
 	"syscall"
+	"time"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -82,7 +87,6 @@ const (
 	// created without it attests successfully but is refused a credential.
 	ncryptUsePerBootKeyFlag = 0x00040000
 	ncryptSilentFlag        = 0x00000040
-	ncryptOverwriteKeyFlag  = 0x00000080
 
 	// bcryptPadPSSFlag is BCRYPT_PAD_PSS.
 	bcryptPadPSSFlag = 0x00000008
@@ -242,7 +246,63 @@ func getDWORDProperty(h windows.Handle, property string) (uint32, bool, error) {
 	return binary.LittleEndian.Uint32(buf[:]), true, nil
 }
 
+// bindingKeyCreateFlags is what NCryptCreatePersistedKey is called with.
+//
+// NCRYPT_OVERWRITE_KEY_FLAG is deliberately absent. Passing it would make key
+// creation unconditionally destructive: it replaces whatever is under the name,
+// which on this shared container means discarding a key another process - or
+// MSAL .NET - is already using and has certificates issued against. Omitting it
+// is necessary but, on its own, not sufficient; see createPersistedKey.
+//
+// The flags are a named constant rather than an expression inlined at the call
+// site so the absence is checkable. See TestBindingKeyCreateFlagsDoNotOverwrite.
+const bindingKeyCreateFlags = ncryptUseVirtualIsolationFlag | ncryptUsePerBootKeyFlag
+
+// errBindingKeyExists reports that this process lost the race to create the
+// named key: somebody else has it. It is a signal to adopt the winner, not a
+// failure.
+var errBindingKeyExists = errors.New("managedidentity: the binding key already exists")
+
+// bindingKeyCreateError maps an NCrypt status from key creation or
+// finalization into the error resolveBindingKey acts on.
+//
+// NTE_EXISTS means the same thing from either call: somebody else holds the
+// name. It arrives from NCryptCreatePersistedKey when the rival finalized before
+// this process created, and it can arrive from NCryptFinalizeKey instead,
+// because finalization is where the key is actually written and a provider is
+// free to report the collision there. Both are a lost race rather than a broken
+// host, so both map to errBindingKeyExists and the caller adopts the winner.
+func bindingKeyCreateError(op string, status uintptr) error {
+	if statusCode(status) == nteExists {
+		return errBindingKeyExists
+	}
+	// A host without VBS rejects the virtual isolation flag outright.
+	return fmt.Errorf("%w: %v", ErrCredentialGuardNotAvailable, ncryptStatusError(op, status))
+}
+
 // createPersistedKey mints a new VBS-isolated RSA key called name.
+//
+// Creation is deliberately non-destructive - see bindingKeyCreateFlags - but
+// that does NOT make it atomic against another process, and this is the single
+// most important thing to understand about this function.
+//
+// NCryptCreatePersistedKey does not persist anything. It builds an in-memory key
+// object; the name is only written when NCryptFinalizeKey succeeds. Two
+// processes can therefore both create, because neither has written the name yet
+// and so neither is told NTE_EXISTS, and then both finalize successfully, with
+// the Microsoft Software KSP letting the later finalize silently replace the
+// earlier one. The observed sequence is: createA ok, createB ok, finalizeA ok,
+// finalizeB ok, and the persisted key is B - while A holds a perfectly valid
+// handle to a key that is no longer under the name and will never be found
+// again.
+//
+// Nothing available here closes that window at the API level. What closes it is
+// checking afterwards: resolveBindingKey reopens the name and compares public
+// keys, and a caller that was replaced discards its candidate and adopts the
+// persisted winner. The named mutex in withBindingKeyLock narrows the window for
+// Go processes that use this package, and the check is what makes the result
+// correct when the mutex is unavailable or the other creator does not
+// participate in it.
 func createPersistedKey(provider windows.Handle, name *uint16) (windows.Handle, error) {
 	algorithm, err := windows.UTF16PtrFromString(ncryptRSAAlgorithm)
 	if err != nil {
@@ -255,14 +315,10 @@ func createPersistedKey(provider windows.Handle, name *uint16) (windows.Handle, 
 		uintptr(unsafe.Pointer(algorithm)),
 		uintptr(unsafe.Pointer(name)),
 		0,
-		uintptr(ncryptUseVirtualIsolationFlag|ncryptUsePerBootKeyFlag|ncryptOverwriteKeyFlag),
+		uintptr(bindingKeyCreateFlags),
 	)
 	if status != 0 {
-		if statusCode(status) == nteExists {
-			return 0, fmt.Errorf("%w: the key already exists and could not be replaced", ErrCredentialGuardNotAvailable)
-		}
-		// A host without VBS rejects the virtual isolation flag outright.
-		return 0, fmt.Errorf("%w: %v", ErrCredentialGuardNotAvailable, ncryptStatusError("NCryptCreatePersistedKey", status))
+		return 0, bindingKeyCreateError("NCryptCreatePersistedKey", status)
 	}
 
 	if err := setDWORDProperty(key, ncryptLengthProperty, csrKeyBits); err != nil {
@@ -285,12 +341,137 @@ func createPersistedKey(provider windows.Handle, name *uint16) (windows.Handle, 
 		freeNCryptObject(key)
 		return 0, err
 	}
+	// Finalization is where the name is written, so it is where a collision can
+	// surface even though the create succeeded.
 	status, _, _ = syscall.SyscallN(procNCryptFinalizeKey.Addr(), uintptr(key), uintptr(ncryptSilentFlag))
 	if status != 0 {
 		freeNCryptObject(key)
-		return 0, fmt.Errorf("%w: %v", ErrCredentialGuardNotAvailable, ncryptStatusError("NCryptFinalizeKey", status))
+		return 0, bindingKeyCreateError("NCryptFinalizeKey", status)
 	}
 	return key, nil
+}
+
+// bindingKeyLockTimeout is how long provisioning waits for the cross-process key
+// lock before going ahead without it.
+//
+// It is longer than the certificate store's persistLockTimeout because the work
+// it guards is longer - creating a VBS key is a trustlet round trip, not a store
+// write - and because giving up here is not free: an unlocked run may create a
+// key that is then discarded, which costs a second key creation. It is still
+// bounded, because a caller must not be held indefinitely behind a process that
+// is wedged or a mutex some other principal is squatting on.
+//
+// It is a variable so a test can shorten it and observe the fail-open path
+// without waiting out the real timeout.
+var bindingKeyLockTimeout = 10 * time.Second
+
+// bindingKeyLockSuffix derives a mutex name from the key container name.
+//
+// The scheme is deliberately the one aliasLockSuffix already uses for the
+// certificate store - SHA-256 of the upper-cased value, hex, truncated - so this
+// package has one convention rather than two. The prefix differs so the key lock
+// and the store lock are distinct objects: they guard different resources and
+// nesting them would be a deadlock waiting to happen.
+//
+// The name is derived from the container, so two different containers take two
+// different locks and provisioning for one identity never blocks another. In
+// practice every identity shares bindingKeyName, which is the point: it is one
+// key, and one lock is what serializes the processes contending for it.
+func bindingKeyLockSuffix(container string) string {
+	sum := sha256.Sum256([]byte(strings.ToUpper(strings.TrimSpace(container))))
+	return "MSAL_MI_K_" + hex.EncodeToString(sum[:])[:32]
+}
+
+// bindingKeyLockNamespaces are the kernel object namespaces tried, in order.
+//
+// Global first so the scope matches the resource; Local as the fallback when
+// creating a global object is denied. It is a variable so a test can substitute
+// namespaces no object can be created in and prove that provisioning still runs
+// when no lock is available at all.
+var bindingKeyLockNamespaces = []string{`Global\`, `Local\`}
+
+// withBindingKeyLock runs fn under a mutex shared by every process using this
+// package that provisions the named key container.
+//
+// Global is tried first so the scope matches the resource: CNG CurrentUser keys
+// live in the user's profile and are shared by every session that user has, so a
+// session-local lock would miss a service running alongside an interactive
+// logon. Creating a global object needs a privilege that is not always granted,
+// and when it is refused the lock falls back to the session-local namespace,
+// because deduplicating within the session is worth more than not locking at
+// all. That is the same fallback withAliasLock makes, for the same reason.
+//
+// Unlike the store lock, a busy or unavailable lock here does not skip the work.
+// Provisioning has to go ahead: refusing to mint a binding key because a mutex
+// could not be taken would turn a hardening measure into a token outage. This is
+// safe precisely because the lock is not what makes the result correct -
+// resolveBindingKey's persisted-winner check is - so losing the lock costs a
+// wasted key creation, not a wrong answer.
+//
+// What this lock does NOT do is exclude MSAL .NET. It is a convention private to
+// this package, and .NET takes no equivalent lock when it provisions the same
+// container, so a Go process and a .NET process can still both be inside their
+// create-finalize sequence at once. Closing that would require both libraries to
+// agree on a mutex name; until they do, the persisted-winner check is what keeps
+// this library correct in that case.
+func withBindingKeyLock(container string, fn func()) {
+	suffix := bindingKeyLockSuffix(container)
+	for _, namespace := range bindingKeyLockNamespaces {
+		handle, ok := openBindingKeyLock(namespace + suffix)
+		if !ok {
+			// The namespace is unavailable to this process, typically because
+			// creating a global object was denied. Try the next one.
+			continue
+		}
+		runUnderBindingKeyLock(handle, fn)
+		return
+	}
+	// No named object could be created in any namespace. Provision anyway;
+	// see above.
+	fn()
+}
+
+// openBindingKeyLock creates or opens the named mutex, reporting whether a
+// usable handle was obtained.
+//
+// CreateMutex reports ERROR_ALREADY_EXISTS alongside a valid handle when the
+// object was opened rather than created, which is the ordinary case and not a
+// failure, so the handle rather than the error decides the outcome.
+func openBindingKeyLock(name string) (windows.Handle, bool) {
+	encoded, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return 0, false
+	}
+	// CreateMutex reports ERROR_ALREADY_EXISTS alongside a valid handle when the
+	// object was opened rather than created, which is the ordinary case here and
+	// not a failure. The handle therefore decides the outcome and the error is
+	// deliberately discarded.
+	handle, _ := windows.CreateMutex(nil, false, encoded)
+	if handle == 0 {
+		return 0, false
+	}
+	return handle, true
+}
+
+// runUnderBindingKeyLock waits for handle, runs fn, and releases and closes on
+// every path.
+//
+// The wait, the work and the release run on one pinned OS thread; see
+// awaitNamedMutex, which both named-mutex callers in this package share. When
+// ownership cannot be taken, fn runs unlocked here rather than inside
+// awaitNamedMutex, so it runs exactly once either way.
+func runUnderBindingKeyLock(handle windows.Handle, fn func()) {
+	// Registered before the wait so it runs after the release and the unpin.
+	defer func() { _ = windows.CloseHandle(handle) }()
+
+	if awaitNamedMutex(handle, bindingKeyLockTimeout, fn) {
+		return
+	}
+	// The lock was busy or the wait failed. Provisioning still goes ahead: the
+	// persisted-winner check in resolveBindingKey is what makes the result
+	// correct, so losing the lock costs a wasted key creation rather than a
+	// wrong answer.
+	fn()
 }
 
 // keyCanSign reports whether an opened key can still perform a private-key
@@ -340,20 +521,20 @@ func keyCanSign(key windows.Handle) bool {
 	return status == 0
 }
 
-// bindingKeyGates serializes provisioning of a CNG container.
+// bindingKeyGates serializes provisioning of a CNG container within this
+// process.
 //
 // The container is process-wide - one name, shared by every identity - while
 // bindingCertCache's gate is keyed by identity and attestation mode. Two
 // identities therefore take different certificate gates and would provision the
-// same container concurrently. createPersistedKey passes
-// NCRYPT_OVERWRITE_KEY_FLAG, and because the key is per-boot keyCanSign fails
-// for every identity after a reboot, so concurrent first calls are guaranteed to
-// both take the create-and-overwrite branch. The loser's freshly issued
-// certificate would then be bound to a key that no longer exists, costing a
-// second /issuecredential call against a rate-limited service, and the overwrite
-// can invalidate a handle another goroutine already holds. This is the
-// key-provisioning counterpart of the gate attestation.go takes for the same
-// process-wide reason.
+// same container concurrently, each paying for a create the other's would
+// discard. This gate collapses that to one.
+//
+// It is the cheapest of three layers and the narrowest. It covers only this
+// process; withBindingKeyLock extends coordination to other processes using this
+// package; and neither is the correctness boundary, which is the
+// persisted-winner check in resolveBindingKey. Nothing here relies on holding
+// the mutex to stay correct.
 //
 // A plain mutex is right here where the attestation gate is a cancellable
 // channel: everything under this lock is a local CNG call, so the wait is
@@ -374,12 +555,221 @@ func bindingKeyGate(name string) *sync.Mutex {
 	return gate
 }
 
-// getOrCreateKey returns the binding key called name, creating it when absent.
+// bindingKeyCreateAttempts bounds the open-then-create loop. Every extra pass is
+// driven by another process winning a race this one just lost, which cannot
+// repeat indefinitely without that other process also deleting the key it just
+// created. Three passes turn a pathological loop into a clear error.
+const bindingKeyCreateAttempts = 3
+
+// bindingKeyContainer is the small set of operations resolveBindingKey drives.
+//
+// It exists as a seam. The loop below is the part of this file that has to get
+// the cross-process race right, and its two most important branches - losing the
+// create to another process and then adopting that process's key, and giving up
+// after losing repeatedly - cannot be reached on demand through the public entry
+// point. getOrCreateKey takes bindingKeyGate first, so goroutines in this
+// process are serialized and only one of them ever reaches the create at all; a
+// test driving them can only ever observe the winner. Nor can a test make real
+// CNG return NTE_EXISTS on cue, since that requires a second process creating
+// the key inside a window this process does not control.
+//
+// Putting the loop behind this interface lets those branches be exercised
+// directly, below the mutex, while production still runs the identical code over
+// the real CNG calls.
+type bindingKeyContainer interface {
+	// open reports the existing key, with ok false when there is none.
+	open() (windows.Handle, bool, error)
+	// usable reports whether an opened key can still perform a private-key
+	// operation.
+	usable(windows.Handle) bool
+	// remove deletes the key an opened handle refers to, consuming the handle.
+	remove(windows.Handle) error
+	// create makes the key, returning errBindingKeyExists when somebody else
+	// created it first.
+	create() (windows.Handle, error)
+	// persisted reports whether candidate is the key the name now resolves to.
+	//
+	// It is the check that makes creation correct, because create alone cannot
+	// be: NCryptCreatePersistedKey does not write the name, NCryptFinalizeKey
+	// does, so two processes can both create and both finalize and the later
+	// finalize silently replaces the earlier. Only reopening the name and
+	// comparing tells a creator whether it is still the one under it.
+	persisted(candidate windows.Handle) (bool, error)
+	// discard releases a candidate handle that turned out not to be the
+	// persisted key.
+	discard(windows.Handle)
+	// adopt turns an opened or created handle into a binding key, taking
+	// ownership of it.
+	adopt(windows.Handle) (bindingKey, error)
+}
+
+// resolveBindingKey opens the container's key, or creates it, converging on
+// whichever key is actually persisted under the name.
+//
+// There are two distinct ways to lose the race, and only one of them is
+// reported by the API.
+//
+// The reported one is create-time: the rival finalized before this process
+// created, so NCryptCreatePersistedKey - or, depending on the provider,
+// NCryptFinalizeKey - answers NTE_EXISTS. That surfaces as errBindingKeyExists
+// and the loop goes round to adopt the winner.
+//
+// The silent one is finalize-time, and it is the case that actually bites.
+// Neither create writes the name, so with two processes interleaved as
+// createA, createB, finalizeA, finalizeB, neither create sees a collision,
+// both finalizes succeed, and the Microsoft Software KSP leaves B under the
+// name. A is told nothing at all: it holds a valid handle to a key that is no
+// longer the persisted one, and if it went on to request a certificate for that
+// key, the certificate would be bound to a key no later process could ever find.
+// Nothing in the CNG API prevents this. So every successful create is followed
+// by reopening the name and comparing public keys, and a creator that finds
+// itself replaced discards its candidate and goes round to adopt the winner.
+//
+// A residual TOCTOU remains and cannot be removed from inside one library: a
+// third creator that does not take withBindingKeyLock - MSAL .NET, today - can
+// finalize between this process's check and its use of the key. The window is
+// tiny and the consequence is bounded, because the next acquisition re-reads the
+// name and finds the newer key. Closing it entirely needs both libraries to
+// agree on the lock; see withBindingKeyLock.
+//
+// The loop is bounded. Every extra pass is driven by another process winning a
+// race this one just lost, which cannot repeat indefinitely without that process
+// also deleting the key it just created.
+func resolveBindingKey(c bindingKeyContainer, name string) (bindingKey, error) {
+	for attempt := 0; attempt < bindingKeyCreateAttempts; attempt++ {
+		key, existed, err := c.open()
+		if err != nil {
+			return bindingKey{}, err
+		}
+		if existed {
+			if c.usable(key) {
+				return c.adopt(key)
+			}
+			// The key survived a reboot in name only: it opens and still
+			// reports Virtual Iso, but the isolated material behind it is gone.
+			// It is deleted rather than overwritten so that a process holding a
+			// handle to the same dead key is not handed a live one underneath
+			// it; any certificate issued against it is worthless either way,
+			// and the caller discards its cache when the public key changes.
+			if err := c.remove(key); err != nil {
+				return bindingKey{}, err
+			}
+		}
+
+		key, err = c.create()
+		if err == nil {
+			won, err := c.persisted(key)
+			if err != nil {
+				c.discard(key)
+				return bindingKey{}, err
+			}
+			if won {
+				return c.adopt(key)
+			}
+			// Replaced between this process's finalize and now. The candidate
+			// is stranded - nothing will ever resolve to it again - so it is
+			// released and the winner adopted on the next pass.
+			c.discard(key)
+			continue
+		}
+		if !errors.Is(err, errBindingKeyExists) {
+			return bindingKey{}, err
+		}
+		// Somebody else created the key first. Go round again and adopt it
+		// instead of replacing it.
+	}
+	return bindingKey{}, fmt.Errorf("%w: the binding key %q kept being replaced by another process while it was being provisioned",
+		ErrCredentialGuardNotAvailable, name)
+}
+
+// cngBindingKeyContainer is the production implementation: the real NCrypt
+// calls against one provider handle and one key name.
+//
+// It does not own the provider handle. getOrCreateKey opens it and releases it
+// on every path that does not hand it to a returned binding key, which is what
+// keeps the ownership rule in one place rather than spread across the loop.
+type cngBindingKeyContainer struct {
+	provider windows.Handle
+	name     *uint16
+}
+
+func (c cngBindingKeyContainer) open() (windows.Handle, bool, error) {
+	return openExistingKey(c.provider, c.name)
+}
+
+func (c cngBindingKeyContainer) usable(key windows.Handle) bool { return keyCanSign(key) }
+
+func (c cngBindingKeyContainer) remove(key windows.Handle) error { return deleteKeyHandle(key) }
+
+func (c cngBindingKeyContainer) create() (windows.Handle, error) {
+	return createPersistedKey(c.provider, c.name)
+}
+
+// persisted reopens the name and compares public keys, so a creator learns
+// whether its finalize is still the one that counts.
+//
+// Only the public half is compared, which is all that is available: a KeyGuard
+// private key never leaves the trustlet. That is enough, because two RSA keys
+// with the same modulus and exponent are the same key for every purpose this
+// flow has - the certificate is issued against the public key, and the handshake
+// proves possession of the matching private half.
+//
+// A name that no longer resolves to anything is reported as not-ours rather than
+// as an error: the rival created and then deleted, and the caller's next pass
+// will create again.
+func (c cngBindingKeyContainer) persisted(candidate windows.Handle) (bool, error) {
+	current, existed, err := openExistingKey(c.provider, c.name)
+	if err != nil {
+		return false, err
+	}
+	if !existed {
+		return false, nil
+	}
+	defer freeNCryptObject(current)
+
+	ours, err := exportRSAPublic(candidate)
+	if err != nil {
+		return false, err
+	}
+	theirs, err := exportRSAPublic(current)
+	if err != nil {
+		return false, err
+	}
+	return ours.E == theirs.E && ours.N.Cmp(theirs.N) == 0, nil
+}
+
+func (c cngBindingKeyContainer) discard(key windows.Handle) { freeNCryptObject(key) }
+
+func (c cngBindingKeyContainer) adopt(key windows.Handle) (bindingKey, error) {
+	return finishBindingKey(key, c.provider)
+}
+
+// getOrCreateKey returns the binding key called name, creating it only when no
+// usable key is present.
+//
+// Three layers of coordination sit under this call, and they do different jobs.
+// bindingKeyGate keeps this process from racing itself, cheaply. The named mutex
+// in withBindingKeyLock keeps other processes using this package from
+// provisioning the same container at the same time. Neither is what makes the
+// result correct: MSAL .NET takes no equivalent lock, and the mutex is
+// deliberately allowed to fail open, so the persisted-winner check inside
+// resolveBindingKey is the guarantee. See resolveBindingKey for the race the
+// check exists for.
 func (keyGuardProvider) getOrCreateKey(name string) (bindingKey, error) {
 	gate := bindingKeyGate(name)
 	gate.Lock()
 	defer gate.Unlock()
 
+	var key bindingKey
+	var err error
+	withBindingKeyLock(name, func() {
+		key, err = provisionBindingKey(name)
+	})
+	return key, err
+}
+
+// provisionBindingKey does the work of getOrCreateKey while both locks are held.
+func provisionBindingKey(name string) (bindingKey, error) {
 	keyName, err := windows.UTF16PtrFromString(name)
 	if err != nil {
 		return bindingKey{}, fmt.Errorf("managedidentity: encoding the key name: %w", err)
@@ -388,37 +778,84 @@ func (keyGuardProvider) getOrCreateKey(name string) (bindingKey, error) {
 	if err != nil {
 		return bindingKey{}, err
 	}
+	// The provider handle is released on every path except the one that hands
+	// it to a binding key, whose Close then owns it.
+	adopted := false
+	defer func() {
+		if !adopted {
+			freeNCryptObject(provider)
+		}
+	}()
+
+	key, err := resolveBindingKey(cngBindingKeyContainer{provider: provider, name: keyName}, name)
+	if err != nil {
+		return bindingKey{}, err
+	}
+	adopted = true
+	return key, nil
+}
+
+// openKey returns the binding key called name without creating one.
+//
+// A key that is absent, and a key that is present but can no longer sign, are
+// both reported as errBindingKeyNotFound: the caller is asking whether the key a
+// certificate was issued against is still usable, and neither case is.
+// Deliberately nothing is created, deleted or replaced here, so a cache read
+// leaves the machine exactly as it found it.
+func (keyGuardProvider) openKey(name string) (bindingKey, error) {
+	keyName, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return bindingKey{}, fmt.Errorf("managedidentity: encoding the key name: %w", err)
+	}
+	provider, err := openProvider()
+	if err != nil {
+		return bindingKey{}, err
+	}
+	adopted := false
+	defer func() {
+		if !adopted {
+			freeNCryptObject(provider)
+		}
+	}()
 
 	key, existed, err := openExistingKey(provider, keyName)
 	if err != nil {
-		freeNCryptObject(provider)
 		return bindingKey{}, err
 	}
-	if existed && !keyCanSign(key) {
-		// The key survived a reboot in name only. Replacing it changes the
-		// public key, so any certificate already issued against the old one is
-		// worthless; the caller discards its cache when the key is replaced.
-		freeNCryptObject(key)
-		existed = false
-	}
 	if !existed {
-		if key, err = createPersistedKey(provider, keyName); err != nil {
-			freeNCryptObject(provider)
-			return bindingKey{}, err
-		}
+		return bindingKey{}, errBindingKeyNotFound
 	}
+	if !keyCanSign(key) {
+		freeNCryptObject(key)
+		return bindingKey{}, errBindingKeyNotFound
+	}
+	bound, err := finishBindingKey(key, provider)
+	if err != nil {
+		return bindingKey{}, err
+	}
+	adopted = true
+	return bound, nil
+}
 
+// finishBindingKey reads the public half and the isolation property off an open
+// key and wraps it as a signer.
+//
+// Ownership is asymmetric on purpose. On success it takes both handles, which
+// the returned key's Close releases. On failure it releases only the key handle
+// and leaves the provider alone, because the provider belongs to the caller
+// until an adoption succeeds: getOrCreateKey and openKey each release it exactly
+// once, from a deferred cleanup that runs on every path they do not hand it
+// away. Freeing it here as well would be a double free.
+func finishBindingKey(key, provider windows.Handle) (bindingKey, error) {
 	public, err := exportRSAPublic(key)
 	if err != nil {
 		freeNCryptObject(key)
-		freeNCryptObject(provider)
 		return bindingKey{}, err
 	}
 
 	isolated, known, err := getDWORDProperty(key, ncryptVirtualIsoProperty)
 	if err != nil {
 		freeNCryptObject(key)
-		freeNCryptObject(provider)
 		return bindingKey{}, err
 	}
 	kind := keyTypeSoftware
@@ -428,6 +865,17 @@ func (keyGuardProvider) getOrCreateKey(name string) (bindingKey, error) {
 
 	signer := &ncryptSigner{key: key, provider: provider, public: public}
 	return bindingKey{Signer: signer, Type: kind, Close: signer.Close}, nil
+}
+
+// deleteKeyHandle deletes the persisted key an open handle refers to. CNG frees
+// the handle on success, so the caller must not free it again.
+func deleteKeyHandle(key windows.Handle) error {
+	status, _, _ := syscall.SyscallN(procNCryptDeleteKey.Addr(), uintptr(key), uintptr(ncryptSilentFlag))
+	if status != 0 {
+		freeNCryptObject(key)
+		return ncryptStatusError("NCryptDeleteKey", status)
+	}
+	return nil
 }
 
 // deleteKey removes a persisted key so the next request mints a fresh one.
@@ -449,13 +897,7 @@ func (keyGuardProvider) deleteKey(name string) error {
 	if !existed {
 		return nil
 	}
-	status, _, _ := syscall.SyscallN(procNCryptDeleteKey.Addr(), uintptr(key), uintptr(ncryptSilentFlag))
-	if status != 0 {
-		freeNCryptObject(key)
-		return ncryptStatusError("NCryptDeleteKey", status)
-	}
-	// NCryptDeleteKey frees the handle on success.
-	return nil
+	return deleteKeyHandle(key)
 }
 
 // exportRSAPublic reads the public half of a CNG key.

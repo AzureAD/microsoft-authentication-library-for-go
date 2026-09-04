@@ -14,11 +14,19 @@ import (
 // client certificate as the reason the handshake failed.
 //
 // Go 1.21 gave alerts a typed representation, so the alert code is read
-// directly rather than inferred from the message. MSAL .NET reaches the same
-// conclusion by catching AuthenticationException, which is broader still: it
-// treats every handshake failure as a reason to re-mint. Matching a specific
-// set of alerts keeps an unrelated handshake problem, such as a protocol
-// version mismatch, from being misread as a stale certificate.
+// directly rather than inferred from the message. MSAL .NET reaches a broader
+// conclusion by catching AuthenticationException, which treats every handshake
+// failure as a reason to re-mint. Matching only alerts that name a certificate
+// keeps an unrelated handshake problem from being misread as a stale one.
+//
+// handshake_failure (40) is deliberately absent. It is the alert a server sends
+// when it cannot agree on a protocol version or a cipher suite, which says
+// nothing about the client certificate; including it would rotate a healthy
+// binding certificate - and spend an /issuecredential call against a
+// rate-limited service - over a TLS configuration mismatch. A server that
+// really is refusing the certificate has bad_certificate, certificate_revoked,
+// certificate_expired, certificate_unknown, unknown_ca, unsupported_certificate,
+// access_denied and certificate_required to say so, and those are matched.
 func isCertificateAlert(err error) bool {
 	var alert tls.AlertError
 	if !errors.As(err, &alert) {
@@ -28,8 +36,7 @@ func isCertificateAlert(err error) bool {
 		return certificateAlertText(err)
 	}
 	switch uint8(alert) {
-	case 40, // handshake_failure
-		42,  // bad_certificate
+	case 42, // bad_certificate
 		43,  // unsupported_certificate
 		44,  // certificate_revoked
 		45,  // certificate_expired

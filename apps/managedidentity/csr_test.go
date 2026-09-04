@@ -8,6 +8,7 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/asn1"
@@ -306,13 +307,28 @@ func (b brokenSigner) Sign(io.Reader, []byte, crypto.SignerOpts) ([]byte, error)
 	return make([]byte, b.pub.Size()), nil
 }
 
-// TestCreateCSRDetectsBadSigner is the mutation check for the signing path: if
-// the signature were never verified, a broken signer would go unnoticed.
+// TestCreateCSRDetectsBadSigner is the mutation check for the signing path.
+// createCSR verifies its own signature before returning, so a signer that is
+// present but misbehaving fails locally rather than as an opaque rejection from
+// IMDS two network round trips later.
 func TestCreateCSRDetectsBadSigner(t *testing.T) {
 	key := testCSRKey(t)
-	csr, err := createCSR(brokenSigner{pub: &key.PublicKey}, testCSRClientID, testCSRTenantID, cuidInfo{VMID: testCSRVMID})
+	_, err := createCSR(brokenSigner{pub: &key.PublicKey}, testCSRClientID, testCSRTenantID, cuidInfo{VMID: testCSRVMID})
+	if err == nil {
+		t.Fatal("createCSR returned a CSR signed with a bogus signature")
+	}
+	if !strings.Contains(err.Error(), "does not verify") {
+		t.Errorf("error = %v, want it to say the signature does not verify", err)
+	}
+}
+
+// The signature createCSR refuses is one neither this package nor crypto/x509
+// would accept, so the production check is not stricter than the wire format.
+func TestBadSignerProducesAnUnacceptableCSR(t *testing.T) {
+	key := testCSRKey(t)
+	csr, err := buildCSRWithoutVerification(t, brokenSigner{pub: &key.PublicKey})
 	if err != nil {
-		t.Fatalf("createCSR: %v", err)
+		t.Fatalf("building the CSR: %v", err)
 	}
 	if err := verifyCSRSignature(csr, &key.PublicKey); err == nil {
 		t.Error("a CSR signed with a bogus signature was accepted")
@@ -327,6 +343,73 @@ func TestCreateCSRDetectsBadSigner(t *testing.T) {
 	}
 	if err := parsed.CheckSignature(); err == nil {
 		t.Error("crypto/x509 accepted a CSR with a bogus signature")
+	}
+}
+
+// buildCSRWithoutVerification produces the bytes createCSR would have returned
+// had it not verified them, so the wire format of a badly signed CSR can still
+// be examined. It signs with a key whose signature is real and then swaps in the
+// broken signer's output, which is the same shape createCSR would have emitted.
+func buildCSRWithoutVerification(t *testing.T, signer crypto.Signer) (string, error) {
+	t.Helper()
+	real, err := rsa.GenerateKey(rand.Reader, csrKeyBits)
+	if err != nil {
+		return "", err
+	}
+	good, err := createCSR(real, testCSRClientID, testCSRTenantID, cuidInfo{VMID: testCSRVMID})
+	if err != nil {
+		return "", err
+	}
+	der, err := base64.StdEncoding.DecodeString(good)
+	if err != nil {
+		return "", err
+	}
+	var req certificationRequest
+	if _, err := asn1.Unmarshal(der, &req); err != nil {
+		return "", err
+	}
+	// Replace the public key half of the request with the broken signer's, and
+	// the signature with what that signer produces, so the result is exactly
+	// what createCSR would have built.
+	bogus, err := signer.Sign(rand.Reader, make([]byte, sha256.Size), &rsa.PSSOptions{
+		SaltLength: rsa.PSSSaltLengthEqualsHash, Hash: crypto.SHA256,
+	})
+	if err != nil {
+		return "", err
+	}
+	req.Signature = asn1.BitString{Bytes: bogus, BitLength: len(bogus) * 8}
+	out, err := asn1.Marshal(req)
+	if err != nil {
+		return "", err
+	}
+	return base64.StdEncoding.EncodeToString(out), nil
+}
+
+// TestCSRKeySizeInvariant pins the size that has to agree with MSAL .NET.
+//
+// The binding key lives in a CNG container whose name both libraries share, so
+// either will open and reuse a key the other created. If they disagreed on the
+// size, the library with the stricter expectation would keep finding an
+// unusable key in the shared container. createCSR is where that disagreement is
+// caught, and it has to be exact in both directions: a smaller key is weaker
+// than IMDS accepts, and a larger one is not the key .NET would have made.
+func TestCSRKeySizeInvariant(t *testing.T) {
+	if csrKeyBits != 2048 {
+		t.Fatalf("csrKeyBits = %d, want 2048: MSAL .NET creates the shared KeyGuardRSAKey container at 2048 bits", csrKeyBits)
+	}
+	for _, bits := range []int{1024, 3072} {
+		key, err := rsa.GenerateKey(rand.Reader, bits)
+		if err != nil {
+			t.Fatalf("generating a %d bit key: %v", bits, err)
+		}
+		_, err = createCSR(key, testCSRClientID, testCSRTenantID, cuidInfo{VMID: testCSRVMID})
+		if err == nil {
+			t.Errorf("createCSR accepted a %d bit key, want exactly %d", bits, csrKeyBits)
+			continue
+		}
+		if !strings.Contains(err.Error(), "must be 2048 bits") {
+			t.Errorf("error for a %d bit key = %v, want it to name the required size", bits, err)
+		}
 	}
 }
 

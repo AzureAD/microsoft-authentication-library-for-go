@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -72,14 +73,34 @@ var attestationLog struct {
 // missing TPM, so a wrong one is worse than none.
 var attestationCallMu sync.Mutex
 
+// attestationLogMaxLines bounds how many diagnostic lines are kept, and
+// attestationLogMaxLineLen how long each may be. The native library is chatty
+// and its lines are not a format this package controls, so both are capped
+// before anything is stored rather than only when an error is built.
+const (
+	attestationLogMaxLines   = 256
+	attestationLogMaxLineLen = 512
+	// attestationDetailMaxLines is how many of the kept lines reach an error
+	// message. An error is read by a person and often written to a log, so it
+	// carries enough to identify the failure rather than the whole transcript.
+	attestationDetailMaxLines = 20
+)
+
 func recordAttestationLog(line string) {
 	attestationLog.mu.Lock()
 	defer attestationLog.mu.Unlock()
 	// Bounded so a chatty library cannot grow this without limit.
-	if len(attestationLog.lines) >= 256 {
+	if len(attestationLog.lines) >= attestationLogMaxLines {
 		return
 	}
-	attestationLog.lines = append(attestationLog.lines, line)
+	attestationLog.lines = append(attestationLog.lines, truncateAttestationLine(line))
+}
+
+func truncateAttestationLine(line string) string {
+	if len(line) <= attestationLogMaxLineLen {
+		return line
+	}
+	return line[:attestationLogMaxLineLen] + "...(truncated)"
 }
 
 func drainAttestationLog() []string {
@@ -88,6 +109,59 @@ func drainAttestationLog() []string {
 	out := attestationLog.lines
 	attestationLog.lines = nil
 	return out
+}
+
+// attestationSecretPattern matches the credential-shaped values a native
+// diagnostic can quote.
+//
+// The native library fetches its own managed identity token to call MAA and
+// returns an MAA statement, and its diagnostics are free to quote either. Both
+// are JWTs, which the first alternative matches as a whole - three dot-separated
+// base64url runs - rather than segment by segment, because a JWT header is short
+// enough to slip under a length threshold on its own while still identifying the
+// token it belongs to. The second alternative catches any other long unbroken
+// run of token-alphabet characters, which no ordinary diagnostic word reaches.
+//
+// Matching the shape rather than a keyword is deliberate: the library's log
+// messages are not a contract, so a keyword list would silently stop covering
+// them.
+var attestationSecretPattern = regexp.MustCompile(
+	`[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-]{8,}\.[A-Za-z0-9_\-+/=]{8,}` +
+		`|[A-Za-z0-9_\-+/=]{40,}`)
+
+// redactAttestationDetail removes anything credential-shaped from a native
+// diagnostic line.
+//
+// These lines reach error strings, which callers log. A token quoted in one is a
+// live credential written to wherever those logs go, so it is replaced by its
+// length. The surrounding text - which is what actually distinguishes an MAA
+// policy denial from a missing TPM - is untouched.
+func redactAttestationDetail(line string) string {
+	return attestationSecretPattern.ReplaceAllStringFunc(line, func(match string) string {
+		return fmt.Sprintf("[redacted %d chars]", len(match))
+	})
+}
+
+// attestationDetail renders drained diagnostics for an error message, bounded
+// and redacted.
+func attestationDetail(lines []string) string {
+	if len(lines) == 0 {
+		return ""
+	}
+	omitted := 0
+	if len(lines) > attestationDetailMaxLines {
+		omitted = len(lines) - attestationDetailMaxLines
+		lines = lines[:attestationDetailMaxLines]
+	}
+	redacted := make([]string, 0, len(lines))
+	for _, line := range lines {
+		redacted = append(redacted, redactAttestationDetail(line))
+	}
+	detail := strings.Join(redacted, "; ")
+	if omitted > 0 {
+		detail = fmt.Sprintf("%s; ...(%d more lines omitted)", detail, omitted)
+	}
+	return detail
 }
 
 // attestationLogThunk is the native logging callback. The pointer arguments are
@@ -257,7 +331,7 @@ func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
 	// uintptr by the syscall ABI; narrowing it back to int32 restores the value
 	// the library actually returned, including negative failure codes.
 	if code := int32(r); code != 0 || token == nil {
-		detail := strings.Join(drainAttestationLog(), "; ")
+		detail := attestationDetail(drainAttestationLog())
 		if detail == "" {
 			detail = "the native library reported no detail"
 		}
@@ -267,7 +341,7 @@ func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
 	_, _, _ = syscall.SyscallN(lib.freeAttestationToken, uintptr(unsafe.Pointer(token)))
 	if jwt == "" {
 		return "", fmt.Errorf("managedidentity: KeyGuard attestation produced an empty token: %s",
-			strings.Join(drainAttestationLog(), "; "))
+			attestationDetail(drainAttestationLog()))
 	}
 	return jwt, nil
 }

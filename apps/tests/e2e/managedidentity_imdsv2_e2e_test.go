@@ -86,7 +86,15 @@ func skipOrFail(t *testing.T, format string, args ...interface{}) {
 // reliable way to know whether a host serves IMDSv2 with an assigned identity is to ask it. Any
 // other failure is reported rather than skipped: silently skipping on a genuine bug would make
 // these tests worthless.
-func skipUnlessIMDSv2(t *testing.T) {
+//
+// It returns the result of that acquisition so the test that called it can assert against it
+// instead of acquiring again. The preflight is not free and it is not inert: it mints a binding
+// certificate, persists it, caches an attestation statement and writes an access token to the
+// token cache. A test that then acquired a second time would be measuring a warm cache while
+// looking like it measured a cold one - which is exactly what makes a "no network round trips on
+// the second call" assertion meaningless. Using the returned result keeps the preflight and the
+// assertion the same acquisition.
+func skipUnlessIMDSv2(t *testing.T) mi.AuthResult {
 	t.Helper()
 	source, srcErr := mi.GetSource()
 	if srcErr != nil || source != mi.DefaultToIMDS {
@@ -99,10 +107,10 @@ func skipUnlessIMDSv2(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	_, err = client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
+	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
 	switch {
 	case err == nil:
-		return
+		return res
 	case errors.Is(err, mi.ErrMtlsPoPNotSupportedInIMDSv1):
 		skipOrFail(t, "this host serves IMDSv1 only")
 	case errors.Is(err, mi.ErrCredentialGuardNotAvailable):
@@ -116,24 +124,17 @@ func skipUnlessIMDSv2(t *testing.T) {
 	default:
 		t.Fatalf("IMDSv2 acquisition failed for a reason that is not an environment gap: %v", err)
 	}
+	return mi.AuthResult{}
 }
 
 // TestIMDSv2SystemAssignedBoundToken acquires a certificate-bound token for the system-assigned
 // identity and checks the properties that make it a bound token rather than a bearer token.
+//
+// The assertions run against the result of the preflight acquisition, which is the same
+// system-assigned, attested, bound acquisition this test would otherwise repeat.
 func TestIMDSv2SystemAssignedBoundToken(t *testing.T) {
-	skipUnlessIMDSv2(t)
+	res := skipUnlessIMDSv2(t)
 
-	client, err := mi.New(mi.SystemAssigned())
-	if err != nil {
-		t.Fatal(err)
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
-	defer cancel()
-
-	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
-	if err != nil {
-		t.Fatalf("AcquireToken: %v", err)
-	}
 	if res.AccessToken == "" {
 		t.Fatal("no access token")
 	}
@@ -207,8 +208,13 @@ func TestIMDSv2BearerOverMtls(t *testing.T) {
 	if res.AccessToken == "" {
 		t.Fatal("no access token")
 	}
-	if strings.EqualFold(res.Metadata.TokenType, "mtls_pop") {
-		t.Fatal("WithRequestOverMtls returned a bound token; it must return a bearer token")
+	// The type has to be exactly Bearer, not merely "not mtls_pop". A caller using
+	// WithRequestOverMtls sends the result with the Bearer scheme whatever the service said, so any
+	// other type - including one this library does not know - fails at the resource with nothing to
+	// explain it. The comparison folds case because RFC 6749 section 7.1 declares token_type
+	// case-insensitive.
+	if !strings.EqualFold(res.Metadata.TokenType, "Bearer") {
+		t.Fatalf("token type = %q, want Bearer: WithRequestOverMtls must return an ordinary bearer token", res.Metadata.TokenType)
 	}
 	// A bearer token is not bound to anything, so no certificate should be handed back: doing so
 	// would suggest the caller has to present it.

@@ -71,6 +71,16 @@ func (p *revocableKeyProvider) getOrCreateKey(string) (bindingKey, error) {
 	return bindingKey{Signer: signer, Type: keyTypeKeyGuard, Close: signer.close}, nil
 }
 
+func (p *revocableKeyProvider) openKey(string) (bindingKey, error) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	if p.key == nil {
+		return bindingKey{}, errBindingKeyNotFound
+	}
+	signer := &revocableSigner{key: p.key}
+	return bindingKey{Signer: signer, Type: keyTypeKeyGuard, Close: signer.close}, nil
+}
+
 func (p *revocableKeyProvider) deleteKey(string) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
@@ -115,7 +125,7 @@ func TestIMDSv2AttestationWithoutMtlsIsRejected(t *testing.T) {
 func TestIMDSv2AttestationIsAcceptedWithBearerOverMtls(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
-	fake.tokenType = "Bearer"
+	fake.tokenTypeOverride = "Bearer"
 	attempts := withStubAttestation(t, stubAttestationJWT(t, time.Now().Add(time.Hour)), nil)
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
@@ -136,7 +146,7 @@ func TestIMDSv2AttestationIsAcceptedWithBearerOverMtls(t *testing.T) {
 func TestIMDSv2BearerOverMtlsReturnsNoBindingCertificate(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
-	fake.tokenType = "Bearer"
+	fake.tokenTypeOverride = "Bearer"
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 	result, err := client.AcquireToken(context.Background(), "https://vault.azure.net", WithRequestOverMtls())
@@ -221,18 +231,30 @@ func TestIMDSv2SeparateIdentitiesGetSeparateCertificates(t *testing.T) {
 	}
 }
 
+// A cached certificate that has aged into the refresh window must be re-minted
+// rather than reused: the token bound to it would otherwise outlive it.
 func TestIMDSv2ReissuesCertificateNearingExpiry(t *testing.T) {
 	withCleanCaches(t)
+	realNow := now
+	base := realNow()
+	current := base
+	now = func() time.Time { return current }
+	t.Cleanup(func() { now = realNow })
+
 	fake := newIMDSFake(t)
-	// Well inside bindingCertRefreshWindow, so the certificate is already too
-	// close to expiry to be worth presenting.
-	fake.certLifetime = time.Minute
+	// Issued comfortably outside the window, so the first acquisition caches it.
+	fake.certLifetime = 30 * 24 * time.Hour
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 	if _, err := client.AcquireToken(context.Background(), "https://vault.azure.net", WithMtlsProofOfPossession()); err != nil {
 		t.Fatalf("first AcquireToken: %v", err)
 	}
 
+	// Far enough on that the cached certificate has less than
+	// bindingCertRefreshWindow of life left. The fake dates each certificate
+	// from the package clock, so the replacement is issued fresh at this
+	// moment and is still long-lived.
+	current = base.Add(30*24*time.Hour - 12*time.Hour)
 	fake.resetCalls()
 	if _, err := client.AcquireToken(context.Background(), "https://storage.azure.com", WithMtlsProofOfPossession()); err != nil {
 		t.Fatalf("second AcquireToken: %v", err)
@@ -242,19 +264,23 @@ func TestIMDSv2ReissuesCertificateNearingExpiry(t *testing.T) {
 	}
 }
 
-// A certificate that is already inside the refresh window is used for the
-// request that minted it but must not be stored: a later caller would reject it
-// on read, so caching it would pin a key handle open for nothing. The
-// reissue test above passes with or without the write-side guard, because the
-// read-side check also forces a re-mint, so the cache is inspected directly.
-func TestIMDSv2DoesNotCacheACertificateBornInsideTheRefreshWindow(t *testing.T) {
+// A certificate that is already inside the refresh window when IMDS issues it
+// cannot carry a token: Entra binds tokens with about a day of life to it, so
+// the caller would be handed a token the resource stops accepting before it
+// expires, with nothing in the token to say why. The acquisition fails instead,
+// and nothing is cached.
+func TestIMDSv2RejectsACertificateBornInsideTheRefreshWindow(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	fake.certLifetime = time.Minute
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
-	if _, err := client.AcquireToken(context.Background(), "https://vault.azure.net", WithMtlsProofOfPossession()); err != nil {
-		t.Fatalf("AcquireToken: %v", err)
+	_, err := client.AcquireToken(context.Background(), "https://vault.azure.net", WithMtlsProofOfPossession())
+	if err == nil {
+		t.Fatal("AcquireToken succeeded with a certificate that expires inside the refresh window")
+	}
+	if !strings.Contains(err.Error(), "refresh window") {
+		t.Fatalf("error = %v, want it to name the refresh window", err)
 	}
 
 	certCache.mu.Lock()

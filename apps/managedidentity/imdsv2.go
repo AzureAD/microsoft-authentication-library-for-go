@@ -9,13 +9,9 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
-	"syscall"
 )
-
-// wsaeConnReset is WSAECONNRESET. Windows reports a peer-side connection reset
-// with this Winsock code rather than the POSIX ECONNRESET value.
-const wsaeConnReset = 10054
 
 // IMDSv2 issues a short-lived, VM-bound X.509 certificate that is then used as
 // a TLS client certificate against a regional Entra endpoint. Acquiring a token
@@ -76,6 +72,8 @@ type csrMetadata struct {
 }
 
 func (m csrMetadata) validate() error {
+	// Presence first, so a missing field is reported as missing rather than as
+	// a malformed one. Every field is required before any is inspected.
 	switch {
 	case m.ClientID == "":
 		return fmt.Errorf("managedidentity: IMDS returned platform metadata without a clientId")
@@ -91,7 +89,112 @@ func (m csrMetadata) validate() error {
 		// libraries should refuse it at the same point.
 		return fmt.Errorf("managedidentity: IMDS returned platform metadata with no attestationEndpoint")
 	}
+	// Both identifiers are GUIDs, and both are load-bearing well past this
+	// document: the client ID becomes the CSR subject, the client_id of the
+	// token request and half of the persisted certificate's identity check,
+	// while the tenant ID is spliced into the token endpoint path and the
+	// persisted certificate's friendly name. Checking the shape is what stops an
+	// unauthenticated responder on the link-local address from steering any of
+	// them with a value that is not an identifier at all.
+	if !looksLikeGUID(m.ClientID) {
+		return fmt.Errorf("managedidentity: IMDS returned platform metadata whose clientId %q is not a GUID", m.ClientID)
+	}
+	if !looksLikeGUID(m.TenantID) {
+		return fmt.Errorf("managedidentity: IMDS returned platform metadata whose tenantId %q is not a GUID", m.TenantID)
+	}
 	return nil
+}
+
+// looksLikeGUID reports whether s is a bare 8-4-4-4-12 hexadecimal GUID.
+//
+// A managed identity client ID and an Entra tenant ID are both GUIDs, and both
+// reach places where a free-form string would be damaging: a cache partition
+// key, a certificate subject, and the client_id of the token request. Checking
+// the shape is what stops a spoofed metadata response from steering any of them
+// with a value that is not an identifier at all. Braced and URN forms are
+// deliberately not accepted, because neither service emits them and accepting
+// both spellings would give one identity two cache keys.
+func looksLikeGUID(s string) bool {
+	if len(s) != 36 {
+		return false
+	}
+	for i, r := range s {
+		switch i {
+		case 8, 13, 18, 23:
+			if r != '-' {
+				return false
+			}
+		default:
+			isHex := (r >= '0' && r <= '9') || (r >= 'a' && r <= 'f') || (r >= 'A' && r <= 'F')
+			if !isHex {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// imdsV2AllowedHostsEnvVar pins the hosts IMDS is allowed to name for the two
+// credential-bearing destinations it reports: the attestation endpoint and the
+// mTLS token endpoint.
+//
+// Legs 1 and 2 are unauthenticated plain HTTP to a link-local address, so both
+// of those hosts arrive from an unauthenticated source. There is no cloud
+// metadata in this package to derive a default from - a managed identity Client
+// is built against a fixed placeholder authority, so it does not know which
+// cloud it is in - and a built-in list of public-cloud suffixes would break
+// every sovereign, Arc-connected and private deployment the moment a region was
+// added. So the list is left to the operator, who does know.
+//
+// Unset, which is the default, means IMDS is trusted for these values exactly as
+// it was before: leg 1 is the trust boundary, an attestation statement is only
+// useful to the endpoint that issued it, and a token is only useful if Entra
+// signed it. Set, it is a fail-closed allowlist: an endpoint whose host is not
+// named is refused before anything is sent to it.
+//
+// The value is a comma or semicolon separated list of hosts. A leading "*." is a
+// suffix match over whole labels, so "*.example.com" admits "a.example.com" and
+// "example.com" but not "notexample.com". Matching is case-insensitive and
+// ignores any port.
+const imdsV2AllowedHostsEnvVar = "MSAL_MI_IMDSV2_ALLOWED_HOSTS"
+
+// allowedIMDSv2Hosts reads the operator's allowlist. An empty result means no
+// restriction was configured.
+func allowedIMDSv2Hosts() []string {
+	raw := os.Getenv(imdsV2AllowedHostsEnvVar)
+	if strings.TrimSpace(raw) == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.FieldsFunc(raw, func(r rune) bool { return r == ',' || r == ';' }) {
+		if p := strings.ToLower(strings.TrimSpace(part)); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
+}
+
+// checkIMDSv2HostAllowed enforces the allowlist, if one is configured, against a
+// host IMDS reported. what names the endpoint in the error, so an operator who
+// set the list too narrowly can see which of the two was refused.
+func checkIMDSv2HostAllowed(what, host string) error {
+	patterns := allowedIMDSv2Hosts()
+	if len(patterns) == 0 {
+		return nil
+	}
+	h := strings.ToLower(strings.TrimSpace(host))
+	for _, pattern := range patterns {
+		if suffix := strings.TrimPrefix(pattern, "*."); suffix != pattern {
+			if h == suffix || strings.HasSuffix(h, "."+suffix) {
+				return nil
+			}
+			continue
+		}
+		if h == pattern {
+			return nil
+		}
+	}
+	return fmt.Errorf("managedidentity: IMDS named %s host %q, which is not in %s", what, host, imdsV2AllowedHostsEnvVar)
 }
 
 // attestationURL returns the attestation endpoint to hand to the native
@@ -111,13 +214,16 @@ func (m csrMetadata) validate() error {
 // is used. MAA endpoints are bare origins, so nothing is lost by dropping any
 // path, query or fragment.
 //
-// Validation stops at the origin: the host itself is whatever IMDS said, and is
-// deliberately not checked against a list of known MAA hosts. Such a list would
-// have to track every sovereign and Arc-connected cloud, and would fail closed
-// on any new region before the list caught up. An attestation statement is only
-// useful to the endpoint that issued it, and the token the native library sends
-// is scoped to the attestation audience, so a redirected call cannot be replayed
-// at a resource. Leg 1 is the trust boundary for this value.
+// Validation stops at the origin unless an operator has said otherwise. The
+// host itself is whatever IMDS said, and is deliberately not checked against a
+// built-in list of known MAA hosts: such a list would have to track every
+// sovereign and Arc-connected cloud, this package has no cloud metadata to
+// derive one from, and it would fail closed on any new region before the list
+// caught up. An attestation statement is only useful to the endpoint that
+// issued it, and the token the native library sends is scoped to the attestation
+// audience, so a redirected call cannot be replayed at a resource. Leg 1 is the
+// trust boundary for this value. A deployment that wants a narrower one names
+// its own hosts in MSAL_MI_IMDSV2_ALLOWED_HOSTS, which is enforced here.
 func (m csrMetadata) attestationURL() (string, error) {
 	if m.AttestationEndpoint == "" {
 		return "", fmt.Errorf("managedidentity: attestation was requested but IMDS returned no attestationEndpoint")
@@ -158,6 +264,9 @@ func (m csrMetadata) attestationURL() (string, error) {
 	// endpoint has it, so its presence is only ever an attempt to disguise one.
 	if u.User != nil {
 		return "", fmt.Errorf("managedidentity: IMDS returned an attestation endpoint with userinfo in it %q", m.AttestationEndpoint)
+	}
+	if err := checkIMDSv2HostAllowed("attestation endpoint", u.Hostname()); err != nil {
+		return "", err
 	}
 	return "https://" + u.Host, nil
 }
@@ -200,6 +309,41 @@ func (r certificateRequestResponse) validate() error {
 	}
 	if len(missing) > 0 {
 		return fmt.Errorf("managedidentity: IMDS issued a credential response missing %s", strings.Join(missing, ", "))
+	}
+	// Both identifiers are GUIDs, and both are load-bearing beyond this
+	// response: the client ID becomes the client_id of the token request and
+	// half of the persisted certificate's identity check, and the tenant ID is
+	// spliced into the token endpoint path. Checking the shape before either is
+	// used keeps a malformed or hostile value from reaching them.
+	if !looksLikeGUID(r.ClientID) {
+		return fmt.Errorf("managedidentity: IMDS issued a credential whose client_id %q is not a GUID", r.ClientID)
+	}
+	if !looksLikeGUID(r.TenantID) {
+		return fmt.Errorf("managedidentity: IMDS issued a credential whose tenant_id %q is not a GUID", r.TenantID)
+	}
+	return nil
+}
+
+// validateAgainst checks that the credential IMDS issued belongs to the identity
+// leg 1 named.
+//
+// Leg 1 is what decides which identity this acquisition is for: it is the value
+// the CSR subject carries, the value the certificate cache was keyed on before
+// the request went out, and the value the caller believes it is holding a
+// credential for. A leg 2 response that names a different identity is therefore
+// not a credential for this request, whether that is a service-side bug, a
+// reassignment that happened between the two legs, or a spoofed responder on the
+// link-local address. Either way it must not be used or persisted, because the
+// certificate would be filed under one identity's cache key while naming
+// another's.
+func (r certificateRequestResponse) validateAgainst(metadata csrMetadata) error {
+	if !strings.EqualFold(r.ClientID, metadata.ClientID) {
+		return fmt.Errorf("managedidentity: IMDS issued a credential for client ID %q but the platform metadata named %q",
+			r.ClientID, metadata.ClientID)
+	}
+	if !strings.EqualFold(r.TenantID, metadata.TenantID) {
+		return fmt.Errorf("managedidentity: IMDS issued a credential for tenant %q but the platform metadata named %q",
+			r.TenantID, metadata.TenantID)
 	}
 	return nil
 }
@@ -312,11 +456,23 @@ func newEntraTokenError(statusCode int, body []byte) error {
 // shouldRemintCertificate reports whether err indicates the binding certificate
 // itself is the problem, rather than the request being wrong.
 //
-// Two things mean the same thing here. Entra answers invalid_client when it no
-// longer accepts the certificate. The TLS stack answers with a connection reset
-// or a handshake failure when the server rejects the client certificate before
-// any HTTP response exists to carry an error code. Both are fixed by minting a
-// new certificate, and neither is fixed by retrying with the same one.
+// Three things mean that. Entra answers invalid_client when it no longer accepts
+// the certificate. The TLS stack raises a certificate-specific alert when the
+// server rejects the client certificate before any HTTP response exists to carry
+// an error code. And our own signer reports that the binding key can no longer
+// sign. Each is fixed by minting a new certificate, and none is fixed by
+// retrying with the same one.
+//
+// Everything else is deliberately excluded, because re-minting is not free: it
+// discards a valid certificate, deletes the persisted copy shared with MSAL
+// .NET, and spends an /issuecredential call against a rate-limited service. A
+// bare connection reset is the clearest example. It is what a proxy, a firewall,
+// an idle pooled connection, a load balancer draining, or a service restart all
+// produce, and none of those says anything about the certificate; treating it as
+// a rejection means a network blip rotates a healthy machine credential, and a
+// persistent one rotates it on every attempt. A server that genuinely refuses
+// the certificate has a TLS alert for saying so, and that is what is matched.
+//
 // bindingKeySignFailureMarker appears on every failure that means the key
 // itself can no longer sign: a closed key, or either NCryptSignHash call. The
 // signer's three argument checks - a nil SignerOpts, a digest whose length
@@ -352,16 +508,8 @@ func shouldRemintCertificate(err error) bool {
 		return true
 	}
 	// A failure to verify the server's own chain is deliberately not treated as
-	// re-mintable: our certificate is not the problem, and silently retrying
-	// would obscure an untrusted or intercepted endpoint.
-	if errors.Is(err, syscall.ECONNRESET) {
-		return true
-	}
-	// Windows reports the same condition with its own code rather than ECONNRESET.
-	var errno syscall.Errno
-	if errors.As(err, &errno) && uintptr(errno) == wsaeConnReset {
-		return true
-	}
+	// re-mintable either: our certificate is not the problem, and silently
+	// retrying would obscure an untrusted or intercepted endpoint.
 	return isCertificateAlert(err)
 }
 
@@ -370,7 +518,10 @@ func shouldRemintCertificate(err error) bool {
 //
 // This is the fallback for toolchains that predate the typed alert; see
 // isCertificateAlert. It is deliberately kept next to the typed implementation
-// so the two sets of alerts stay in step.
+// so the two sets of alerts stay in step, and like that one it lists only alerts
+// that name a certificate: a bare handshake_failure is what a server sends for a
+// protocol version or cipher suite it cannot agree on, so matching it would
+// rotate the credential over a TLS configuration problem.
 func certificateAlertText(err error) bool {
 	msg := strings.ToLower(err.Error())
 	for _, alert := range []string{
@@ -382,8 +533,6 @@ func certificateAlertText(err error) bool {
 		"tls: unsupported certificate",
 		"tls: unknown certificate authority",
 		"tls: access denied",
-		"tls: handshake failure",
-		"handshake failure",
 	} {
 		if strings.Contains(msg, alert) {
 			return true

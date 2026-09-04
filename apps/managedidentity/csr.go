@@ -31,6 +31,16 @@ var (
 )
 
 // csrKeyBits is the RSA key size IMDS expects for the binding key.
+//
+// It is also an interoperability invariant rather than a local preference. The
+// binding key lives in a CNG container whose name is shared with MSAL .NET
+// (bindingKeyName, "KeyGuardRSAKey"), and either library will open and reuse a
+// key the other created. Two libraries that disagreed on the size would keep
+// finding a key of the wrong size in the shared container and, before this was
+// checked, would have signed a CSR with it and let IMDS reject the result. MSAL
+// .NET creates that key at 2048 bits, this package sets the same Length property
+// when it creates one, and createCSR refuses any key that is not exactly this
+// size. TestCSRKeySizeInvariant pins it.
 const csrKeyBits = 2048
 
 // pkcs10Attribute is a single CSR attribute: an OID plus a SET of values.
@@ -207,13 +217,30 @@ func createCSR(signer crypto.Signer, clientID, tenantID string, cuid cuidInfo) (
 	}
 
 	// IMDS wants raw base64 DER: no PEM armor and no line breaks.
-	return base64.StdEncoding.EncodeToString(csrDER), nil
+	encoded := base64.StdEncoding.EncodeToString(csrDER)
+
+	// The signature is verified before the request leaves the process. The
+	// signer here is a handle to a key inside the VBS trustlet, so it is the one
+	// component of this flow that can fail silently: a malfunctioning or
+	// misconfigured signer returns bytes rather than an error, and the only
+	// other party that would notice is IMDS, which answers with a generic
+	// rejection that names neither the signature nor the key. One RSA-2048
+	// verification is negligible next to the two network round trips it guards,
+	// and it turns that opaque rejection into a local error that says exactly
+	// what went wrong.
+	if err := verifyCSRSignature(encoded, pub); err != nil {
+		return "", fmt.Errorf("managedidentity: the binding key produced a CSR signature that does not verify against its own public key, so the key cannot be used: %w", err)
+	}
+	return encoded, nil
 }
 
 // verifyCSRSignature re-verifies a generated CSR against the public key that
-// signed it. It exists so the signing path can be exercised in tests without a
-// live IMDS, and so a malfunctioning hardware signer is caught locally rather
-// than as an opaque rejection from IMDS.
+// signed it.
+//
+// It runs on the production path, at the end of createCSR, so a malfunctioning
+// hardware signer is caught locally rather than as an opaque rejection from
+// IMDS. Tests use it directly as well, to exercise the signing path without a
+// live service.
 func verifyCSRSignature(csrBase64 string, pub *rsa.PublicKey) error {
 	der, err := base64.StdEncoding.DecodeString(csrBase64)
 	if err != nil {
