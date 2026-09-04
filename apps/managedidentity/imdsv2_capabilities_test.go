@@ -657,10 +657,226 @@ func TestCapabilitiesReprobesAfterATransientFailure(t *testing.T) {
 	}
 }
 
-// The complement of the test above. A 404 is the host stating that it serves
-// IMDSv1 only, which cannot change under a running process, so it must still be
-// cached for good: without this, re-probing transient failures would degrade
-// into probing every v1-only host on every call.
+// A v2 failure that was not a definitive 404 leaves v2's absence unproven, so an
+// answer built from v1 must not be kept for good even when everything about the
+// v1 side succeeded. v2 may recover, and a client that remembered the weaker
+// answer permanently would never notice.
+func TestCapabilitiesExpiresAV1AnswerReachedAfterATransientV2Failure(t *testing.T) {
+	withCleanCaches(t)
+	realNow := now
+	current := realNow()
+	now = func() time.Time { return current }
+	t.Cleanup(func() { now = realNow })
+
+	fake := newIMDSFake(t)
+	// 500 is a failure to get an answer, not the host saying it has no v2 route.
+	fake.metadataStatus = http.StatusInternalServerError
+	// The v1 side is entirely healthy and its document parses.
+	fake.computeBody = `{"osType":"Windows","securityProfile":{"securityType":"TrustedLaunch"}}`
+	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
+
+	got, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("Capabilities: %v", err)
+	}
+	if got.Source != DefaultToIMDS {
+		t.Fatalf("source = %q, want DefaultToIMDS: v1 answered", got.Source)
+	}
+	if got.MaxSupportedBindingStrength != MtlsBindingStrengthSoftware {
+		t.Fatalf("strength = %s, want Software from the compute document", got.MaxSupportedBindingStrength)
+	}
+
+	// Not settled. Past the interval the client probes again, and a recovered
+	// v2 must be able to raise the answer.
+	fake.calls = nil
+	fake.metadataStatus = http.StatusOK
+	current = current.Add(capabilitiesRetryInterval + time.Second)
+	recovered, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("Capabilities: %v", err)
+	}
+	if len(fake.calls) == 0 {
+		t.Fatal("an answer reached after a transient v2 failure was cached permanently")
+	}
+	if recovered.MaxSupportedBindingStrength != MtlsBindingStrengthKeyGuard {
+		t.Fatalf("strength = %s, want KeyGuard once v2 recovered", recovered.MaxSupportedBindingStrength)
+	}
+}
+
+// Neither probe answered, so nothing has proved this host serves managed
+// identity. Source must stay empty: reporting DefaultToIMDS would tell a
+// credential chain there is an identity endpoint when nothing responded like
+// one. The answer is transient, so a later call probes again.
+func TestCapabilitiesReportsNoSourceWhenBothProbesFail(t *testing.T) {
+	withCleanCaches(t)
+	realNow := now
+	current := realNow()
+	now = func() time.Time { return current }
+	t.Cleanup(func() { now = realNow })
+
+	fake := newIMDSFake(t)
+	fake.metadataStatus = http.StatusNotFound
+	fake.v1ProbeStatus = http.StatusNotFound
+	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
+
+	got, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("Capabilities: %v", err)
+	}
+	if got.Source != "" {
+		t.Fatalf("source = %q, want empty: no probe established IMDS", got.Source)
+	}
+	if got.MaxSupportedBindingStrength != MtlsBindingStrengthNone {
+		t.Fatalf("strength = %s, want None", got.MaxSupportedBindingStrength)
+	}
+	if got.ErrorReason == "" {
+		t.Fatal("no reason was reported for a host with no managed identity")
+	}
+	if !strings.Contains(got.ErrorReason, "IMDSv1") {
+		t.Fatalf("reason = %q, want it to mention the v1 probe as well as v2", got.ErrorReason)
+	}
+
+	// Not settled: both failures could be a service that was briefly down, so
+	// the next call past the retry interval asks again and can find a host.
+	fake.calls = nil
+	fake.metadataStatus = http.StatusOK
+	current = current.Add(capabilitiesRetryInterval + time.Second)
+	recovered, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("Capabilities: %v", err)
+	}
+	if len(fake.calls) == 0 {
+		t.Fatal("a failed detection was cached permanently")
+	}
+	if recovered.Source != DefaultToIMDS {
+		t.Fatalf("source = %q, want DefaultToIMDS once v2 answered", recovered.Source)
+	}
+}
+
+// v1 is there but its tier could not be read. The source is established, so it
+// is reported; the tier is not, so the reason has to say that rather than
+// repeating the v2 failure, and the answer must not be kept for good because the
+// compute endpoint may recover.
+func TestCapabilitiesTreatsAComputeFailureAsTransientWithSourceIntact(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		body string
+		code int
+	}{
+		{"compute unavailable", "", 0},
+		{"compute unparsable", "{not json", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withCleanCaches(t)
+			realNow := now
+			current := realNow()
+			now = func() time.Time { return current }
+			t.Cleanup(func() { now = realNow })
+
+			fake := newIMDSFake(t)
+			fake.metadataStatus = http.StatusNotFound // v2 definitively absent
+			fake.computeBody = tc.body
+			client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
+
+			got, err := client.Capabilities(context.Background())
+			if err != nil {
+				t.Fatalf("Capabilities: %v", err)
+			}
+			if got.Source != DefaultToIMDS {
+				t.Fatalf("source = %q, want DefaultToIMDS: the v1 probe answered", got.Source)
+			}
+			if got.MaxSupportedBindingStrength != MtlsBindingStrengthNone {
+				t.Fatalf("strength = %s, want None when the tier is unknown", got.MaxSupportedBindingStrength)
+			}
+			if !strings.Contains(got.ErrorReason, "binding strength could not be determined") {
+				t.Fatalf("reason = %q, want it to name the compute failure rather than the v2 one", got.ErrorReason)
+			}
+
+			// Transient: past the interval it tries again and can succeed.
+			fake.calls = nil
+			fake.computeBody = `{"osType":"Windows","securityProfile":{"securityType":"TrustedLaunch"}}`
+			current = current.Add(capabilitiesRetryInterval + time.Second)
+			recovered, err := client.Capabilities(context.Background())
+			if err != nil {
+				t.Fatalf("Capabilities: %v", err)
+			}
+			if len(fake.calls) == 0 {
+				t.Fatal("an unreadable tier was cached permanently")
+			}
+			if recovered.MaxSupportedBindingStrength != MtlsBindingStrengthSoftware {
+				t.Fatalf("strength = %s, want Software once the document could be read", recovered.MaxSupportedBindingStrength)
+			}
+			if recovered.ErrorReason != "" {
+				t.Fatalf("reason = %q, want none once the tier was determined", recovered.ErrorReason)
+			}
+		})
+	}
+}
+
+// Whether this build can mint a KeyGuard key is a separate question from whether
+// the host serves managed identity. A platform that cannot bind must still
+// report the source it found, or a credential chain on Linux would be told there
+// is no managed identity on a VM that plainly has one.
+func TestCapabilitiesDetectsTheSourceOnAPlatformThatCannotBind(t *testing.T) {
+	withCleanCaches(t)
+	fake := newIMDSFake(t)
+	// Stand in for a non-Windows build: no platform key provider.
+	platformSupportsMtlsPoP = func() bool { return false }
+	provider := newFakeKeyProvider()
+	provider.err = ErrMtlsNotSupportedForPlatform
+	client := fake.newTestClient(t, SystemAssigned(), provider)
+
+	got, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("Capabilities: %v", err)
+	}
+	if got.Source != DefaultToIMDS {
+		t.Fatalf("source = %q, want DefaultToIMDS: the v2 probe answered regardless of the platform", got.Source)
+	}
+	// The host speaks the protocol, so the software floor stands even though
+	// this build cannot produce a KeyGuard key. Acquisition is what fails.
+	if got.MaxSupportedBindingStrength != MtlsBindingStrengthSoftware {
+		t.Fatalf("strength = %s, want Software: the host answered the v2 probe", got.MaxSupportedBindingStrength)
+	}
+	if got.MaxSupportedBindingStrength == MtlsBindingStrengthKeyGuard {
+		t.Fatal("a platform with no key provider reported the attested tier")
+	}
+}
+
+// The compute document is not evidence that IMDSv1 exists. It describes the
+// machine and answers on hosts with no identity endpoint at all, so a host whose
+// v1 probe fails must not be reported as an IMDS host just because the document
+// reads back.
+func TestCapabilitiesDoesNotInferIMDSv1FromTheComputeDocument(t *testing.T) {
+	withCleanCaches(t)
+	fake := newIMDSFake(t)
+	fake.metadataStatus = http.StatusNotFound
+	fake.v1ProbeStatus = http.StatusNotFound
+	// A perfectly good compute document on a host with no identity endpoint.
+	fake.computeBody = `{"osType":"Windows","securityProfile":{"securityType":"TrustedLaunch"}}`
+	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
+
+	got, err := client.Capabilities(context.Background())
+	if err != nil {
+		t.Fatalf("Capabilities: %v", err)
+	}
+	if got.Source != "" {
+		t.Fatalf("source = %q, want empty: the compute document is not an identity endpoint", got.Source)
+	}
+	if got.MaxSupportedBindingStrength != MtlsBindingStrengthNone {
+		t.Fatalf("strength = %s, want None", got.MaxSupportedBindingStrength)
+	}
+	for _, call := range fake.calls {
+		if call == "compute" {
+			t.Fatal("the compute document was read before the v1 probe established IMDS")
+		}
+	}
+}
+
+// probe and a compute document that parses, is a settled description of the
+// host: none of it can change under a running process, so it is cached for good.
+// Without this, re-probing transient failures would degrade into probing every
+// v1-only host on every call.
 func TestCapabilitiesCachesAV1OnlyHostForTheProcessLifetime(t *testing.T) {
 	withCleanCaches(t)
 	realNow := now
@@ -670,6 +886,10 @@ func TestCapabilitiesCachesAV1OnlyHostForTheProcessLifetime(t *testing.T) {
 
 	fake := newIMDSFake(t)
 	fake.metadataStatus = http.StatusNotFound
+	// A document that parses and describes a host which cannot bind. The
+	// answer is then complete: v2 is definitively absent, v1 is definitively
+	// present, and the tier was read rather than guessed.
+	fake.computeBody = `{"osType":"Linux"}`
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 	if _, err := client.Capabilities(context.Background()); err != nil {
@@ -684,6 +904,9 @@ func TestCapabilitiesCachesAV1OnlyHostForTheProcessLifetime(t *testing.T) {
 	}
 	if len(fake.calls) != 0 {
 		t.Fatalf("calls = %q, want a v1-only host answered from cache forever", fake.calls)
+	}
+	if got.Source != DefaultToIMDS {
+		t.Fatalf("source = %q, want DefaultToIMDS: the v1 probe answered", got.Source)
 	}
 	if got.MaxSupportedBindingStrength != MtlsBindingStrengthNone {
 		t.Fatalf("strength = %s, want None on a v1-only host", got.MaxSupportedBindingStrength)

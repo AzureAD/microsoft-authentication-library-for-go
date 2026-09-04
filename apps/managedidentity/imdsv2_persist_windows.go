@@ -85,13 +85,21 @@ func openMyStore(readOnly bool) (windows.Handle, error) {
 	if readOnly {
 		flags |= windows.CERT_STORE_READONLY_FLAG | windows.CERT_STORE_OPEN_EXISTING_FLAG
 	}
-	return windows.CertOpenStore(
+	// The result is captured rather than returned directly so that name stays
+	// reachable across the call. CertOpenStore takes the store name as an
+	// unsafe.Pointer converted to uintptr, which the garbage collector does not
+	// see as a reference, so returning the call expression would leave the last
+	// use of name before the call and the buffer collectable while crypt32 is
+	// still reading it.
+	store, err := windows.CertOpenStore(
 		windows.CERT_STORE_PROV_SYSTEM,
 		0,
 		0,
 		flags,
 		uintptr(unsafe.Pointer(name)),
 	)
+	runtime.KeepAlive(name)
+	return store, err
 }
 
 // snapshotStore returns an owned duplicate of every certificate in the store.

@@ -6,6 +6,10 @@
 package managedidentity
 
 import (
+	"crypto"
+	"crypto/rand"
+	"crypto/rsa"
+	"crypto/sha256"
 	"errors"
 	"fmt"
 	"strings"
@@ -29,21 +33,22 @@ import (
 // runs.
 type scriptedContainer struct {
 	// exists is what open reports, consulted afresh on each call so a script
-	// can model another process creating or deleting the key mid-loop.
+	// can model another process creating, replacing or deleting the key
+	// mid-loop.
 	exists   func(opens int) (windows.Handle, bool, error)
 	canSign  func(windows.Handle) bool
-	createFn func(creates int) (windows.Handle, error)
+	createFn func(creates int, overwrite bool) (windows.Handle, error)
 	// persistedFn reports whether the candidate is the key the name resolves
 	// to. Left nil it answers yes, which is the uncontended case.
 	persistedFn func(creates int, candidate windows.Handle) (bool, error)
 
-	opens     int
-	creates   int
-	opened    []windows.Handle
-	removed   []windows.Handle
-	adopted   []windows.Handle
-	discarded []windows.Handle
-	verified  []windows.Handle
+	opens      int
+	creates    int
+	opened     []windows.Handle
+	adopted    []windows.Handle
+	discarded  []windows.Handle
+	verified   []windows.Handle
+	overwrites []bool
 }
 
 func (s *scriptedContainer) open() (windows.Handle, bool, error) {
@@ -65,13 +70,9 @@ func (s *scriptedContainer) usable(h windows.Handle) bool {
 	return s.canSign(h)
 }
 
-func (s *scriptedContainer) remove(h windows.Handle) error {
-	s.removed = append(s.removed, h)
-	return nil
-}
-
-func (s *scriptedContainer) create() (windows.Handle, error) {
-	h, err := s.createFn(s.creates)
+func (s *scriptedContainer) create(overwrite bool) (windows.Handle, error) {
+	s.overwrites = append(s.overwrites, overwrite)
+	h, err := s.createFn(s.creates, overwrite)
 	s.creates++
 	return h, err
 }
@@ -100,8 +101,11 @@ func (s *scriptedContainer) adopt(h windows.Handle) (bindingKey, error) {
 // against.
 func TestResolveBindingKeyAdoptsAnExistingUsableKey(t *testing.T) {
 	c := &scriptedContainer{
-		exists:   func(int) (windows.Handle, bool, error) { return 41, true, nil },
-		createFn: func(int) (windows.Handle, error) { t.Fatal("created a key when a usable one existed"); return 0, nil },
+		exists: func(int) (windows.Handle, bool, error) { return 41, true, nil },
+		createFn: func(int, bool) (windows.Handle, error) {
+			t.Fatal("created a key when a usable one existed")
+			return 0, nil
+		},
 	}
 	if _, err := resolveBindingKey(c, bindingKeyName); err != nil {
 		t.Fatalf("resolveBindingKey: %v", err)
@@ -109,8 +113,8 @@ func TestResolveBindingKeyAdoptsAnExistingUsableKey(t *testing.T) {
 	if c.creates != 0 {
 		t.Errorf("create was called %d times, want 0", c.creates)
 	}
-	if len(c.removed) != 0 {
-		t.Errorf("an existing usable key was deleted: %v", c.removed)
+	if len(c.discarded) != 0 {
+		t.Errorf("an existing usable key's handle was released: %v", c.discarded)
 	}
 	if len(c.adopted) != 1 || c.adopted[0] != 41 {
 		t.Errorf("adopted %v, want the existing key 41", c.adopted)
@@ -136,7 +140,7 @@ func TestResolveBindingKeyAdoptsTheWinnerAfterLosingTheCreate(t *testing.T) {
 			}
 			return winner, true, nil
 		},
-		createFn: func(int) (windows.Handle, error) { return 0, errBindingKeyExists },
+		createFn: func(int, bool) (windows.Handle, error) { return 0, errBindingKeyExists },
 	}
 
 	key, err := resolveBindingKey(c, bindingKeyName)
@@ -157,40 +161,151 @@ func TestResolveBindingKeyAdoptsTheWinnerAfterLosingTheCreate(t *testing.T) {
 	if len(c.opened) != 1 || c.opened[0] != winner {
 		t.Errorf("opened %v, want exactly one reopen of the winner's key %d", c.opened, winner)
 	}
-	if len(c.removed) != 0 {
-		t.Errorf("the winner's key was deleted: %v", c.removed)
+	if len(c.overwrites) != 0 && c.overwrites[len(c.overwrites)-1] {
+		t.Error("the winner's key was overwritten instead of adopted")
 	}
 }
 
 // A key that opens but can no longer sign is what a reboot leaves behind. It is
-// deleted explicitly and then recreated, rather than overwritten, so a process
-// holding a handle to the dead key is not silently handed a live one.
-func TestResolveBindingKeyReplacesAStrandedKeyByDeletingIt(t *testing.T) {
-	const stranded windows.Handle = 9
+// released and recreated over, never deleted through.
+//
+// The distinction is the whole fix. NCryptDeleteKey resolves the name rather
+// than the handle's object, so deleting through a stale handle destroys whatever
+// now holds the name - reproduced 3/3 against the Microsoft Software KSP: open
+// A, replace the name with B, delete through A, B is gone, success reported.
+// This test fails if that behaviour comes back, because a delete would show up
+// on the container.
+func TestResolveBindingKeyRecoversAStaleKeyWithoutDeletingIt(t *testing.T) {
+	const stale windows.Handle = 9
 	const fresh windows.Handle = 10
 	c := &scriptedContainer{}
-	c.exists = func(int) (windows.Handle, bool, error) {
-		// Gone once remove has consumed it, which is what makes the second
-		// pass take the create branch.
-		if len(c.removed) > 0 {
-			return 0, false, nil
-		}
-		return stranded, true, nil
-	}
-	c.canSign = func(windows.Handle) bool { return false }
-	c.createFn = func(int) (windows.Handle, error) { return fresh, nil }
+	c.exists = func(int) (windows.Handle, bool, error) { return stale, true, nil }
+	c.canSign = func(h windows.Handle) bool { return h != stale }
+	c.createFn = func(int, bool) (windows.Handle, error) { return fresh, nil }
 
 	if _, err := resolveBindingKey(c, bindingKeyName); err != nil {
 		t.Fatalf("resolveBindingKey: %v", err)
 	}
-	if len(c.removed) != 1 || c.removed[0] != stranded {
-		t.Fatalf("removed %v, want the stranded key %d deleted", c.removed, stranded)
+	// Two stale handles are observed on this script - the initial open and the
+	// reopen that guards against overwriting a replacement - and BOTH must be
+	// released rather than deleted through. Counting them is what catches a
+	// reintroduced delete: a delete consumes the handle without going through
+	// the container, so the count drops.
+	if len(c.discarded) != 2 {
+		t.Fatalf("released %d stale handles, want 2: a handle was deleted through instead of freed", len(c.discarded))
+	}
+	for _, h := range c.discarded {
+		if h != stale {
+			t.Errorf("discarded %#x, want only the stale handle %#x", h, stale)
+		}
 	}
 	if c.creates != 1 {
-		t.Errorf("create was called %d times, want 1", c.creates)
+		t.Fatalf("create was called %d times, want 1", c.creates)
+	}
+	// Recreating over a name that still exists requires overwrite; without it
+	// the create can only ever return NTE_EXISTS.
+	if len(c.overwrites) != 1 || !c.overwrites[0] {
+		t.Fatalf("create overwrite flags = %v, want a single overwriting create", c.overwrites)
 	}
 	if len(c.adopted) != 1 || c.adopted[0] != fresh {
-		t.Errorf("adopted %v, want the replacement key %d", c.adopted, fresh)
+		t.Errorf("adopted %v, want the replacement key %#x", c.adopted, fresh)
+	}
+}
+
+// The window between deciding a key is unusable and replacing it is a race, and
+// the good outcome is to adopt somebody else's replacement rather than overwrite
+// it. This scripts exactly that: the first open reports the dead key, and by the
+// second open another process has put a working one under the name.
+//
+// It fails if the reopen is removed, because the loop would then overwrite a
+// live key and `overwrites` would show a create that should never have happened.
+func TestResolveBindingKeyAdoptsAReplacementRacedInDuringRecovery(t *testing.T) {
+	const stale windows.Handle = 0x21
+	const rival windows.Handle = 0x22
+	c := &scriptedContainer{}
+	c.exists = func(opens int) (windows.Handle, bool, error) {
+		if opens == 0 {
+			return stale, true, nil
+		}
+		return rival, true, nil
+	}
+	c.canSign = func(h windows.Handle) bool { return h != stale }
+	c.createFn = func(int, bool) (windows.Handle, error) {
+		t.Fatal("overwrote a key another process had already replaced")
+		return 0, nil
+	}
+
+	if _, err := resolveBindingKey(c, bindingKeyName); err != nil {
+		t.Fatalf("resolveBindingKey: %v", err)
+	}
+	if c.creates != 0 {
+		t.Errorf("create was called %d times, want 0: the replacement should have been adopted", c.creates)
+	}
+	if len(c.adopted) != 1 || c.adopted[0] != rival {
+		t.Errorf("adopted %v, want the rival's replacement %#x", c.adopted, rival)
+	}
+	if len(c.discarded) != 1 || c.discarded[0] != stale {
+		t.Errorf("discarded %v, want only the stale handle released", c.discarded)
+	}
+}
+
+// A stale key that another process deleted outright leaves the name free, so an
+// ordinary non-overwriting create is both sufficient and safer than forcing one.
+func TestResolveBindingKeyCreatesWithoutOverwriteWhenTheStaleNameVanishes(t *testing.T) {
+	const stale windows.Handle = 0x31
+	const fresh windows.Handle = 0x32
+	c := &scriptedContainer{}
+	c.exists = func(opens int) (windows.Handle, bool, error) {
+		if opens == 0 {
+			return stale, true, nil
+		}
+		return 0, false, nil
+	}
+	c.canSign = func(h windows.Handle) bool { return h != stale }
+	c.createFn = func(int, bool) (windows.Handle, error) { return fresh, nil }
+
+	if _, err := resolveBindingKey(c, bindingKeyName); err != nil {
+		t.Fatalf("resolveBindingKey: %v", err)
+	}
+	if len(c.overwrites) != 1 || c.overwrites[0] {
+		t.Fatalf("create overwrite flags = %v, want a single non-overwriting create", c.overwrites)
+	}
+	if len(c.adopted) != 1 || c.adopted[0] != fresh {
+		t.Errorf("adopted %v, want the new key %#x", c.adopted, fresh)
+	}
+}
+
+// An ordinary create - the name was free - must never ask for overwrite, or a
+// racing creator's key would be destroyed instead of adopted.
+func TestResolveBindingKeyDoesNotOverwriteWhenTheNameWasFree(t *testing.T) {
+	const fresh windows.Handle = 0x41
+	c := &scriptedContainer{
+		exists:   func(int) (windows.Handle, bool, error) { return 0, false, nil },
+		createFn: func(int, bool) (windows.Handle, error) { return fresh, nil },
+	}
+	if _, err := resolveBindingKey(c, bindingKeyName); err != nil {
+		t.Fatalf("resolveBindingKey: %v", err)
+	}
+	if len(c.overwrites) != 1 || c.overwrites[0] {
+		t.Fatalf("create overwrite flags = %v, want a single non-overwriting create", c.overwrites)
+	}
+}
+
+// The replacement flag set has to be what MSAL .NET's CreateFresh uses:
+// overwrite plus virtual isolation plus per-boot. Dropping isolation or the
+// per-boot flag would produce a key IMDS refuses a credential for.
+func TestBindingKeyReplaceFlagsMatchDotNetCreateFresh(t *testing.T) {
+	if bindingKeyReplaceFlags&ncryptOverwriteKeyFlag == 0 {
+		t.Error("the replacement flags do not overwrite, so recovery can only ever return NTE_EXISTS")
+	}
+	if bindingKeyReplaceFlags&ncryptUseVirtualIsolationFlag == 0 {
+		t.Error("the replacement flags no longer ask for VBS isolation")
+	}
+	if bindingKeyReplaceFlags&ncryptUsePerBootKeyFlag == 0 {
+		t.Error("the replacement flags no longer ask for a per-boot key, which IMDS requires")
+	}
+	if bindingKeyReplaceFlags != bindingKeyCreateFlags|ncryptOverwriteKeyFlag {
+		t.Error("the replacement flags differ from the create flags by something other than overwrite")
 	}
 }
 
@@ -202,7 +317,7 @@ func TestResolveBindingKeyGivesUpAfterBoundedAttempts(t *testing.T) {
 		// Never there when looked for, always there when created against: the
 		// rival wins every race and then withdraws.
 		exists:   func(int) (windows.Handle, bool, error) { return 0, false, nil },
-		createFn: func(int) (windows.Handle, error) { return 0, errBindingKeyExists },
+		createFn: func(int, bool) (windows.Handle, error) { return 0, errBindingKeyExists },
 	}
 
 	_, err := resolveBindingKey(c, bindingKeyName)
@@ -229,7 +344,7 @@ func TestResolveBindingKeyDoesNotRetryARealCreateFailure(t *testing.T) {
 	sentinel := fmt.Errorf("%w: no VBS here", ErrCredentialGuardNotAvailable)
 	c := &scriptedContainer{
 		exists:   func(int) (windows.Handle, bool, error) { return 0, false, nil },
-		createFn: func(int) (windows.Handle, error) { return 0, sentinel },
+		createFn: func(int, bool) (windows.Handle, error) { return 0, sentinel },
 	}
 	_, err := resolveBindingKey(c, bindingKeyName)
 	if !errors.Is(err, sentinel) {
@@ -279,7 +394,7 @@ func TestResolveBindingKeyAdoptsThePersistedWinnerAfterASilentReplace(t *testing
 			return winner, true, nil
 		},
 		// A's create and finalize both succeed. The API reports no collision.
-		createFn: func(int) (windows.Handle, error) { return mine, nil },
+		createFn: func(int, bool) (windows.Handle, error) { return mine, nil },
 		// But the name resolves to B.
 		persistedFn: func(_ int, candidate windows.Handle) (bool, error) {
 			return candidate == winner, nil
@@ -302,8 +417,8 @@ func TestResolveBindingKeyAdoptsThePersistedWinnerAfterASilentReplace(t *testing
 	if len(c.adopted) != 1 || c.adopted[0] != winner {
 		t.Errorf("adopted %v, want the persisted winner %#x", c.adopted, winner)
 	}
-	if len(c.removed) != 0 {
-		t.Errorf("the winner's key was deleted: %v", c.removed)
+	if len(c.overwrites) != 0 && c.overwrites[len(c.overwrites)-1] {
+		t.Error("the winner's key was overwritten instead of adopted")
 	}
 }
 
@@ -314,7 +429,7 @@ func TestResolveBindingKeyAdoptsItsOwnKeyWhenItReallyWon(t *testing.T) {
 	const mine windows.Handle = 0xC
 	c := &scriptedContainer{
 		exists:   func(int) (windows.Handle, bool, error) { return 0, false, nil },
-		createFn: func(int) (windows.Handle, error) { return mine, nil },
+		createFn: func(int, bool) (windows.Handle, error) { return mine, nil },
 		persistedFn: func(_ int, candidate windows.Handle) (bool, error) {
 			return candidate == mine, nil
 		},
@@ -339,7 +454,7 @@ func TestResolveBindingKeyAdoptsItsOwnKeyWhenItReallyWon(t *testing.T) {
 func TestResolveBindingKeyBoundsRepeatedSilentReplacement(t *testing.T) {
 	c := &scriptedContainer{
 		exists:      func(int) (windows.Handle, bool, error) { return 0, false, nil },
-		createFn:    func(creates int) (windows.Handle, error) { return windows.Handle(0x100 + creates), nil },
+		createFn:    func(creates int, _ bool) (windows.Handle, error) { return windows.Handle(0x100 + creates), nil },
 		persistedFn: func(int, windows.Handle) (bool, error) { return false, nil },
 	}
 	_, err := resolveBindingKey(c, bindingKeyName)
@@ -367,7 +482,7 @@ func TestResolveBindingKeyFailsWhenVerificationFails(t *testing.T) {
 	boom := errors.New("cannot reopen the container")
 	c := &scriptedContainer{
 		exists:      func(int) (windows.Handle, bool, error) { return 0, false, nil },
-		createFn:    func(int) (windows.Handle, error) { return mine, nil },
+		createFn:    func(int, bool) (windows.Handle, error) { return mine, nil },
 		persistedFn: func(int, windows.Handle) (bool, error) { return false, boom },
 	}
 	_, err := resolveBindingKey(c, bindingKeyName)
@@ -578,8 +693,95 @@ func TestOpenBindingKeyLockRejectsUnusableNames(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// Flags.
+// PSS salt length.
 // ---------------------------------------------------------------------------
+
+// crypto.Signer's contract gives the two sentinels different meanings, and
+// collapsing them - which this signer used to do - makes a caller asking for
+// rsa.PSSSaltLengthAuto get a hash-length salt instead of the largest the
+// modulus allows. A verifier configured for the exact salt it asked for then
+// rejects a signature this library produced.
+func TestPSSSaltLengthDistinguishesAutoFromEqualsHash(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, csrKeyBits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := &key.PublicKey
+	hash := crypto.SHA256
+
+	equalsHash, err := pssSaltLength(rsa.PSSSaltLengthEqualsHash, hash, pub)
+	if err != nil {
+		t.Fatalf("EqualsHash: %v", err)
+	}
+	if equalsHash != hash.Size() {
+		t.Errorf("EqualsHash salt = %d, want %d", equalsHash, hash.Size())
+	}
+
+	auto, err := pssSaltLength(rsa.PSSSaltLengthAuto, hash, pub)
+	if err != nil {
+		t.Fatalf("Auto: %v", err)
+	}
+	// RFC 8017 9.1.1: emLen - hLen - 2, with emLen = ceil((modBits-1)/8).
+	wantAuto := (pub.N.BitLen()-1+7)/8 - hash.Size() - 2
+	if auto != wantAuto {
+		t.Errorf("Auto salt = %d, want the encoding maximum %d", auto, wantAuto)
+	}
+	if auto == equalsHash {
+		t.Fatal("Auto and EqualsHash resolved to the same salt, which is the bug this guards")
+	}
+	// It must also agree with what crypto/rsa itself accepts for Auto.
+	digest := sha256.Sum256([]byte("salt length parity"))
+	sig, err := rsa.SignPSS(rand.Reader, key, hash, digest[:], &rsa.PSSOptions{
+		SaltLength: rsa.PSSSaltLengthAuto, Hash: hash,
+	})
+	if err != nil {
+		t.Fatalf("crypto/rsa SignPSS(Auto): %v", err)
+	}
+	if err := rsa.VerifyPSS(pub, hash, digest[:], sig, &rsa.PSSOptions{
+		SaltLength: auto, Hash: hash,
+	}); err != nil {
+		t.Fatalf("crypto/rsa's Auto signature does not verify at salt %d: %v", auto, err)
+	}
+}
+
+// Explicit lengths pass through, and values that cannot be honoured are refused
+// rather than wrapped into an enormous unsigned salt.
+func TestPSSSaltLengthBoundaries(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, csrKeyBits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pub := &key.PublicKey
+
+	if got, err := pssSaltLength(20, crypto.SHA256, pub); err != nil || got != 20 {
+		t.Errorf("explicit salt = %d (err %v), want 20", got, err)
+	}
+	// 0 is not "an explicit zero-length salt": crypto/rsa defines
+	// PSSSaltLengthAuto as 0, so it has to resolve to the encoding maximum.
+	auto, err := pssSaltLength(0, crypto.SHA256, pub)
+	if err != nil {
+		t.Fatalf("zero (Auto): %v", err)
+	}
+	if want := (pub.N.BitLen()-1+7)/8 - crypto.SHA256.Size() - 2; auto != want {
+		t.Errorf("zero salt = %d, want the Auto maximum %d", auto, want)
+	}
+	// -3 and below are not sentinels and cannot be a length.
+	if _, err := pssSaltLength(-3, crypto.SHA256, pub); err == nil {
+		t.Error("a negative salt length was accepted")
+	}
+	// A modulus too small to carry the hash yields a negative maximum, which
+	// must be refused rather than converted.
+	small, err := rsa.GenerateKey(rand.Reader, 512)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := pssSaltLength(rsa.PSSSaltLengthAuto, crypto.SHA512, &small.PublicKey); err == nil {
+		t.Error("Auto returned a salt for a key too small to carry the hash")
+	}
+	if _, err := pssSaltLength(rsa.PSSSaltLengthAuto, crypto.SHA256, nil); err == nil {
+		t.Error("Auto returned a salt without a public key to derive it from")
+	}
+}
 
 // The CNG container this provider uses is named by MSAL .NET as well, and is
 // shared with every other process on the machine. NCRYPT_OVERWRITE_KEY_FLAG

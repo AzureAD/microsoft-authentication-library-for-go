@@ -187,6 +187,10 @@ type imdsFake struct {
 	certKeyUsage    *x509.KeyUsage
 	// tokenBody, when set, replaces the whole leg 3 success body verbatim.
 	tokenBody string
+	// v1ProbeStatus is what the IMDSv1 probe answers. Zero means 400, which is
+	// the contract for "this host serves IMDSv1"; a test sets 404 to model a
+	// host with no managed identity endpoint at all.
+	v1ProbeStatus int
 }
 
 func newIMDSFake(t *testing.T) *imdsFake {
@@ -302,6 +306,21 @@ func (f *imdsFake) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	}
 	if strings.Contains(r.URL.Path, "/instance/compute") {
 		f.handleCompute(w, r)
+		return
+	}
+	// An IMDSv1 probe is a headerless GET of the token path with no resource.
+	// It is answered before the resource-carrying branch below so a probe is
+	// never mistaken for a token request.
+	if strings.Contains(r.URL.Path, "/identity/oauth2/token") && r.URL.Query().Get("resource") == "" {
+		f.record("v1probe")
+		f.writeServerHeader(w)
+		status := f.v1ProbeStatus
+		if status == 0 {
+			// 400 is the contract: only a host that routes the token endpoint
+			// can reject the request for the missing Metadata header.
+			status = http.StatusBadRequest
+		}
+		w.WriteHeader(status)
 		return
 	}
 	// An IMDSv1 token request carries a resource but no cred-api-version.

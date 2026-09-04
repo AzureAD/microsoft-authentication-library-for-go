@@ -288,10 +288,13 @@ func WithAttestationSupport() AcquireTokenOption {
 // explicitly and get a typed answer, not a way to relax or tighten what is
 // accepted.
 //
-// The check runs host capability discovery, whose result is reused for the
-// lifetime of the process. Passing [MtlsBindingStrengthNone] imposes no floor
-// and skips discovery entirely, which is the same as not using this option. Any
-// value that is not one of the three declared tiers is rejected with
+// The check runs host capability discovery, whose result is cached on this
+// client and shared by copies of it made by value; independently constructed
+// clients discover independently. A settled answer is kept for that client's
+// lifetime, while a transient failure to reach the metadata service is retried
+// after 30 seconds. Passing [MtlsBindingStrengthNone] imposes no floor and skips
+// discovery entirely, which is the same as not using this option. Any value that
+// is not one of the three declared tiers is rejected with
 // [ErrInvalidMtlsBindingStrength].
 //
 // Tokens acquired under a floor are cached separately from tokens acquired
@@ -322,6 +325,15 @@ func WithForceRefresh() AcquireTokenOption {
 
 // WithHTTPClient allows for a custom HTTP client to be set. Service Fabric requires a standard
 // *http.Client with a *http.Transport and does not support custom TLS dialing or verification.
+//
+// Redirects on the plain-HTTP metadata legs are the caller's to own here. This
+// library refuses to follow one by default, because a 307 or 308 replays the
+// request body - which on the credential leg carries the CSR and the attestation
+// statement - at whatever host the Location header names. It can only install
+// that refusal on a plain *http.Client that has stated no CheckRedirect of its
+// own: an arbitrary [ops.HTTPClient] implementation cannot be inspected or
+// overridden, so a caller supplying one takes on redirect behaviour entirely,
+// and a caller supplying an *http.Client with its own CheckRedirect keeps it.
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient

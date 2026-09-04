@@ -232,22 +232,31 @@ func (c *bindingCertCache) releaseWaiter(key string) {
 // the key provider, and holding the cache lock across an operating system call
 // would serialize every identity behind it.
 //
-// The client ID comparison is case-insensitive. Both sides are GUIDs that have
-// already been validated as such, and IMDS is not consistent about the case it
-// reports them in: a certificate persisted with a lower-cased common name is
-// compared against whatever leg 1 just returned. A case-sensitive comparison
-// would silently re-mint on every acquisition against a rate-limited service.
-func (c *bindingCertCache) usable(key, clientID string, provider keyProvider) (*bindingCertificate, bool) {
+// Both identifiers from the fresh platform metadata have to match. The client ID
+// alone is not enough: an identity can be moved between tenants, and a
+// certificate issued for the old tenant still carries the same client ID while
+// naming an authority the token endpoint will no longer honour. Comparing only
+// the client ID would reuse it until it expired. Both comparisons fold case,
+// because both sides are GUIDs and IMDS is not consistent about how it renders
+// them.
+func (c *bindingCertCache) usable(key, clientID, tenantID string, provider keyProvider) (*bindingCertificate, bool) {
 	cert, ok := c.get(key)
 	if !ok {
 		return nil, false
 	}
-	if strings.EqualFold(cert.ClientID, clientID) && !needsRefresh(cert.Leaf) && !isOrphaned(cert, provider) {
+	if identityMatches(cert.ClientID, cert.TenantID, clientID, tenantID) &&
+		!needsRefresh(cert.Leaf) && !isOrphaned(cert, provider) {
 		return cert, true
 	}
 	c.dropEntry(key, cert)
 	_ = cert.Close()
 	return nil, false
+}
+
+// identityMatches reports whether a cached certificate was issued for the
+// identity the fresh metadata names.
+func identityMatches(cachedClientID, cachedTenantID, clientID, tenantID string) bool {
+	return strings.EqualFold(cachedClientID, clientID) && strings.EqualFold(cachedTenantID, tenantID)
 }
 
 // restore promotes a certificate from the operating system store into memory.
@@ -262,7 +271,7 @@ func (c *bindingCertCache) usable(key, clientID string, provider keyProvider) (*
 // The key is opened, never created. This is a cache read: a host with no key has
 // nothing that could match the stored certificate, so creating one would change
 // the machine without changing the answer.
-func (c *bindingCertCache) restore(key, clientID string, provider keyProvider) (*bindingCertificate, bool) {
+func (c *bindingCertCache) restore(key, clientID, tenantID string, provider keyProvider) (*bindingCertificate, bool) {
 	c.mu.Lock()
 	_, forced := c.forceMint[key]
 	persisted := c.persisted
@@ -276,10 +285,11 @@ func (c *bindingCertCache) restore(key, clientID string, provider keyProvider) (
 		return nil, false
 	}
 	// A certificate issued to a different identity than the one IMDS now
-	// reports is not this machine's credential any more. The comparison folds
-	// case for the reason usable does: the stored value came back from a
-	// certificate subject, which is lower-cased on the way in.
-	if !strings.EqualFold(stored.ClientID, clientID) {
+	// reports is not this machine's credential any more. Both identifiers are
+	// compared: a tenant move leaves the client ID unchanged while making the
+	// stored certificate useless, so checking only the client ID would keep
+	// restoring it from the store on every cold start.
+	if !identityMatches(stored.ClientID, stored.TenantID, clientID, tenantID) {
 		persisted.deleteAll(key)
 		return nil, false
 	}
@@ -365,6 +375,20 @@ func (c *bindingCertCache) adopt(key string, cert *bindingCertificate) {
 // requests. Trusting a stale healthy answer would let a certificate whose key
 // vanished mid-window reach the handshake, which is exactly the failure this
 // function exists to prevent.
+//
+// This is deliberately where the orphan problem is solved, and it differs from
+// MSAL .NET. When .NET replaces the binding key it eagerly purges the certificate
+// store (PurgeManagedIdentityCertificates deletes every certificate matching the
+// managed identity subject prefix), so its cached certificates are cleaned up by
+// the writer. Doing the same here would mean a read-mostly library issuing broad
+// deletes against the user's personal store on behalf of identities it may not
+// own, including certificates another library or another process is still using.
+// Detecting the orphan per read instead is narrower: it never deletes anything
+// belonging to someone else, it converges on the same answer, and it also covers
+// the case .NET's purge cannot - a key that disappeared without this process ever
+// replacing it, such as a VBS container reset. Orphaned entries are dropped
+// lazily, by the caller that finds them (see bindingCertCache.usable and
+// restore), rather than by a sweep.
 func isOrphaned(cert *bindingCertificate, provider keyProvider) bool {
 	current, err := provider.openKey(bindingKeyName)
 	if err != nil {
@@ -501,7 +525,7 @@ func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bind
 		return nil, "", err
 	}
 
-	if cert, ok := certCache.usable(key, metadata.ClientID, v.keyProvider); ok {
+	if cert, ok := certCache.usable(key, metadata.ClientID, metadata.TenantID, v.keyProvider); ok {
 		return cert, key, nil
 	}
 
@@ -513,14 +537,14 @@ func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bind
 	defer certCache.leave(key)
 
 	// Whoever held the gate may have minted the certificate this caller wanted.
-	if cert, ok := certCache.usable(key, metadata.ClientID, v.keyProvider); ok {
+	if cert, ok := certCache.usable(key, metadata.ClientID, metadata.TenantID, v.keyProvider); ok {
 		return cert, key, nil
 	}
 
 	// A previous run of this or any other MSAL on the machine may have left a
 	// usable certificate behind, which is worth far more than a round trip: it
 	// is what keeps a restarting fleet from being throttled by IMDS.
-	if cert, ok := certCache.restore(key, metadata.ClientID, v.keyProvider); ok {
+	if cert, ok := certCache.restore(key, metadata.ClientID, metadata.TenantID, v.keyProvider); ok {
 		return cert, key, nil
 	}
 

@@ -30,6 +30,14 @@ import (
 //
 // This does not affect the two plain-HTTP calls to the metadata service, which
 // use the client given to [WithHTTPClient].
+//
+// Redirects: the returned client is copied before use, and if it states no
+// CheckRedirect this library installs one that refuses to follow, because a 307
+// or 308 on this leg replays the client credential at the redirect target and
+// offers the binding certificate on the cloned handshake. A factory that returns
+// a client with its own non-nil CheckRedirect keeps it untouched - the copy is
+// never mutated either way - which means that caller has taken on
+// redirect-replay safety for this leg.
 func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) ClientOption {
 	return func(c *Client) {
 		c.mtlsClientFactory = factory

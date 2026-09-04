@@ -240,7 +240,7 @@ func TestForceMintBlocksReadsUntilRemint(t *testing.T) {
 	if _, ok := certCache.get(key); ok {
 		t.Fatal("the memory cache served a certificate the service rejected")
 	}
-	if _, ok := certCache.restore(key, "", provider); ok {
+	if _, ok := certCache.restore(key, "", "", provider); ok {
 		t.Fatal("the store served a certificate the service rejected")
 	}
 	if persisted.count(key) != 0 {

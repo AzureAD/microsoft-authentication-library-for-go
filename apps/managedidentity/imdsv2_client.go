@@ -103,6 +103,69 @@ func (v imdsV2) probeEndpoint(ctx context.Context, correlationID string) error {
 	return fmt.Errorf("managedidentity: the IMDSv2 probe returned %d", resp.StatusCode)
 }
 
+// imdsV1TokenPath and imdsV1ProbeAPIVersion address the IMDSv1 token endpoint.
+// They are what MSAL .NET probes v1 with, as ImdsManagedIdentitySource's
+// ImdsTokenPath and ImdsApiVersion.
+const (
+	imdsV1TokenPath       = "/metadata/identity/oauth2/token"
+	imdsV1ProbeAPIVersion = "2018-02-01"
+)
+
+// probeV1Endpoint asks whether this host serves IMDSv1, without asking it for a
+// token.
+//
+// It is the same question probeEndpoint asks of v2, put to the v1 route: the
+// request omits the Metadata header, and a 400 is the answer that the host is
+// there, because only a host that routes the token endpoint can reject the
+// request for the missing header. MSAL .NET probes both versions through one
+// function with exactly this contract - ProbeImdsEndpointAsync switches only the
+// path and api-version and then treats HTTP 400 as success for either.
+//
+// This is what establishes that v1 exists. The instance compute document must
+// not be used for it: that document describes the machine's security profile and
+// answers on hosts that serve no managed identity at all, so reading it instead
+// of probing would report DefaultToIMDS for a host that has no identity endpoint.
+// It is read only after this probe succeeds, and only to decide the tier.
+func (v imdsV2) probeV1Endpoint(ctx context.Context, correlationID string) error {
+	u, err := url.Parse(v.baseEndpoint + imdsV1TokenPath)
+	if err != nil {
+		return fmt.Errorf("managedidentity: building the IMDSv1 probe URL: %w", err)
+	}
+	q := u.Query()
+	q.Set(apiVersionQueryParameterName, imdsV1ProbeAPIVersion)
+	// The identity selector travels on the probe, as it does in .NET, so a
+	// user-assigned configuration is probed the way it will be used.
+	switch t := v.miType.(type) {
+	case UserAssignedClientID:
+		q.Set("client_id", string(t))
+	case UserAssignedObjectID:
+		q.Set("object_id", string(t))
+	case UserAssignedResourceID:
+		q.Set("msi_res_id", string(t))
+	}
+	u.RawQuery = q.Encode()
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u.String(), nil)
+	if err != nil {
+		return fmt.Errorf("managedidentity: building the IMDSv1 probe: %w", err)
+	}
+	// Only the correlation headers; Metadata is the header whose absence this
+	// probe tests for.
+	req.Header.Set(imdsV2CorrelationIDHeader, correlationID)
+	req.Header.Set(imdsV2ClientRequestIDHeader, correlationID)
+
+	resp, err := sendIMDSRequest(ctx, v.httpClient, req, v.retryEnabled, imdsProbeRetriableStatus)
+	if err != nil {
+		return fmt.Errorf("managedidentity: probing for IMDSv1: %w", err)
+	}
+	_, _ = io.Copy(io.Discard, io.LimitReader(resp.Body, 4096))
+	resp.Body.Close()
+	if resp.StatusCode == http.StatusBadRequest {
+		return nil
+	}
+	return fmt.Errorf("managedidentity: the IMDSv1 probe returned %d", resp.StatusCode)
+}
+
 // endpoint builds an IMDS URL with the api version and any user-assigned
 // identity selector applied.
 func (v imdsV2) endpoint(path string) (string, error) {

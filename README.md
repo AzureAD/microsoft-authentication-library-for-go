@@ -522,25 +522,35 @@ if err == nil && caps.MaxSupportedBindingStrength == managedidentity.MtlsBinding
 _ = caps.MaxSupportedBindingStrength // None, Software, or KeyGuard
 ```
 
+Discovery follows the order MSAL .NET uses. An environment-configured source settles the question
+outright. Otherwise IMDSv2 is probed, and if that fails IMDSv1 is probed as well — both with the
+same headerless request whose HTTP 400 answer is what proves the endpoint is there. `Source` is only
+reported as `DefaultToIMDS` once one of those probes has answered; if neither does, it is left empty,
+because nothing has shown the host serves managed identity at all. The instance compute document is
+read only *after* the v1 probe succeeds, and only to decide that host's tier — it describes the
+machine rather than an identity endpoint, so it is never used to establish that IMDS exists.
+
 Discovery is not purely a read. On a host that serves IMDSv2 it asks the platform for the binding
 key, which **creates and persists that key** if it is not already there — a CNG container under a
 fixed name, shared with MSAL .NET, surviving process restarts. That is what makes the reported tier
 trustworthy: it describes a key the host really produced rather than a guess from a document. No
 certificate and no token is minted, so nothing is requested from IMDS beyond the probe itself.
 
-The result is cached per client configuration, and the two negative answers are cached differently.
-A definitive one — this platform has no key provider, or the host answered that it serves IMDSv1
-only — cannot change under a running process, so it is kept for the life of the process and later
-calls return it without touching the network. A transient failure to reach the metadata service is
-reported the same way but kept for only 30 seconds, after which the next call probes again, so a
-host that was briefly unreachable is not written off. A caller that saw `None` for that reason can
-get a different answer half a minute later.
+The result is cached on the client — copies of a client made by value share it, independently
+constructed clients discover independently — and answers are kept for different lengths of time.
+A settled one, such as the host answering that it serves IMDSv1 only and then describing its tier,
+cannot change under a running process and is kept for that client's lifetime. Anything unresolved is
+kept for only 30 seconds: a probe that could not be completed, a compute document that could not be
+read or parsed, or a v2 failure that was not a definitive 404 — because v2 may come back, and a
+client that remembered the weaker v1 answer for good would never notice. A caller that saw `None`
+for one of those reasons can get a different answer half a minute later. A cancelled call is never
+cached at all.
 
 `MtlsBindingStrength` describes how well the host can protect a binding key:
 
 | Value | Meaning |
 |---|---|
-| `MtlsBindingStrengthNone` | No binding is available here. Either the host does not serve the v2 credential API, or this platform has no key provider at all (everything except Windows), or the probe could not be completed — see `ErrorReason`, and note that the last of those is retried after 30 seconds. |
+| `MtlsBindingStrengthNone` | No binding is available here. Either no probe established IMDS at all (in which case `Source` is empty too), or the host serves IMDSv1 only and its compute document does not describe a bindable machine, or the tier could not be determined — see `ErrorReason`, and note that everything except a settled answer is retried after 30 seconds. |
 | `MtlsBindingStrengthSoftware` | The host speaks the protocol, but the key would not be VBS-isolated. |
 | `MtlsBindingStrengthKeyGuard` | The key is isolated in a KeyGuard trustlet. |
 
