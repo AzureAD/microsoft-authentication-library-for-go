@@ -445,6 +445,23 @@ func (w windowsPersistentCertCache) deleteAll(alias string) {
 	})
 }
 
+func (w windowsPersistentCertCache) deleteCertificate(alias string, der []byte) {
+	if len(der) == 0 {
+		return
+	}
+	target := sha256.Sum256(der)
+	withAliasLock(alias, func() {
+		store, err := openMyStore(false)
+		if err != nil {
+			return
+		}
+		defer func() { _ = windows.CertCloseStore(store, 0) }()
+		deleteWhere(store, alias, func(leaf *x509.Certificate) bool {
+			return sha256.Sum256(leaf.Raw) == target
+		})
+	})
+}
+
 // pruneExpired removes entries for alias that are past their expiry, which is
 // the conservative cleanup MSAL .NET performs after every write.
 func pruneExpired(store windows.Handle, alias string, nowUTC time.Time) {

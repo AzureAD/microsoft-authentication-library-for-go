@@ -4,6 +4,7 @@
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/rand"
@@ -144,6 +145,10 @@ type imdsFake struct {
 	tokenFailures    int
 	tokenFailureCode int
 	tokenFailureBody string
+	// rejectedTokenCertificate makes the token endpoint consistently reject
+	// one certificate while accepting replacements, as Entra does after a
+	// binding certificate becomes stale.
+	rejectedTokenCertificate []byte
 
 	// tokenTypeOverride makes the token endpoint claim it issued a type other
 	// than the one that was requested. Left empty the fake echoes the request,
@@ -176,6 +181,9 @@ type imdsFake struct {
 	// acquisition asked for.
 	issueClientID string
 	issueTenantID string
+	// issueEndpoint, when set, replaces the mtls_authentication_endpoint leg 2
+	// advertises, so a test can drive a malformed or downgraded authority.
+	issueEndpoint string
 	// certSubjectCN, when set, replaces the common name on the issued leaf, so
 	// a test can drive a certificate that names an identity the issuance
 	// response does not.
@@ -494,12 +502,16 @@ func (f *imdsFake) handleIssue(w http.ResponseWriter, r *http.Request) {
 	if f.issueTenantID != "" {
 		issuedTenantID = f.issueTenantID
 	}
+	issuedEndpoint := f.tokenServer.Listener.Addr().String()
+	if f.issueEndpoint != "" {
+		issuedEndpoint = f.issueEndpoint
+	}
 	issued := map[string]string{
 		"client_id":                    issuedClientID,
 		"tenant_id":                    issuedTenantID,
 		"certificate":                  base64.StdEncoding.EncodeToString(certDER),
 		"identity_type":                "SAMI",
-		"mtls_authentication_endpoint": f.tokenServer.Listener.Addr().String(),
+		"mtls_authentication_endpoint": issuedEndpoint,
 	}
 	for _, field := range f.omitIssueFields {
 		delete(issued, field)
@@ -536,6 +548,8 @@ func (f *imdsFake) handleToken(w http.ResponseWriter, r *http.Request) {
 	if f.sawClientCert {
 		f.presentedCert = r.TLS.PeerCertificates[0]
 	}
+	certificateRejected := f.sawClientCert &&
+		bytes.Equal(f.presentedCert.Raw, f.rejectedTokenCertificate)
 	failuresLeft := f.tokenFailures
 	if failuresLeft > 0 {
 		f.tokenFailures--
@@ -553,6 +567,12 @@ func (f *imdsFake) handleToken(w http.ResponseWriter, r *http.Request) {
 			body = `{"error":"invalid_client","error_description":"certificate rejected"}`
 		}
 		_, _ = w.Write([]byte(body))
+		return
+	}
+	if certificateRejected {
+		w.WriteHeader(http.StatusUnauthorized)
+		_, _ = w.Write([]byte(
+			`{"error":"invalid_client","error_description":"certificate rejected"}`))
 		return
 	}
 

@@ -22,6 +22,7 @@ import (
 	"path/filepath"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -554,8 +555,7 @@ func GetSource() (Source, error) {
 // was created to test the function against refreshin
 var now = time.Now
 
-// miTokenGate serializes every managed identity token acquisition in the
-// process.
+// miTokenGate serializes managed identity endpoint work across the process.
 //
 // The managed identity endpoints are per-machine services with their own
 // throttling, and a service that takes a token per inbound request will fan out
@@ -567,16 +567,26 @@ var now = time.Now
 // identity endpoint must be throttled; otherwise, the endpoint will throw a HTTP
 // 429.").
 //
-// It is a buffered channel rather than a mutex so the wait can be abandoned when
-// the caller's context is cancelled. Ordering among waiters is not guaranteed
-// and does not need to be.
-var miTokenGate = make(chan struct{}, 1)
+// A custom mTLS client factory is caller code rather than endpoint work, so its
+// invocation temporarily releases the gate and reacquires it before a request
+// resumes. It is a buffered channel rather than a mutex so both the ordinary
+// wait and that reacquisition can be abandoned when the caller's context is
+// cancelled. Ordering among waiters is not guaranteed and does not need to be.
+var (
+	miTokenGate = make(chan struct{}, 1)
+	// miTokenGateGeneration advances whenever ownership changes. A
+	// speculative refresh uses it to distinguish "the gate stayed free while
+	// caller code ran" from "another acquisition completed and released it
+	// before the refresh looked again."
+	miTokenGateGeneration uint64
+)
 
 // acquireMITokenGate blocks until this goroutine holds the gate, and returns the
 // function that releases it.
 func acquireMITokenGate(ctx context.Context) (func(), error) {
 	select {
 	case miTokenGate <- struct{}{}:
+		atomic.AddUint64(&miTokenGateGeneration, 1)
 		return func() { <-miTokenGate }, nil
 	case <-ctx.Done():
 		return nil, ctx.Err()
@@ -595,10 +605,144 @@ func acquireMITokenGate(ctx context.Context) (func(), error) {
 func tryAcquireMITokenGate() (func(), bool) {
 	select {
 	case miTokenGate <- struct{}{}:
+		atomic.AddUint64(&miTokenGateGeneration, 1)
 		return func() { <-miTokenGate }, true
 	default:
 		return nil, false
 	}
+}
+
+// miTokenGateLease owns one acquisition of miTokenGate and can temporarily
+// release it around caller code.
+//
+// A custom mTLS client factory has no context parameter and can call back into
+// managed identity. Holding the gate while invoking it would let that nested
+// acquisition wait on the outer one forever. The lease makes the release
+// explicit and idempotent, so a panic in caller code also cannot strand the
+// process-wide gate.
+type miTokenGateLease struct {
+	release      func()
+	tryReacquire bool
+	generation   uint64
+}
+
+var errMITokenGateBusy = errors.New(
+	"managedidentity: the token gate became busy during a speculative refresh")
+
+func (l *miTokenGateLease) Close() {
+	if l.release == nil {
+		return
+	}
+	release := l.release
+	l.release = nil
+	release()
+}
+
+// runOutside releases the gate, invokes f, and reacquires the gate before
+// protected work resumes. If f fails there is no work left to serialize, so
+// the gate stays released. Reacquisition honors the caller's cancellation.
+func (l *miTokenGateLease) runOutside(ctx context.Context, f func() error) error {
+	l.Close()
+	if err := f(); err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if l.tryReacquire {
+		release, ok := tryAcquireMITokenGate()
+		if !ok {
+			return errMITokenGateBusy
+		}
+		generation := atomic.LoadUint64(&miTokenGateGeneration)
+		if generation != l.generation+1 {
+			// This acquisition accounts for one increment. Any larger change
+			// proves another owner completed while caller code ran. That owner
+			// may have refreshed the token, so speculative endpoint work must
+			// stop rather than duplicate it.
+			release()
+			return errMITokenGateBusy
+		}
+		l.release = release
+		l.generation = generation
+		return nil
+	}
+	release, err := acquireMITokenGate(ctx)
+	if err != nil {
+		return fmt.Errorf("managedidentity: reacquiring the token gate after the custom mTLS client factory: %w", err)
+	}
+	l.release = release
+	l.generation = atomic.LoadUint64(&miTokenGateGeneration)
+	return nil
+}
+
+// miAttemptTimeout bounds a single HTTP attempt made while the process-wide
+// managed identity gate is held.
+//
+// The gate is what keeps a cold-start stampede from becoming simultaneous
+// requests to one local endpoint, and it is process-wide, so whoever holds it
+// blocks every other identity and every other source too. That is safe only
+// while the holder is guaranteed to finish. It is not guaranteed by the caller:
+// a context without a deadline is ordinary, and the HTTP client is replaceable
+// through [WithHTTPClient] and [WithMtlsHTTPClient] with an implementation this
+// package cannot inspect and whose Timeout it therefore cannot see or set. A
+// single connection to a wedged endpoint that never answers and never resets
+// would otherwise hold the gate for the life of the process, and every later
+// acquisition would block until its own context expired.
+//
+// Bounding each attempt rather than the whole acquisition is what MSAL .NET
+// does: it sets no timeout on the clients it builds, so each call inherits
+// HttpClient's own default of 100 seconds while a multi-leg acquisition with
+// retries is free to take longer. Matching the number keeps a slow but
+// answering regional endpoint working here exactly as it does there, and still
+// leaves every hold on the gate finite.
+//
+// A caller's own deadline is never extended by this: the bound is derived from
+// the request's context, so a shorter caller deadline continues to win.
+//
+// It is a variable so tests can shrink it; nothing outside tests assigns to it.
+var miAttemptTimeout = 100 * time.Second
+
+// boundedBody ties an attempt's cancel to the lifetime of the response body, so
+// the deadline covers reading the response as well as receiving its header, and
+// is released as soon as the caller is done with it.
+//
+// Cancelling when Do returns instead would abort the caller's own read of a
+// response that had already succeeded, which is the failure this package
+// already hit once on the IMDSv1 retry path (see bufferResponseBody and issue
+// #634). Buffering the whole body would avoid that too, but it would read an
+// unbounded amount of an unauthenticated link-local response into memory, and
+// the IMDSv2 legs deliberately cap what they read instead.
+type boundedBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+	once   sync.Once
+}
+
+func (b *boundedBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.once.Do(b.cancel)
+	return err
+}
+
+// doBoundedAttempt sends req with a deadline no later than miAttemptTimeout,
+// returning a response whose body must be closed to release it.
+//
+// A caller that never closes the body loses nothing beyond a timer that fires
+// at the deadline, because the context is derived from the request's own.
+func doBoundedAttempt(client ops.HTTPClient, req *http.Request) (*http.Response, error) {
+	ctx, cancel := context.WithTimeout(req.Context(), miAttemptTimeout)
+	resp, err := client.Do(req.Clone(ctx))
+	if err != nil || resp == nil {
+		cancel()
+		return resp, err
+	}
+	if resp.Body == nil {
+		cancel()
+		return resp, nil
+	}
+	resp.Body = &boundedBody{ReadCloser: resp.Body, cancel: cancel}
+	return resp, nil
 }
 
 // Acquires tokens from the configured managed identity on an azure resource.
@@ -668,8 +812,13 @@ func (c Client) refreshWithoutWaiting(ctx context.Context, resource string, o Ac
 	if !ok {
 		return AuthResult{}, false
 	}
-	defer release()
-	ar, err := c.getToken(ctx, resource, o)
+	gate := miTokenGateLease{
+		release:      release,
+		tryReacquire: true,
+		generation:   atomic.LoadUint64(&miTokenGateGeneration),
+	}
+	defer gate.Close()
+	ar, err := c.getToken(ctx, resource, o, &gate, false)
 	if err != nil {
 		// The caller still has its cached token, so a failed refresh is not an
 		// error: it simply does not replace what the caller already has.
@@ -679,7 +828,7 @@ func (c Client) refreshWithoutWaiting(ctx context.Context, resource string, o Ac
 }
 
 // serializedToken acquires a token while holding the process-wide managed
-// identity gate.
+// identity gate around library-controlled endpoint work.
 //
 // recheckCache asks for one more cache read after the gate is held. A caller
 // that queued behind a cold-start stampede was told the cache was empty before
@@ -692,14 +841,18 @@ func (c Client) serializedToken(ctx context.Context, resource string, o AcquireT
 	if err != nil {
 		return AuthResult{}, err
 	}
-	defer release()
+	gate := miTokenGateLease{
+		release:    release,
+		generation: atomic.LoadUint64(&miTokenGateGeneration),
+	}
+	defer gate.Close()
 
 	if recheckCache {
 		if ar, _, hit, err := c.cachedAuthResult(ctx, o); err == nil && hit {
 			return ar, nil
 		}
 	}
-	return c.getToken(ctx, resource, o)
+	return c.getToken(ctx, resource, o, &gate, recheckCache)
 }
 
 // cachedAuthResult reports the token this request would be served from the
@@ -753,17 +906,27 @@ func (c Client) cachedAuthResult(ctx context.Context, o AcquireTokenOptions) (_ 
 	// certificate hands back a token that every resource rejects. The scheme
 	// lookup above already resolved that certificate.
 	if o.mtlsPoP {
-		ar.BindingCertificate = copyBindingCertificate(cachedBinding)
+		copied, err := copyBindingCertificate(cachedBinding)
+		if err != nil {
+			return AuthResult{}, false, false, err
+		}
+		ar.BindingCertificate = copied
 	}
 	return ar, refreshDue, true, nil
 }
 
-func (c Client) getToken(ctx context.Context, resource string, o AcquireTokenOptions) (AuthResult, error) {
+func (c Client) getToken(
+	ctx context.Context,
+	resource string,
+	o AcquireTokenOptions,
+	gate *miTokenGateLease,
+	recheckCache bool,
+) (AuthResult, error) {
 	// The IMDSv2 certificate path replaces the ordinary IMDS request entirely.
 	// There is deliberately no fallback to IMDSv1 here: quietly returning an
 	// unbound token would defeat the protection the caller asked for.
 	if o.usesIMDSv2() {
-		return c.acquireTokenForIMDSv2(ctx, resource, o)
+		return c.acquireTokenForIMDSv2(ctx, resource, o, gate, recheckCache)
 	}
 	switch c.source {
 	case AzureArc:
@@ -849,7 +1012,10 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (A
 		return AuthResult{}, err
 	}
 
-	response, err := c.httpClient.Do(req)
+	// Arc's challenge is the one request that does not go through
+	// getTokenForRequest, so it is bounded here for the same reason: it runs
+	// while the process-wide gate is held.
+	response, err := doBoundedAttempt(c.httpClient, req)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -1055,7 +1221,9 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	if c.retryPolicyEnabled {
 		resp, err = c.retry(defaultRetryCount, req)
 	} else {
-		resp, err = c.httpClient.Do(req)
+		// retry() already bounds each of its attempts; this branch is the one
+		// that would otherwise hand an unbounded call the process-wide gate.
+		resp, err = doBoundedAttempt(c.httpClient, req)
 	}
 	if err != nil {
 		return r, err

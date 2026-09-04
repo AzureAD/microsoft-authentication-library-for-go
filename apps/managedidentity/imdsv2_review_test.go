@@ -730,10 +730,12 @@ func TestNilMtlsClientFactoryIsAnError(t *testing.T) {
 // Location header names and offer the binding certificate on the cloned
 // handshake, so the refusal is installed on a copy of the caller's client.
 func TestCustomMtlsClientGetsARedirectRefusalWithoutBeingMutated(t *testing.T) {
+	binding := testBindingCertificate(t, newFakeKeyProvider(), bindingKeyName, now().Add(30*24*time.Hour))
+	t.Cleanup(func() { _ = binding.Close() })
 	caller := &http.Client{}
 	c := Client{mtlsClientFactory: func(tls.Certificate) *http.Client { return caller }}
 
-	got, err := c.mtlsClient(tls.Certificate{})
+	got, err := c.mtlsClient(binding)
 	if err != nil {
 		t.Fatalf("mtlsClient: %v", err)
 	}
@@ -754,7 +756,7 @@ func TestCustomMtlsClientGetsARedirectRefusalWithoutBeingMutated(t *testing.T) {
 	// override explicit configuration.
 	stated := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return nil }}
 	c = Client{mtlsClientFactory: func(tls.Certificate) *http.Client { return stated }}
-	got, err = c.mtlsClient(tls.Certificate{})
+	got, err = c.mtlsClient(binding)
 	if err != nil {
 		t.Fatalf("mtlsClient: %v", err)
 	}

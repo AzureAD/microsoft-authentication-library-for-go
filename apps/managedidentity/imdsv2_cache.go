@@ -4,6 +4,7 @@
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"errors"
@@ -48,13 +49,12 @@ type bindingCertCache struct {
 	// .NET keys its gates the same way, with KeyedSemaphorePool in
 	// MtlsCertificateCache.
 	//
-	// Note that this does not, on its own, make two identities mint in
-	// parallel: AcquireToken already holds the process-wide miTokenGate for the
-	// whole acquisition, so in the ordinary flow only one identity is minting
-	// at a time regardless of what this map allows. What the key buys is that
-	// the gate a caller waits on is the one its own identity is using, so a
-	// certificate minted for another identity never satisfies the double-check
-	// below and never has to be waited out twice.
+	// The process-wide miTokenGate normally serializes minting, but it is
+	// deliberately released while a caller's custom mTLS factory runs. Another
+	// identity may mint in that interval, and direct cache users are not
+	// required to hold the process-wide gate at all. Keying this gate therefore
+	// keeps same-identity issuance single-flight without making unrelated
+	// identities wait on each other's cache state.
 	gates map[string]*mintGate
 	// forceMint marks identities whose certificate the service rejected. It is
 	// what stops the caches from answering between the eviction and the next
@@ -143,6 +143,20 @@ func (c *bindingCertCache) get(key string) (*bindingCertificate, bool) {
 	return entry.cert, true
 }
 
+// isCurrent reports whether cert is still the active entry under key.
+//
+// The caller already holds its own reference to cert. This only compares
+// identity under the cache lock; it does not take another reference.
+func (c *bindingCertCache) isCurrent(key string, cert *bindingCertificate) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if _, forced := c.forceMint[key]; forced {
+		return false
+	}
+	entry, ok := c.entries[key]
+	return ok && entry.cert == cert
+}
+
 // evict drops a certificate from every cache and marks the identity so nothing
 // can serve the evicted certificate again before a new one is minted.
 func (c *bindingCertCache) evict(key string) {
@@ -155,6 +169,32 @@ func (c *bindingCertCache) evict(key string) {
 	persisted := c.persisted
 	c.mu.Unlock()
 	persisted.deleteAll(key)
+}
+
+// evictIfCurrent evicts cert only while it is still the active entry.
+//
+// A token request can temporarily release the process-wide gate around caller
+// code. Another acquisition may replace its certificate in that interval, and
+// a rejection of the old certificate must not delete the replacement from
+// memory or persistence.
+func (c *bindingCertCache) evictIfCurrent(key string, cert *bindingCertificate) bool {
+	c.mu.Lock()
+	entry, ok := c.entries[key]
+	if !ok || entry.cert != cert {
+		c.mu.Unlock()
+		return false
+	}
+	c.forceMint[key] = struct{}{}
+	_ = entry.cert.Close()
+	delete(c.entries, key)
+	persisted := c.persisted
+	c.mu.Unlock()
+	var der []byte
+	if len(cert.TLS.Certificate) > 0 {
+		der = cert.TLS.Certificate[0]
+	}
+	persisted.deleteCertificate(key, der)
+	return true
 }
 
 // dropEntry removes cert from the cache, but only if it is still the entry
@@ -272,16 +312,39 @@ func identityMatches(cachedClientID, cachedTenantID, clientID, tenantID string) 
 // nothing that could match the stored certificate, so creating one would change
 // the machine without changing the answer.
 func (c *bindingCertCache) restore(key, clientID, tenantID string, provider keyProvider) (*bindingCertificate, bool) {
+	return c.restoreCandidate(key, clientID, tenantID, provider, nil, false)
+}
+
+// restoreAfterRejection allows a different certificate written by another
+// process to satisfy a force-mint state. The rejected DER itself is never
+// restored; if no distinct valid entry remains, issuance proceeds as usual.
+func (c *bindingCertCache) restoreAfterRejection(
+	key, clientID, tenantID string,
+	provider keyProvider,
+	rejectedDER []byte,
+) (*bindingCertificate, bool) {
+	return c.restoreCandidate(key, clientID, tenantID, provider, rejectedDER, true)
+}
+
+func (c *bindingCertCache) restoreCandidate(
+	key, clientID, tenantID string,
+	provider keyProvider,
+	rejectedDER []byte,
+	allowForceMint bool,
+) (*bindingCertificate, bool) {
 	c.mu.Lock()
 	_, forced := c.forceMint[key]
 	persisted := c.persisted
 	c.mu.Unlock()
-	if forced {
+	if forced && !allowForceMint {
 		return nil, false
 	}
 
 	stored, ok := persisted.read(key)
 	if !ok {
+		return nil, false
+	}
+	if allowForceMint && (len(rejectedDER) == 0 || bytes.Equal(stored.DER, rejectedDER)) {
 		return nil, false
 	}
 	// A certificate issued to a different identity than the one IMDS now
@@ -331,6 +394,20 @@ func (c *bindingCertCache) restore(key, clientID, tenantID string, provider keyP
 		TenantID:                   stored.TenantID,
 		MtlsAuthenticationEndpoint: stored.Endpoint,
 	})
+	// The endpoint travelled through the certificate store's friendly name, so
+	// it is the one field here that another writer could have rewritten into
+	// something this process would later dial. Parsing it now, rather than at
+	// the token leg, keeps a malformed or downgraded authority out of the
+	// in-memory cache entirely: reaching the token leg with one would fail the
+	// acquisition after the certificate had already been adopted, and every
+	// later caller would restore the same unusable entry from the store and
+	// fail the same way. Clearing the alias instead makes the next acquisition
+	// mint a certificate whose endpoint came straight from IMDS.
+	if _, err := cert.tokenEndpoint(); err != nil {
+		_ = cert.Close()
+		persisted.deleteAll(key)
+		return nil, false
+	}
 	c.adopt(key, cert)
 	return cert, true
 }
@@ -511,6 +588,25 @@ func certificateUsableForClientMtls(leaf *x509.Certificate) error {
 // The returned certificate carries a reference the caller must release with
 // Close.
 func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bindingCertificate, string, error) {
+	return v.getBindingCertificateExcept(ctx, attested, nil)
+}
+
+// getBindingCertificateAfterRejection may restore a different certificate
+// another process persisted under the shared alias while this process was
+// using rejectedDER.
+func (v imdsV2) getBindingCertificateAfterRejection(
+	ctx context.Context,
+	attested bool,
+	rejectedDER []byte,
+) (*bindingCertificate, string, error) {
+	return v.getBindingCertificateExcept(ctx, attested, rejectedDER)
+}
+
+func (v imdsV2) getBindingCertificateExcept(
+	ctx context.Context,
+	attested bool,
+	rejectedDER []byte,
+) (*bindingCertificate, string, error) {
 	if !platformSupportsMtlsPoP() {
 		return nil, "", ErrMtlsNotSupportedForPlatform
 	}
@@ -544,8 +640,16 @@ func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bind
 	// A previous run of this or any other MSAL on the machine may have left a
 	// usable certificate behind, which is worth far more than a round trip: it
 	// is what keeps a restarting fleet from being throttled by IMDS.
-	if cert, ok := certCache.restore(key, metadata.ClientID, metadata.TenantID, v.keyProvider); ok {
-		return cert, key, nil
+	if len(rejectedDER) > 0 {
+		if cert, ok := certCache.restoreAfterRejection(
+			key, metadata.ClientID, metadata.TenantID, v.keyProvider, rejectedDER,
+		); ok {
+			return cert, key, nil
+		}
+	} else {
+		if cert, ok := certCache.restore(key, metadata.ClientID, metadata.TenantID, v.keyProvider); ok {
+			return cert, key, nil
+		}
 	}
 
 	cert, err := v.issueBindingCertificate(ctx, correlationID, metadata, attested)
@@ -569,6 +673,17 @@ func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bind
 		return nil, "", fmt.Errorf(
 			"managedidentity: IMDS issued a binding certificate that expires at %s, which is inside the %s refresh window, so a token bound to it could outlive it",
 			notAfter, bindingCertRefreshWindow)
+	}
+	// The endpoint IMDS returned is parsed before the certificate is adopted or
+	// written to the operating system store. Leaving that to the token leg
+	// would mean a malformed or non-https authority is discovered only after
+	// the certificate is cached in memory and persisted, so every later
+	// acquisition in this process - and every process that restores the alias
+	// afterwards - would fail on the same unusable value. Rejecting it here
+	// keeps it out of both caches and names the real problem.
+	if _, err := cert.tokenEndpoint(); err != nil {
+		_ = cert.Close()
+		return nil, "", err
 	}
 	// The cache takes over the reference newBindingCertificate created; the
 	// caller gets one of its own.

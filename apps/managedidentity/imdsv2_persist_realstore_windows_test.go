@@ -293,6 +293,38 @@ func TestRealStoreDeleteAll(t *testing.T) {
 	}
 }
 
+// TestRealStoreDeleteCertificate proves a rejection removes only the rejected
+// DER, not a different certificate another process persisted under the same
+// shared alias.
+func TestRealStoreDeleteCertificate(t *testing.T) {
+	store := requireRealStore(t)
+	alias := scopedAlias(t, store)
+
+	const clientID = "44444444-4444-4444-4444-444444444444"
+	rejected := makeBindingCert(
+		t, clientID, "tenant", "https://d.example", time.Now().Add(29*24*time.Hour))
+	replacement := makeBindingCert(
+		t, clientID, "tenant", "https://d.example", time.Now().Add(30*24*time.Hour))
+	store.write(alias, rejected)
+	store.write(alias, replacement)
+	if n := countRealStore(t, alias); n != 2 {
+		t.Fatalf("setup stored %d certificates, want rejected and replacement", n)
+	}
+
+	store.deleteCertificate(alias, rejected.TLS.Certificate[0])
+
+	if n := countRealStore(t, alias); n != 1 {
+		t.Fatalf("certificate-specific delete left %d entries, want only the replacement", n)
+	}
+	got, ok := store.read(alias)
+	if !ok {
+		t.Fatal("certificate-specific delete removed the replacement")
+	}
+	if !got.Leaf.Equal(replacement.Leaf) {
+		t.Fatal("certificate-specific delete left the rejected certificate")
+	}
+}
+
 // TestRealStoreEncodesEndpointFaithfully proves the friendly-name codec
 // survives a real round trip through the store, including an endpoint that
 // contains slashes. That is the field MSAL .NET has to be able to decode.

@@ -48,9 +48,12 @@ type persistentCertCache interface {
 	read(alias string) (*persistedCertificate, bool)
 	// write stores cert for alias and prunes expired entries.
 	write(alias string, cert *bindingCertificate)
-	// deleteAll removes every entry for alias, expired or not. It is what runs
-	// when the service rejects a certificate, so the next acquisition cannot
-	// find the rejected certificate again.
+	// deleteCertificate removes only the named DER certificate. The alias is
+	// shared across processes, so rejection of one process's certificate must
+	// not remove a different replacement another process has already stored.
+	deleteCertificate(alias string, der []byte)
+	// deleteAll removes every entry for alias, expired or not. It is reserved
+	// for an alias whose persisted state is invalid as a whole.
 	deleteAll(alias string)
 }
 
@@ -61,6 +64,7 @@ type noopPersistentCertCache struct{}
 
 func (noopPersistentCertCache) read(string) (*persistedCertificate, bool) { return nil, false }
 func (noopPersistentCertCache) write(string, *bindingCertificate)         {}
+func (noopPersistentCertCache) deleteCertificate(string, []byte)          {}
 func (noopPersistentCertCache) deleteAll(string)                          {}
 
 // newPersistentCertCache returns the persistent cache for this host.

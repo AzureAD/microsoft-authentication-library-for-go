@@ -4,6 +4,7 @@
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"crypto/x509"
 	"strings"
@@ -80,6 +81,24 @@ func (f *fakePersistentCertCache) deleteAll(alias string) {
 	delete(f.entries, alias)
 }
 
+func (f *fakePersistentCertCache) deleteCertificate(alias string, der []byte) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.deletes++
+	entries := f.entries[alias]
+	kept := entries[:0]
+	for _, entry := range entries {
+		if !bytes.Equal(entry.DER, der) {
+			kept = append(kept, entry)
+		}
+	}
+	if len(kept) == 0 {
+		delete(f.entries, alias)
+		return
+	}
+	f.entries[alias] = kept
+}
+
 func (f *fakePersistentCertCache) count(alias string) int {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -93,6 +112,57 @@ func (f *fakePersistentCertCache) reset() {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.entries = map[string][]persistedCertificate{}
+}
+
+// The persisted alias is shared across processes. Rejecting this process's
+// local certificate X must not delete a different certificate Y another process
+// has already written under that alias.
+func TestConditionalEvictionPreservesAPersistedReplacement(t *testing.T) {
+	persisted := withCleanCaches(t)
+	provider := newFakeKeyProvider()
+	rejected := testBindingCertificate(
+		t, provider, bindingKeyName, now().Add(29*24*time.Hour))
+	replacement := testBindingCertificate(
+		t, provider, bindingKeyName, now().Add(30*24*time.Hour))
+	t.Cleanup(func() {
+		_ = rejected.Close()
+		_ = replacement.Close()
+	})
+	rejected.Endpoint = "https://mtlsauth.example"
+	replacement.Endpoint = rejected.Endpoint
+
+	alias := cacheKey(SystemAssigned(), false)
+	certCache.adopt(alias, rejected)
+	persisted.write(alias, rejected)
+	persisted.write(alias, replacement)
+
+	if !certCache.evictIfCurrent(alias, rejected) {
+		t.Fatal("the rejected certificate was not the current in-memory entry")
+	}
+	persisted.mu.Lock()
+	entries := append([]persistedCertificate(nil), persisted.entries[alias]...)
+	persisted.mu.Unlock()
+	if len(entries) != 1 {
+		t.Fatalf("persisted entries = %d, want only the cross-process replacement", len(entries))
+	}
+	if !bytes.Equal(entries[0].DER, replacement.TLS.Certificate[0]) {
+		t.Fatal("conditional eviction preserved the rejected certificate instead of its replacement")
+	}
+
+	restored, ok := certCache.restoreAfterRejection(
+		alias,
+		replacement.ClientID,
+		replacement.TenantID,
+		provider,
+		rejected.TLS.Certificate[0],
+	)
+	if !ok {
+		t.Fatal("the valid persisted replacement was not restored")
+	}
+	defer func() { _ = restored.Close() }()
+	if !bytes.Equal(restored.TLS.Certificate[0], replacement.TLS.Certificate[0]) {
+		t.Fatal("restored certificate is not the cross-process replacement")
+	}
 }
 
 // swapPersistentCache installs p as the process-wide persistent store and

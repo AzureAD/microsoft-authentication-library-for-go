@@ -10,6 +10,7 @@ import (
 	"crypto/x509"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"runtime"
@@ -203,7 +204,13 @@ func (o AcquireTokenOptions) validate(source Source) error {
 // bounded to one attempt: a second failure is a real error rather than a stale
 // certificate, and retrying further would turn a misconfiguration into a loop
 // against a rate-limited service.
-func (c Client) acquireTokenForIMDSv2(ctx context.Context, resource string, o AcquireTokenOptions) (AuthResult, error) {
+func (c Client) acquireTokenForIMDSv2(
+	ctx context.Context,
+	resource string,
+	o AcquireTokenOptions,
+	gate *miTokenGateLease,
+	recheckCache bool,
+) (AuthResult, error) {
 	// The floor is checked before anything is minted. Discovering afterwards
 	// that the host cannot meet it would mean IMDS had already issued a
 	// credential the caller was always going to refuse.
@@ -236,25 +243,72 @@ func (c Client) acquireTokenForIMDSv2(ctx context.Context, resource string, o Ac
 	// variable rather than capturing the first value.
 	defer func() { _ = binding.Close() }()
 
-	client, err := c.mtlsClient(binding.TLS)
+	// A caller factory runs outside the process-wide gate. Once the gate is
+	// reacquired, another waiter may already have filled this request's cache,
+	// so read it again before sending a duplicate token request. Claims, force
+	// refresh and proactive refresh deliberately keep recheckCache false.
+	clientForBinding := func() (*http.Client, AuthResult, bool, error) {
+		for {
+			client, err := c.mtlsClientForAcquisition(ctx, binding, gate)
+			if err != nil {
+				return nil, AuthResult{}, false, err
+			}
+			if recheckCache && c.mtlsClientFactory != nil {
+				if ar, _, hit, cacheErr := c.cachedAuthResult(ctx, o); cacheErr == nil && hit {
+					return client, ar, true, nil
+				}
+			}
+			if c.mtlsClientFactory == nil || certCache.isCurrent(key, binding) {
+				return client, AuthResult{}, false, nil
+			}
+
+			// The certificate changed while caller code ran outside the gate.
+			// Re-resolve it before sending anything. In particular, a token
+			// rejection for the old certificate must not evict the replacement.
+			current, _, err := v.getBindingCertificate(ctx, o.attestation)
+			if err != nil {
+				return nil, AuthResult{}, false, err
+			}
+			_ = binding.Close()
+			binding = current
+		}
+	}
+
+	client, cached, hit, err := clientForBinding()
 	if err != nil {
 		return AuthResult{}, err
+	}
+	if hit {
+		return cached, nil
 	}
 	tr, err := requestEntraToken(ctx, client, binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
 	if err != nil {
 		if !shouldRemintCertificate(err) {
 			return AuthResult{}, err
 		}
-		certCache.evict(key)
-		reminted, _, err := v.getBindingCertificate(ctx, o.attestation)
+		var rejectedDER []byte
+		if len(binding.TLS.Certificate) > 0 {
+			rejectedDER = binding.TLS.Certificate[0]
+		}
+		evicted := certCache.evictIfCurrent(key, binding)
+		var reminted *bindingCertificate
+		if evicted {
+			reminted, _, err = v.getBindingCertificateAfterRejection(
+				ctx, o.attestation, rejectedDER)
+		} else {
+			reminted, _, err = v.getBindingCertificate(ctx, o.attestation)
+		}
 		if err != nil {
 			return AuthResult{}, err
 		}
 		_ = binding.Close()
 		binding = reminted
-		client, err = c.mtlsClient(binding.TLS)
+		client, cached, hit, err = clientForBinding()
 		if err != nil {
 			return AuthResult{}, err
+		}
+		if hit {
+			return cached, nil
 		}
 		tr, err = requestEntraToken(ctx, client, binding, resource, claims, o.mtlsPoP, c.retryPolicyEnabled)
 		if err != nil {
@@ -336,44 +390,57 @@ func (c Client) authResultForIMDSv2(tr accesstokens.TokenResponse, binding *bind
 		// otherwise the bound token is rejected. A copy is handed out so a
 		// caller mutating it cannot corrupt the cached certificate that future
 		// handshakes rely on.
-		res.BindingCertificate = copyBindingCertificate(binding)
+		copied, err := copyBindingCertificate(binding)
+		if err != nil {
+			return AuthResult{}, err
+		}
+		res.BindingCertificate = copied
 	}
 	return res, nil
 }
 
 // copyBindingCertificate returns a certificate the caller can hold and mutate
 // without affecting the cached one. The DER chain is deep-copied and the leaf is
-// re-parsed from that copy, so the result shares no backing array with the
-// cached certificate.
+// re-parsed from that copy, so the result shares no backing array and no
+// *x509.Certificate with the cached certificate.
+//
+// That isolation is the whole point, so a leaf that cannot be re-parsed is an
+// error rather than a reason to hand back the cached one. Sharing the cached
+// leaf would silently reintroduce exactly the aliasing this function exists to
+// prevent: the recipient would be free to mutate a certificate the cache is
+// still serving to every other acquisition in the process. The cached chain
+// already parsed once, so this cannot happen for a certificate this package
+// issued; if it ever does, something is wrong enough that guessing is worse
+// than saying so.
 //
 // The private key is necessarily backed by the same object, because it is a
 // handle to one operating system key. The copy therefore takes a reference on
 // the binding certificate so that evicting the cache entry cannot release a key
 // this certificate still needs, and drops it once the caller lets the key go.
-func copyBindingCertificate(binding *bindingCertificate) *tls.Certificate {
+// The reference is taken only after the parse has succeeded, so the error path
+// has nothing to release.
+func copyBindingCertificate(binding *bindingCertificate) (*tls.Certificate, error) {
+	if len(binding.TLS.Certificate) == 0 {
+		return nil, errors.New("managedidentity: the binding certificate has no DER chain to copy")
+	}
 	chain := make([][]byte, len(binding.TLS.Certificate))
 	for i, der := range binding.TLS.Certificate {
 		chain[i] = append([]byte(nil), der...)
 	}
+	leaf, err := x509.ParseCertificate(chain[0])
+	if err != nil {
+		return nil, fmt.Errorf("managedidentity: the binding certificate could not be re-parsed from its own DER: %w", err)
+	}
 	out := &tls.Certificate{
 		Certificate: chain,
 		PrivateKey:  binding.TLS.PrivateKey,
-	}
-	if len(chain) > 0 {
-		if leaf, err := x509.ParseCertificate(chain[0]); err == nil {
-			out.Leaf = leaf
-		}
-	}
-	if out.Leaf == nil {
-		// The cached chain already parsed once, so this is unreachable in
-		// practice; sharing the cached leaf is still better than returning none.
-		out.Leaf = binding.Leaf
+		Leaf:        leaf,
 	}
 	if signer, ok := binding.TLS.PrivateKey.(crypto.Signer); ok {
 		binding.retain()
 		out.PrivateKey = newRetainedSigner(signer, binding.Close)
 	}
-	return out
+	return out, nil
 }
 
 // retainedSigner is the private key handed to a caller. It holds a reference on
@@ -387,9 +454,34 @@ func copyBindingCertificate(binding *bindingCertificate) *tls.Certificate {
 // in use, and release the key underneath the caller. The private key survives
 // every such copy, so it is the only place the reference can safely live. This
 // mirrors what SafeHandle does for the same certificate in MSAL .NET.
+//
+// Sign and Public are written out rather than promoted from the embedded
+// Signer, and that is load-bearing. A promoted method is called on the embedded
+// field, so the last use of the *retainedSigner ends when the field is read -
+// before the native operation runs. The garbage collector may then finalize the
+// wrapper and release the binding key while the trustlet is still signing with
+// it. Forwarding explicitly, storing the result, and keeping the wrapper alive
+// across the delegated call closes that window: the finalizer cannot run until
+// after the operation has produced its result.
 type retainedSigner struct {
 	crypto.Signer
 	release func() error
+}
+
+// Public returns the public half of the binding key, keeping the wrapper alive
+// until the delegated call has returned.
+func (r *retainedSigner) Public() crypto.PublicKey {
+	pub := r.Signer.Public()
+	runtime.KeepAlive(r)
+	return pub
+}
+
+// Sign signs digest with the binding key, keeping the wrapper alive until the
+// delegated call has returned so the finalizer cannot free the key mid-signature.
+func (r *retainedSigner) Sign(rand io.Reader, digest []byte, opts crypto.SignerOpts) ([]byte, error) {
+	signature, err := r.Signer.Sign(rand, digest, opts)
+	runtime.KeepAlive(r)
+	return signature, err
 }
 
 func newRetainedSigner(signer crypto.Signer, release func() error) *retainedSigner {
@@ -419,26 +511,82 @@ var ErrMtlsClientFactoryReturnedNil = errors.New(
 // copy is what keeps this from mutating a client the caller may share with
 // unrelated code; a caller who did set CheckRedirect has stated a policy and is
 // left alone, exactly as imdsRedirectGuarded treats the plain-HTTP legs.
-func (c Client) mtlsClient(cert tls.Certificate) (*http.Client, error) {
+//
+// The certificate handed to a factory is a deep copy, for the same reason the
+// one handed to the caller in [AuthResult] is. A tls.Certificate passed by value
+// still shares its DER slices and its *x509.Certificate leaf with the cached
+// original, so a factory that rewrote cert.Certificate[0] or annotated
+// cert.Leaf would be mutating process-wide cached state that every other
+// acquisition reads, without any lock and while other goroutines are using it.
+// Copying first makes the factory's certificate its own. The copy also carries a
+// retained signer, so a factory that keeps its client - the usual case, since
+// building one per request is expensive - still has a live key after this
+// acquisition has released its own reference.
+//
+// The default client is built from the cached certificate directly. It is this
+// package's own code and only reads the value; its cached transport retains the
+// signer for connection reuse and is keyed so a remint cannot select a client
+// built for the previous key.
+func (c Client) mtlsClient(binding *bindingCertificate) (*http.Client, error) {
+	return c.mtlsClientWithFactoryInvoker(binding, func(invoke func() error) error {
+		return invoke()
+	})
+}
+
+// mtlsClientForAcquisition invokes caller code outside the process-wide token
+// gate. The gate is reacquired before this returns so the token request remains
+// serialized with every other managed identity acquisition.
+func (c Client) mtlsClientForAcquisition(
+	ctx context.Context,
+	binding *bindingCertificate,
+	gate *miTokenGateLease,
+) (*http.Client, error) {
+	return c.mtlsClientWithFactoryInvoker(binding, func(invoke func() error) error {
+		return gate.runOutside(ctx, invoke)
+	})
+}
+
+func (c Client) mtlsClientWithFactoryInvoker(
+	binding *bindingCertificate,
+	invoke func(func() error) error,
+) (*http.Client, error) {
 	if c.mtlsClientFactory == nil {
-		return mtlsHTTPClient(cert), nil
+		return mtlsHTTPClient(binding.TLS), nil
 	}
-	client := c.mtlsClientFactory(cert)
-	if client == nil {
-		return nil, ErrMtlsClientFactoryReturnedNil
+	isolated, err := copyBindingCertificate(binding)
+	if err != nil {
+		return nil, err
 	}
-	guarded := *client
-	if guarded.CheckRedirect == nil {
-		guarded.CheckRedirect = refuseIMDSv2Redirect
+
+	var guarded *http.Client
+	err = invoke(func() error {
+		client := c.mtlsClientFactory(*isolated)
+		if client == nil {
+			return ErrMtlsClientFactoryReturnedNil
+		}
+		copied := *client
+		if copied.CheckRedirect == nil {
+			copied.CheckRedirect = refuseIMDSv2Redirect
+		}
+		guarded = &copied
+		return nil
+	})
+	runtime.KeepAlive(isolated)
+	if err != nil {
+		return nil, err
 	}
-	return &guarded, nil
+	return guarded, nil
 }
 
 // imdsV2BaseEndpoint returns the metadata service root.
 //
 // AZURE_POD_IDENTITY_AUTHORITY_HOST redirects the metadata calls at a pod
 // identity sidecar, which is how AKS presents a managed identity to a
-// container. It is honoured here for the same reason IMDSv1 honours it.
+// container. MSAL .NET reads the same variable when it builds the IMDSv2
+// endpoint. It is deliberately scoped to this path: the IMDSv1 request this
+// package sends is built from a fixed address (see createIMDSAuthRequest), and
+// making it follow the variable would change a shipped flow that no part of
+// this feature depends on.
 func imdsV2BaseEndpoint() string {
 	if host := os.Getenv(azurePodIdentityAuthorityHostEnvVar); host != "" {
 		return strings.TrimSuffix(host, "/")

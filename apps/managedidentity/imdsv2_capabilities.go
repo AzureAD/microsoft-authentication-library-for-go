@@ -123,20 +123,25 @@ type Capabilities struct {
 	// produce. This is the signal to branch on rather than the source label.
 	MaxSupportedBindingStrength MtlsBindingStrength
 
-	// ErrorReason describes why the host cannot bind a token, and is empty when
-	// it can.
+	// ErrorReason carries diagnostic detail when discovery, or the attempt to
+	// determine the binding strength, did not fully succeed. It is not a
+	// reliable signal that binding is unavailable, and it is not populated for
+	// every host that cannot bind.
 	//
-	// It is not limited to "no source was detected". On a host that does have a
-	// managed identity source it carries the reason binding is unavailable
-	// there: the IMDSv2 probe failed and the compute document did not describe
-	// a host that could bind either, or that document could not be read at all.
-	// A populated ErrorReason with Source set to [DefaultToIMDS] is therefore
-	// normal, and says managed identity works here but a bound token does not.
+	// It is set when no managed identity source was detected, when the compute
+	// document that names the IMDSv1 tier could not be read or parsed, when the
+	// key provider could not produce a key to measure the tier from - which
+	// includes a build whose platform has no provider at all - and on an
+	// IMDSv1-only host whose compute document was read successfully and says the
+	// host cannot bind, where it carries the IMDSv2 probe's answer. A populated
+	// ErrorReason alongside [DefaultToIMDS] is therefore ordinary, and says
+	// managed identity works here while a bound token does not.
 	//
-	// It does not report whether this build can mint a KeyGuard key. That is a
-	// property of the process rather than of the host, it does not change what
-	// the host supports, and it surfaces as the error from an actual
-	// acquisition - [ErrMtlsNotSupportedForPlatform] - not here.
+	// It is empty for an environment-configured source that simply does not
+	// support binding. App Service, Cloud Shell, Azure ML, Service Fabric and
+	// Azure Arc issue no binding certificate, so [MtlsBindingStrengthNone]
+	// there is the complete answer and nothing failed to produce it. Branch on
+	// MaxSupportedBindingStrength, and read ErrorReason for the explanation.
 	ErrorReason string
 }
 
@@ -383,11 +388,16 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 	if v2Err == nil {
 		// The host speaks the key-bound CSR protocol, so it can bind at least
 		// at software strength; the platform key decides whether it can do
-		// better. This is a settled fact about the host.
+		// better. Whether that answer is settled is decided by the provider:
+		// a key it actually produced is a fact about the host, while a provider
+		// that failed for a local reason leaves the tier unknown and must not
+		// be cached as though the host had answered.
+		strength, reason, definitive := bindingStrengthFor(v.keyProvider)
 		return Capabilities{
 			Source:                      DefaultToIMDS,
-			MaxSupportedBindingStrength: bindingStrengthFor(v.keyProvider),
-		}, true
+			MaxSupportedBindingStrength: strength,
+			ErrorReason:                 reason,
+		}, definitive
 	}
 	if ctx.Err() != nil {
 		return Capabilities{}, false
@@ -451,7 +461,8 @@ func imdsV1BindingStrength(ctx context.Context, v imdsV2) (MtlsBindingStrength, 
 }
 
 // bindingStrengthFor reports the strongest binding a host that already answered
-// the IMDSv2 metadata call can produce.
+// the IMDSv2 metadata call can produce, a diagnostic when that could not be
+// established, and whether the answer is settled.
 //
 // Answering that call proves the host speaks the key-bound CSR protocol, so it
 // can bind at least at software strength. Whether it can do better depends on
@@ -468,10 +479,35 @@ func imdsV1BindingStrength(ctx context.Context, v imdsV2) (MtlsBindingStrength, 
 // reporting no binding at all. The host demonstrably speaks the protocol; a key
 // that could not be provisioned right now is a local condition, and reporting
 // None would tell a credential chain to abandon managed identity over it.
-func bindingStrengthFor(provider keyProvider) MtlsBindingStrength {
+//
+// What such a failure must not do is settle the question. Whether the host can
+// reach the attested tier is unknown while the provider is failing, and caching
+// "Software" for the life of the client would turn a passing condition - VBS
+// still starting, the KSP briefly unavailable, a transient NTE_ error - into a
+// permanent verdict that only a restart could clear. The third return therefore
+// distinguishes the two kinds of failure:
+//
+//   - a key that was produced, at either tier, is a fact about the host and is
+//     definitive;
+//   - [ErrMtlsNotSupportedForPlatform] is definitive too, but for the opposite
+//     reason: it is chosen at compile time by the build's key provider, so it
+//     cannot change while this binary is running, and retrying it every thirty
+//     seconds would only re-answer a settled question;
+//   - anything else is indeterminate and is reported as transient, so the
+//     thirty-second expiry re-asks once the local condition has had a chance to
+//     clear.
+//
+// The strength continues to describe the host and the reason describes this
+// process. A Linux build reports the software floor the host really has - the
+// same tier MSAL .NET reports for that machine - together with a reason saying
+// this build cannot mint the key. Acquisition remains KeyGuard-only either way.
+func bindingStrengthFor(provider keyProvider) (MtlsBindingStrength, string, bool) {
 	key, err := provider.getOrCreateKey(bindingKeyName)
 	if err != nil {
-		return MtlsBindingStrengthSoftware
+		if errors.Is(err, ErrMtlsNotSupportedForPlatform) {
+			return MtlsBindingStrengthSoftware, err.Error(), true
+		}
+		return MtlsBindingStrengthSoftware, err.Error(), false
 	}
 	defer func() {
 		if key.Close != nil {
@@ -479,9 +515,9 @@ func bindingStrengthFor(provider keyProvider) MtlsBindingStrength {
 		}
 	}()
 	if key.Type == keyTypeKeyGuard {
-		return MtlsBindingStrengthKeyGuard
+		return MtlsBindingStrengthKeyGuard, "", true
 	}
-	return MtlsBindingStrengthSoftware
+	return MtlsBindingStrengthSoftware, "", true
 }
 
 // enforceMinStrength fails an acquisition whose host cannot bind as strongly as
