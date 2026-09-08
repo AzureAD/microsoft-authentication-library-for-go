@@ -53,11 +53,23 @@ A per-request `WithMtlsProofOfPossession()` **always takes precedence** over the
 the same client can still mint a bound `mtls_pop` token on demand. See the sibling
 [`mtlscacheisolation`](../mtlscacheisolation) demo, which relies on exactly that.
 
-`confidential.New` returns an error for any non-certificate credential:
+Use either a direct certificate credential or a signed-assertion callback that returns the
+certificate its assertion is bound to:
 
+```go
+cred := confidential.NewCredFromSignedAssertionCallback(
+    func(ctx context.Context, opts confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+        return confidential.SignedAssertion{
+            Assertion:          assertionFor(opts.TokenEndpoint),
+            BindingCertificate: bindingCert,
+        }, nil
+    })
+app, err := confidential.New(authority, clientID, cred,
+    confidential.WithSendCertificateOverMtls())
 ```
-WithSendCertificateOverMtls requires a certificate credential, such as one from NewCredFromCert
-```
+
+The callback receives the final `mtlsauth.*` token endpoint for its assertion audience. Its
+assertion is sent as `jwt-pop`, and the request fails closed if it omits `BindingCertificate`.
 
 ## Running it
 

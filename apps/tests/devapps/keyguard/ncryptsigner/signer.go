@@ -644,12 +644,18 @@ func buildChain(ctx *windows.CertContext, additionalStore windows.Handle, leafDE
 			return leafOnly, fmt.Errorf("ncryptsigner: parsing chain element %d failed, "+
 				"falling back to a leaf-only chain: %w", i, err)
 		}
-		// Stop at a self-signed certificate: that's the root, and x5c carries leaf plus
-		// intermediates only. Entra already trusts the root and doesn't need it on the wire.
-		if bytes.Equal(cert.RawIssuer, cert.RawSubject) {
+		// A self-issued certificate can be a rollover intermediate, so omit it only when its
+		// signature also verifies under its own public key.
+		if isSelfSigned(cert) {
 			break
 		}
 		chain = append(chain, elementDER)
 	}
 	return chain, nil
+}
+
+func isSelfSigned(cert *x509.Certificate) bool {
+	return cert != nil &&
+		bytes.Equal(cert.RawIssuer, cert.RawSubject) &&
+		cert.CheckSignatureFrom(cert) == nil
 }

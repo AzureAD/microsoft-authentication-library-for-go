@@ -34,8 +34,9 @@ The points the demo exists to make, each verifiable in this branch's source:
   `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-pop`
   (`grant.ClientAssertionPoP` in `apps/internal/oauth/ops/internal/grant/grant.go`).
 - **The assertion story inverts across the stack:** vanilla certificate auth sends `jwt-bearer`;
-  plain mTLS PoP sends *no client assertion at all* (`FromClientCertificate` — the TLS handshake
-  authenticates the client); FIC leg 2 sends the assertion again, as `jwt-pop`.
+  direct certificate-credential mTLS PoP sends *no client assertion at all*
+  (`FromClientCertificate` — the TLS handshake authenticates the client); FIC leg 2 sends the
+  assertion again, as `jwt-pop`.
 
 ## Running it
 

@@ -173,29 +173,48 @@ _ = result.BindingCertificateThumbprint()      // base64url SHA-256 (x5t#S256)
 
 Notes:
 
-- **Binding is via the TLS certificate**: on the mTLS PoP path no `client_assertion` and no `req_cnf`
+- **Binding is via the TLS certificate**: on the direct certificate-credential mTLS PoP path no `client_assertion` and no `req_cnf`
   are sent — the certificate presented on the TLS handshake is the proof. This omission is specific to
   mTLS PoP: a normal Bearer acquisition with the same SN/I certificate (i.e. without
   `WithMtlsProofOfPossession()`) still signs and sends a `client_assertion`. The endpoint is rewritten
   from `login.*` to `mtlsauth.*`.
+- **Callback/two-leg authentication sends an assertion**: a
+  `NewCredFromSignedAssertionCallback` credential sends its certificate-bound assertion with
+  `client_assertion_type=jwt-pop` while presenting `SignedAssertion.BindingCertificate` on the same
+  token-endpoint handshake.
 - **Using the token**: present it to the resource with the `mtls_pop` authorization scheme (not
   `Bearer`) and `result.BindingCertificate` as the client certificate on the TLS handshake, so the
   connection matches the token binding. `BindingCertificate` is a `*tls.Certificate` that carries both
   the parsed leaf (`.Leaf`) and the private key MSAL used, so it goes straight into
-  `tls.Config.Certificates` — including when the key is non-exportable (KeyGuard/CNG/HSM) and the
+  `tls.Config.GetClientCertificate` — including when the key is non-exportable (KeyGuard/CNG/HSM) and the
   credential came from [`NewCredFromTLSCertificate`](#non-exportable-keys-keyguard-cng-hsm), because
   `crypto/tls` only needs a `crypto.Signer`:
 
   ```go
   transport := http.DefaultTransport.(*http.Transport).Clone()
   transport.TLSClientConfig = &tls.Config{
-      Certificates: []tls.Certificate{*result.BindingCertificate},
-      MinVersion:   tls.VersionTLS12,
+      GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+          return result.BindingCertificate, nil
+      },
+      MinVersion:    tls.VersionTLS12,
+      MaxVersion:    tls.VersionTLS12,
+      Renegotiation: tls.RenegotiateOnceAsClient,
   }
   req, _ := http.NewRequest(http.MethodGet, resourceURL, nil)
   req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
-  resp, err := (&http.Client{Transport: transport}).Do(req)
+  client := &http.Client{
+      Transport: transport,
+      CheckRedirect: func(req *http.Request, via []*http.Request) error {
+          return fmt.Errorf("refusing redirect to %s", req.URL.Redacted())
+      },
+  }
+  resp, err := client.Do(req)
   ```
+  Require an absolute HTTPS resource URL and refuse redirects so neither the bound token nor the
+  certificate is replayed to another host. `GetClientCertificate` avoids Go filtering the
+  certificate against advertised CAs. TLS 1.2 plus renegotiation is needed for resources such as
+  Key Vault that request a client certificate after the initial handshake; Go doesn't implement the
+  TLS 1.3 post-handshake equivalent.
 - **App-only**: mTLS PoP is a client-credentials-only mechanism — the binding certificate
   authenticates the application, not a user, so `WithMtlsProofOfPossession()` is accepted by
   `AcquireTokenByCredential` only (as in MSAL .NET, where it exists only on `AcquireTokenForClient`).
@@ -219,6 +238,11 @@ Notes:
   that satisfies the interface without being an `*http.Client` reaches this error on the first mTLS
   request. Note that a caller who reaches MSAL through a library that constructs the confidential
   client itself cannot supply either option unless that library forwards them.
+- **Custom mTLS factories are cached by MSAL per certificate thumbprint.** Each factory return must
+  present the certificate supplied to that invocation; one static client configured for a different
+  certificate is invalid. MSAL shallow-copies the returned `*http.Client`, installs the same default
+  redirect refusal when `CheckRedirect` is nil, preserves an explicit policy, and does not close the
+  caller-owned/aliased transport during internal cache eviction.
 - **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. For the
   mTLS token endpoint the legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are
@@ -393,10 +417,10 @@ Notes:
 - **A per-request `WithMtlsProofOfPossession()` always takes precedence.** Setting both is well
   defined: that call returns a certificate-bound `mtls_pop` token instead. Bound and unbound tokens
   occupy separate cache partitions, so neither is ever served in place of the other.
-- **A certificate credential is required**; `New` returns an error for any other kind. That includes
-  `NewCredFromSignedAssertionCallback`, even though its callback returns a binding certificate: that
-  certificate is produced at request time, and only an mTLS proof-of-possession request resolves the
-  callback early enough to present it on the handshake.
+- **A certificate-capable credential is required.** Direct certificate credentials are supported,
+  as is `NewCredFromSignedAssertionCallback`. In the callback form the returned assertion is sent as
+  `jwt-pop` and `SignedAssertion.BindingCertificate` is presented on the handshake. The request fails
+  closed if the callback omits the certificate.
 - The **authority requirements and transport rules** above apply here too, because the request still
   goes to `mtlsauth.*`: it needs a tenanted AAD authority on a known `login.*` host, and a
   `WithHTTPClient` value that is not an `*http.Client` still requires `WithMtlsHTTPClient`.

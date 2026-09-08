@@ -99,7 +99,7 @@ func (t *Client) AuthCode(ctx context.Context, req accesstokens.AuthCodeRequest)
 	if err := scopeError(req.AuthParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	if err := t.resolveEndpoint(ctx, &req.AuthParams, ""); err != nil {
+	if err := t.ResolveTokenEndpoint(ctx, &req.AuthParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 
@@ -144,7 +144,7 @@ func (t *Client) Credential(ctx context.Context, authParams authority.AuthParams
 		return tr, nil
 	}
 
-	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
+	if err := t.ResolveTokenEndpoint(ctx, &authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 
@@ -179,7 +179,7 @@ func (t *Client) OnBehalfOf(ctx context.Context, authParams authority.AuthParams
 	if err := scopeError(authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
+	if err := t.ResolveTokenEndpoint(ctx, &authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 
@@ -202,7 +202,7 @@ func (t *Client) UserFederatedIdentityCredential(ctx context.Context, authParams
 	if err := scopeError(authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
+	if err := t.ResolveTokenEndpoint(ctx, &authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 	return t.AccessTokens.FromUserFederatedIdentityCredential(ctx, authParams, cred)
@@ -212,7 +212,7 @@ func (t *Client) Refresh(ctx context.Context, reqType accesstokens.AppType, auth
 	if err := scopeError(authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
-	if err := t.resolveEndpoint(ctx, &authParams, ""); err != nil {
+	if err := t.ResolveTokenEndpoint(ctx, &authParams); err != nil {
 		return accesstokens.TokenResponse{}, err
 	}
 
@@ -378,12 +378,39 @@ func (t *Client) resolveEndpoint(ctx context.Context, authParams *authority.Auth
 	// reached these AuthParams and the mTLS endpoint fell back to the global host even when a region
 	// had been detected. Endpoint resolution is also cached, so doing it here keeps the region
 	// consistent across acquisitions instead of only the first one.
-	authParams.AuthorityInfo.ResolveRegion(ctx)
+	if authParams.AuthorityInfo.AuthorityType != authority.DSTS {
+		authParams.AuthorityInfo.ResolveRegion(ctx)
+	}
 	endpoints, err := t.Resolver.ResolveEndpoints(ctx, authParams.AuthorityInfo, userPrincipalName)
 	if err != nil {
 		return fmt.Errorf("unable to resolve an endpoint: %w", err)
 	}
 	authParams.Endpoints = endpoints
+	return nil
+}
+
+// ResolveTokenEndpoint resolves the authority/discovery endpoint and then derives the final wire
+// endpoint exactly once. AuthParams.Endpoints remains unchanged for authority discovery and cache
+// aliases; assertions and the HTTP POST use AuthParams.TokenEndpoint.
+func (t *Client) ResolveTokenEndpoint(ctx context.Context, authParams *authority.AuthParams) error {
+	if authParams.TokenEndpoint != "" {
+		return nil
+	}
+	authParams.CorrelationID = uuid.New().String()
+	if authParams.Endpoints.TokenEndpoint == "" {
+		if err := t.resolveEndpoint(ctx, authParams, ""); err != nil {
+			return err
+		}
+	}
+	endpoint := authParams.Endpoints.TokenEndpoint
+	if authParams.IsMtlsPoP || authParams.MtlsTransport {
+		var err error
+		endpoint, err = authParams.MtlsTokenEndpoint()
+		if err != nil {
+			return err
+		}
+	}
+	authParams.TokenEndpoint = endpoint
 	return nil
 }
 

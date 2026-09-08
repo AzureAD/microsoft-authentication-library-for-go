@@ -6,7 +6,10 @@ package authority
 import (
 	"context"
 	"os"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 // TestInfoResolveRegion covers the sentinel replacement that keeps a successfully auto-detected
@@ -125,6 +128,134 @@ func TestDetectRegionMemoizesDetection(t *testing.T) {
 	if err := os.Unsetenv(regionName); err != nil {
 		t.Fatal(err)
 	}
+
+	t.Run("single flight and cache", func(t *testing.T) {
+		t.Setenv(regionName, "")
+		resetDetectedRegion()
+		defer resetDetectedRegion()
+		originalProbe := probeRegion
+		defer func() { probeRegion = originalProbe }()
+
+		started := make(chan struct{})
+		release := make(chan struct{})
+		var calls int32
+		probeRegion = func(context.Context) string {
+			if atomic.AddInt32(&calls, 1) == 1 {
+				close(started)
+			}
+			<-release
+			return "eastus2"
+		}
+
+		const waiters = 12
+		results := make(chan string, waiters)
+		var wg sync.WaitGroup
+		for i := 0; i < waiters; i++ {
+			wg.Add(1)
+			go func() {
+				defer wg.Done()
+				results <- detectRegion(context.Background())
+			}()
+		}
+		<-started
+		close(release)
+		wg.Wait()
+		close(results)
+		for region := range results {
+			if region != "eastus2" {
+				t.Errorf("detectRegion = %q, want eastus2", region)
+			}
+		}
+		if got := atomic.LoadInt32(&calls); got != 1 {
+			t.Fatalf("IMDS probe ran %d times, want 1", got)
+		}
+		if got := detectRegion(context.Background()); got != "eastus2" {
+			t.Fatalf("cached detectRegion = %q, want eastus2", got)
+		}
+		if got := atomic.LoadInt32(&calls); got != 1 {
+			t.Fatalf("cached lookup started another probe; calls = %d", got)
+		}
+	})
+
+	t.Run("canceled waiter does not cancel probe", func(t *testing.T) {
+		t.Setenv(regionName, "")
+		resetDetectedRegion()
+		defer resetDetectedRegion()
+		originalProbe := probeRegion
+		defer func() { probeRegion = originalProbe }()
+
+		started := make(chan struct{})
+		release := make(chan struct{})
+		probeRegion = func(context.Context) string {
+			close(started)
+			<-release
+			return "centralus"
+		}
+		active := make(chan string, 1)
+		go func() { active <- detectRegion(context.Background()) }()
+		<-started
+
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
+		begin := time.Now()
+		if got := detectRegion(ctx); got != "" {
+			t.Fatalf("canceled waiter got %q, want empty", got)
+		}
+		if elapsed := time.Since(begin); elapsed > 100*time.Millisecond {
+			t.Fatalf("canceled waiter took %s to return", elapsed)
+		}
+
+		close(release)
+		if got := <-active; got != "centralus" {
+			t.Fatalf("active probe returned %q, want centralus", got)
+		}
+		if got := detectRegion(context.Background()); got != "centralus" {
+			t.Fatalf("probe result wasn't cached: %q", got)
+		}
+	})
+
+	t.Run("failure and retry semantics", func(t *testing.T) {
+		t.Setenv(regionName, "")
+		resetDetectedRegion()
+		defer resetDetectedRegion()
+		originalProbe := probeRegion
+		defer func() { probeRegion = originalProbe }()
+
+		var calls int32
+		probeRegion = func(context.Context) string {
+			atomic.AddInt32(&calls, 1)
+			return ""
+		}
+		if got := detectRegion(context.Background()); got != "" {
+			t.Fatalf("failed probe returned %q", got)
+		}
+		if got := detectRegion(context.Background()); got != "" {
+			t.Fatalf("cached failed probe returned %q", got)
+		}
+		if got := atomic.LoadInt32(&calls); got != 1 {
+			t.Fatalf("completed failure was probed %d times, want 1", got)
+		}
+
+		resetDetectedRegion()
+		canceled, cancel := context.WithCancel(context.Background())
+		cancel()
+		if got := detectRegion(canceled); got != "" {
+			t.Fatalf("pre-canceled lookup returned %q", got)
+		}
+		if got := atomic.LoadInt32(&calls); got != 1 {
+			t.Fatalf("pre-canceled lookup started a probe; calls = %d", got)
+		}
+		probeRegion = func(context.Context) string {
+			atomic.AddInt32(&calls, 1)
+			return "westus2"
+		}
+		if got := detectRegion(context.Background()); got != "westus2" {
+			t.Fatalf("live retry returned %q, want westus2", got)
+		}
+		if got := atomic.LoadInt32(&calls); got != 2 {
+			t.Fatalf("live retry probe count = %d, want 2 total", got)
+		}
+	})
 	canceled, cancel := context.WithCancel(context.Background())
 	cancel()
 

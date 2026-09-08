@@ -4,10 +4,12 @@
 package comm
 
 import (
+	"context"
 	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -38,6 +40,44 @@ func (r *recordingClient) closeCount() int {
 	return r.closed
 }
 
+type recordingTransport struct {
+	recorder *recordingClient
+}
+
+func (r recordingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	return r.recorder.Do(req)
+}
+
+func (r recordingTransport) CloseIdleConnections() {
+	r.recorder.CloseIdleConnections()
+}
+
+func recordingHTTPClient(recorder *recordingClient) *http.Client {
+	return &http.Client{Transport: recordingTransport{recorder: recorder}}
+}
+
+type deadlineRecordingClient struct {
+	deadline chan time.Time
+}
+
+func (c deadlineRecordingClient) Do(req *http.Request) (*http.Response, error) {
+	deadline, _ := req.Context().Deadline()
+	c.deadline <- deadline
+	return &http.Response{
+		StatusCode: http.StatusOK,
+		Body:       io.NopCloser(strings.NewReader("")),
+	}, nil
+}
+
+func (deadlineRecordingClient) CloseIdleConnections() {}
+
+type contextBlockingTransport struct{}
+
+func (contextBlockingTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+	<-req.Context().Done()
+	return nil, req.Context().Err()
+}
+
 // TestBuildMtlsClientUsesConfiguredTransport is the regression test for the strongest finding in the
 // review: BuildMtlsClient cloned http.DefaultTransport unconditionally, so an application's
 // WithHTTPClient settings (corporate proxy, custom RootCAs, custom dialer, tracing) were silently
@@ -47,6 +87,69 @@ func TestBuildMtlsClientUsesConfiguredTransport(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+
+	t.Run("configured timeout is preserved", func(t *testing.T) {
+		cert := parseableTestCert(t, 26)
+		for _, timeout := range []time.Duration{0, 25 * time.Millisecond, 2 * time.Minute} {
+			t.Run(timeout.String(), func(t *testing.T) {
+				base := &http.Client{Timeout: timeout}
+				got, err := BuildMtlsClient(cert, base)
+				if err != nil {
+					t.Fatal(err)
+				}
+				if got.Timeout != timeout {
+					t.Fatalf("Timeout = %s, want configured %s", got.Timeout, timeout)
+				}
+				if base.Timeout != timeout {
+					t.Fatalf("caller-owned Timeout was mutated to %s", base.Timeout)
+				}
+			})
+		}
+	})
+
+	t.Run("timeout precedence", func(t *testing.T) {
+		req, err := http.NewRequest(http.MethodGet, "https://example.test", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		c := &Client{}
+
+		t.Run("MSAL fallback", func(t *testing.T) {
+			deadlines := make(chan time.Time, 1)
+			before := time.Now()
+			if _, err := c.doWithClient(context.Background(), req, deadlineRecordingClient{deadline: deadlines}); err != nil {
+				t.Fatal(err)
+			}
+			remaining := (<-deadlines).Sub(before)
+			if remaining < 29*time.Second || remaining > 31*time.Second {
+				t.Fatalf("fallback deadline is %s away, want about 30s", remaining)
+			}
+		})
+
+		t.Run("earlier caller deadline", func(t *testing.T) {
+			deadlines := make(chan time.Time, 1)
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			want, _ := ctx.Deadline()
+			if _, err := c.doWithClient(ctx, req, deadlineRecordingClient{deadline: deadlines}); err != nil {
+				t.Fatal(err)
+			}
+			if got := <-deadlines; !got.Equal(want) {
+				t.Fatalf("request deadline = %s, want caller deadline %s", got, want)
+			}
+		})
+
+		t.Run("shorter http client timeout", func(t *testing.T) {
+			client := &http.Client{Timeout: 20 * time.Millisecond, Transport: contextBlockingTransport{}}
+			start := time.Now()
+			if _, err := c.doWithClient(context.Background(), req, client); err == nil {
+				t.Fatal("expected the configured client timeout")
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Fatalf("configured 20ms client timeout took %s", elapsed)
+			}
+		})
+	})
 	roots := x509.NewCertPool()
 	configured := &http.Transport{
 		Proxy:                 func(*http.Request) (*url.URL, error) { return proxyURL, nil },
@@ -61,7 +164,7 @@ func TestBuildMtlsClientUsesConfiguredTransport(t *testing.T) {
 	}
 	base := &http.Client{Transport: configured}
 
-	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
+	cert := parseableTestCert(t, 10)
 	client, err := BuildMtlsClient(cert, base)
 	if err != nil {
 		t.Fatalf("BuildMtlsClient error: %v", err)
@@ -114,7 +217,7 @@ func TestBuildMtlsClientUsesConfiguredTransport(t *testing.T) {
 // would itself serve from http.DefaultTransport). Both must still yield a usable transport carrying
 // the binding certificate.
 func TestBuildMtlsClientUsesDefaultTransportWhenUnconfigured(t *testing.T) {
-	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
+	cert := parseableTestCert(t, 11)
 	var typedNil *http.Client
 	for _, test := range []struct {
 		desc string
@@ -155,7 +258,7 @@ func TestBuildMtlsClientUsesDefaultTransportWhenUnconfigured(t *testing.T) {
 // process default would send the one request that carries a client credential outside all of them.
 // Both shapes must now fail, and the error must name the option that resolves it.
 func TestBuildMtlsClientRejectsOpaqueTransport(t *testing.T) {
-	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
+	cert := parseableTestCert(t, 12)
 	for _, test := range []struct {
 		desc string
 		base HTTPClient
@@ -182,7 +285,8 @@ func TestBuildMtlsClientRejectsOpaqueTransport(t *testing.T) {
 // rather than being swallowed into a cached client.
 func TestMtlsClientPropagatesBuildError(t *testing.T) {
 	c := &Client{client: &recordingClient{}}
-	cert := &tls.Certificate{Certificate: [][]byte{{0x77}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 13)
+	cert := &certValue
 	if _, err := c.mtlsClient(cert); err == nil {
 		t.Fatal("mtlsClient with an opaque base client = nil error, want an error")
 	} else if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
@@ -206,7 +310,7 @@ func TestBuildMtlsClientKeepsStrongerMinVersion(t *testing.T) {
 	base := &http.Client{Transport: &http.Transport{
 		TLSClientConfig: &tls.Config{MinVersion: tls.VersionTLS13},
 	}}
-	client, err := BuildMtlsClient(tls.Certificate{Certificate: [][]byte{{0x01}}}, base)
+	client, err := BuildMtlsClient(parseableTestCert(t, 14), base)
 	if err != nil {
 		t.Fatalf("BuildMtlsClient error: %v", err)
 	}
@@ -230,7 +334,7 @@ func TestBuildMtlsClientClearsGetClientCertificate(t *testing.T) {
 			GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) { return other, nil },
 		},
 	}}
-	client, err := BuildMtlsClient(tls.Certificate{Certificate: [][]byte{{0x01}}}, base)
+	client, err := BuildMtlsClient(parseableTestCert(t, 15), base)
 	if err != nil {
 		t.Fatalf("BuildMtlsClient error: %v", err)
 	}
@@ -248,12 +352,14 @@ func TestBuildMtlsClientClearsGetClientCertificate(t *testing.T) {
 // deadlocked permanently. Building outside the lock makes this safe. The test would hang (and be
 // killed by the test timeout) if the fix regressed.
 func TestMtlsClientFactoryNotCalledUnderLock(t *testing.T) {
-	certA := &tls.Certificate{Certificate: [][]byte{{0xAA}}, PrivateKey: testKey}
-	certB := &tls.Certificate{Certificate: [][]byte{{0xBB}}, PrivateKey: testKey}
+	certAValue := parseableTestCert(t, 16)
+	certBValue := parseableTestCert(t, 17)
+	certA := &certAValue
+	certB := &certBValue
 
 	c := &Client{}
 	c.SetMtlsClientFactory(func(cert tls.Certificate) HTTPClient {
-		if len(cert.Certificate) > 0 && len(cert.Certificate[0]) > 0 && cert.Certificate[0][0] == 0xAA {
+		if cert.Leaf != nil && cert.Leaf.SerialNumber.Int64() == 16 {
 			// Re-enter the Client from inside the factory.
 			if _, err := c.mtlsClient(certB); err != nil {
 				t.Errorf("re-entrant mtlsClient failed: %v", err)
@@ -281,7 +387,8 @@ func TestMtlsClientFactoryNotCalledUnderLock(t *testing.T) {
 // be closed: they all came from the caller's factory, which owns their lifetime. Closing a race
 // loser here is what breaks a memoizing factory, where the "loser" is the same object as the winner.
 func TestMtlsClientConcurrentSameCertPublishesOneClient(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x42}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 18)
+	cert := &certValue
 
 	var mu sync.Mutex
 	built := []*recordingClient{}
@@ -293,7 +400,7 @@ func TestMtlsClientConcurrentSameCertPublishesOneClient(t *testing.T) {
 		mu.Unlock()
 		// Widen the window between building and publishing so losers are likely.
 		time.Sleep(time.Millisecond)
-		return rc
+		return recordingHTTPClient(rc)
 	})
 
 	const goroutines = 16
@@ -353,14 +460,12 @@ func TestMtlsClientCacheCapClears(t *testing.T) {
 		mu.Lock()
 		built = append(built, rc)
 		mu.Unlock()
-		return rc
+		return recordingHTTPClient(rc)
 	})
 
 	certFor := func(i int) *tls.Certificate {
-		return &tls.Certificate{
-			Certificate: [][]byte{{byte(i), byte(i >> 8), byte(i >> 16)}},
-			PrivateKey:  testKey,
-		}
+		cert := parseableTestCert(t, int64(1000+i))
+		return &cert
 	}
 	for i := 0; i < maxMtlsClients; i++ {
 		if _, err := c.mtlsClient(certFor(i)); err != nil {
@@ -417,7 +522,8 @@ func TestMtlsClientCacheCapClosesOnlyMsalBuiltClients(t *testing.T) {
 	c.mtlsMu.Unlock()
 
 	// No factory, so this builds through BuildMtlsClient and trips the cap.
-	cert := &tls.Certificate{Certificate: [][]byte{{0x91, 0x92}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 19)
+	cert := &certValue
 	if _, err := c.mtlsClient(cert); err != nil {
 		t.Fatalf("mtlsClient failed: %v", err)
 	}
@@ -441,7 +547,8 @@ func TestMtlsClientCacheCapClosesOnlyMsalBuiltClients(t *testing.T) {
 // exact object it is about to hand back. The interleaving is forced by publishing the winner from
 // inside the factory, which mtlsClient invokes outside mtlsMu.
 func TestMtlsClientRaceLoserKeepsCallerClientOpen(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x64, 0x65}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 20)
+	cert := &certValue
 	sum := sha256.Sum256(cert.Certificate[0])
 	key := base64.RawURLEncoding.EncodeToString(sum[:])
 
@@ -456,7 +563,7 @@ func TestMtlsClientRaceLoserKeepsCallerClientOpen(t *testing.T) {
 			c.mtlsClients[key] = mtlsCacheEntry{client: shared}
 		}
 		c.mtlsMu.Unlock()
-		return shared
+		return recordingHTTPClient(shared)
 	})
 
 	got, err := c.mtlsClient(cert)
@@ -480,27 +587,30 @@ func TestMtlsClientRaceLoserKeepsCallerClientOpen(t *testing.T) {
 // The interleaving is deterministic: the first factory swaps itself out while it is being invoked,
 // which is legal because mtlsClient calls factories outside the lock.
 func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x71, 0x72}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 21)
+	cert := &certValue
 	retired := &recordingClient{}
 	current := &recordingClient{}
+	retiredClient := recordingHTTPClient(retired)
+	currentClient := recordingHTTPClient(current)
 
 	c := &Client{}
 	var swapped bool
 	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		if !swapped {
 			swapped = true
-			c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return current })
-			return retired
+			c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return currentClient })
+			return retiredClient
 		}
 		t.Error("the retired factory was consulted again after being replaced")
-		return retired
+		return retiredClient
 	})
 
 	got, err := c.mtlsClient(cert)
 	if err != nil {
 		t.Fatalf("mtlsClient failed: %v", err)
 	}
-	if got != current {
+	if got.(*http.Client).Transport != currentClient.Transport {
 		t.Fatalf("mtlsClient returned a client from the retired factory")
 	}
 	c.mtlsMu.Lock()
@@ -510,7 +620,7 @@ func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
 		t.Fatalf("cache holds %d entries, want 1", len(cached))
 	}
 	for _, entry := range cached {
-		if entry.client != current {
+		if entry.client.(*http.Client).Transport != currentClient.Transport {
 			t.Error("the cache published a client built by the retired factory")
 		}
 	}
@@ -528,10 +638,11 @@ func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
 // these clients - rather than the invisible cache housekeeping in mtlsClient, and nothing is
 // published afterwards, so unlike those paths it can never close a client it is about to return.
 func TestSetMtlsClientFactoryClosesDiscardedClients(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x55}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 22)
+	cert := &certValue
 	rc := &recordingClient{}
 	c := &Client{}
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return rc })
+	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return recordingHTTPClient(rc) })
 	if _, err := c.mtlsClient(cert); err != nil {
 		t.Fatalf("mtlsClient failed: %v", err)
 	}
@@ -552,7 +663,8 @@ func TestSetMtlsClientFactoryClosesDiscardedClients(t *testing.T) {
 // "var c *http.Client; return c" hands back an interface that is not == nil but panics on Do, so a
 // plain nil check would cache it.
 func TestMtlsClientRejectsTypedNilFactoryResult(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x33}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 23)
+	cert := &certValue
 	c := &Client{}
 	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		var typedNil *http.Client

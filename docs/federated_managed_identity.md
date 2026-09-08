@@ -122,9 +122,10 @@ func main() {
 ## mTLS Proof-of-Possession (both legs)
 
 The two-leg flow above returns Bearer tokens by default. To bind the tokens to the SN/I certificate
-over mutual TLS, opt into mTLS proof-of-possession on **each** leg. The credential is unchanged — only
-the mechanism changes from signing an assertion to presenting the certificate as the client TLS
-certificate. Both legs return `token_type=mtls_pop`.
+over mutual TLS, opt into mTLS proof-of-possession on **each** leg. A direct certificate credential
+authenticates with the TLS certificate and sends no client assertion. The callback/two-leg form sends
+the callback's certificate-bound assertion as `jwt-pop` while presenting the same certificate on
+the TLS handshake. Both legs return `token_type=mtls_pop`.
 
 ```go
 // Leg 1 (inside your RMA helper): SN/I cert -> cert-bound federated assertion, itself mTLS PoP.
@@ -217,7 +218,7 @@ Notes:
   the only way to supply it: MSAL exposes no call-site option that would let the assertion and the
   certificate be sourced separately.
 - Results expose the binding certificate as `BindingCertificate` (a `*tls.Certificate` carrying the
-  parsed leaf and the private key, ready for `tls.Config.Certificates`) and its thumbprint as
+  parsed leaf and the private key, ready for `tls.Config.GetClientCertificate`) and its thumbprint as
   `BindingCertificateThumbprint()`.
 - The private key may be non-exportable (Windows KeyGuard, CNG, an HSM); MSAL only requires that it
   implement `crypto.Signer`.
@@ -257,5 +258,3 @@ cachedResult, err := app.AcquireTokenByCredential(ctx, scopes,
 - Use the special client ID `urn:microsoft:identity:fmi` for FMI scenarios
 - The FMI credential is typically obtained from an RMA (Resource Management API) service  
 - Cache isolation is handled automatically - no manual cache management needed
-
-

@@ -10,6 +10,9 @@ import (
 	"fmt"
 	"net/http"
 	"reflect"
+	"time"
+
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/certutil"
 )
 
 // maxMtlsClients caps the per-certificate mTLS client cache. Each entry owns its own connection
@@ -26,9 +29,10 @@ const maxMtlsClients = 1000
 // interface without being able to have a client certificate installed on it. When unset, MSAL
 // auto-builds and caches a client per certificate.
 //
-// The clients a factory returns belong to the caller. A factory may memoize and hand back one
-// shared client for every certificate; MSAL therefore never closes their idle connections during
-// its own cache housekeeping. See mtlsCacheEntry.
+// The clients a factory returns belong to the caller. MSAL shallow-copies a concrete *http.Client,
+// caches the copy per certificate thumbprint, and never closes its aliased transport during internal
+// cache housekeeping. A non-*http.Client result is rejected because its redirect policy cannot be
+// inspected or made fail-closed.
 type MtlsClientFactory func(cert tls.Certificate) HTTPClient
 
 // mtlsCacheEntry is one cached per-certificate mTLS client plus the provenance that decides whether
@@ -36,11 +40,9 @@ type MtlsClientFactory func(cert tls.Certificate) HTTPClient
 type mtlsCacheEntry struct {
 	client HTTPClient
 	// owned reports whether BuildMtlsClient produced client, in which case MSAL created its
-	// connection pool and may tear it down when the entry is discarded. A client that came from a
-	// caller-supplied MtlsClientFactory is never owned: that factory is free to memoize, so the
-	// same *http.Client can be the value under several keys, the value the caller uses elsewhere,
-	// and - on the paths below - the very client being returned to the caller. Closing it during
-	// MSAL's own cache housekeeping would reach into application state MSAL does not own.
+	// connection pool and may tear it down when the entry is discarded. A factory result is
+	// shallow-copied, so its transport can still be caller-owned and aliased elsewhere. Closing it
+	// during MSAL's own cache housekeeping would reach into application state MSAL does not own.
 	owned bool
 }
 
@@ -90,9 +92,13 @@ func (c *Client) SetMtlsClientFactory(factory MtlsClientFactory) {
 // TLSClientConfig, and the copy is what the client certificate is installed on, so the caller's
 // *tls.Config is neither shared nor written to.
 //
-// http.Client.Timeout is deliberately not carried over: every request goes through doWithClient,
-// which already applies a 30 second context deadline.
+// The configured http.Client.Timeout is copied exactly. Every request also goes through
+// doWithClient's 30 second context fallback, so the earliest configured limit still wins.
 func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error) {
+	isolated, err := certutil.CloneTLSCertificate(&cert)
+	if err != nil {
+		return nil, fmt.Errorf("invalid mTLS binding certificate: %w", err)
+	}
 	transport, err := cloneBaseTransport(base)
 	if err != nil {
 		return nil, err
@@ -104,7 +110,7 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error
 		// Only ever raise the floor: a caller who pinned TLS 1.3 keeps it.
 		transport.TLSClientConfig.MinVersion = tls.VersionTLS12
 	}
-	transport.TLSClientConfig.Certificates = []tls.Certificate{cert}
+	transport.TLSClientConfig.Certificates = []tls.Certificate{*isolated}
 	// A caller-supplied GetClientCertificate takes precedence over Certificates during the
 	// handshake, so it would silently suppress the binding certificate. Clear it on our copy.
 	transport.TLSClientConfig.GetClientCertificate = nil
@@ -124,9 +130,14 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error
 	if transport.TLSClientConfig.ClientSessionCache != nil {
 		transport.TLSClientConfig.ClientSessionCache = tls.NewLRUClientSessionCache(0)
 	}
+	var timeout time.Duration
+	if hc, ok := base.(*http.Client); ok && hc != nil {
+		timeout = hc.Timeout
+	}
 	return &http.Client{
 		Transport:     transport,
 		CheckRedirect: mtlsCheckRedirect(base),
+		Timeout:       timeout,
 	}, nil
 }
 
@@ -279,7 +290,7 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 	if cert.PrivateKey == nil {
 		return nil, fmt.Errorf("mTLS proof-of-possession binding certificate is missing its private key")
 	}
-	// Everything below works from a private deep copy of the DER chain. The cache key is a digest of
+	// Everything below works from a private deep copy. The cache key is a digest of
 	// Certificate[0], and the certificate is then handed to a caller-supplied factory or to
 	// BuildMtlsClient, both of which take it by value -- a shallow copy that shares the backing
 	// arrays. Anything still holding those arrays could rewrite them after the key was computed,
@@ -288,13 +299,11 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 	// the presented bytes derive from the same immutable snapshot.
 	//
 	// PrivateKey is deliberately shared rather than copied: it is the live signer that performs the
-	// handshake, and a non-exportable key cannot be copied at all. Leaf is carried over as-is; it is
-	// already a private re-parse, because every certificate reaching here has been through
-	// confidential.validBindingCertificate.
-	pinned := *cert
-	pinned.Certificate = make([][]byte, len(cert.Certificate))
-	for i, der := range cert.Certificate {
-		pinned.Certificate[i] = append([]byte(nil), der...)
+	// handshake, and a non-exportable key cannot be copied at all. Leaf is re-parsed from the copied
+	// DER because its Raw fields otherwise alias the retained request certificate.
+	pinned, err := certutil.CloneTLSCertificate(cert)
+	if err != nil {
+		return nil, fmt.Errorf("invalid mTLS binding certificate: %w", err)
 	}
 	sum := sha256.Sum256(pinned.Certificate[0])
 	key := base64.RawURLEncoding.EncodeToString(sum[:])
@@ -318,16 +327,25 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 		// evaluates CreateMtlsHttpClient(cert) before GetOrAdd is entered.
 		entry := mtlsCacheEntry{owned: factory == nil}
 		if factory != nil {
-			entry.client = factory(pinned)
+			produced := factory(*pinned)
+			if isNilClient(produced) {
+				return nil, fmt.Errorf("mTLS proof-of-possession client factory returned a nil client")
+			}
+			hc, ok := produced.(*http.Client)
+			if !ok {
+				return nil, fmt.Errorf("mTLS proof-of-possession client factory returned %T; a concrete *http.Client is required so MSAL can refuse redirects by default", produced)
+			}
+			copied := *hc
+			if copied.CheckRedirect == nil {
+				copied.CheckRedirect = refuseMtlsRedirect
+			}
+			entry.client = &copied
 		} else {
-			built, err := BuildMtlsClient(pinned, base)
+			built, err := BuildMtlsClient(*pinned, base)
 			if err != nil {
 				return nil, err
 			}
 			entry.client = built
-		}
-		if isNilClient(entry.client) {
-			return nil, fmt.Errorf("mTLS proof-of-possession client factory returned a nil client")
 		}
 
 		var discarded []HTTPClient
@@ -369,9 +387,8 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 }
 
 // discardMtlsClient releases a client mtlsClient built but will not publish. Only a client MSAL
-// built is closed: a caller-supplied factory may memoize, in which case the client being discarded
-// here is the same object as the one already cached and about to be returned, so closing it would
-// tear down the pool of the client the caller is handed. See mtlsCacheEntry.
+// built is closed; a factory result's transport remains caller-owned even though MSAL copied the
+// surrounding *http.Client. See mtlsCacheEntry.
 func discardMtlsClient(entry mtlsCacheEntry) {
 	if entry.owned {
 		closeIdleConnections(entry.client)

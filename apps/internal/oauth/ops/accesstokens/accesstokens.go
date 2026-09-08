@@ -33,6 +33,7 @@ import (
 	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/exported"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/comm"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
 	"github.com/golang-jwt/jwt/v5"
@@ -145,9 +146,14 @@ type TLSCertFields struct {
 // assertionRequestOptions builds the options handed to an application-provided assertion callback.
 func assertionRequestOptions(authParams authority.AuthParams) exported.AssertionRequestOptions {
 	return exported.AssertionRequestOptions{
-		ClientID:      authParams.ClientID,
-		TokenEndpoint: authParams.Endpoints.TokenEndpoint,
-		FMIPath:       authParams.ExtraBodyParameters["fmi_path"],
+		ClientID:           authParams.ClientID,
+		TokenEndpoint:      authParams.EffectiveTokenEndpoint(),
+		TenantID:           authParams.AuthorityInfo.Tenant,
+		Authority:          authParams.AuthorityInfo.CanonicalAuthorityURI,
+		Claims:             authParams.Claims,
+		ClientCapabilities: authParams.Capabilities.Values(),
+		CorrelationID:      authParams.CorrelationID,
+		FMIPath:            authParams.ExtraBodyParameters["fmi_path"],
 	}
 }
 
@@ -167,7 +173,7 @@ func (c *Credential) JWT(ctx context.Context, authParams authority.AuthParams) (
 		return c.AssertionCallback(ctx, assertionRequestOptions(authParams))
 	}
 	claims := jwt.MapClaims{
-		"aud": authParams.Endpoints.TokenEndpoint,
+		"aud": authParams.EffectiveTokenEndpoint(),
 		"exp": json.Number(strconv.FormatInt(time.Now().Add(10*time.Minute).Unix(), 10)),
 		"iss": authParams.ClientID,
 		"jti": uuid.New().String(),
@@ -450,10 +456,7 @@ func (c Client) FromAssertion(ctx context.Context, authParameters authority.Auth
 	// wrongly catch the second one: a Bearer-over-mTLS request from a certificate credential sets a
 	// binding certificate without requesting an mtls_pop token, and must stay jwt-bearer. That is why
 	// this keys on AssertionBoundToCallbackCert, which only the callback path sets.
-	assertionType := grant.ClientAssertion
-	if authParameters.IsMtlsPoP || authParameters.AssertionBoundToCallbackCert {
-		assertionType = grant.ClientAssertionPoP
-	}
+	assertionType := clientAssertionType(authParameters)
 	qv.Set("client_assertion_type", assertionType)
 	qv.Set("client_assertion", assertion)
 	qv.Set(clientID, authParameters.ClientID)
@@ -511,7 +514,7 @@ func (c Client) FromUserAssertionClientCertificate(ctx context.Context, authPara
 		return TokenResponse{}, err
 	}
 	qv.Set(grantType, grant.JWT)
-	qv.Set("client_assertion_type", grant.ClientAssertion)
+	qv.Set("client_assertion_type", clientAssertionType(authParameters))
 	qv.Set("client_assertion", assertion)
 	qv.Set(clientID, authParameters.ClientID)
 	qv.Set("assertion", userAssertion)
@@ -624,6 +627,7 @@ func (c Client) FromSamlGrant(ctx context.Context, authParameters authority.Auth
 }
 
 func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams, qv url.Values) (TokenResponse, error) {
+	ctx = comm.WithCorrelationID(ctx, authParams.CorrelationID)
 	resp := TokenResponse{}
 	if authParams.AuthnScheme != nil {
 		trParams := authParams.AuthnScheme.TokenRequestParams()
@@ -631,16 +635,18 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 			qv.Set(k, v)
 		}
 	}
-	endpoint := authParams.Endpoints.TokenEndpoint
+	endpoint := authParams.EffectiveTokenEndpoint()
 	var err error
 	if authParams.IsMtlsPoP || authParams.MtlsTransport {
 		// mTLS transport: rewrite login.* -> mtlsauth.* and present the binding certificate on the TLS
 		// handshake. This covers both mTLS PoP (token_type=mtls_pop) and Bearer-over-mTLS (plain Bearer
 		// token). The endpoint derivation also enforces the mTLS guardrails (tenanted authority,
 		// supported cloud, login.* host).
-		endpoint, err = authParams.MtlsTokenEndpoint()
-		if err != nil {
-			return resp, err
+		if authParams.TokenEndpoint == "" {
+			endpoint, err = authParams.MtlsTokenEndpoint()
+			if err != nil {
+				return resp, err
+			}
 		}
 		err = c.Comm.URLFormCallWithCertificate(ctx, endpoint, qv, &resp, authParams.MtlsBindingCert)
 	} else {
@@ -660,9 +666,16 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 	// identity provider must honor it. Fail closed on a downgrade (e.g. token_type=Bearer) rather
 	// than returning a token that only looks bound. Mirrors MSAL .NET's TokenClient token_type
 	// check (error code "token_type_mismatch").
-	if authParams.IsMtlsPoP && !strings.EqualFold(resp.TokenType, authority.AccessTokenTypeMtlsPoP) {
+	expectedTokenType := authority.AccessTokenTypeBearer
+	if authParams.AuthnScheme != nil {
+		expectedTokenType = authParams.AuthnScheme.AccessTokenType()
+	}
+	if strings.EqualFold(resp.TokenType, expectedTokenType) {
+		return resp, nil
+	}
+	if strings.EqualFold(expectedTokenType, authority.AccessTokenTypeMtlsPoP) {
 		return resp, msalerrors.MtlsPoPTokenTypeMismatchError{
-			Expected: authority.AccessTokenTypeMtlsPoP,
+			Expected: expectedTokenType,
 			Actual:   resp.TokenType,
 		}
 	}
@@ -673,10 +686,11 @@ func (c Client) doTokenResp(ctx context.Context, authParams authority.AuthParams
 	// by the resource, which requires the bound certificate on the connection. Only the
 	// request/response pair can detect this, so reject it here rather than letting it surface as an
 	// opaque 401.
-	if !authParams.IsMtlsPoP && strings.EqualFold(resp.TokenType, authority.AccessTokenTypeMtlsPoP) {
-		return resp, fmt.Errorf("identity provider returned a %q access token for a request that did not ask for proof-of-possession: the token is bound to a certificate the caller has not been given and cannot present, so it would be rejected by the resource. Use WithMtlsProofOfPossession to request a certificate-bound token", resp.TokenType)
+	actual := resp.TokenType
+	if actual == "" {
+		actual = "<missing>"
 	}
-	return resp, nil
+	return resp, fmt.Errorf("requested token_type %q but the identity provider returned %q", expectedTokenType, actual)
 }
 
 // prepURLVals returns an url.Values that sets various key/values if we are doing secrets
@@ -693,8 +707,15 @@ func prepURLVals(ctx context.Context, cc *Credential, authParams authority.AuthP
 		return nil, err
 	}
 	params.Set("client_assertion", jwt)
-	params.Set("client_assertion_type", grant.ClientAssertion)
+	params.Set("client_assertion_type", clientAssertionType(authParams))
 	return params, nil
+}
+
+func clientAssertionType(authParams authority.AuthParams) string {
+	if authParams.IsMtlsPoP || authParams.AssertionBoundToCallbackCert {
+		return grant.ClientAssertionPoP
+	}
+	return grant.ClientAssertion
 }
 
 // openid required to get an id token

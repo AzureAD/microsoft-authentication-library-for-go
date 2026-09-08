@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"net/url"
@@ -20,6 +19,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/certutil"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -70,7 +70,11 @@ type AcquireTokenSilentParameters struct {
 	MtlsBindingCert *tls.Certificate
 	// MtlsTransport requests Bearer-over-mTLS: route over the mutual-TLS transport (mtlsauth.*) using
 	// MtlsBindingCert but return a plain Bearer token (see authority.AuthParams.MtlsTransport).
-	MtlsTransport bool
+	MtlsTransport                bool
+	AssertionBoundToCallbackCert bool
+	Endpoints                    authority.Endpoints
+	TokenEndpoint                string
+	CorrelationID                string
 }
 
 // AcquireTokenAuthCodeParameters contains the parameters required to acquire an access token using the auth code flow.
@@ -90,8 +94,12 @@ type AcquireTokenAuthCodeParameters struct {
 	CacheKeyComponents map[string]string
 	// MtlsBindingCert / MtlsTransport request Bearer-over-mTLS for the auth-code flow (route over
 	// mtlsauth.* with the certificate on the handshake, return a plain Bearer token).
-	MtlsBindingCert *tls.Certificate
-	MtlsTransport   bool
+	MtlsBindingCert              *tls.Certificate
+	MtlsTransport                bool
+	AssertionBoundToCallbackCert bool
+	Endpoints                    authority.Endpoints
+	TokenEndpoint                string
+	CorrelationID                string
 }
 
 type AcquireTokenOnBehalfOfParameters struct {
@@ -104,8 +112,12 @@ type AcquireTokenOnBehalfOfParameters struct {
 	CacheKeyComponents map[string]string
 	// MtlsBindingCert / MtlsTransport request Bearer-over-mTLS for the on-behalf-of flow (route over
 	// mtlsauth.* with the certificate on the handshake, return a plain Bearer token).
-	MtlsBindingCert *tls.Certificate
-	MtlsTransport   bool
+	MtlsBindingCert              *tls.Certificate
+	MtlsTransport                bool
+	AssertionBoundToCallbackCert bool
+	Endpoints                    authority.Endpoints
+	TokenEndpoint                string
+	CorrelationID                string
 }
 
 // AcquireTokenByUserFICParameters contains the parameters to acquire a user token via the user_fic flow.
@@ -197,35 +209,16 @@ var errBindingCertUnresolved = errors.New("mTLS proof-of-possession: the binding
 // PrivateKey is deliberately shared rather than copied: callers need the live signer to present the
 // certificate on the handshake to the resource, and a non-exportable key cannot be copied at all.
 func bindingCertWithLeaf(cert *tls.Certificate) *tls.Certificate {
-	if cert == nil || len(cert.Certificate) == 0 {
-		return nil
-	}
-	out := *cert
-	out.Certificate = copyDERChain(cert.Certificate)
-	leaf, err := x509.ParseCertificate(out.Certificate[0])
-	if err != nil {
-		return nil
-	}
-	out.Leaf = leaf
-	return &out
+	out, _ := bindingCertWithLeafError(cert)
+	return out
 }
 
-// copyDERChain deep-copies a DER chain so the returned certificate shares no backing array with the
-// cached *tls.Certificate it was derived from.
-func copyDERChain(chain [][]byte) [][]byte {
-	if chain == nil {
-		return nil
+func bindingCertWithLeafError(cert *tls.Certificate) (*tls.Certificate, error) {
+	out, err := certutil.CloneTLSCertificate(cert)
+	if err != nil {
+		return nil, fmt.Errorf("mTLS proof-of-possession binding certificate could not be copied: %w", err)
 	}
-	out := make([][]byte, len(chain))
-	for i, der := range chain {
-		if der == nil {
-			continue
-		}
-		cp := make([]byte, len(der))
-		copy(cp, der)
-		out[i] = cp
-	}
-	return out
+	return out, nil
 }
 
 type TokenSource int
@@ -466,6 +459,10 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.IsMtlsPoP = silent.IsMtlsPoP
 	authParams.MtlsBindingCert = silent.MtlsBindingCert
 	authParams.MtlsTransport = silent.MtlsTransport
+	authParams.AssertionBoundToCallbackCert = silent.AssertionBoundToCallbackCert
+	authParams.Endpoints = silent.Endpoints
+	authParams.TokenEndpoint = silent.TokenEndpoint
+	authParams.CorrelationID = silent.CorrelationID
 	if silent.MtlsTransport {
 		// Bearer-over-mTLS forces the x5c chain onto the private_key_jwt client assertion regardless of
 		// the app-level WithX5C setting (mirrors MSAL .NET's Mode=OAuth credential resolution).
@@ -495,9 +492,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			if authParams.IsMtlsPoP {
-				bindingCert := bindingCertWithLeaf(authParams.MtlsBindingCert)
-				if bindingCert == nil {
-					return AuthResult{}, errBindingCertUnresolved
+				bindingCert, certErr := bindingCertWithLeafError(authParams.MtlsBindingCert)
+				if certErr != nil {
+					return AuthResult{}, fmt.Errorf("%w: %v", errBindingCertUnresolved, certErr)
 				}
 				ar.BindingCertificate = bindingCert
 			}
@@ -569,6 +566,10 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 	authParams.AuthorizationType = authority.ATAuthCode
 	authParams.MtlsBindingCert = authCodeParams.MtlsBindingCert
 	authParams.MtlsTransport = authCodeParams.MtlsTransport
+	authParams.AssertionBoundToCallbackCert = authCodeParams.AssertionBoundToCallbackCert
+	authParams.Endpoints = authCodeParams.Endpoints
+	authParams.TokenEndpoint = authCodeParams.TokenEndpoint
+	authParams.CorrelationID = authCodeParams.CorrelationID
 	if authCodeParams.MtlsTransport {
 		authParams.SendX5C = true
 	}
@@ -596,17 +597,21 @@ func (b Client) AcquireTokenByAuthCode(ctx context.Context, authCodeParams Acqui
 func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams AcquireTokenOnBehalfOfParameters) (AuthResult, error) {
 	var ar AuthResult
 	silentParameters := AcquireTokenSilentParameters{
-		Scopes:             onBehalfOfParams.Scopes,
-		RequestType:        accesstokens.ATConfidential,
-		Credential:         onBehalfOfParams.Credential,
-		UserAssertion:      onBehalfOfParams.UserAssertion,
-		AuthorizationType:  authority.ATOnBehalfOf,
-		TenantID:           onBehalfOfParams.TenantID,
-		Claims:             onBehalfOfParams.Claims,
-		ClientClaims:       onBehalfOfParams.ClientClaims,
-		CacheKeyComponents: onBehalfOfParams.CacheKeyComponents,
-		MtlsBindingCert:    onBehalfOfParams.MtlsBindingCert,
-		MtlsTransport:      onBehalfOfParams.MtlsTransport,
+		Scopes:                       onBehalfOfParams.Scopes,
+		RequestType:                  accesstokens.ATConfidential,
+		Credential:                   onBehalfOfParams.Credential,
+		UserAssertion:                onBehalfOfParams.UserAssertion,
+		AuthorizationType:            authority.ATOnBehalfOf,
+		TenantID:                     onBehalfOfParams.TenantID,
+		Claims:                       onBehalfOfParams.Claims,
+		ClientClaims:                 onBehalfOfParams.ClientClaims,
+		CacheKeyComponents:           onBehalfOfParams.CacheKeyComponents,
+		MtlsBindingCert:              onBehalfOfParams.MtlsBindingCert,
+		MtlsTransport:                onBehalfOfParams.MtlsTransport,
+		AssertionBoundToCallbackCert: onBehalfOfParams.AssertionBoundToCallbackCert,
+		Endpoints:                    onBehalfOfParams.Endpoints,
+		TokenEndpoint:                onBehalfOfParams.TokenEndpoint,
+		CorrelationID:                onBehalfOfParams.CorrelationID,
 	}
 	ar, err := b.AcquireTokenSilent(ctx, silentParameters)
 	if err == nil {
@@ -626,6 +631,10 @@ func (b Client) AcquireTokenOnBehalfOf(ctx context.Context, onBehalfOfParams Acq
 	}
 	authParams.MtlsBindingCert = onBehalfOfParams.MtlsBindingCert
 	authParams.MtlsTransport = onBehalfOfParams.MtlsTransport
+	authParams.AssertionBoundToCallbackCert = onBehalfOfParams.AssertionBoundToCallbackCert
+	authParams.Endpoints = onBehalfOfParams.Endpoints
+	authParams.TokenEndpoint = onBehalfOfParams.TokenEndpoint
+	authParams.CorrelationID = onBehalfOfParams.CorrelationID
 	if onBehalfOfParams.MtlsTransport {
 		authParams.SendX5C = true
 	}
@@ -683,8 +692,9 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 	// every later acquisition would serve it from there without ever re-running this path.
 	var bindingCert *tls.Certificate
 	if authParams.IsMtlsPoP {
-		if bindingCert = bindingCertWithLeaf(authParams.MtlsBindingCert); bindingCert == nil {
-			return AuthResult{}, errBindingCertUnresolved
+		var certErr error
+		if bindingCert, certErr = bindingCertWithLeafError(authParams.MtlsBindingCert); certErr != nil {
+			return AuthResult{}, fmt.Errorf("%w: %v", errBindingCertUnresolved, certErr)
 		}
 	}
 	account, err := m.Write(authParams, token)

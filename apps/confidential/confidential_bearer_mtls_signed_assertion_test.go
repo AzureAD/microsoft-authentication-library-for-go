@@ -6,13 +6,294 @@ package confidential
 import (
 	"context"
 	"crypto/tls"
+	"encoding/base64"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"reflect"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
+
+func TestSendCertificateOverMtlsSignedCallbackUsesFinalEndpointAndOptions(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "callback-options")
+	const claims = `{"access_token":{"essential":true}}`
+	for _, test := range []struct {
+		name      string
+		authority string
+		region    string
+		private   bool
+		want      string
+	}{
+		{
+			name:      "global",
+			authority: "https://login.microsoftonline.com/tenant",
+			want:      "https://mtlsauth.microsoft.com/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "regional",
+			authority: "https://login.microsoftonline.com/tenant",
+			region:    "westus3",
+			want:      "https://westus3.mtlsauth.microsoft.com/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "US Government",
+			authority: "https://login.microsoftonline.us/tenant",
+			want:      "https://mtlsauth.microsoftonline.us/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "China",
+			authority: "https://login.partner.microsoftonline.cn/tenant",
+			want:      "https://mtlsauth.partner.microsoftonline.cn/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "private cloud",
+			authority: "https://login.private.example/tenant",
+			private:   true,
+			want:      "https://mtlsauth.private.example/tenant/oauth2/v2.0/token",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var got AssertionRequestOptions
+			cred := NewCredFromSignedAssertionCallback(func(_ context.Context, opts AssertionRequestOptions) (SignedAssertion, error) {
+				got = opts
+				return SignedAssertion{Assertion: "opaque-assertion", BindingCertificate: tlsCertFor(leaf, key)}, nil
+			})
+			var opts []Option
+			if test.region != "" {
+				opts = append(opts, WithAzureRegion(test.region))
+			}
+
+			t.Run("public flow jwt-pop", func(t *testing.T) {
+				for _, test := range []struct {
+					name    string
+					acquire func(Client) (AuthResult, error)
+				}{
+					{
+						name: "client credential",
+						acquire: func(client Client) (AuthResult, error) {
+							return client.AcquireTokenByCredential(context.Background(), tokenScope)
+						},
+					},
+					{
+						name: "authorization code",
+						acquire: func(client Client) (AuthResult, error) {
+							return client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+						},
+					},
+					{
+						name: "on behalf of",
+						acquire: func(client Client) (AuthResult, error) {
+							return client.AcquireTokenOnBehalfOf(context.Background(), "user-assertion", tokenScope)
+						},
+					},
+				} {
+					t.Run(test.name, func(t *testing.T) {
+						leaf, key := newSelfSignedCert(t, test.name)
+						var gotOpts AssertionRequestOptions
+						cred := NewCredFromSignedAssertionCallback(func(_ context.Context, opts AssertionRequestOptions) (SignedAssertion, error) {
+							gotOpts = opts
+							return SignedAssertion{Assertion: "bound-assertion", BindingCertificate: tlsCertFor(leaf, key)}, nil
+						})
+						client, router := newBearerMtlsClient(t, cred, bearerMtlsControlAuthority)
+						if _, err := test.acquire(client); err != nil {
+							t.Fatal(err)
+						}
+						req := router.tokenRequest()
+						form := router.tokenRequestBody()
+						if req == nil || form == nil {
+							t.Fatal("no token request was recorded")
+						}
+						if gotOpts.TokenEndpoint != req.String() {
+							t.Errorf("callback endpoint = %q, request URI = %q", gotOpts.TokenEndpoint, req)
+						}
+						if requestID := router.tokenRequestHeader().Get("client-request-id"); requestID != gotOpts.CorrelationID {
+							t.Errorf("request client-request-id = %q, callback CorrelationID = %q", requestID, gotOpts.CorrelationID)
+						}
+						if got := form.Get("client_assertion"); got != "bound-assertion" {
+							t.Errorf("client_assertion = %q, want callback result", got)
+						}
+						if got := form.Get("client_assertion_type"); !strings.HasSuffix(got, "jwt-pop") {
+							t.Errorf("client_assertion_type = %q, want jwt-pop", got)
+						}
+					})
+				}
+			})
+
+			t.Run("silent refresh jwt-pop", func(t *testing.T) {
+				leaf, key := newSelfSignedCert(t, "silent-refresh")
+				var callbackOptions []AssertionRequestOptions
+				cred := NewCredFromSignedAssertionCallback(func(_ context.Context, opts AssertionRequestOptions) (SignedAssertion, error) {
+					callbackOptions = append(callbackOptions, opts)
+					return SignedAssertion{Assertion: "bound-assertion", BindingCertificate: tlsCertFor(leaf, key)}, nil
+				})
+
+				const (
+					tenant = "tenant"
+					lmo    = "login.microsoftonline.com"
+				)
+				clientInfo := base64.RawStdEncoding.EncodeToString([]byte(`{"uid":"uid","utid":"utid"}`))
+				idToken := mock.GetIDToken(tenant, fmt.Sprintf(authorityFmt, lmo, tenant))
+				mockClient := mock.NewClient()
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+				mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("seed", idToken, "refresh-token", clientInfo, 1, 0)))
+
+				client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+					WithHTTPClient(mockClient),
+					WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+					WithInstanceDiscovery(false),
+					WithSendCertificateOverMtls(),
+				)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				t.Run("certificate ownership boundaries", func(t *testing.T) {
+					leaf, key := newSelfSignedCert(t, "ownership")
+					caller := &tls.Certificate{
+						Certificate:                  [][]byte{append([]byte(nil), leaf.Raw...)},
+						PrivateKey:                   key,
+						Leaf:                         leaf,
+						SupportedSignatureAlgorithms: []tls.SignatureScheme{tls.PKCS1WithSHA256},
+						OCSPStaple:                   []byte{1, 2, 3},
+						SignedCertificateTimestamps:  [][]byte{{4, 5, 6}},
+					}
+					cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
+						return SignedAssertion{Assertion: "bound-assertion", BindingCertificate: caller}, nil
+					})
+					router := &bearerMtlsRouter{
+						host:      "login.microsoftonline.com",
+						tenant:    "tenant",
+						tokenBody: mtlsPoPTokenBody("mtls-pop-token", 3600),
+					}
+					var factoryCert tls.Certificate
+					client, err := New("https://login.microsoftonline.com/tenant", fakeClientID, cred,
+						WithHTTPClient(router),
+						WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
+							factoryCert = cert
+							return &http.Client{Transport: bearerMtlsRoundTripper{router: router}}
+						}),
+					)
+					if err != nil {
+						t.Fatal(err)
+					}
+					result, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithMtlsProofOfPossession())
+					if err != nil {
+						t.Fatal(err)
+					}
+					if result.BindingCertificate == nil {
+						t.Fatal("result has no binding certificate")
+					}
+
+					mutate := func(cert *tls.Certificate, marker byte, algorithm tls.SignatureScheme) {
+						cert.Certificate[0][0] = marker
+						cert.Leaf.Raw[1] = marker + 1
+						cert.SupportedSignatureAlgorithms[0] = algorithm
+						cert.OCSPStaple[0] = marker + 2
+						cert.SignedCertificateTimestamps[0][0] = marker + 3
+					}
+					certs := []*tls.Certificate{caller, &factoryCert, result.BindingCertificate}
+					markers := []byte{0x11, 0x22, 0x33}
+					algorithms := []tls.SignatureScheme{tls.PKCS1WithSHA384, tls.PSSWithSHA256, tls.PSSWithSHA384}
+					var wg sync.WaitGroup
+					for i, cert := range certs {
+						wg.Add(1)
+						go func(cert *tls.Certificate, marker byte, algorithm tls.SignatureScheme) {
+							defer wg.Done()
+							mutate(cert, marker, algorithm)
+						}(cert, markers[i], algorithms[i])
+					}
+					wg.Wait()
+
+					for i, cert := range certs {
+						if cert.Certificate[0][0] != markers[i] ||
+							cert.Leaf.Raw[1] != markers[i]+1 ||
+							cert.SupportedSignatureAlgorithms[0] != algorithms[i] ||
+							cert.OCSPStaple[0] != markers[i]+2 ||
+							cert.SignedCertificateTimestamps[0][0] != markers[i]+3 {
+							t.Errorf("certificate %d shares mutable state across an ownership boundary", i)
+						}
+					}
+					if caller.PrivateKey != factoryCert.PrivateKey || caller.PrivateKey != result.BindingCertificate.PrivateKey {
+						t.Error("PrivateKey should be the one intentionally shared field")
+					}
+				})
+				seed, err := client.AcquireTokenByAuthCode(context.Background(), "code", "https://localhost", tokenScope)
+				if err != nil {
+					t.Fatal(err)
+				}
+
+				var refreshURL string
+				var refreshRequestID string
+				var refreshForm url.Values
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody("refreshed", idToken, "refresh-token", clientInfo, 3600, 0)),
+					mock.WithCallback(func(r *http.Request) {
+						refreshURL = r.URL.String()
+						refreshRequestID = r.Header.Get("client-request-id")
+						body, _ := io.ReadAll(r.Body)
+						refreshForm, _ = url.ParseQuery(string(body))
+					}),
+				)
+				if _, err := client.AcquireTokenSilent(context.Background(), tokenScope, WithSilentAccount(seed.Account)); err != nil {
+					t.Fatal(err)
+				}
+				if got := refreshForm.Get("grant_type"); got != "refresh_token" {
+					t.Fatalf("grant_type = %q, want refresh_token", got)
+				}
+				if got := refreshForm.Get("client_assertion_type"); !strings.HasSuffix(got, "jwt-pop") {
+					t.Errorf("client_assertion_type = %q, want jwt-pop", got)
+				}
+				if len(callbackOptions) != 2 ||
+					callbackOptions[1].TokenEndpoint != refreshURL ||
+					callbackOptions[1].CorrelationID != refreshRequestID {
+					t.Errorf("refresh callback options = %+v, request URI = %q, client-request-id = %q", callbackOptions, refreshURL, refreshRequestID)
+				}
+			})
+			if test.private {
+				opts = append(opts, WithInstanceDiscovery(false))
+			}
+			opts = append(opts, WithClientCapabilities([]string{"CP1"}))
+			client, router := newBearerMtlsClient(t, cred, test.authority, opts...)
+			if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope,
+				WithClaims(claims), WithFMIPath("fmi/path")); err != nil {
+				t.Fatal(err)
+			}
+			req := router.tokenRequest()
+			if req == nil {
+				t.Fatal("no token request was sent")
+			}
+			if req.String() != test.want || got.TokenEndpoint != req.String() {
+				t.Fatalf("callback endpoint = %q, request endpoint = %q, want %q", got.TokenEndpoint, req, test.want)
+			}
+			if got.ClientID != fakeClientID || got.TenantID != "tenant" {
+				t.Errorf("callback identity options = {ClientID:%q TenantID:%q}", got.ClientID, got.TenantID)
+			}
+			if got.Authority != test.authority+"/" {
+				t.Errorf("callback Authority = %q, want %q", got.Authority, test.authority+"/")
+			}
+			if got.Claims != claims || got.FMIPath != "fmi/path" {
+				t.Errorf("callback request options = {Claims:%q FMIPath:%q}", got.Claims, got.FMIPath)
+			}
+			if !reflect.DeepEqual(got.ClientCapabilities, []string{"CP1"}) {
+				t.Errorf("callback ClientCapabilities = %v, want [CP1]", got.ClientCapabilities)
+			}
+			if got.CorrelationID == "" {
+				t.Error("callback CorrelationID is empty")
+			} else if requestID := router.tokenRequestHeader().Get("client-request-id"); requestID != got.CorrelationID {
+				t.Errorf("token request client-request-id = %q, callback CorrelationID = %q", requestID, got.CorrelationID)
+			}
+			if assertionType := router.tokenRequestBody().Get("client_assertion_type"); !strings.HasSuffix(assertionType, "jwt-pop") {
+				t.Errorf("client_assertion_type = %q, want jwt-pop", assertionType)
+			}
+		})
+	}
+}
 
 // bearerMtlsCallbackCred builds a signed-assertion credential whose callback returns the test
 // certificate as its binding certificate, and reports how many times the callback ran.

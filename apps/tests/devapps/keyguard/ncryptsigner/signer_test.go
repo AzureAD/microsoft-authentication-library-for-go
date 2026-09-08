@@ -9,10 +9,13 @@ import (
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/x509"
+	"crypto/x509/pkix"
 	"encoding/binary"
 	"math/big"
 	"strings"
 	"testing"
+	"time"
 )
 
 // rsaPublicBlob builds the BCRYPT_RSAKEY_BLOB CNG returns for a public key, so the parser can be
@@ -146,7 +149,75 @@ func TestSignRejectsNegativeSaltLength(t *testing.T) {
 	if err == nil {
 		t.Fatal("Sign() = nil error, want a rejection for a negative PSS salt length")
 	}
+
 	if !strings.Contains(err.Error(), "invalid PSS salt length -7") {
 		t.Errorf("Sign() error = %v, want it to name the invalid salt length", err)
+	}
+}
+
+func TestIsSelfSignedPreservesSelfIssuedRolloverCertificate(t *testing.T) {
+	oldKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	newKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
+	name := pkix.Name{CommonName: "rollover authority"}
+	oldTemplate := &x509.Certificate{
+		SerialNumber:          big.NewInt(1),
+		Subject:               name,
+		NotBefore:             time.Now().Add(-time.Hour),
+		NotAfter:              time.Now().Add(time.Hour),
+		IsCA:                  true,
+		BasicConstraintsValid: true,
+		KeyUsage:              x509.KeyUsageCertSign,
+	}
+	oldDER, err := x509.CreateCertificate(rand.Reader, oldTemplate, oldTemplate, &oldKey.PublicKey, oldKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	oldCert, err := x509.ParseCertificate(oldDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !isSelfSigned(oldCert) {
+		t.Fatal("self-signed root was not recognized")
+	}
+
+	rolloverTemplate := *oldTemplate
+	rolloverTemplate.SerialNumber = big.NewInt(2)
+	rolloverDER, err := x509.CreateCertificate(rand.Reader, &rolloverTemplate, oldCert, &newKey.PublicKey, oldKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	rollover, err := x509.ParseCertificate(rolloverDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(rollover.RawIssuer) != string(rollover.RawSubject) {
+		t.Fatal("fixture is not self-issued")
+	}
+	if isSelfSigned(rollover) {
+		t.Fatal("self-issued rollover intermediate was mistaken for a self-signed root")
+	}
+
+	renewedTemplate := *oldTemplate
+	renewedTemplate.SerialNumber = big.NewInt(3)
+	renewedTemplate.Subject = pkix.Name{CommonName: "renewed authority"}
+	renewedDER, err := x509.CreateCertificate(rand.Reader, &renewedTemplate, oldCert, &oldKey.PublicKey, oldKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	renewed, err := x509.ParseCertificate(renewedDER)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if renewed.CheckSignatureFrom(renewed) != nil {
+		t.Fatal("fixture must self-verify because issuer and subject share a key")
+	}
+	if isSelfSigned(renewed) {
+		t.Fatal("different-DN intermediate sharing its issuer's key was mistaken for a root")
 	}
 }

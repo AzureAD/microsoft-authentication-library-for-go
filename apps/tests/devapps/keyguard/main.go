@@ -286,6 +286,9 @@ func callResource(ctx context.Context, resourceURL, token string, bindingCert *t
 	}
 	client := &http.Client{
 		Timeout: 30 * time.Second,
+		CheckRedirect: func(req *http.Request, via []*http.Request) error {
+			return fmt.Errorf("refusing resource redirect to %s because it could replay the bound token and client certificate", req.URL.Redacted())
+		},
 		Transport: &http.Transport{
 			TLSClientConfig: &tls.Config{
 				// The binding certificate is used exactly as MSAL returned it. Its PrivateKey is

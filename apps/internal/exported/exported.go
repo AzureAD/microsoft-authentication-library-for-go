@@ -13,10 +13,10 @@ type SignedAssertion struct {
 	// Assertion is the client assertion, the same value a plain assertion callback returns.
 	Assertion string
 
-	// BindingCertificate is the certificate the assertion is bound to, presented as the client
-	// certificate on the mutual-TLS handshake when the request is an mTLS proof-of-possession
-	// request. It is required for such a request and unused for any other. Its PrivateKey may be
-	// any crypto.Signer, including a non-exportable platform key.
+	// BindingCertificate is the certificate the assertion is bound to. It is presented as the client
+	// certificate for both mTLS proof-of-possession and WithSendCertificateOverMtls requests. It is
+	// required on those requests and unused otherwise. Its PrivateKey may be any crypto.Signer,
+	// including a non-exportable platform key.
 	BindingCertificate *tls.Certificate
 }
 
@@ -27,6 +27,22 @@ type AssertionRequestOptions struct {
 
 	// TokenEndpoint is the intended token endpoint. Used as the assertion's "aud" claim.
 	TokenEndpoint string
+
+	// TenantID is the tenant selected for this request, including a per-request tenant override.
+	TenantID string
+
+	// Authority is the canonical authority configured for this request. Unlike TokenEndpoint, it is
+	// never rewritten to an mTLS wire endpoint.
+	Authority string
+
+	// Claims contains the per-request claims challenge, if any.
+	Claims string
+
+	// ClientCapabilities contains the client capabilities configured on the application.
+	ClientCapabilities []string
+
+	// CorrelationID identifies this authentication request for diagnostics.
+	CorrelationID string
 
 	// FMIPath is the federated managed identity path for the current request, if any.
 	// Assertion providers can use this to scope the credential they return.

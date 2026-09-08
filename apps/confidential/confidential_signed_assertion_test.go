@@ -977,8 +977,8 @@ func TestSignedAssertionCallbackReceivesResolvedTokenEndpoint(t *testing.T) {
 	if gotOpts.FMIPath != "fmi/path" {
 		t.Errorf("callback FMIPath = %q, want fmi/path", gotOpts.FMIPath)
 	}
-	if !strings.HasPrefix(gotOpts.TokenEndpoint, "https://login.microsoftonline.com/") {
-		t.Errorf("callback TokenEndpoint = %q, want the resolved login.microsoftonline.com endpoint", gotOpts.TokenEndpoint)
+	if !strings.HasPrefix(gotOpts.TokenEndpoint, "https://mtlsauth.microsoft.com/") {
+		t.Errorf("callback TokenEndpoint = %q, want the final mtlsauth.microsoft.com endpoint", gotOpts.TokenEndpoint)
 	}
 }
 

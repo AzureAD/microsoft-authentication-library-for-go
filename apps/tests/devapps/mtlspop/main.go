@@ -223,8 +223,16 @@ func run(cfg config) error {
 func useToken(cfg config, result confidential.AuthResult) error {
 	section("using the token")
 
+	target := cfg.resource
+	if target == "" {
+		target = graphMtlsResourceURL
+	}
+	if err := requireHTTPS(target); err != nil {
+		return err
+	}
 	client := &http.Client{
-		Timeout: 30 * time.Second,
+		Timeout:       30 * time.Second,
+		CheckRedirect: refuseResourceRedirect,
 		Transport: &http.Transport{
 			// #nosec G402 -- MaxVersion is pinned to TLS 1.2 deliberately. Go
 			// implements renegotiation only for TLS 1.2 and does not implement
@@ -242,14 +250,11 @@ func useToken(cfg config, result confidential.AuthResult) error {
 		},
 	}
 
-	target := cfg.resource
-	if target == "" {
-		target = graphMtlsResourceURL
-	}
 	req, err := http.NewRequest(http.MethodGet, target, nil)
 	if err != nil {
 		return fmt.Errorf("building the resource request failed: %w", err)
 	}
+
 	// Not "Bearer". A resource expecting proof-of-possession rejects the Bearer scheme.
 	req.Header.Set("Authorization", "mtls_pop "+result.AccessToken)
 
@@ -280,6 +285,21 @@ func useToken(cfg config, result confidential.AuthResult) error {
 	}
 	fmt.Println("  OK: the resource accepted the certificate-bound token over mTLS.")
 	return nil
+}
+
+func requireHTTPS(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("resource URL %q is invalid: %w", rawURL, err)
+	}
+	if u.Scheme != "https" || u.Host == "" {
+		return fmt.Errorf("resource URL %q must be an absolute https:// URL", rawURL)
+	}
+	return nil
+}
+
+func refuseResourceRedirect(req *http.Request, via []*http.Request) error {
+	return fmt.Errorf("refusing resource redirect to %s because it could replay the bound token and client certificate", req.URL.Redacted())
 }
 
 // tracingMtlsClient builds the mutual-TLS client used for the token request and wraps its transport

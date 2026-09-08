@@ -122,7 +122,8 @@ func TestCloneBaseTransportStillWorksWithRealDefaultTransport(t *testing.T) {
 // bytes that no longer match the thumbprint it is filed under, and a token bound to a certificate
 // MSAL never saw.
 func TestMtlsClientPinsCertificateDER(t *testing.T) {
-	der := []byte{0x01, 0x02, 0x03, 0x04}
+	fixture := parseableTestCert(t, 6)
+	der := append([]byte(nil), fixture.Certificate[0]...)
 	cert := &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: testKey}
 
 	var seen []byte
@@ -157,22 +158,45 @@ func TestMtlsClientPinsCertificateDER(t *testing.T) {
 func TestMtlsClientPinnedCertReachesBuiltClient(t *testing.T) {
 	tlsCert := signerOnlyTestCert(t)
 	der := tlsCert.Certificate[0]
-	cert := &tls.Certificate{Certificate: [][]byte{der}, PrivateKey: tlsCert.PrivateKey}
+	cert := &tls.Certificate{
+		Certificate:                  [][]byte{der},
+		PrivateKey:                   tlsCert.PrivateKey,
+		SupportedSignatureAlgorithms: []tls.SignatureScheme{tls.PKCS1WithSHA256},
+		OCSPStaple:                   []byte{1, 2, 3},
+		SignedCertificateTimestamps:  [][]byte{{4, 5, 6}},
+	}
 
 	c := &Client{}
 	got, err := c.mtlsClient(cert)
 	if err != nil {
 		t.Fatal(err)
 	}
-	presented := got.(*http.Client).Transport.(*http.Transport).TLSClientConfig.Certificates[0].Certificate[0]
+	presentedCert := &got.(*http.Client).Transport.(*http.Transport).TLSClientConfig.Certificates[0]
+	presented := presentedCert.Certificate[0]
 	if &presented[0] == &der[0] {
 		t.Fatal("the built client presents the caller's backing array")
 	}
 	before := append([]byte(nil), presented...)
+	leafBefore := append([]byte(nil), presentedCert.Leaf.Raw...)
 	for i := range der {
 		der[i] ^= 0xff
 	}
+	cert.SupportedSignatureAlgorithms[0] = tls.PSSWithSHA256
+	cert.OCSPStaple[0] ^= 0xff
+	cert.SignedCertificateTimestamps[0][0] ^= 0xff
 	if !bytes.Equal(presented, before) {
 		t.Error("mutating the caller's DER changed what the cached client presents on the handshake")
+	}
+	if !bytes.Equal(presentedCert.Leaf.Raw, leafBefore) {
+		t.Error("cached transport Leaf.Raw aliases the caller")
+	}
+	if presentedCert.SupportedSignatureAlgorithms[0] != tls.PKCS1WithSHA256 {
+		t.Error("cached transport SupportedSignatureAlgorithms aliases the caller")
+	}
+	if presentedCert.OCSPStaple[0] != 1 {
+		t.Error("cached transport OCSPStaple aliases the caller")
+	}
+	if presentedCert.SignedCertificateTimestamps[0][0] != 4 {
+		t.Error("cached transport SignedCertificateTimestamps aliases the caller")
 	}
 }

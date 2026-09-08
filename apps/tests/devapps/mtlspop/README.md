@@ -29,18 +29,28 @@ MSAL reported and the thumbprint inside the token agree. That is the proof the t
 Redeeming the token then takes **both halves**, and neither works alone:
 
 ```go
-tls.Config{Certificates: []tls.Certificate{*res.BindingCertificate}}
+tls.Config{
+    GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
+        return res.BindingCertificate, nil
+    },
+    MinVersion:    tls.VersionTLS12,
+    MaxVersion:    tls.VersionTLS12,
+    Renegotiation: tls.RenegotiateOnceAsClient,
+}
 req.Header.Set("Authorization", "mtls_pop "+res.AccessToken)
 ```
 
-The `using the token` section builds exactly that client and request. It only sends it when
-`-resource` is supplied.
+The `using the token` section requires an HTTPS resource URL and refuses redirects before sending.
+It uses `GetClientCertificate` so Go doesn't filter the certificate against the server's advertised
+CAs. TLS 1.2 renegotiation is needed for resources such as Key Vault that ask for a certificate
+after the initial handshake; Go doesn't implement the TLS 1.3 post-handshake equivalent. The demo
+only sends the request when `-resource` is supplied.
 
 ### Three things that are easy to get wrong
 
-- **`WithX5C()` is inert in this flow.** mTLS PoP mints no client assertion at all, so there is no
-  JWT header for an `x5c` array to ride in. The chain is presented on the TLS handshake instead.
-  Passing `WithX5C()` is harmless but changes nothing about an mTLS PoP call.
+- **`WithX5C()` is inert in the direct certificate-credential flow shown here.** That form mints no
+  client assertion, so there is no JWT header for an `x5c` array to ride in. The callback/two-leg
+  form instead sends a certificate-bound `jwt-pop` assertion.
 - **The token endpoint is rewritten from `login.*` to `mtlsauth.*`** (regionalized to
   `{region}.mtlsauth.*` when a region is configured). Public-cloud login hosts collapse onto the
   shared `mtlsauth.microsoft.com` family.
@@ -146,7 +156,7 @@ depend on your certificate and region.
   The token is cryptographically bound to the certificate presented on the TLS handshake.
 
 == using the token ==
-  tls.Config.Certificates:         []tls.Certificate{*result.BindingCertificate}
+  tls.Config.GetClientCertificate: returns result.BindingCertificate
   Authorization header:            "mtls_pop " + result.AccessToken
   resource:                        https://mtlstb.graph.microsoft.com/v1.0/applications?$top=1
   The client and request above are built but not sent; pass -resource <url> to send it.

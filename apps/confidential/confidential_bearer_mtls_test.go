@@ -36,6 +36,126 @@ func assertClientAssertionHasX5C(t *testing.T, assertion string) {
 	}
 }
 
+func assertClientAssertionAudience(t *testing.T, assertion, want string) {
+	t.Helper()
+	parts := strings.Split(assertion, ".")
+	if len(parts) != 3 {
+		t.Fatalf("client_assertion is not a JWT: %q", assertion)
+	}
+	payload, err := base64.RawURLEncoding.DecodeString(parts[1])
+	if err != nil {
+		t.Fatal(err)
+	}
+	var claims struct {
+		Audience string `json:"aud"`
+	}
+	if err := json.Unmarshal(payload, &claims); err != nil {
+		t.Fatal(err)
+	}
+	if claims.Audience != want {
+		t.Errorf("client_assertion aud = %q, want final request URI %q", claims.Audience, want)
+	}
+}
+
+func TestSendCertificateOverMtlsGeneratedAssertionUsesFinalEndpoint(t *testing.T) {
+	certs, key := loadTestCert(t)
+	cred, err := NewCredFromCert(certs, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	t.Run("mismatched token type is not cached", func(t *testing.T) {
+		certs, key := loadTestCert(t)
+		cred, err := NewCredFromCert(certs, key)
+		if err != nil {
+			t.Fatal(err)
+		}
+		const (
+			tenant = "tenant"
+			lmo    = "login.microsoftonline.com"
+		)
+		cache := make(testCache)
+		mockClient := mock.NewClient()
+		mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+		mockClient.AppendResponse(mock.WithBody([]byte(
+			`{"access_token":"wrong-type","expires_in":3600,"token_type":"DPoP"}`)))
+
+		client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+			WithHTTPClient(mockClient),
+			WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+			WithSendCertificateOverMtls(),
+			WithCache(&cache),
+		)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope); err == nil {
+			t.Fatal("expected a token_type mismatch")
+		}
+		if len(cache) != 0 {
+			t.Errorf("mismatched token entered %d cache partition(s)", len(cache))
+		}
+	})
+	for _, test := range []struct {
+		name      string
+		authority string
+		region    string
+		private   bool
+		want      string
+	}{
+		{
+			name:      "global",
+			authority: "https://login.microsoftonline.com/tenant",
+			want:      "https://mtlsauth.microsoft.com/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "regional",
+			authority: "https://login.microsoftonline.com/tenant",
+			region:    "westus3",
+			want:      "https://westus3.mtlsauth.microsoft.com/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "US Government",
+			authority: "https://login.microsoftonline.us/tenant",
+			want:      "https://mtlsauth.microsoftonline.us/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "China",
+			authority: "https://login.partner.microsoftonline.cn/tenant",
+			want:      "https://mtlsauth.partner.microsoftonline.cn/tenant/oauth2/v2.0/token",
+		},
+		{
+			name:      "private cloud",
+			authority: "https://login.private.example/tenant",
+			private:   true,
+			want:      "https://mtlsauth.private.example/tenant/oauth2/v2.0/token",
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			var opts []Option
+			if test.region != "" {
+				opts = append(opts, WithAzureRegion(test.region))
+			}
+			if test.private {
+				opts = append(opts, WithInstanceDiscovery(false))
+			}
+			client, router := newBearerMtlsClient(t, cred, test.authority, opts...)
+			if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope); err != nil {
+				t.Fatal(err)
+			}
+			req := router.tokenRequest()
+			if req == nil {
+				t.Fatal("no token request was sent")
+			}
+			if got := req.String(); got != test.want {
+				t.Fatalf("token endpoint = %q, want %q", got, test.want)
+			}
+			assertClientAssertionAudience(t, router.tokenRequestBody().Get("client_assertion"), req.String())
+		})
+	}
+}
+
 // assertAccessTokenCachedUnder fails unless every access token in the serialized cache is stored under
 // wantEnv and none is keyed under an mtlsauth.* host. Bearer-over-mTLS rewrites only the transport
 // endpoint (inside accesstokens.doTokenResp), so the cache environment must remain the login-derived

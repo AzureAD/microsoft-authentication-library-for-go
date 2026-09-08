@@ -39,6 +39,8 @@ type bearerMtlsRouter struct {
 	reqs       int
 	tokenReqs  []*url.URL
 	tokenBodys []url.Values
+	tokenHeads []http.Header
+	tokenBody  []byte
 }
 
 func (r *bearerMtlsRouter) Do(req *http.Request) (*http.Response, error) {
@@ -63,8 +65,12 @@ func (r *bearerMtlsRouter) Do(req *http.Request) (*http.Response, error) {
 		r.mu.Lock()
 		r.tokenReqs = append(r.tokenReqs, req.URL)
 		r.tokenBodys = append(r.tokenBodys, form)
+		r.tokenHeads = append(r.tokenHeads, req.Header.Clone())
 		r.mu.Unlock()
-		body = mock.GetAccessTokenBody("bearer-over-mtls-token", "", "", "", 3600, 0)
+		body = r.tokenBody
+		if body == nil {
+			body = mock.GetAccessTokenBody("bearer-over-mtls-token", "", "", "", 3600, 0)
+		}
 	}
 	return &http.Response{
 		StatusCode: http.StatusOK,
@@ -93,6 +99,25 @@ func (r *bearerMtlsRouter) tokenRequestBody() url.Values {
 		return nil
 	}
 	return r.tokenBodys[0]
+}
+
+func (r *bearerMtlsRouter) tokenRequestHeader() http.Header {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if len(r.tokenHeads) == 0 {
+		return nil
+	}
+	return r.tokenHeads[0].Clone()
+}
+
+func (r *bearerMtlsRouter) tokenRequestHeaders() []http.Header {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	headers := make([]http.Header, len(r.tokenHeads))
+	for i, header := range r.tokenHeads {
+		headers[i] = header.Clone()
+	}
+	return headers
 }
 
 // requestCount returns how many requests the client attempted in total, discovery included, so a

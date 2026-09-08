@@ -152,6 +152,38 @@ func TestBuildMtlsClientRefusesRedirectsByDefault(t *testing.T) {
 				t.Fatalf("BuildMtlsClient error: %v", err)
 			}
 
+			t.Run("custom factory", func(t *testing.T) {
+				target := &tlsRecorder{}
+				targetSrv := startTLSServer(t, target.handler(http.StatusOK, ""), 0)
+				origin := &tlsRecorder{}
+				originSrv := startTLSServer(t, origin.handler(status, targetSrv.URL+"/redirected"), 0)
+				roots := rootsFor(targetSrv, originSrv)
+				cert := newBindingCert(t, "factory-binding-cert")
+
+				c := &Client{}
+				c.SetMtlsClientFactory(func(cert tls.Certificate) HTTPClient {
+					return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+						RootCAs:      roots,
+						Certificates: []tls.Certificate{cert},
+						MinVersion:   tls.VersionTLS12,
+					}}}
+				})
+				client, err := c.mtlsClient(&cert)
+				if err != nil {
+					t.Fatal(err)
+				}
+				resp, err := postAssertion(t, client.(*http.Client), originSrv.URL)
+				if resp != nil {
+					resp.Body.Close()
+				}
+				if err == nil {
+					t.Fatalf("custom factory client followed the %d redirect", status)
+				}
+				if hits := target.snapshot(); len(hits) != 0 {
+					t.Fatalf("redirect target was reached %d time(s)", len(hits))
+				}
+			})
+
 			resp, err := postAssertion(t, client, originSrv.URL)
 			if resp != nil {
 				resp.Body.Close()

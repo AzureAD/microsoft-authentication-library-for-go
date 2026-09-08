@@ -110,8 +110,8 @@ func TestUnrequestedMtlsPoPTokenTypeRejected(t *testing.T) {
 	if !strings.Contains(err.Error(), authority.AccessTokenTypeMtlsPoP) {
 		t.Errorf("error should name the token type it rejected, got: %v", err)
 	}
-	if !strings.Contains(err.Error(), "WithMtlsProofOfPossession") {
-		t.Errorf("error should name the remedy, got: %v", err)
+	if !strings.Contains(err.Error(), authority.AccessTokenTypeBearer) {
+		t.Errorf("error should name the expected token type, got: %v", err)
 	}
 }
 
@@ -130,4 +130,36 @@ func TestUnrequestedBearerTokenTypeAccepted(t *testing.T) {
 	if _, err := client.FromClientCertificate(context.Background(), authParams); err != nil {
 		t.Fatalf("a bearer response to a non-PoP request must be accepted, got: %v", err)
 	}
+
+	t.Run("active scheme token type validation", func(t *testing.T) {
+		cert := selfSignedTLSCert(t)
+		for _, test := range []struct {
+			tokenType string
+			wantErr   bool
+		}{
+			{tokenType: "Bearer"},
+			{tokenType: "bearer"},
+			{tokenType: "BEARER"},
+			{tokenType: "", wantErr: true},
+			{tokenType: "DPoP", wantErr: true},
+			{tokenType: "PoP", wantErr: true},
+			{tokenType: "arbitrary", wantErr: true},
+			{tokenType: authority.AccessTokenTypeMtlsPoP, wantErr: true},
+		} {
+			t.Run(test.tokenType, func(t *testing.T) {
+				authParams := mtlsAuthParams(cert)
+				authParams.IsMtlsPoP = false
+				authParams.MtlsTransport = true
+				authParams.AuthnScheme = &authority.BearerAuthenticationScheme{}
+				fake := &respWritingCaller{tokenType: test.tokenType}
+				_, err := (Client{Comm: fake}).FromClientCertificate(context.Background(), authParams)
+				if (err != nil) != test.wantErr {
+					t.Fatalf("token_type %q error = %v, wantErr %t", test.tokenType, err, test.wantErr)
+				}
+				if test.wantErr && !strings.Contains(err.Error(), authority.AccessTokenTypeBearer) {
+					t.Errorf("error %q doesn't name expected token type Bearer", err)
+				}
+			})
+		}
+	})
 }

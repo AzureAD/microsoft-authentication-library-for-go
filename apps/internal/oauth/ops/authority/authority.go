@@ -57,6 +57,15 @@ type jsonCaller interface {
 	JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error
 }
 
+// EffectiveTokenEndpoint returns the final per-request endpoint when one has been resolved, or the
+// ordinary discovery endpoint for callers that construct AuthParams directly.
+func (p AuthParams) EffectiveTokenEndpoint() string {
+	if p.TokenEndpoint != "" {
+		return p.TokenEndpoint
+	}
+	return p.Endpoints.TokenEndpoint
+}
+
 // For backward compatibility, accept both old and new China endpoints for a transition period.
 // This list is derived from the AAD instance discovery metadata and represents all known trusted hosts
 // across different Azure clouds (Public, China, Germany, US Government, etc.)
@@ -247,6 +256,9 @@ type AuthParams struct {
 	AuthorityInfo Info
 	CorrelationID string
 	Endpoints     Endpoints
+	// TokenEndpoint is the final endpoint for this request. Endpoints.TokenEndpoint remains the
+	// authority/discovery result; this field may contain the separately derived mTLS wire endpoint.
+	TokenEndpoint string
 	ClientID      string
 	// Redirecturi is used for auth flows that specify a redirect URI (e.g. local server for interactive auth flow).
 	Redirecturi   string
@@ -509,12 +521,15 @@ type ClientCapabilities struct {
 	asJSON string
 	// asMap is for merging the capabilities with challenge claims
 	asMap map[string]any
+	// values is the application-configured representation exposed to assertion callbacks.
+	values []string
 }
 
 func NewClientCapabilities(capabilities []string) (ClientCapabilities, error) {
 	c := ClientCapabilities{}
 	var err error
 	if len(capabilities) > 0 {
+		c.values = append([]string(nil), capabilities...)
 		cpbs := make([]string, len(capabilities))
 		for i := 0; i < len(cpbs); i++ {
 			cpbs[i] = fmt.Sprintf(`"%s"`, capabilities[i])
@@ -524,6 +539,11 @@ func NewClientCapabilities(capabilities []string) (ClientCapabilities, error) {
 		err = json.Unmarshal([]byte(c.asJSON), &c.asMap)
 	}
 	return c, err
+}
+
+// Values returns an independent copy of the configured capabilities.
+func (c ClientCapabilities) Values() []string {
+	return append([]string(nil), c.values...)
 }
 
 // Info consists of information about the authority.
@@ -703,7 +723,7 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 			return resp, fmt.Errorf("invalid region %q: region must be a lowercase ASCII DNS label of at most 63 characters", authorityInfo.Region)
 		}
 		region = authorityInfo.Region
-	} else if authorityInfo.Region == autoDetectRegion {
+	} else if authorityInfo.Region == autoDetectRegion && authorityInfo.AuthorityType != DSTS {
 		region = detectRegion(ctx)
 	}
 	if region != "" {
@@ -754,7 +774,15 @@ var (
 	detectedRegionMu    sync.Mutex
 	detectedRegion      string
 	detectedRegionKnown bool
+	detectedRegionProbe *regionProbe
 )
+
+type regionProbe struct {
+	done   chan struct{}
+	region string
+}
+
+var probeRegion = detectRegionFromIMDS
 
 // ResolveRegion replaces the auto-detect sentinel with the region that was actually detected, so
 // that everything downstream reads a concrete value (or an empty string when detection found
@@ -783,28 +811,60 @@ func detectRegion(ctx context.Context) string {
 		return ""
 	}
 
+	if ctx.Err() != nil {
+		return ""
+	}
+
 	detectedRegionMu.Lock()
-	defer detectedRegionMu.Unlock()
 	if detectedRegionKnown {
-		return detectedRegion
+		region := detectedRegion
+		detectedRegionMu.Unlock()
+		return region
 	}
-	region = detectRegionFromIMDS(ctx)
-	// Don't memoize a failure that only reflects the caller's canceled context; a later request
-	// with a live context should still get the chance to detect.
-	if region != "" || ctx.Err() == nil {
-		detectedRegion = region
-		detectedRegionKnown = true
+	probe := detectedRegionProbe
+	if probe == nil {
+		probe = &regionProbe{done: make(chan struct{})}
+		detectedRegionProbe = probe
+		//nolint:gosec // A process-wide bounded probe must outlive any one canceled waiter.
+		go func() {
+			// The bounded IMDS probe is process-wide rather than owned by its first waiter. A caller
+			// timing out must not cancel discovery for other acquisitions already waiting on it.
+			region := probeRegion(context.Background())
+			detectedRegionMu.Lock()
+			probe.region = region
+			detectedRegion = region
+			detectedRegionKnown = true
+			if detectedRegionProbe == probe {
+				detectedRegionProbe = nil
+			}
+			close(probe.done)
+			detectedRegionMu.Unlock()
+		}()
 	}
-	return region
+	detectedRegionMu.Unlock()
+
+	select {
+	case <-probe.done:
+		return probe.region
+	case <-ctx.Done():
+		return ""
+	}
 }
 
 // resetDetectedRegion clears the memoized auto-detection result so tests can exercise detection
 // more than once in a process.
 func resetDetectedRegion() {
 	detectedRegionMu.Lock()
-	defer detectedRegionMu.Unlock()
+	if probe := detectedRegionProbe; probe != nil {
+		done := probe.done
+		detectedRegionMu.Unlock()
+		<-done
+		detectedRegionMu.Lock()
+	}
 	detectedRegion = ""
 	detectedRegionKnown = false
+	detectedRegionProbe = nil
+	detectedRegionMu.Unlock()
 }
 
 func detectRegionFromIMDS(ctx context.Context) string {

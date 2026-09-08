@@ -37,6 +37,16 @@ type HTTPClient interface {
 	CloseIdleConnections()
 }
 
+type correlationIDContextKey struct{}
+
+// WithCorrelationID associates an authentication request's correlation ID with its HTTP call.
+func WithCorrelationID(ctx context.Context, correlationID string) context.Context {
+	if correlationID == "" {
+		return ctx
+	}
+	return context.WithValue(ctx, correlationIDContextKey{}, correlationID)
+}
+
 // Client provides a wrapper to our *http.Client that handles serialization needs.
 type Client struct {
 	client HTTPClient
@@ -217,6 +227,9 @@ func (c *Client) urlFormCall(ctx context.Context, endpoint string, qv url.Values
 	headers := http.Header{}
 	headers.Set("Content-Type", "application/x-www-form-urlencoded; charset=utf-8")
 	addStdHeaders(headers)
+	if correlationID, ok := ctx.Value(correlationIDContextKey{}).(string); ok && correlationID != "" {
+		headers.Set("client-request-id", correlationID)
+	}
 
 	enc := qv.Encode()
 

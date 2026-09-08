@@ -5,7 +5,9 @@ package confidential
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -14,6 +16,57 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
+
+func TestBearerOverMtlsSignedCallbackKeepsDSTSEndpoint(t *testing.T) {
+	certs, key := loadTestCert(t)
+	host := "dsts.core.windows.net"
+	tenantPath := "dstsv2/" + authority.DSTSTenant
+	authorityURI := fmt.Sprintf("https://%s/%s", host, tenantPath)
+	wantEndpoint := authorityURI + "/oauth2/v2.0/token"
+
+	var gotOpts AssertionRequestOptions
+	cred := NewCredFromSignedAssertionCallback(func(_ context.Context, opts AssertionRequestOptions) (SignedAssertion, error) {
+		gotOpts = opts
+		return SignedAssertion{
+			Assertion: "dsts-assertion",
+			BindingCertificate: &tls.Certificate{
+				Certificate: [][]byte{certs[0].Raw},
+				PrivateKey:  key,
+				Leaf:        certs[0],
+			},
+		}, nil
+	})
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenantPath)))
+	var tokenURL *url.URL
+	var form url.Values
+	mockClient.AppendResponse(
+		mock.WithBody(mock.GetAccessTokenBody("dsts-bearer-token", "", "", "", 3600, 0)),
+		mock.WithCallback(func(r *http.Request) {
+			tokenURL = r.URL
+			body, _ := io.ReadAll(r.Body)
+			form, _ = url.ParseQuery(string(body))
+		}),
+	)
+	client, err := New(authorityURI, fakeClientID, cred,
+		WithHTTPClient(mockClient),
+		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		WithInstanceDiscovery(false),
+		WithSendCertificateOverMtls(),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope); err != nil {
+		t.Fatal(err)
+	}
+	if tokenURL == nil || tokenURL.String() != wantEndpoint || gotOpts.TokenEndpoint != wantEndpoint {
+		t.Fatalf("callback endpoint = %q, request endpoint = %v, want %q", gotOpts.TokenEndpoint, tokenURL, wantEndpoint)
+	}
+	if got := form.Get("client_assertion_type"); !strings.HasSuffix(got, "jwt-pop") {
+		t.Errorf("client_assertion_type = %q, want jwt-pop", got)
+	}
+}
 
 // TestMtlsPoPDSTSKeepsItsEndpointAndCaches is the end-to-end counterpart to
 // TestMtlsTokenEndpointAcceptsTenantedDSTS: a tenanted dSTS authority acquires an mTLS PoP token

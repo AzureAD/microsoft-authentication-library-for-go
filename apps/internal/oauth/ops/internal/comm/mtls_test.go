@@ -10,16 +10,51 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"errors"
 	"io"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 )
 
 // testKey is a non-nil placeholder private key for fixtures that never perform a real TLS handshake.
 var testKey = struct{}{}
+
+var (
+	fixtureKeyOnce sync.Once
+	fixtureKey     *rsa.PrivateKey
+	fixtureKeyErr  error
+)
+
+func parseableTestCert(t *testing.T, serial int64) tls.Certificate {
+	t.Helper()
+	fixtureKeyOnce.Do(func() {
+		fixtureKey, fixtureKeyErr = rsa.GenerateKey(rand.Reader, 2048)
+	})
+	if fixtureKeyErr != nil {
+		t.Fatal(fixtureKeyErr)
+	}
+	template := x509.Certificate{
+		SerialNumber: big.NewInt(serial),
+		Subject:      pkix.Name{CommonName: "fixture"},
+		NotBefore:    time.Now().Add(-time.Hour),
+		NotAfter:     time.Now().Add(time.Hour),
+		KeyUsage:     x509.KeyUsageDigitalSignature,
+	}
+	der, err := x509.CreateCertificate(rand.Reader, &template, &template, &fixtureKey.PublicKey, fixtureKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	leaf, err := x509.ParseCertificate(der)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: testKey, Leaf: leaf}
+}
 
 // signerKey models a non-exportable key such as a Windows KeyGuard (VBS-isolated) key: it satisfies
 // crypto.Signer by delegating to an RSA key it never exposes, so nothing can type assert it to an
@@ -136,7 +171,7 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 }
 
 func TestBuildMtlsClient(t *testing.T) {
-	cert := tls.Certificate{Certificate: [][]byte{{0x01, 0x02, 0x03}}}
+	cert := parseableTestCert(t, 1)
 	client, err := BuildMtlsClient(cert, nil)
 	if err != nil {
 		t.Fatalf("BuildMtlsClient error: %v", err)
@@ -180,8 +215,10 @@ func TestBuildMtlsClientCarriesSignerKey(t *testing.T) {
 }
 
 func TestMtlsClientCachePerThumbprint(t *testing.T) {
-	certA := &tls.Certificate{Certificate: [][]byte{{0xAA, 0xBB}}, PrivateKey: testKey}
-	certB := &tls.Certificate{Certificate: [][]byte{{0xCC, 0xDD}}, PrivateKey: testKey}
+	certAValue := parseableTestCert(t, 2)
+	certBValue := parseableTestCert(t, 3)
+	certA := &certAValue
+	certB := &certBValue
 
 	var built int
 	c := &Client{}
@@ -230,7 +267,8 @@ func TestMtlsClientRequiresCert(t *testing.T) {
 }
 
 func TestMtlsClientRejectsNilFactoryResult(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x22}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 4)
+	cert := &certValue
 	c := &Client{}
 	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return nil })
 	if _, err := c.mtlsClient(cert); err == nil {
@@ -239,7 +277,8 @@ func TestMtlsClientRejectsNilFactoryResult(t *testing.T) {
 }
 
 func TestMtlsClientUsesFactoryOverride(t *testing.T) {
-	cert := &tls.Certificate{Certificate: [][]byte{{0x11}}, PrivateKey: testKey}
+	certValue := parseableTestCert(t, 5)
+	cert := &certValue
 	sentinel := &http.Client{}
 	c := &Client{}
 	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return sentinel })
@@ -248,7 +287,72 @@ func TestMtlsClientUsesFactoryOverride(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mtlsClient error: %v", err)
 	}
-	if got != sentinel {
-		t.Error("mtlsClient did not return the client produced by the override factory")
+
+	t.Run("factory client copy and redirect policy", func(t *testing.T) {
+		certValue := parseableTestCert(t, 24)
+		cert := &certValue
+		transport := &notATransport{}
+		caller := &http.Client{Transport: transport, Timeout: 17 * time.Second}
+		c := &Client{}
+		c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return caller })
+
+		gotClient, err := c.mtlsClient(cert)
+		if err != nil {
+			t.Fatal(err)
+		}
+		got := gotClient.(*http.Client)
+		if got == caller {
+			t.Fatal("factory result wasn't copied")
+		}
+		if caller.CheckRedirect != nil {
+			t.Error("MSAL mutated the caller-owned client's redirect policy")
+		}
+		if got.Transport != caller.Transport || got.Timeout != caller.Timeout {
+			t.Error("the client copy didn't preserve caller configuration")
+		}
+		if got.CheckRedirect == nil {
+			t.Fatal("the client copy has no redirect refusal")
+		}
+		req, err := http.NewRequest(http.MethodPost, "https://redirect.example/token", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := got.CheckRedirect(req, nil); err == nil {
+			t.Fatal("default custom-factory client followed a redirect")
+		}
+
+		explicitErr := errors.New("explicit redirect policy")
+		explicit := &http.Client{
+			CheckRedirect: func(*http.Request, []*http.Request) error { return explicitErr },
+		}
+		c = &Client{}
+		c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return explicit })
+		gotClient, err = c.mtlsClient(cert)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if err := gotClient.(*http.Client).CheckRedirect(req, nil); !errors.Is(err, explicitErr) {
+			t.Fatalf("explicit redirect policy returned %v, want %v", err, explicitErr)
+		}
+		if explicit.CheckRedirect == nil {
+			t.Error("the caller's explicit policy was mutated")
+		}
+	})
+
+	t.Run("factory rejects opaque client", func(t *testing.T) {
+		certValue := parseableTestCert(t, 25)
+		c := &Client{}
+		c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return &recordingClient{} })
+		if _, err := c.mtlsClient(&certValue); err == nil {
+			t.Fatal("factory returning a non-*http.Client succeeded without an enforceable redirect policy")
+		} else if !strings.Contains(err.Error(), "*http.Client") {
+			t.Fatalf("error = %v, want concrete client requirement", err)
+		}
+	})
+	if got == sentinel {
+		t.Error("mtlsClient returned the caller-owned client instead of a shallow copy")
+	}
+	if got.(*http.Client).Transport != sentinel.Transport {
+		t.Error("mtlsClient's copy did not preserve the caller's transport")
 	}
 }
