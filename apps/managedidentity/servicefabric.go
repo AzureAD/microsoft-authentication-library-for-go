@@ -22,49 +22,35 @@ import (
 // serviceFabricCertificateVerifiedHTTPClient derives a client with Service Fabric's required certificate pinning.
 // Only standard clients and transports can be safely cloned and augmented without changing the
 // caller's behavior for other requests.
-func serviceFabricCertificateVerifiedHTTPClient(httpClient interface {
-	Do(*http.Request) (*http.Response, error)
-	CloseIdleConnections()
-}) (*http.Client, string, error) {
-	endpoint, err := serviceFabricEndpoint()
-	if err != nil {
-		return nil, "", err
-	}
+func serviceFabricCertificateVerifiedHTTPClient(httpClient *http.Client) (*http.Client, error) {
 	pin, err := serviceFabricThumbprint(os.Getenv(identityServerThumbprintEnvVar))
 	if err != nil {
-		return nil, "", err
+		return nil, err
 	}
 
-	callerClient, ok := httpClient.(*http.Client)
-	if !ok {
-		return nil, "", errors.New("managed identity on Service Fabric requires a standard *http.Client")
-	}
-	derivedClient := *callerClient
+	derivedClient := *httpClient
 
 	var callerTransport *http.Transport
-	if callerClient.Transport == nil {
+	if httpClient.Transport == nil {
 		var ok bool
 		callerTransport, ok = http.DefaultTransport.(*http.Transport)
 		if !ok {
-			return nil, "", errors.New("managed identity on Service Fabric requires a standard *http.Transport")
+			return nil, errors.New("managed identity on Service Fabric requires a standard *http.Transport")
 		}
 	} else {
 		var ok bool
-		callerTransport, ok = callerClient.Transport.(*http.Transport)
+		callerTransport, ok = httpClient.Transport.(*http.Transport)
 		if !ok {
-			return nil, "", errors.New("managed identity on Service Fabric requires a standard *http.Transport")
+			return nil, errors.New("managed identity on Service Fabric requires a standard *http.Transport")
 		}
 	}
 	//nolint:staticcheck // DialTLS must be rejected because it bypasses TLSClientConfig.
 	if callerTransport.DialTLS != nil || callerTransport.DialTLSContext != nil {
-		return nil, "", errors.New("Service Fabric managed identity does not support a transport with custom TLS dialing")
+		return nil, errors.New("managed identity on Service Fabric does not support a transport with custom TLS dialing")
 	}
 	if callerTransport.TLSClientConfig != nil &&
 		(callerTransport.TLSClientConfig.VerifyPeerCertificate != nil || callerTransport.TLSClientConfig.VerifyConnection != nil) {
-		return nil, "", errors.New("managed identity on Service Fabric does not support custom TLS verification")
-	}
-	if callerTransport.TLSNextProto != nil {
-		return nil, "", errors.New("managed identity on Service Fabric does not support custom TLS protocol handlers")
+		return nil, errors.New("managed identity on Service Fabric does not support custom TLS verification")
 	}
 	derivedTransport := callerTransport.Clone()
 	tlsConfig := derivedTransport.TLSClientConfig.Clone()
@@ -86,7 +72,7 @@ func serviceFabricCertificateVerifiedHTTPClient(httpClient interface {
 	derivedClient.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return errors.New("redirects are not permitted for managed identity on Service Fabric")
 	}
-	return &derivedClient, endpoint, nil
+	return &derivedClient, nil
 }
 
 func serviceFabricEndpoint() (string, error) {

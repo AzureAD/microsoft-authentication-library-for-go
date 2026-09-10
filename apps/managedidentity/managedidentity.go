@@ -200,12 +200,29 @@ func WithClaims(claims string) AcquireTokenOption {
 	}
 }
 
-// WithHTTPClient allows for a custom HTTP client to be set. Service Fabric requires a standard
-// *http.Client with a *http.Transport and does not support custom TLS dialing or verification.
+// WithHTTPClient allows for a custom HTTP client to be set. Flows that must configure the
+// transport underlying the client (for example, Service Fabric certificate pinning) require
+// [WithConfigurableHTTPClient] instead, because a plain ops.HTTPClient exposes no way to
+// apply those requirements.
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
 	}
+}
+
+// WithConfigurableHTTPClient sets an HTTP client that installs a transport MSAL configures.
+// This is required when the implementation of HTTPClient isn't a *http.Client and the credential
+// flow requires customizing the client and its underlying transport.
+func WithConfigurableHTTPClient(client ClientConfigurer) ClientOption {
+	return func(c *Client) {
+		c.httpClient = client
+	}
+}
+
+// ClientConfigurer is an ops.HTTPClient that abstracts a configurable HTTP client.
+type ClientConfigurer interface {
+	ops.HTTPClient
+	ConfigureClient(augment func(*http.Client) (*http.Client, error)) error
 }
 
 func WithRetryPolicyDisabled() ClientOption {
@@ -273,11 +290,28 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		option(&client)
 	}
 	if source == ServiceFabric {
-		serviceFabricClient, serviceFabricURL, err := serviceFabricCertificateVerifiedHTTPClient(client.httpClient)
+		serviceFabricURL, err := serviceFabricEndpoint()
 		if err != nil {
 			return Client{}, err
 		}
-		client.httpClient = serviceFabricClient
+
+		switch tt := client.httpClient.(type) {
+		case ClientConfigurer:
+			err = tt.ConfigureClient(func(c *http.Client) (*http.Client, error) {
+				return serviceFabricCertificateVerifiedHTTPClient(c)
+			})
+		case *http.Client:
+			var serviceFabricClient *http.Client
+			serviceFabricClient, err = serviceFabricCertificateVerifiedHTTPClient(tt)
+			client.httpClient = serviceFabricClient
+		default:
+			return Client{}, errors.New("Service Fabric managed identity requires an *http.Client or a client provided through WithConfigurableHTTPClient")
+		}
+
+		if err != nil {
+			return Client{}, err
+		}
+
 		client.serviceFabricURL = serviceFabricURL
 	}
 	fakeAuthInfo, err := authority.NewInfoFromAuthorityURI("https://login.microsoftonline.com/managed_identity", false, true)

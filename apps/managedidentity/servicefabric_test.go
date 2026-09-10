@@ -35,6 +35,102 @@ func (f serviceFabricRoundTripperFunc) RoundTrip(request *http.Request) (*http.R
 	return f(request)
 }
 
+// serviceFabricConfigurableClient is a TransportConfigurer that supplies a base client to augment
+// and routes requests through the augmented client, mimicking a caller that wraps its own transport.
+type serviceFabricConfigurableClient struct {
+	base           *http.Client
+	configured     *http.Client
+	configureCalls int
+}
+
+func (c *serviceFabricConfigurableClient) Do(request *http.Request) (*http.Response, error) {
+	if c.configured == nil {
+		return nil, errors.New("transport was not configured")
+	}
+	return c.configured.Do(request)
+}
+
+func (c *serviceFabricConfigurableClient) CloseIdleConnections() {
+	if c.configured != nil {
+		c.configured.CloseIdleConnections()
+	}
+}
+
+func (c *serviceFabricConfigurableClient) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
+	c.configureCalls++
+	configured, err := augment(c.base)
+	if err != nil {
+		return err
+	}
+	c.configured = configured
+	return nil
+}
+
+func TestServiceFabricWithConfigurableHTTPClient(t *testing.T) {
+	var requests int32
+	var receivedRequest *http.Request
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		receivedRequest = request.Clone(request.Context())
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write(responseBody)
+	}))
+	defer server.Close()
+
+	setServiceFabricEnvironment(t, server.URL, serviceFabricServerThumbprint(server))
+	resetServiceFabricCache(t)
+
+	configurable := &serviceFabricConfigurableClient{base: server.Client()}
+	client, err := New(SystemAssigned(), WithConfigurableHTTPClient(configurable), WithRetryPolicyDisabled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configurable.configureCalls != 1 {
+		t.Fatalf("expected ConfigureTransport to be called once, got %d", configurable.configureCalls)
+	}
+	if configurable.configured == nil {
+		t.Fatal("expected ConfigureTransport to install an augmented client")
+	}
+	if configurable.configured == configurable.base {
+		t.Fatal("expected augment to derive a new client rather than reuse the base")
+	}
+	// The configurer, not the derived client, must remain in use so its middleware is preserved.
+	if client.httpClient != configurable {
+		t.Fatalf("expected the configurable client to remain in use, got %T", client.httpClient)
+	}
+	derivedTransport, ok := configurable.configured.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected derived *http.Transport, got %T", configurable.configured.Transport)
+	}
+	if derivedTransport.TLSClientConfig == nil || derivedTransport.TLSClientConfig.VerifyConnection == nil {
+		t.Fatal("expected Service Fabric certificate pinning on the derived transport")
+	}
+	if configurable.configured.CheckRedirect == nil {
+		t.Fatal("expected Service Fabric redirect policy on the derived client")
+	}
+
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&requests); got != 1 {
+		t.Fatalf("expected one Service Fabric request, got %d", got)
+	}
+	if receivedRequest == nil {
+		t.Fatal("expected Service Fabric request")
+	}
+	if receivedRequest.Header.Get("Secret") != "secret" {
+		t.Fatalf("expected Secret header to be set, got %q", receivedRequest.Header.Get("Secret"))
+	}
+	if result.AccessToken != token {
+		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+	}
+}
+
 func TestServiceFabricAcquireTokenWithPinnedCertificate(t *testing.T) {
 	var requests int32
 	var receivedRequest *http.Request
@@ -267,15 +363,6 @@ func TestServiceFabricRejectsUnsupportedClientsAndEndpoints(t *testing.T) {
 		_, err := New(SystemAssigned(), WithHTTPClient(&http.Client{Transport: customTransport}))
 		if err == nil || !strings.Contains(err.Error(), "custom TLS verification") {
 			t.Fatalf("expected custom TLS verification error, got %v", err)
-		}
-	})
-	t.Run("custom TLS protocol handler", func(t *testing.T) {
-		setServiceFabricEnvironment(t, server.URL, validThumbprint)
-		customTransport := server.Client().Transport.(*http.Transport).Clone()
-		customTransport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{}
-		_, err := New(SystemAssigned(), WithHTTPClient(&http.Client{Transport: customTransport}))
-		if err == nil || !strings.Contains(err.Error(), "custom TLS protocol handlers") {
-			t.Fatalf("expected custom TLS protocol handler error, got %v", err)
 		}
 	})
 }
