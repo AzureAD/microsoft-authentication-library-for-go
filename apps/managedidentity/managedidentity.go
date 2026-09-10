@@ -201,27 +201,34 @@ func WithClaims(claims string) AcquireTokenOption {
 }
 
 // WithHTTPClient allows for a custom HTTP client to be set. Flows that must configure the
-// transport underlying the client (for example, Service Fabric certificate pinning) require
-// [WithConfigurableHTTPClient] instead, because a plain ops.HTTPClient exposes no way to
-// apply those requirements.
+// transport underlying the client (for example, Service Fabric certificate pinning) require a
+// [ClientConfigurer], because a plain ops.HTTPClient exposes no way to apply those requirements;
+// pass a [ClientConfigurer] here and MSAL will invoke it to install the configuration it needs.
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
 	}
 }
 
-// WithConfigurableHTTPClient sets an HTTP client that installs a transport MSAL configures.
-// This is required when the implementation of HTTPClient isn't a *http.Client and the credential
-// flow requires customizing the client and its underlying transport.
-func WithConfigurableHTTPClient(client ClientConfigurer) ClientOption {
-	return func(c *Client) {
-		c.httpClient = client
-	}
-}
-
-// ClientConfigurer is an ops.HTTPClient that abstracts a configurable HTTP client.
+// ClientConfigurer is an [ops.HTTPClient] that lets MSAL install the transport and client
+// configuration a flow requires, such as Service Fabric certificate pinning. Pass one to
+// [WithHTTPClient] and MSAL will call ConfigureClient during [New].
+//
+// Implementations of ConfigureClient must:
+//   - call augment exactly once, synchronously, before ConfigureClient returns, passing the
+//     non-nil client MSAL should build upon;
+//   - route every subsequent Do call through the client augment returns, without bypassing its
+//     transport, TLS configuration, or redirect policy;
+//   - forward CloseIdleConnections to that same client;
+//   - return any error augment reports and complete all configuration before returning.
+//
+// MSAL calls ConfigureClient once, during [New]; a ClientConfigurer need not be safe for
+// concurrent configuration. An implementation may wrap additional middleware around the client
+// augment returns so long as requests still traverse the augmented transport and redirect policy.
 type ClientConfigurer interface {
 	ops.HTTPClient
+	// ConfigureClient receives augment, which derives the client MSAL requires from the supplied
+	// base client. See [ClientConfigurer] for the contract implementations must satisfy.
 	ConfigureClient(augment func(*http.Client) (*http.Client, error)) error
 }
 
@@ -297,15 +304,20 @@ func New(id ID, options ...ClientOption) (Client, error) {
 
 		switch tt := client.httpClient.(type) {
 		case ClientConfigurer:
+			augmentCalls := 0
 			err = tt.ConfigureClient(func(c *http.Client) (*http.Client, error) {
+				augmentCalls++
 				return serviceFabricCertificateVerifiedHTTPClient(c)
 			})
+			if err == nil && augmentCalls != 1 {
+				return Client{}, fmt.Errorf("ConfigureClient must call augment exactly once to install the Service Fabric client, got %d calls", augmentCalls)
+			}
 		case *http.Client:
 			var serviceFabricClient *http.Client
 			serviceFabricClient, err = serviceFabricCertificateVerifiedHTTPClient(tt)
 			client.httpClient = serviceFabricClient
 		default:
-			return Client{}, errors.New("Service Fabric managed identity requires an *http.Client or a client provided through WithConfigurableHTTPClient")
+			return Client{}, errors.New("Service Fabric managed identity requires an *http.Client or a ClientConfigurer")
 		}
 
 		if err != nil {

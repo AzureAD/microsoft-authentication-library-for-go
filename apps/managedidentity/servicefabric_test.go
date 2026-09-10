@@ -35,7 +35,7 @@ func (f serviceFabricRoundTripperFunc) RoundTrip(request *http.Request) (*http.R
 	return f(request)
 }
 
-// serviceFabricConfigurableClient is a TransportConfigurer that supplies a base client to augment
+// serviceFabricConfigurableClient is a ClientConfigurer that supplies a base client to augment
 // and routes requests through the augmented client, mimicking a caller that wraps its own transport.
 type serviceFabricConfigurableClient struct {
 	base           *http.Client
@@ -47,6 +47,8 @@ func (c *serviceFabricConfigurableClient) Do(request *http.Request) (*http.Respo
 	if c.configured == nil {
 		return nil, errors.New("transport was not configured")
 	}
+	// Inject observable middleware so tests can confirm requests traverse the wrapper.
+	request.Header.Set("X-Configurable-Middleware", "wrapped")
 	return c.configured.Do(request)
 }
 
@@ -66,7 +68,9 @@ func (c *serviceFabricConfigurableClient) ConfigureClient(augment func(*http.Cli
 	return nil
 }
 
-func TestServiceFabricWithConfigurableHTTPClient(t *testing.T) {
+var _ ClientConfigurer = (*serviceFabricConfigurableClient)(nil)
+
+func TestServiceFabricWithClientConfigurer(t *testing.T) {
 	var requests int32
 	var receivedRequest *http.Request
 	responseBody, err := getSuccessfulResponse(resource, true)
@@ -85,15 +89,15 @@ func TestServiceFabricWithConfigurableHTTPClient(t *testing.T) {
 	resetServiceFabricCache(t)
 
 	configurable := &serviceFabricConfigurableClient{base: server.Client()}
-	client, err := New(SystemAssigned(), WithConfigurableHTTPClient(configurable), WithRetryPolicyDisabled())
+	client, err := New(SystemAssigned(), WithHTTPClient(configurable), WithRetryPolicyDisabled())
 	if err != nil {
 		t.Fatal(err)
 	}
 	if configurable.configureCalls != 1 {
-		t.Fatalf("expected ConfigureTransport to be called once, got %d", configurable.configureCalls)
+		t.Fatalf("expected ConfigureClient to be called once, got %d", configurable.configureCalls)
 	}
 	if configurable.configured == nil {
-		t.Fatal("expected ConfigureTransport to install an augmented client")
+		t.Fatal("expected ConfigureClient to install an augmented client")
 	}
 	if configurable.configured == configurable.base {
 		t.Fatal("expected augment to derive a new client rather than reuse the base")
@@ -126,8 +130,111 @@ func TestServiceFabricWithConfigurableHTTPClient(t *testing.T) {
 	if receivedRequest.Header.Get("Secret") != "secret" {
 		t.Fatalf("expected Secret header to be set, got %q", receivedRequest.Header.Get("Secret"))
 	}
+	if receivedRequest.Header.Get("X-Configurable-Middleware") != "wrapped" {
+		t.Fatalf("expected wrapper middleware header to reach the server, got %q", receivedRequest.Header.Get("X-Configurable-Middleware"))
+	}
 	if result.AccessToken != token {
 		t.Fatalf("wanted %q, got %q", token, result.AccessToken)
+	}
+}
+
+func TestServiceFabricConfigurableClientRejectsMismatchedCertificate(t *testing.T) {
+	var requests int32
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		response.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	setServiceFabricEnvironment(t, server.URL, strings.Repeat("0", 40))
+	resetServiceFabricCache(t)
+
+	configurable := &serviceFabricConfigurableClient{base: server.Client()}
+	client, err := New(SystemAssigned(), WithHTTPClient(configurable), WithRetryPolicyDisabled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireToken(context.Background(), resource)
+	if err == nil {
+		t.Fatal("expected a thumbprint validation error")
+	}
+	if got := atomic.LoadInt32(&requests); got != 0 {
+		t.Fatalf("expected no HTTP request after a thumbprint mismatch, got %d", got)
+	}
+}
+
+func TestServiceFabricConfigurableClientRejectsRedirectBeforeSendingSecret(t *testing.T) {
+	var redirectedRequests int32
+	var redirectedSecret string
+	redirectTarget := httptest.NewServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		atomic.AddInt32(&redirectedRequests, 1)
+		redirectedSecret = request.Header.Get("Secret")
+		response.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer redirectTarget.Close()
+
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
+		http.Redirect(response, request, redirectTarget.URL, http.StatusFound)
+	}))
+	defer server.Close()
+	setServiceFabricEnvironment(t, server.URL, serviceFabricServerThumbprint(server))
+	resetServiceFabricCache(t)
+
+	configurable := &serviceFabricConfigurableClient{base: server.Client()}
+	client, err := New(SystemAssigned(), WithHTTPClient(configurable), WithRetryPolicyDisabled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, err = client.AcquireToken(context.Background(), resource)
+	if err == nil || !strings.Contains(err.Error(), "redirects are not permitted") {
+		t.Fatalf("expected redirect rejection, got %v", err)
+	}
+	if got := atomic.LoadInt32(&redirectedRequests); got != 0 {
+		t.Fatalf("expected no HTTP redirect request, got %d", got)
+	}
+	if redirectedSecret != "" {
+		t.Fatalf("expected no Secret on HTTP redirect, got %q", redirectedSecret)
+	}
+}
+
+func TestServiceFabricAcceptsLazilyPopulatedTLSNextProto(t *testing.T) {
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write(responseBody)
+	}))
+	defer server.Close()
+
+	setServiceFabricEnvironment(t, server.URL, serviceFabricServerThumbprint(server))
+	resetServiceFabricCache(t)
+
+	callerTransport := server.Client().Transport.(*http.Transport).Clone()
+	// Simulate a transport previously used for HTTP/2, whose TLSNextProto the standard library lazily populated.
+	callerTransport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{
+		"h2": func(string, *tls.Conn) http.RoundTripper { return nil },
+	}
+	callerClient := &http.Client{Transport: callerTransport}
+
+	client, err := New(SystemAssigned(), WithHTTPClient(callerClient), WithRetryPolicyDisabled())
+	if err != nil {
+		t.Fatalf("expected a lazily populated TLSNextProto to be accepted, got %v", err)
+	}
+	derivedClient, ok := client.httpClient.(*http.Client)
+	if !ok {
+		t.Fatalf("expected derived *http.Client, got %T", client.httpClient)
+	}
+	derivedTransport, ok := derivedClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected derived *http.Transport, got %T", derivedClient.Transport)
+	}
+	if derivedTransport.TLSClientConfig == nil || derivedTransport.TLSClientConfig.VerifyConnection == nil {
+		t.Fatal("expected Service Fabric certificate pinning on the derived transport")
+	}
+	if _, err = client.AcquireToken(context.Background(), resource); err != nil {
+		t.Fatal(err)
 	}
 }
 

@@ -23,6 +23,9 @@ import (
 // Only standard clients and transports can be safely cloned and augmented without changing the
 // caller's behavior for other requests.
 func serviceFabricCertificateVerifiedHTTPClient(httpClient *http.Client) (*http.Client, error) {
+	if httpClient == nil {
+		return nil, errors.New("Service Fabric managed identity requires a non-nil *http.Client")
+	}
 	pin, err := serviceFabricThumbprint(os.Getenv(identityServerThumbprintEnvVar))
 	if err != nil {
 		return nil, err
