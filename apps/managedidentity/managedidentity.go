@@ -204,6 +204,9 @@ func WithClaims(claims string) AcquireTokenOption {
 // transport underlying the client (for example, Service Fabric certificate pinning) require a
 // [ClientConfigurer], because a plain ops.HTTPClient exposes no way to apply those requirements;
 // pass a [ClientConfigurer] here and MSAL will invoke it to install the configuration it needs.
+//
+// Only the Service Fabric source currently consumes a [ClientConfigurer]; every other managed
+// identity source treats the value as a plain ops.HTTPClient and never calls ConfigureClient.
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
@@ -214,6 +217,10 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 // configuration a flow requires, such as Service Fabric certificate pinning. Pass one to
 // [WithHTTPClient] and MSAL will call ConfigureClient during [New].
 //
+// Only the Service Fabric managed identity source consumes a ClientConfigurer. For every other
+// source MSAL uses the value directly as an ops.HTTPClient and does not call ConfigureClient, so
+// implementations should not rely on ConfigureClient being invoked outside Service Fabric.
+//
 // Implementations of ConfigureClient must:
 //   - call augment exactly once, synchronously, before ConfigureClient returns, passing the
 //     non-nil client MSAL should build upon;
@@ -221,6 +228,9 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //     transport, TLS configuration, or redirect policy;
 //   - forward CloseIdleConnections to that same client;
 //   - return any error augment reports and complete all configuration before returning.
+//
+// MSAL fails closed: if augment reports an error, [New] returns it even when ConfigureClient
+// discards the error and returns nil, so a misconfigured client is never returned.
 //
 // MSAL calls ConfigureClient once, during [New]; a ClientConfigurer need not be safe for
 // concurrent configuration. An implementation may wrap additional middleware around the client
@@ -305,10 +315,19 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		switch tt := client.httpClient.(type) {
 		case ClientConfigurer:
 			augmentCalls := 0
+			var augmentErr error
 			err = tt.ConfigureClient(func(c *http.Client) (*http.Client, error) {
 				augmentCalls++
-				return serviceFabricCertificateVerifiedHTTPClient(c)
+				var configured *http.Client
+				configured, augmentErr = serviceFabricCertificateVerifiedHTTPClient(c)
+				return configured, augmentErr
 			})
+			// Fail closed: if augment failed, New must return that error even when
+			// ConfigureClient ignores it, so a caller never receives a client that lacks
+			// the mandatory certificate pinning and redirect policy.
+			if err == nil {
+				err = augmentErr
+			}
 			if err == nil && augmentCalls != 1 {
 				return Client{}, fmt.Errorf("ConfigureClient must call augment exactly once to install the Service Fabric client, got %d calls", augmentCalls)
 			}

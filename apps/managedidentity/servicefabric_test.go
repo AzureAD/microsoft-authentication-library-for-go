@@ -138,6 +138,92 @@ func TestServiceFabricWithClientConfigurer(t *testing.T) {
 	}
 }
 
+// serviceFabricFailingConfigurableClient is a ClientConfigurer whose ConfigureClient reports a
+// configuration error, so New must fail closed rather than return a partially configured client.
+type serviceFabricFailingConfigurableClient struct {
+	err            error
+	configureCalls int
+}
+
+func (c *serviceFabricFailingConfigurableClient) Do(*http.Request) (*http.Response, error) {
+	return nil, errors.New("transport was not configured")
+}
+
+func (c *serviceFabricFailingConfigurableClient) CloseIdleConnections() {}
+
+func (c *serviceFabricFailingConfigurableClient) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
+	c.configureCalls++
+	return c.err
+}
+
+var _ ClientConfigurer = (*serviceFabricFailingConfigurableClient)(nil)
+
+// serviceFabricSwallowingConfigurableClient is a ClientConfigurer that calls augment, ignores the
+// error augment reports, and returns nil. New must still fail closed rather than hand back a client
+// that lacks the mandatory Service Fabric certificate pinning and redirect policy.
+type serviceFabricSwallowingConfigurableClient struct {
+	base           *http.Client
+	configureCalls int
+	augmentErr     error
+}
+
+func (c *serviceFabricSwallowingConfigurableClient) Do(*http.Request) (*http.Response, error) {
+	return nil, errors.New("transport was not configured")
+}
+
+func (c *serviceFabricSwallowingConfigurableClient) CloseIdleConnections() {}
+
+func (c *serviceFabricSwallowingConfigurableClient) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
+	c.configureCalls++
+	_, c.augmentErr = augment(c.base)
+	// Deliberately swallow the augment error and report success to MSAL.
+	return nil
+}
+
+var _ ClientConfigurer = (*serviceFabricSwallowingConfigurableClient)(nil)
+
+func TestServiceFabricClientConfigurerErrorFailsNew(t *testing.T) {
+	t.Run("ConfigureClient propagates augment error", func(t *testing.T) {
+		setServiceFabricEnvironment(t, "https://localhost", strings.Repeat("0", 40))
+		resetServiceFabricCache(t)
+
+		configureErr := errors.New("configuration failed")
+		configurable := &serviceFabricFailingConfigurableClient{err: configureErr}
+		_, err := New(SystemAssigned(), WithHTTPClient(configurable), WithRetryPolicyDisabled())
+		if err == nil {
+			t.Fatal("expected New to fail when ConfigureClient returns an error")
+		}
+		if !errors.Is(err, configureErr) {
+			t.Fatalf("expected New to return the configuration error, got %v", err)
+		}
+		if configurable.configureCalls != 1 {
+			t.Fatalf("expected ConfigureClient to be called once, got %d", configurable.configureCalls)
+		}
+	})
+
+	t.Run("ConfigureClient swallows augment error", func(t *testing.T) {
+		setServiceFabricEnvironment(t, "https://localhost", strings.Repeat("0", 40))
+		resetServiceFabricCache(t)
+
+		// Passing a nil base to augment makes serviceFabricCertificateVerifiedHTTPClient fail,
+		// reproducing a configurer that ignores that error and reports success anyway.
+		configurable := &serviceFabricSwallowingConfigurableClient{base: nil}
+		_, err := New(SystemAssigned(), WithHTTPClient(configurable), WithRetryPolicyDisabled())
+		if err == nil {
+			t.Fatal("expected New to fail closed when augment fails even though ConfigureClient returned nil")
+		}
+		if configurable.configureCalls != 1 {
+			t.Fatalf("expected ConfigureClient to be called once, got %d", configurable.configureCalls)
+		}
+		if configurable.augmentErr == nil {
+			t.Fatal("expected augment to report an error for the nil base client")
+		}
+		if !errors.Is(err, configurable.augmentErr) {
+			t.Fatalf("expected New to surface the augment error, got %v", err)
+		}
+	})
+}
+
 func TestServiceFabricConfigurableClientRejectsMismatchedCertificate(t *testing.T) {
 	var requests int32
 	server := httptest.NewTLSServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
@@ -522,6 +608,29 @@ func TestServiceFabricLeavesCustomClientAvailableToOtherSources(t *testing.T) {
 	}
 	if client.httpClient != customClient {
 		t.Fatal("non-Service Fabric clients must not be changed")
+	}
+}
+
+func TestServiceFabricConfigurerIgnoredForOtherSources(t *testing.T) {
+	t.Setenv(identityEndpointEnvVar, "")
+	t.Setenv(identityHeaderEnvVar, "")
+	t.Setenv(identityServerThumbprintEnvVar, "")
+	t.Setenv(msiEndpointEnvVar, "")
+	t.Setenv(msiSecretEnvVar, "")
+	t.Setenv(imdsEndVar, "")
+
+	// A ClientConfigurer is only consulted for Service Fabric; other sources must use it as a
+	// plain ops.HTTPClient and never call ConfigureClient.
+	configurable := &serviceFabricFailingConfigurableClient{err: errors.New("ConfigureClient should not be called")}
+	client, err := New(SystemAssigned(), WithHTTPClient(configurable))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if configurable.configureCalls != 0 {
+		t.Fatalf("expected ConfigureClient not to be called for a non-Service Fabric source, got %d calls", configurable.configureCalls)
+	}
+	if client.httpClient != configurable {
+		t.Fatal("non-Service Fabric clients must be used as-is")
 	}
 }
 
