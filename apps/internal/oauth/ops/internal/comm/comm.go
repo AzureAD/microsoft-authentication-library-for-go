@@ -22,6 +22,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	customJSON "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
+	internaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/telemetry"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/version"
 )
 
@@ -98,6 +99,7 @@ func (c *Client) JSONCall(ctx context.Context, endpoint string, headers http.Hea
 
 	if resp != nil {
 		if err := unmarshal(data, resp); err != nil {
+			internaltelemetry.ObserveErrorCode(ctx, "invalid_response")
 			return errors.InvalidJsonErr{Err: fmt.Errorf("json decode error: %w\njson message bytes were: %s", err, string(data))}
 		}
 	}
@@ -221,6 +223,7 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 	}
 	if resp != nil {
 		if err := unmarshal(data, resp); err != nil {
+			internaltelemetry.ObserveErrorCode(ctx, "invalid_response")
 			return errors.InvalidJsonErr{Err: fmt.Errorf("json decode error: %w\nraw message was: %s", err, string(data))}
 		}
 	}
@@ -236,14 +239,22 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	}
 	req = req.WithContext(ctx)
 
+	started := time.Now()
 	reply, err := c.client.Do(req)
+	statusCode := 0
+	if reply != nil {
+		statusCode = reply.StatusCode
+	}
+	internaltelemetry.ObserveHTTP(ctx, time.Since(started), statusCode)
 	if err != nil {
+		internaltelemetry.ObserveErrorCode(ctx, "transport_error")
 		return nil, fmt.Errorf("server response error:\n %w", err)
 	}
 	defer reply.Body.Close()
 
 	data, err := c.readBody(reply)
 	if err != nil {
+		internaltelemetry.ObserveErrorCode(ctx, "invalid_response")
 		return nil, fmt.Errorf("could not read the body of an HTTP Response: %w", err)
 	}
 	reply.Body = io.NopCloser(bytes.NewBuffer(data))
@@ -253,6 +264,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	switch reply.StatusCode {
 	case 200, 201:
 	default:
+		internaltelemetry.ObserveServiceError(ctx, data)
 		sd := strings.TrimSpace(string(data))
 		if sd != "" {
 			// We probably have the error in the body.

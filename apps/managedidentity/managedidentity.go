@@ -31,7 +31,9 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	internaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/telemetry"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/version"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry"
 	"github.com/google/uuid"
 )
 
@@ -182,6 +184,7 @@ type Client struct {
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	canRefresh         *atomic.Value
+	metricsProvider    telemetry.MetricsProvider
 }
 
 type AcquireTokenOptions struct {
@@ -205,6 +208,13 @@ func WithClaims(claims string) AcquireTokenOption {
 func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	return func(c *Client) {
 		c.httpClient = httpClient
+	}
+}
+
+// WithMetricsProvider configures a privacy-safe authentication metrics destination.
+func WithMetricsProvider(provider telemetry.MetricsProvider) ClientOption {
+	return func(c *Client) {
+		c.metricsProvider = provider
 	}
 }
 
@@ -323,13 +333,34 @@ var now = time.Now
 //
 // Resource: scopes application is requesting access to
 // Options: [WithClaims]
-func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (AuthResult, error) {
+func (c Client) AcquireToken(ctx context.Context, resource string, options ...AcquireTokenOption) (result AuthResult, err error) {
+	apiID := telemetry.APIIDAcquireTokenForUserAssignedIdentity
+	if _, ok := c.miType.(systemAssignedValue); ok {
+		apiID = telemetry.APIIDAcquireTokenForSystemAssignedIdentity
+	}
+	ctx, acquisition := internaltelemetry.Start(ctx, c.metricsProvider, apiID, telemetry.TokenTypeBearer, version.Version)
+	defer func() {
+		if acquisition != nil {
+			acquisition.Complete(
+				ctx,
+				err == nil,
+				telemetry.TokenSource(result.Metadata.TokenSource),
+				result.ExpiresOn,
+				internaltelemetry.ErrorCode(err),
+			)
+		}
+	}()
+
 	resource = strings.TrimSuffix(resource, "/.default")
 	o := AcquireTokenOptions{}
 	for _, option := range options {
 		option(&o)
 	}
 	c.authParams.Scopes = []string{resource}
+	refreshReason := telemetry.CacheRefreshReasonNotApplicable
+	if o.claims != "" {
+		refreshReason = telemetry.CacheRefreshReasonForceRefreshOrClaims
+	}
 
 	// ignore cached access tokens when given claims
 	if o.claims == "" {
@@ -342,13 +373,21 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 			if !stResp.AccessToken.RefreshOn.T.IsZero() && !stResp.AccessToken.RefreshOn.T.After(now()) && c.canRefresh.CompareAndSwap(false, true) {
 				defer c.canRefresh.Store(false)
 				if tr, er := c.getToken(ctx, resource); er == nil {
+					internaltelemetry.ObserveCacheResult(ctx, telemetry.CacheLevelNone, telemetry.CacheRefreshReasonProactivelyRefreshed)
 					return tr, nil
 				}
 			}
+			internaltelemetry.ObserveCacheResult(ctx, telemetry.CacheLevelL1, telemetry.CacheRefreshReasonNotApplicable)
 			ar.AccessToken, err = c.authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
+		if stResp.AccessToken.Secret != "" {
+			refreshReason = telemetry.CacheRefreshReasonExpired
+		} else {
+			refreshReason = telemetry.CacheRefreshReasonNoCachedAccessToken
+		}
 	}
+	internaltelemetry.ObserveCacheResult(ctx, telemetry.CacheLevelNone, refreshReason)
 	return c.getToken(ctx, resource)
 }
 
@@ -437,8 +476,15 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (A
 		return AuthResult{}, err
 	}
 
+	started := time.Now()
 	response, err := c.httpClient.Do(req)
+	statusCode := 0
+	if response != nil {
+		statusCode = response.StatusCode
+	}
+	internaltelemetry.ObserveHTTP(ctx, time.Since(started), statusCode)
 	if err != nil {
+		internaltelemetry.ObserveErrorCode(ctx, "transport_error")
 		return AuthResult{}, err
 	}
 	defer response.Body.Close()
@@ -604,8 +650,14 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 		}
 		cancelPrev = tryCancel
 		cloneReq := req.Clone(tryCtx)
+		started := time.Now()
 		resp, err = c.httpClient.Do(cloneReq)
-		succeeded := err == nil && !contains(retrylist, resp.StatusCode)
+		statusCode := 0
+		if resp != nil {
+			statusCode = resp.StatusCode
+		}
+		internaltelemetry.ObserveHTTP(req.Context(), time.Since(started), statusCode)
+		succeeded := err == nil && resp != nil && !contains(retrylist, resp.StatusCode)
 		if succeeded || attempt == maxRetries-1 {
 			// Buffer the body into memory while tryCtx is still alive so the
 			// caller can read resp.Body after we cancel this attempt's context.
@@ -640,19 +692,28 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	if c.retryPolicyEnabled {
 		resp, err = c.retry(defaultRetryCount, req)
 	} else {
+		started := time.Now()
 		resp, err = c.httpClient.Do(req)
+		statusCode := 0
+		if resp != nil {
+			statusCode = resp.StatusCode
+		}
+		internaltelemetry.ObserveHTTP(req.Context(), time.Since(started), statusCode)
 	}
 	if err != nil {
+		internaltelemetry.ObserveErrorCode(req.Context(), "transport_error")
 		return r, err
 	}
 	responseBytes, err := io.ReadAll(resp.Body)
 	defer resp.Body.Close()
 	if err != nil {
+		internaltelemetry.ObserveErrorCode(req.Context(), "invalid_response")
 		return r, err
 	}
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusAccepted:
 	default:
+		internaltelemetry.ObserveServiceError(req.Context(), responseBytes)
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
 			return r, errors.CallErr{

@@ -50,3 +50,24 @@ jobs:
       #     oboConfidentialClientSecret: ${{ secrets.OBO_CONFIDENTIAL_APP_CLIENT_SECRET }}
       #     oboPublicClientId: ${{ secrets.OBO_PUBLIC_APP_CLIENT_ID }}
       #     CI: ${{secrets.ENABLECI}}
+
+  opentelemetry:
+    name: OpenTelemetry integration
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: "1.25"
+
+      - name: Check out code
+        uses: actions/checkout@v5
+
+      - name: Test adapter
+        working-directory: apps/integrations/opentelemetry
+        run: go test -race ./...
+
+      - name: Build example
+        working-directory: apps/integrations/opentelemetry/example
+        run: go build ./...
