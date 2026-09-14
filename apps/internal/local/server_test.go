@@ -156,7 +156,11 @@ func TestServerRejectsGET(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	t.Cleanup(func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("failed to close response body: %v", err)
+		}
+	})
 
 	if resp.StatusCode != http.StatusMethodNotAllowed {
 		t.Errorf("GET request: got StatusCode %d, want %d", resp.StatusCode, http.StatusMethodNotAllowed)

@@ -505,7 +505,7 @@ func TestDeviceCodeResult(t *testing.T) {
 			continue
 		}
 
-		wantEndpoint := strings.Replace(authParams.Endpoints.TokenEndpoint, "token", "devicecode", -1)
+		wantEndpoint := strings.ReplaceAll(authParams.Endpoints.TokenEndpoint, "token", "devicecode")
 		if err := fake.compare(wantEndpoint, test.qv); err != nil {
 			t.Errorf("TestDeviceCodeResult(%s): %s", test.desc, err)
 		}

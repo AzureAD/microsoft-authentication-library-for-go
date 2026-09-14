@@ -236,6 +236,7 @@ func TestDecoderStoreAdditional(t *testing.T) {
 	}
 
 	for _, test := range tests {
+		test := test
 		dec := newDecoder(json.NewDecoder(bytes.NewBuffer(test.b)), reflect.ValueOf(&test.got).Elem())
 		_, err := dec.start() // populates our translator field
 		if err != nil {

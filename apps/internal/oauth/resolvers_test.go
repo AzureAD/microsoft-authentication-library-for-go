@@ -36,6 +36,13 @@ func tenantDiscoveryJSONWithScheme(scheme, host string) string {
 	}`, scheme, host, scheme, host, scheme, host)
 }
 
+func writeTestResponse(t *testing.T, w http.ResponseWriter, body string) {
+	t.Helper()
+	if _, err := fmt.Fprint(w, body); err != nil {
+		t.Errorf("failed to write test response: %v", err)
+	}
+}
+
 func newTestAuthorityInfo(host, canonicalURI, tenant string) authority.Info {
 	return authority.Info{
 		Host:                  host,
@@ -48,7 +55,7 @@ func newTestAuthorityInfo(host, canonicalURI, tenant string) authority.Info {
 func TestResolveEndpoints_BasicResolution(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, tenantDiscoveryJSON("login.microsoftonline.com"))
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
 	}))
 	defer srv.Close()
 
@@ -77,7 +84,7 @@ func TestResolveEndpoints_CachesResult(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, tenantDiscoveryJSON("login.microsoftonline.com"))
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
 	}))
 	defer srv.Close()
 
@@ -113,7 +120,7 @@ func TestResolveEndpoints_SingleFlightDeduplicates(t *testing.T) {
 		atomic.AddInt32(&callCount, 1)
 		<-gate // wait until test releases
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, tenantDiscoveryJSON("login.microsoftonline.com"))
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
 	}))
 	defer srv.Close()
 
@@ -160,7 +167,7 @@ func TestResolveEndpoints_DifferentAuthoritiesResolveIndependently(t *testing.T)
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, tenantDiscoveryJSON("login.microsoftonline.com"))
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
 	}))
 	defer srv.Close()
 
@@ -196,7 +203,7 @@ func TestResolveEndpoints_ConcurrentDifferentAuthorities(t *testing.T) {
 		// Small delay to increase chance of concurrent map access
 		time.Sleep(10 * time.Millisecond)
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, tenantDiscoveryJSON("login.microsoftonline.com"))
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
 	}))
 	defer srv.Close()
 
@@ -244,7 +251,7 @@ func TestResolveEndpoints_ErrorNotCached(t *testing.T) {
 		}
 		// Subsequent calls succeed
 		w.Header().Set("Content-Type", "application/json")
-		fmt.Fprint(w, tenantDiscoveryJSON("login.microsoftonline.com"))
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
 	}))
 	defer srv.Close()
 
@@ -279,7 +286,7 @@ func TestResolveEndpoints_ADFS_CachesByDomain(t *testing.T) {
 		atomic.AddInt32(&callCount, 1)
 		w.Header().Set("Content-Type", "application/json")
 		// Use the test server host in the response so issuer validation passes
-		fmt.Fprint(w, tenantDiscoveryJSONWithScheme("http", r.Host))
+		writeTestResponse(t, w, tenantDiscoveryJSONWithScheme("http", r.Host))
 	}))
 	defer srv.Close()
 
@@ -346,7 +353,9 @@ func TestResolveEndpoints_IssuerValidation(t *testing.T) {
 			"token_endpoint":         "https://login.microsoftonline.com/common/oauth2/v2.0/token",
 			"issuer":                 "https://evil.example.com/common/v2.0",
 		}
-		json.NewEncoder(w).Encode(resp)
+		if err := json.NewEncoder(w).Encode(resp); err != nil {
+			t.Errorf("failed to encode test response: %v", err)
+		}
 	}))
 	defer srv.Close()
 

@@ -31,7 +31,11 @@ func TestFMIBasicFunctionality(t *testing.T) {
 
 	// Create temporary cache and defer cleanup
 	tmpCacheFile := "fmi_basic_cache.json"
-	defer os.Remove(tmpCacheFile)
+	t.Cleanup(func() {
+		if err := os.Remove(tmpCacheFile); err != nil && !os.IsNotExist(err) {
+			t.Errorf("failed to remove temporary cache: %v", err)
+		}
+	})
 
 	// Create the cache file if it doesn't exist
 	if _, err := os.Stat(tmpCacheFile); os.IsNotExist(err) {
@@ -39,7 +43,9 @@ func TestFMIBasicFunctionality(t *testing.T) {
 		if err != nil {
 			t.Fatalf("TestFMIBasicFunctionality: failed to create cache file: %s", err)
 		}
-		file.Close()
+		if err := file.Close(); err != nil {
+			t.Fatalf("TestFMIBasicFunctionality: failed to close cache file: %s", err)
+		}
 	}
 
 	cacheAccessor := &TokenCache{file: tmpCacheFile}
@@ -101,7 +107,11 @@ func TestFMIIntegration(t *testing.T) {
 
 	// Create temporary cache and defer cleanup
 	tmpCacheFile := "fmi_testfile.json"
-	defer os.Remove(tmpCacheFile)
+	t.Cleanup(func() {
+		if err := os.Remove(tmpCacheFile); err != nil && !os.IsNotExist(err) {
+			t.Errorf("failed to remove temporary cache: %v", err)
+		}
+	})
 
 	// Create the cache file if it doesn't exist
 	if _, err := os.Stat(tmpCacheFile); os.IsNotExist(err) {
@@ -109,7 +119,9 @@ func TestFMIIntegration(t *testing.T) {
 		if err != nil {
 			t.Fatalf("TestFMIIntegration: failed to create cache file: %s", err)
 		}
-		file.Close()
+		if err := file.Close(); err != nil {
+			t.Fatalf("TestFMIIntegration: failed to close cache file: %s", err)
+		}
 	}
 
 	cacheAccessor := &TokenCache{file: tmpCacheFile}

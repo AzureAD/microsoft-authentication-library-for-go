@@ -124,7 +124,9 @@ func benchMarkObo(users int, tokens int, client base.Client) {
 }
 
 func queryCache(users int, tokens int, client base.Client) {
+	// #nosec G404 -- pseudorandom selection is intentional for non-security benchmark inputs.
 	userAssertion := fmt.Sprintf("fake_access_token%d", rand.Intn(users))
+	// #nosec G404 -- pseudorandom selection is intentional for non-security benchmark inputs.
 	scope := []string{fmt.Sprintf("scope%d", rand.Intn(tokens))}
 	params := base.AcquireTokenOnBehalfOfParameters{
 		Scopes:        scope,

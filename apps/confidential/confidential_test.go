@@ -51,9 +51,11 @@ func TestCertFromPEM(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
 	pemData, err := io.ReadAll(f)
 	if err != nil {
+		t.Fatal(err)
+	}
+	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
 	certs, key, err := CertFromPEM(pemData, "")
@@ -251,11 +253,14 @@ func TestRegionAutoEnable_EmptyRegion_EnvRegion(t *testing.T) {
 	}
 
 	envRegion := "envRegion"
-	err = os.Setenv("MSAL_FORCE_REGION", envRegion)
-	if err != nil {
+	if err := os.Setenv("MSAL_FORCE_REGION", envRegion); err != nil {
 		t.Fatal(err)
 	}
-	defer os.Unsetenv("MSAL_FORCE_REGION")
+	t.Cleanup(func() {
+		if err := os.Unsetenv("MSAL_FORCE_REGION"); err != nil {
+			t.Errorf("failed to unset MSAL_FORCE_REGION: %v", err)
+		}
+	})
 
 	lmo := "login.microsoftonline.com"
 	tenant := "tenant"
@@ -761,9 +766,11 @@ func TestNewCredFromCert(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		defer f.Close()
 		pemData, err := io.ReadAll(f)
 		if err != nil {
+			t.Fatal(err)
+		}
+		if err := f.Close(); err != nil {
 			t.Fatal(err)
 		}
 		certs, key, err := CertFromPEM(pemData, "")
@@ -1153,7 +1160,7 @@ func TestConcurrentRequests(t *testing.T) {
 			}
 		}(tenant)
 	}
-	for a, b := false, false; !(a && b); {
+	for a, b := false, false; !a || !b; {
 		select {
 		case <-ctx.Done():
 			t.Fatal("timed out waiting for both goroutines to refresh")
@@ -1259,7 +1266,7 @@ func TestRefreshIn(t *testing.T) {
 
 func isTimeSame(t time.Time, expectedSeconds int) bool {
 	v := int(time.Until(t).Seconds())
-	return !(v < expectedSeconds-2 || v > expectedSeconds+2)
+	return v >= expectedSeconds-2 && v <= expectedSeconds+2
 }
 
 func TestNewCredFromTokenProviderError(t *testing.T) {
