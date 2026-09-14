@@ -11,7 +11,6 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -47,15 +46,8 @@ func (*errorClient) Do(req *http.Request) (*http.Response, error) {
 func (*errorClient) CloseIdleConnections() {}
 
 func TestCertFromPEM(t *testing.T) {
-	f, err := os.Open(filepath.Clean("../testdata/test-cert.pem"))
+	pemData, err := os.ReadFile(filepath.Clean("../testdata/test-cert.pem"))
 	if err != nil {
-		t.Fatal(err)
-	}
-	pemData, err := io.ReadAll(f)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if err := f.Close(); err != nil {
 		t.Fatal(err)
 	}
 	certs, key, err := CertFromPEM(pemData, "")
@@ -762,15 +754,8 @@ func TestNewCredFromCert(t *testing.T) {
 		{"../testdata/test-cert-chain.pem", 2, fakeAuthority},
 		{"../testdata/test-cert-chain-reverse.pem", 2, fakeAuthority},
 	} {
-		f, err := os.Open(filepath.Clean(file.path))
+		pemData, err := os.ReadFile(filepath.Clean(file.path))
 		if err != nil {
-			t.Fatal(err)
-		}
-		pemData, err := io.ReadAll(f)
-		if err != nil {
-			t.Fatal(err)
-		}
-		if err := f.Close(); err != nil {
 			t.Fatal(err)
 		}
 		certs, key, err := CertFromPEM(pemData, "")
