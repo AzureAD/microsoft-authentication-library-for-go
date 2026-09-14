@@ -182,7 +182,7 @@ func ObserveTokenType(ctx context.Context, accessTokenType string) {
 	if a == nil {
 		return
 	}
-	tokenType := publictelemetry.TokenTypeExtension
+	var tokenType publictelemetry.TokenType
 	if strings.EqualFold(accessTokenType, "Bearer") {
 		tokenType = publictelemetry.TokenTypeBearer
 	} else {
@@ -226,7 +226,10 @@ func (a *Acquisition) Complete(
 	a.event.TokenSource = tokenSource
 	a.event.ExpiresOn = expiresOn
 	a.event.TotalDuration = time.Since(a.started)
-	if errorCode == "context_canceled" || errorCode == "context_deadline_exceeded" {
+	if succeeded {
+		a.event.ErrorCode = ""
+		a.event.RawSTSErrorCode = ""
+	} else if errorCode == "context_canceled" || errorCode == "context_deadline_exceeded" {
 		a.event.ErrorCode = errorCode
 		a.event.RawSTSErrorCode = ""
 	} else if a.event.ErrorCode == "" {

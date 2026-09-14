@@ -12,7 +12,9 @@ import (
 	msaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/sdk/metric"
+	"go.opentelemetry.io/otel/sdk/metric/exemplar"
 	"go.opentelemetry.io/otel/sdk/metric/metricdata"
+	"go.opentelemetry.io/otel/trace"
 )
 
 func TestProviderEmitsV2Schema(t *testing.T) {
@@ -155,4 +157,80 @@ func TestProviderFailureHasStableRawSTSErrorTag(t *testing.T) {
 		}
 	}
 	t.Fatal("MsalFailure wasn't emitted")
+}
+
+func TestProviderExemplarsExcludeTraceAndSpanIDs(t *testing.T) {
+	reader := metric.NewManualReader()
+	meterProvider := metric.NewMeterProvider(
+		metric.WithReader(reader),
+		metric.WithExemplarFilter(exemplar.AlwaysOnFilter),
+	)
+	t.Cleanup(func() {
+		if err := meterProvider.Shutdown(context.Background()); err != nil {
+			t.Error(err)
+		}
+	})
+	provider, err := New(meterProvider)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	spanContext := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    trace.TraceID{1},
+		SpanID:     trace.SpanID{2},
+		TraceFlags: trace.FlagsSampled,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
+	provider.RecordAuthentication(ctx, msaltelemetry.AuthenticationEvent{
+		APIID:         msaltelemetry.APIIDAcquireTokenForClient,
+		CacheLevel:    msaltelemetry.CacheLevelL1,
+		ExpiresOn:     time.Now().Add(time.Hour),
+		HTTPDuration:  time.Millisecond,
+		MSALVersion:   "1.10.0",
+		Platform:      "test",
+		Succeeded:     true,
+		TokenSource:   msaltelemetry.TokenSourceCache,
+		TokenType:     msaltelemetry.TokenTypeBearer,
+		TotalDuration: time.Millisecond,
+	})
+	provider.RecordAuthentication(ctx, msaltelemetry.AuthenticationEvent{
+		APIID:         msaltelemetry.APIIDAcquireTokenForClient,
+		ErrorCode:     "invalid_client",
+		HTTPDuration:  time.Millisecond,
+		MSALVersion:   "1.10.0",
+		Platform:      "test",
+		TokenType:     msaltelemetry.TokenTypeBearer,
+		TotalDuration: time.Millisecond,
+	})
+
+	var data metricdata.ResourceMetrics
+	if err := reader.Collect(context.Background(), &data); err != nil {
+		t.Fatal(err)
+	}
+	exemplarCount := 0
+	checkExemplars := func(exemplars []metricdata.Exemplar[int64]) {
+		for _, exemplar := range exemplars {
+			exemplarCount++
+			if len(exemplar.TraceID) != 0 || len(exemplar.SpanID) != 0 {
+				t.Errorf("exemplar exported trace ID %x or span ID %x", exemplar.TraceID, exemplar.SpanID)
+			}
+		}
+	}
+	for _, scope := range data.ScopeMetrics {
+		for _, m := range scope.Metrics {
+			switch points := m.Data.(type) {
+			case metricdata.Sum[int64]:
+				for _, point := range points.DataPoints {
+					checkExemplars(point.Exemplars)
+				}
+			case metricdata.Histogram[int64]:
+				for _, point := range points.DataPoints {
+					checkExemplars(point.Exemplars)
+				}
+			}
+		}
+	}
+	if exemplarCount == 0 {
+		t.Fatal("expected the always-on reservoir to produce exemplars")
+	}
 }

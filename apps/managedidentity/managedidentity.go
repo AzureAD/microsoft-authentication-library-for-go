@@ -13,6 +13,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	stderrors "errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -366,6 +367,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	if o.claims == "" {
 		stResp, err := cacheManager.Read(ctx, c.authParams)
 		if err != nil {
+			internaltelemetry.ObserveErrorCode(ctx, "cache_error")
 			return AuthResult{}, err
 		}
 		ar, err := base.AuthResultFromStorage(stResp)
@@ -618,37 +620,37 @@ func bufferResponseBody(resp *http.Response) error {
 		return nil
 	}
 	body, err := io.ReadAll(resp.Body)
-	resp.Body.Close()
+	// A close error can't change the result after the response body has been consumed.
+	_ = resp.Body.Close()
 	if err != nil {
-		return err
+		return responseBodyReadError{err: err}
 	}
 	resp.Body = io.NopCloser(bytes.NewReader(body))
 	return nil
+}
+
+type responseBodyReadError struct {
+	err error
+}
+
+func (e responseBodyReadError) Error() string {
+	return e.err.Error()
+}
+
+func (e responseBodyReadError) Unwrap() error {
+	return e.err
 }
 
 // retry performs an HTTP request with retries based on the provided options.
 func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error) {
 	var resp *http.Response
 	var err error
-	// cancelPrev cancels the context of the previous attempt. It is invoked only
-	// after that attempt's body has been drained, so the transport connection can
-	// still be reused, while avoiding the resource retention of deferring every
-	// per-attempt cancel until retry() returns.
-	var cancelPrev context.CancelFunc
 	retrylist := retryStatusCodes
 	if c.source == DefaultToIMDS {
 		retrylist = retryCodesForIMDS
 	}
 	for attempt := 0; attempt < maxRetries; attempt++ {
 		tryCtx, tryCancel := context.WithTimeout(req.Context(), time.Minute)
-		if resp != nil && resp.Body != nil {
-			_, _ = io.Copy(io.Discard, resp.Body)
-			resp.Body.Close()
-		}
-		if cancelPrev != nil {
-			cancelPrev()
-		}
-		cancelPrev = tryCancel
 		cloneReq := req.Clone(tryCtx)
 		started := time.Now()
 		resp, err = c.httpClient.Do(cloneReq)
@@ -656,7 +658,6 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 		if resp != nil {
 			statusCode = resp.StatusCode
 		}
-		internaltelemetry.ObserveHTTP(req.Context(), time.Since(started), statusCode)
 		succeeded := err == nil && resp != nil && !contains(retrylist, resp.StatusCode)
 		if succeeded || attempt == maxRetries-1 {
 			// Buffer the body into memory while tryCtx is still alive so the
@@ -667,19 +668,23 @@ func (c Client) retry(maxRetries int, req *http.Request) (*http.Response, error)
 			if bufErr := bufferResponseBody(resp); bufErr != nil && err == nil {
 				err = bufErr
 			}
+			internaltelemetry.ObserveHTTP(req.Context(), time.Since(started), statusCode)
 			tryCancel()
 			return resp, err
 		}
+		if resp != nil && resp.Body != nil {
+			_, _ = io.Copy(io.Discard, resp.Body)
+			// The response is discarded, so a close error is non-actionable.
+			_ = resp.Body.Close()
+		}
+		internaltelemetry.ObserveHTTP(req.Context(), time.Since(started), statusCode)
+		tryCancel()
 		select {
 		case <-time.After(time.Second):
 		case <-req.Context().Done():
 			err = req.Context().Err()
-			tryCancel()
 			return resp, err
 		}
-	}
-	if cancelPrev != nil {
-		cancelPrev()
 	}
 	return resp, err
 }
@@ -698,14 +703,23 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 		if resp != nil {
 			statusCode = resp.StatusCode
 		}
+		if bufErr := bufferResponseBody(resp); bufErr != nil && err == nil {
+			err = bufErr
+		}
 		internaltelemetry.ObserveHTTP(req.Context(), time.Since(started), statusCode)
 	}
 	if err != nil {
-		internaltelemetry.ObserveErrorCode(req.Context(), "transport_error")
+		var bodyReadErr responseBodyReadError
+		if stderrors.As(err, &bodyReadErr) {
+			internaltelemetry.ObserveErrorCode(req.Context(), "invalid_response")
+		} else {
+			internaltelemetry.ObserveErrorCode(req.Context(), "transport_error")
+		}
 		return r, err
 	}
 	responseBytes, err := io.ReadAll(resp.Body)
-	defer resp.Body.Close()
+	// A close error can't change the result after the response body has been consumed.
+	_ = resp.Body.Close()
 	if err != nil {
 		internaltelemetry.ObserveErrorCode(req.Context(), "invalid_response")
 		return r, err

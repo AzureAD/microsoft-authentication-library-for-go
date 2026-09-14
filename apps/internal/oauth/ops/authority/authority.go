@@ -22,6 +22,7 @@ import (
 	"github.com/google/uuid"
 
 	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	internaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/telemetry"
 )
 
 const (
@@ -730,22 +731,34 @@ func detectRegion(ctx context.Context) string {
 	}
 	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, imdsEndpoint, nil)
 	req.Header.Set("Metadata", "true")
-	resp, err := client.Do(req)
-	if err == nil {
-		defer resp.Body.Close()
+	response, statusCode, err := regionRequest(ctx, &client, req)
+	if err == nil && statusCode == http.StatusOK {
+		return parseRegionFromIMDSResponse(response)
 	}
 	// If the request times out or there is an error, it is retried once
-	if err != nil || resp.StatusCode != http.StatusOK {
-		resp, err = client.Do(req)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			return ""
-		}
-	}
-	response, err := io.ReadAll(resp.Body)
-	if err != nil {
+	response, statusCode, err = regionRequest(ctx, &client, req)
+	if err != nil || statusCode != http.StatusOK {
 		return ""
 	}
 	return parseRegionFromIMDSResponse(response)
+}
+
+func regionRequest(ctx context.Context, client *http.Client, req *http.Request) ([]byte, int, error) {
+	started := time.Now()
+	resp, err := client.Do(req)
+	statusCode := 0
+	if resp != nil {
+		statusCode = resp.StatusCode
+	}
+	if err != nil {
+		internaltelemetry.ObserveHTTP(ctx, time.Since(started), statusCode)
+		return nil, statusCode, err
+	}
+	response, readErr := io.ReadAll(resp.Body)
+	// A close error can't change the result after the response body has been consumed.
+	_ = resp.Body.Close()
+	internaltelemetry.ObserveHTTP(ctx, time.Since(started), statusCode)
+	return response, statusCode, readErr
 }
 
 // imdsComputeResponse models the subset of the IMDS compute metadata response

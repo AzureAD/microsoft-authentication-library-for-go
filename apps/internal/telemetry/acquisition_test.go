@@ -144,3 +144,33 @@ func TestTerminalCancellationOverridesPollingError(t *testing.T) {
 		t.Fatalf("RawSTSErrorCode = %q, want empty", event.RawSTSErrorCode)
 	}
 }
+
+func TestSuccessClearsTransientPollingError(t *testing.T) {
+	provider := &recordingProvider{}
+	ctx, acquisition := Start(
+		context.Background(),
+		provider,
+		publictelemetry.APIIDAcquireTokenByDeviceCode,
+		publictelemetry.TokenTypeBearer,
+		"1.0.0",
+	)
+	ObserveServiceError(ctx, []byte(`{
+		"error":"authorization_pending",
+		"error_codes":[70016]
+	}`))
+	acquisition.Complete(
+		ctx,
+		true,
+		publictelemetry.TokenSourceIdentityProvider,
+		time.Now().Add(time.Hour),
+		"",
+	)
+
+	event := provider.events[0]
+	if event.ErrorCode != "" {
+		t.Fatalf("ErrorCode = %q, want empty", event.ErrorCode)
+	}
+	if event.RawSTSErrorCode != "" {
+		t.Fatalf("RawSTSErrorCode = %q, want empty", event.RawSTSErrorCode)
+	}
+}

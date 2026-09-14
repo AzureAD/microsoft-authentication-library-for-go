@@ -14,6 +14,7 @@ import (
 	msaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/metric"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // MeterName is the OpenTelemetry instrumentation scope used by MSAL metrics.
@@ -169,21 +170,22 @@ func New(meterProvider metric.MeterProvider) (*Provider, error) {
 
 // RecordAuthentication implements telemetry.MetricsProvider.
 func (p *Provider) RecordAuthentication(ctx context.Context, event msaltelemetry.AuthenticationEvent) {
+	metricCtx := trace.ContextWithSpanContext(ctx, trace.SpanContext{})
 	if event.Succeeded {
-		p.successCounter.Add(ctx, 1, metric.WithAttributes(successAttributes(event)...))
+		p.successCounter.Add(metricCtx, 1, metric.WithAttributes(successAttributes(event)...))
 	} else {
-		p.failureCounter.Add(ctx, 1, metric.WithAttributes(failureAttributes(event)...))
+		p.failureCounter.Add(metricCtx, 1, metric.WithAttributes(failureAttributes(event)...))
 	}
 
 	p.totalDurationHistogram.Record(
-		ctx,
+		metricCtx,
 		event.TotalDuration.Milliseconds(),
 		metric.WithAttributes(totalDurationAttributes(event)...),
 	)
 
 	if event.HTTPDuration > 0 {
 		p.httpDurationHistogram.Record(
-			ctx,
+			metricCtx,
 			event.HTTPDuration.Milliseconds(),
 			metric.WithAttributes(httpDurationAttributes(event)...),
 		)
@@ -192,7 +194,7 @@ func (p *Provider) RecordAuthentication(ctx context.Context, event msaltelemetry
 	if event.Succeeded && event.TokenSource == msaltelemetry.TokenSourceCache &&
 		event.CacheLevel == msaltelemetry.CacheLevelL1 {
 		p.l1CacheDurationHistogram.Record(
-			ctx,
+			metricCtx,
 			event.TotalDuration.Microseconds(),
 			metric.WithAttributes(l1CacheAttributes(event)...),
 		)
@@ -201,7 +203,7 @@ func (p *Provider) RecordAuthentication(ctx context.Context, event msaltelemetry
 	if event.Succeeded {
 		remaining := max(time.Until(event.ExpiresOn).Seconds(), 0)
 		p.remainingLifetimeHistogram.Record(
-			ctx,
+			metricCtx,
 			int64(remaining),
 			metric.WithAttributes(remainingLifetimeAttributes(event)...),
 		)

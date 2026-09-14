@@ -245,14 +245,15 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 	if reply != nil {
 		statusCode = reply.StatusCode
 	}
-	internaltelemetry.ObserveHTTP(ctx, time.Since(started), statusCode)
 	if err != nil {
+		internaltelemetry.ObserveHTTP(ctx, time.Since(started), statusCode)
 		internaltelemetry.ObserveErrorCode(ctx, "transport_error")
 		return nil, fmt.Errorf("server response error:\n %w", err)
 	}
-	defer reply.Body.Close()
-
 	data, err := c.readBody(reply)
+	// A close error can't change the result after the response body has been consumed.
+	_ = reply.Body.Close()
+	internaltelemetry.ObserveHTTP(ctx, time.Since(started), statusCode)
 	if err != nil {
 		internaltelemetry.ObserveErrorCode(ctx, "invalid_response")
 		return nil, fmt.Errorf("could not read the body of an HTTP Response: %w", err)

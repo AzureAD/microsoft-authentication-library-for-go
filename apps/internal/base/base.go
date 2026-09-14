@@ -608,11 +608,15 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		return AuthResult{}, err
 	}
 	ar, err := NewAuthResult(token, account)
-	if err == nil && b.cacheAccessor != nil {
-		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
-	}
 	if err != nil {
 		return AuthResult{}, err
+	}
+	if b.cacheAccessor != nil {
+		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
+		if err != nil {
+			internaltelemetry.ObserveErrorCode(ctx, "cache_error")
+			return AuthResult{}, err
+		}
 	}
 
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
