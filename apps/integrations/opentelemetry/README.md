@@ -23,6 +23,17 @@ client, err := confidential.New(
 MSAL doesn't configure an SDK or exporter. Applications retain control over
 collection, aggregation, sampling, and export.
 
+## Release ordering
+
+This module depends on the `apps/telemetry` contract introduced in the parent
+MSAL Go module at `v1.10.0`. Publish the parent module at `v1.10.0` or later
+before tagging a release of this adapter module.
+
+The relative `replace` directive in this module supports development and CI in
+the MSAL Go repository only. Go doesn't inherit dependency replacement
+directives in downstream applications, so it doesn't remove the parent-release
+requirement.
+
 ## Metrics
 
 | Instrument | Type | Unit |

@@ -30,46 +30,189 @@ func TestProviderEmitsV2Schema(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	provider.RecordAuthentication(context.Background(), msaltelemetry.AuthenticationEvent{
+	event := msaltelemetry.AuthenticationEvent{
 		APIID:              msaltelemetry.APIIDAcquireTokenForClient,
-		CacheLevel:         msaltelemetry.CacheLevelNone,
-		CacheRefreshReason: msaltelemetry.CacheRefreshReasonNoCachedAccessToken,
-		ExpiresOn:          time.Now().Add(time.Hour),
+		CacheLevel:         msaltelemetry.CacheLevelL1,
+		CacheRefreshReason: msaltelemetry.CacheRefreshReasonNotApplicable,
 		HTTPDuration:       20 * time.Millisecond,
 		HTTPStatusCode:     200,
 		MSALVersion:        "1.10.0",
 		Platform:           "test",
 		Succeeded:          true,
-		TokenSource:        msaltelemetry.TokenSourceIdentityProvider,
+		TokenSource:        msaltelemetry.TokenSourceCache,
 		TokenType:          msaltelemetry.TokenTypeBearer,
 		TotalDuration:      25 * time.Millisecond,
-	})
+	}
+	provider.RecordAuthentication(context.Background(), event)
 
 	var data metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &data); err != nil {
 		t.Fatal(err)
 	}
-	var names []string
-	for _, scope := range data.ScopeMetrics {
-		for _, m := range scope.Metrics {
-			names = append(names, m.Name)
-		}
+	if len(data.ScopeMetrics) != 1 {
+		t.Fatalf("scope count = %d, want 1", len(data.ScopeMetrics))
 	}
-	sort.Strings(names)
-	want := []string{
-		httpDurationHistogramName,
-		remainingLifetimeHistogramName,
-		successCounterName,
-		totalDurationHistogramName,
+	scope := data.ScopeMetrics[0]
+	if scope.Scope.Name != MeterName || scope.Scope.Version != "1.0.0" ||
+		scope.Scope.SchemaURL != "" || scope.Scope.Attributes.Len() != 0 {
+		t.Fatalf("unexpected instrumentation scope: %#v", scope.Scope)
 	}
-	sort.Strings(want)
-	if len(names) != len(want) {
-		t.Fatalf("metric names = %v, want %v", names, want)
+	metrics := make(map[string]metricdata.Metrics, len(scope.Metrics))
+	for _, m := range scope.Metrics {
+		metrics[m.Name] = m
 	}
-	for i := range want {
-		if names[i] != want[i] {
-			t.Fatalf("metric names = %v, want %v", names, want)
-		}
+	if len(metrics) != 5 {
+		t.Fatalf("metric count = %d, want 5: %#v", len(metrics), metrics)
+	}
+
+	assertCounterMetric(
+		t,
+		metrics[successCounterName],
+		"",
+		"Number of successful token acquisition calls",
+		1,
+		[]attribute.KeyValue{
+			attribute.String("MsalVersion", "1.10.0"),
+			attribute.String("Platform", "test"),
+			attribute.Int("ApiId", 1004),
+			attribute.String("CallerSdkId", ""),
+			attribute.Int("TokenSource", 1),
+			attribute.Int("CacheRefreshReason", 0),
+			attribute.Int("CacheLevel", 2),
+			attribute.Int("TokenType", 1),
+		},
+	)
+	assertHistogramMetric(
+		t,
+		metrics[totalDurationHistogramName],
+		"ms",
+		"Token acquisition latency including successes and failures",
+		25,
+		[]attribute.KeyValue{
+			attribute.String("MsalVersionPlatform", "1.10.0,test"),
+			attribute.Int("ApiId", 1004),
+			attribute.String("TokenSource", "1"),
+			attribute.String("CacheLevel", "2"),
+			attribute.Int("CacheRefreshReason", 0),
+			attribute.Int("TokenType", 1),
+			attribute.String("ErrorCode", ""),
+			attribute.Bool("Succeeded", true),
+		},
+	)
+	assertHistogramMetric(
+		t,
+		metrics[l1CacheDurationHistogramName],
+		"us",
+		"Token acquisition latency when the internal cache is used",
+		25_000,
+		[]attribute.KeyValue{
+			attribute.String("MsalVersion", "1.10.0"),
+			attribute.String("Platform", "test"),
+			attribute.Int("ApiId", 1004),
+			attribute.Int("TokenSource", 1),
+			attribute.Int("CacheLevel", 2),
+			attribute.Int("CacheRefreshReason", 0),
+		},
+	)
+	assertHistogramMetric(
+		t,
+		metrics[httpDurationHistogramName],
+		"ms",
+		"Token acquisition HTTP latency including successes and failures",
+		20,
+		[]attribute.KeyValue{
+			attribute.String("MsalVersionPlatform", "1.10.0,test"),
+			attribute.Int("ApiId", 1004),
+			attribute.Int("TokenType", 1),
+			attribute.Int("HttpStatusCode", 200),
+		},
+	)
+	assertHistogramMetric(
+		t,
+		metrics[remainingLifetimeHistogramName],
+		"s",
+		"Remaining lifetime of an acquired token",
+		0,
+		[]attribute.KeyValue{
+			attribute.String("MsalVersionPlatform", "1.10.0,test"),
+			attribute.Int("ApiId", 1004),
+			attribute.Int("TokenSource", 1),
+			attribute.Int("CacheLevel", 2),
+			attribute.Int("CacheRefreshReason", 0),
+			attribute.Int("TokenType", 1),
+		},
+	)
+}
+
+func assertCounterMetric(
+	t *testing.T,
+	metric metricdata.Metrics,
+	unit, description string,
+	value int64,
+	attributes []attribute.KeyValue,
+) {
+	t.Helper()
+	assertMetricMetadata(t, metric, unit, description)
+	sum, ok := metric.Data.(metricdata.Sum[int64])
+	if !ok {
+		t.Fatalf("%s aggregation = %T, want metricdata.Sum[int64]", metric.Name, metric.Data)
+	}
+	if !sum.IsMonotonic || sum.Temporality != metricdata.CumulativeTemporality ||
+		len(sum.DataPoints) != 1 || sum.DataPoints[0].Value != value {
+		t.Fatalf("%s unexpected sum: %#v", metric.Name, sum)
+	}
+	assertAttributeSet(t, metric.Name, sum.DataPoints[0].Attributes, attributes)
+}
+
+func assertHistogramMetric(
+	t *testing.T,
+	metric metricdata.Metrics,
+	unit, description string,
+	value int64,
+	attributes []attribute.KeyValue,
+) {
+	t.Helper()
+	assertMetricMetadata(t, metric, unit, description)
+	histogram, ok := metric.Data.(metricdata.Histogram[int64])
+	if !ok {
+		t.Fatalf("%s aggregation = %T, want metricdata.Histogram[int64]", metric.Name, metric.Data)
+	}
+	if histogram.Temporality != metricdata.CumulativeTemporality ||
+		len(histogram.DataPoints) != 1 ||
+		histogram.DataPoints[0].Count != 1 ||
+		histogram.DataPoints[0].Sum != value {
+		t.Fatalf("%s unexpected histogram: %#v", metric.Name, histogram)
+	}
+	assertAttributeSet(t, metric.Name, histogram.DataPoints[0].Attributes, attributes)
+}
+
+func assertMetricMetadata(t *testing.T, metric metricdata.Metrics, unit, description string) {
+	t.Helper()
+	if metric.Name == "" {
+		t.Fatal("expected metric to be exported")
+	}
+	if metric.Unit != unit || metric.Description != description {
+		t.Fatalf(
+			"%s metadata = unit %q, description %q; want unit %q, description %q",
+			metric.Name,
+			metric.Unit,
+			metric.Description,
+			unit,
+			description,
+		)
+	}
+}
+
+func assertAttributeSet(
+	t *testing.T,
+	metricName string,
+	got attribute.Set,
+	attributes []attribute.KeyValue,
+) {
+	t.Helper()
+	want := attribute.NewSet(attributes...)
+	if !got.Equals(&want) {
+		t.Fatalf("%s attributes = %v, want %v", metricName, got.ToSlice(), want.ToSlice())
 	}
 }
 
@@ -145,14 +288,23 @@ func TestProviderFailureHasStableRawSTSErrorTag(t *testing.T) {
 			if m.Name != failureCounterName {
 				continue
 			}
-			sum, ok := m.Data.(metricdata.Sum[int64])
-			if !ok || len(sum.DataPoints) != 1 {
-				t.Fatalf("unexpected failure metric data: %#v", m.Data)
-			}
-			value, ok := sum.DataPoints[0].Attributes.Value("RawStsErrorCode")
-			if !ok || value.AsString() != "" {
-				t.Fatalf("RawStsErrorCode = %q, present=%t", value.AsString(), ok)
-			}
+			assertCounterMetric(
+				t,
+				m,
+				"",
+				"Number of failed token acquisition calls",
+				1,
+				[]attribute.KeyValue{
+					attribute.String("MsalVersion", "1.10.0"),
+					attribute.String("Platform", "test"),
+					attribute.String("ErrorCode", "invalid_client"),
+					attribute.Int("ApiId", 1004),
+					attribute.String("CallerSdkId", ""),
+					attribute.Int("CacheRefreshReason", 0),
+					attribute.Int("TokenType", 1),
+					attribute.String("RawStsErrorCode", ""),
+				},
+			)
 			return
 		}
 	}
