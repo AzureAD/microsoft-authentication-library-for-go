@@ -5,6 +5,7 @@ package telemetry
 
 import (
 	"context"
+	"sync"
 	"testing"
 	"time"
 
@@ -12,11 +13,20 @@ import (
 )
 
 type recordingProvider struct {
+	mu     sync.Mutex
 	events []publictelemetry.AuthenticationEvent
 }
 
 func (p *recordingProvider) RecordAuthentication(_ context.Context, event publictelemetry.AuthenticationEvent) {
+	p.mu.Lock()
+	defer p.mu.Unlock()
 	p.events = append(p.events, event)
+}
+
+func (p *recordingProvider) snapshot() []publictelemetry.AuthenticationEvent {
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return append([]publictelemetry.AuthenticationEvent(nil), p.events...)
 }
 
 func TestAcquisitionEmitsOnce(t *testing.T) {
@@ -172,5 +182,133 @@ func TestSuccessClearsTransientPollingError(t *testing.T) {
 	}
 	if event.RawSTSErrorCode != "" {
 		t.Fatalf("RawSTSErrorCode = %q, want empty", event.RawSTSErrorCode)
+	}
+}
+
+func TestConcurrentAcquisitionsEmitOnceWithoutCrossContamination(t *testing.T) {
+	const acquisitions = 64
+	provider := &recordingProvider{}
+	var wg sync.WaitGroup
+	for i := 0; i < acquisitions; i++ {
+		wg.Add(1)
+		go func(statusCode int) {
+			defer wg.Done()
+			ctx, acquisition := Start(
+				context.Background(),
+				provider,
+				publictelemetry.APIIDAcquireTokenForClient,
+				publictelemetry.TokenTypeBearer,
+				"1.0.0",
+			)
+			ObserveHTTP(ctx, time.Duration(statusCode)*time.Microsecond, statusCode)
+			acquisition.Complete(
+				ctx,
+				true,
+				publictelemetry.TokenSourceIdentityProvider,
+				time.Now().Add(time.Hour),
+				"",
+			)
+		}(200 + i)
+	}
+
+	ctx, acquisition := Start(
+		context.Background(),
+		provider,
+		publictelemetry.APIIDAcquireTokenSilent,
+		publictelemetry.TokenTypeBearer,
+		"1.0.0",
+	)
+	for i := 0; i < acquisitions; i++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			acquisition.Complete(
+				ctx,
+				false,
+				publictelemetry.TokenSourceCache,
+				time.Time{},
+				"internal_error",
+			)
+		}()
+	}
+	wg.Wait()
+
+	events := provider.snapshot()
+	if len(events) != acquisitions+1 {
+		t.Fatalf("event count = %d, want %d", len(events), acquisitions+1)
+	}
+	statuses := make(map[int]time.Duration, acquisitions)
+	silentEvents := 0
+	for _, event := range events {
+		switch event.APIID {
+		case publictelemetry.APIIDAcquireTokenForClient:
+			statuses[event.HTTPStatusCode] = event.HTTPDuration
+		case publictelemetry.APIIDAcquireTokenSilent:
+			silentEvents++
+		default:
+			t.Fatalf("unexpected APIID %d", event.APIID)
+		}
+	}
+	if silentEvents != 1 {
+		t.Fatalf("silent event count = %d, want 1", silentEvents)
+	}
+	for statusCode := 200; statusCode < 200+acquisitions; statusCode++ {
+		if got := statuses[statusCode]; got != time.Duration(statusCode)*time.Microsecond {
+			t.Fatalf("status %d duration = %s", statusCode, got)
+		}
+	}
+}
+
+func TestCanceledContextsEmitTerminalError(t *testing.T) {
+	tests := []struct {
+		name      string
+		context   func() (context.Context, context.CancelFunc)
+		errorCode string
+	}{
+		{
+			name: "canceled",
+			context: func() (context.Context, context.CancelFunc) {
+				ctx, cancel := context.WithCancel(context.Background())
+				cancel()
+				return ctx, cancel
+			},
+			errorCode: "context_canceled",
+		},
+		{
+			name: "deadline exceeded",
+			context: func() (context.Context, context.CancelFunc) {
+				return context.WithDeadline(context.Background(), time.Now().Add(-time.Second))
+			},
+			errorCode: "context_deadline_exceeded",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx, cancel := test.context()
+			defer cancel()
+			provider := &recordingProvider{}
+			ctx, acquisition := Start(
+				ctx,
+				provider,
+				publictelemetry.APIIDAcquireTokenForClient,
+				publictelemetry.TokenTypeBearer,
+				"1.0.0",
+			)
+			acquisition.Complete(
+				ctx,
+				false,
+				publictelemetry.TokenSourceIdentityProvider,
+				time.Time{},
+				ErrorCode(ctx.Err()),
+			)
+
+			events := provider.snapshot()
+			if len(events) != 1 {
+				t.Fatalf("event count = %d, want 1", len(events))
+			}
+			if events[0].ErrorCode != test.errorCode {
+				t.Fatalf("ErrorCode = %q, want %q", events[0].ErrorCode, test.errorCode)
+			}
+		})
 	}
 }

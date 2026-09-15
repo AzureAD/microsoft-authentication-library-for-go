@@ -55,6 +55,44 @@ current APIs can't measure those outcomes with the same semantics as MSAL.NET.
 Use `CanonicalTagsByMetric` to obtain the MSAL-owned attributes for each
 instrument.
 
+## Example output
+
+A failed client-credential acquisition emits data equivalent to:
+
+```text
+MsalFailure = 1
+  MsalVersion: "1.10.0"
+  Platform: "linux"
+  ErrorCode: "invalid_client"
+  ApiId: 1004
+  CallerSdkId: ""
+  CacheRefreshReason: 2
+  TokenType: 1
+  RawStsErrorCode: "7000215"
+
+MsalTotalDurationV2.1A = 125 ms
+  MsalVersionPlatform: "1.10.0,linux"
+  ApiId: 1004
+  TokenSource: ""
+  CacheLevel: ""
+  CacheRefreshReason: 2
+  TokenType: 1
+  ErrorCode: "invalid_client"
+  Succeeded: false
+
+MsalDurationInHttpV2.1A = 118 ms
+  MsalVersionPlatform: "1.10.0,linux"
+  ApiId: 1004
+  TokenType: 1
+  HttpStatusCode: 401
+```
+
+OpenTelemetry exporters wrap these measurements in their own resource and
+scope envelopes. The canonical measurement data contains no client or tenant
+ID, account, scope, authority or URL, correlation ID, token, secret, response
+body, or error description. The adapter also removes trace and span IDs from
+metric exemplars.
+
 ## Privacy
 
 Canonical metrics don't include client or tenant IDs, account identifiers,
