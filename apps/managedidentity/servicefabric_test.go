@@ -9,6 +9,7 @@ import (
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -283,7 +284,12 @@ func TestServiceFabricConfigurableClientRejectsRedirectBeforeSendingSecret(t *te
 	}
 }
 
-func TestServiceFabricAcceptsLazilyPopulatedTLSNextProto(t *testing.T) {
+// TestServiceFabricAcceptsConfiguredTLSNextProto guards against rejecting a non-nil TLSNextProto. A transport
+// configured for HTTP/2 (e.g. via golang.org/x/net/http2.ConfigureTransports, as azure-sdk-for-go's default
+// transport does) carries a non-nil TLSNextProto that Transport.Clone copies. Rejecting it would break those
+// callers, and it is not a pinning-bypass vector because the transport completes the pinned TLS handshake
+// before dispatching the connection to the ALPN handler.
+func TestServiceFabricAcceptsConfiguredTLSNextProto(t *testing.T) {
 	responseBody, err := getSuccessfulResponse(resource, true)
 	if err != nil {
 		t.Fatal(err)
@@ -298,7 +304,6 @@ func TestServiceFabricAcceptsLazilyPopulatedTLSNextProto(t *testing.T) {
 	resetServiceFabricCache(t)
 
 	callerTransport := server.Client().Transport.(*http.Transport).Clone()
-	// Simulate a transport previously used for HTTP/2, whose TLSNextProto the standard library lazily populated.
 	callerTransport.TLSNextProto = map[string]func(string, *tls.Conn) http.RoundTripper{
 		"h2": func(string, *tls.Conn) http.RoundTripper { return nil },
 	}
@@ -306,7 +311,7 @@ func TestServiceFabricAcceptsLazilyPopulatedTLSNextProto(t *testing.T) {
 
 	client, err := New(SystemAssigned(), WithHTTPClient(callerClient), WithRetryPolicyDisabled())
 	if err != nil {
-		t.Fatalf("expected a lazily populated TLSNextProto to be accepted, got %v", err)
+		t.Fatalf("expected a configured TLSNextProto to be accepted, got %v", err)
 	}
 	derivedClient, ok := client.httpClient.(*http.Client)
 	if !ok {
@@ -322,6 +327,74 @@ func TestServiceFabricAcceptsLazilyPopulatedTLSNextProto(t *testing.T) {
 	if _, err = client.AcquireToken(context.Background(), resource); err != nil {
 		t.Fatal(err)
 	}
+}
+
+// TestServiceFabricReusesHTTP2Transport exercises a transport that has actually served an HTTP/2 request, so
+// its HTTP/2 state is genuinely populated rather than hand-assigned, then reuses it for Service Fabric and
+// verifies that certificate pinning still holds for both a matching and a mismatched thumbprint.
+func TestServiceFabricReusesHTTP2Transport(t *testing.T) {
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var requests int32
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&requests, 1)
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write(responseBody)
+	}))
+	server.EnableHTTP2 = true
+	server.StartTLS()
+	defer server.Close()
+
+	callerClient := server.Client()
+	if _, ok := callerClient.Transport.(*http.Transport); !ok {
+		t.Fatalf("expected *http.Transport from the test server client, got %T", callerClient.Transport)
+	}
+	// Exercise the transport so its HTTP/2 state is populated by a real request rather than hand-assigned.
+	warmup, err := callerClient.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, warmup.Body)
+	warmup.Body.Close()
+	if warmup.ProtoMajor != 2 {
+		t.Fatalf("expected the warm-up request to negotiate HTTP/2, got HTTP/%d.%d", warmup.ProtoMajor, warmup.ProtoMinor)
+	}
+
+	t.Run("matching pin succeeds", func(t *testing.T) {
+		setServiceFabricEnvironment(t, server.URL, serviceFabricServerThumbprint(server))
+		resetServiceFabricCache(t)
+
+		client, err := New(SystemAssigned(), WithHTTPClient(callerClient), WithRetryPolicyDisabled())
+		if err != nil {
+			t.Fatalf("expected the reused HTTP/2 transport to be accepted, got %v", err)
+		}
+		before := atomic.LoadInt32(&requests)
+		if _, err := client.AcquireToken(context.Background(), resource); err != nil {
+			t.Fatal(err)
+		}
+		if got := atomic.LoadInt32(&requests) - before; got == 0 {
+			t.Fatal("expected the pinned request to reach the server")
+		}
+	})
+
+	t.Run("wrong pin fails", func(t *testing.T) {
+		setServiceFabricEnvironment(t, server.URL, strings.Repeat("0", 40))
+		resetServiceFabricCache(t)
+
+		client, err := New(SystemAssigned(), WithHTTPClient(callerClient), WithRetryPolicyDisabled())
+		if err != nil {
+			t.Fatalf("expected the reused HTTP/2 transport to be accepted, got %v", err)
+		}
+		before := atomic.LoadInt32(&requests)
+		if _, err := client.AcquireToken(context.Background(), resource); err == nil {
+			t.Fatal("expected a thumbprint validation error")
+		}
+		if got := atomic.LoadInt32(&requests) - before; got != 0 {
+			t.Fatalf("expected no HTTP request after a thumbprint mismatch, got %d", got)
+		}
+	})
 }
 
 func TestServiceFabricAcquireTokenWithPinnedCertificate(t *testing.T) {
