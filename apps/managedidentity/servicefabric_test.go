@@ -20,6 +20,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/base/storage"
+	"golang.org/x/net/http2"
 )
 
 type serviceFabricCustomHTTPClient struct{}
@@ -395,6 +396,93 @@ func TestServiceFabricReusesHTTP2Transport(t *testing.T) {
 			t.Fatalf("expected no HTTP request after a thumbprint mismatch, got %d", got)
 		}
 	})
+}
+
+// TestServiceFabricDoesNotReuseCallerHTTP2Connection reproduces the connection-reuse hazard from
+// golang.org/x/net/http2.ConfigureTransports: its "h2" callback retains the caller's connection pool and
+// Transport.Clone copies that callback by reference. A warm HTTP/2 connection to server A is established for a
+// shared authority, later dials for that authority are routed to server B whose certificate matches the pin,
+// and the Service Fabric request must reach the freshly pinned server B rather than reusing the pooled,
+// unpinned connection to server A.
+func TestServiceFabricDoesNotReuseCallerHTTP2Connection(t *testing.T) {
+	responseBody, err := getSuccessfulResponse(resource, true)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var warmedRequests, pinnedRequests int32
+	// Server A answers the warm-up request and must never receive the pinned Service Fabric request.
+	warmedServer := httptest.NewUnstartedServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&warmedRequests, 1)
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write(responseBody)
+	}))
+	warmedServer.EnableHTTP2 = true
+	warmedServer.StartTLS()
+	defer warmedServer.Close()
+
+	// Server B holds the certificate whose thumbprint is pinned; the Service Fabric request must land here.
+	pinnedServer := httptest.NewUnstartedServer(http.HandlerFunc(func(response http.ResponseWriter, _ *http.Request) {
+		atomic.AddInt32(&pinnedRequests, 1)
+		response.Header().Set("Content-Type", "application/json")
+		_, _ = response.Write(responseBody)
+	}))
+	pinnedServer.EnableHTTP2 = true
+	pinnedServer.StartTLS()
+	defer pinnedServer.Close()
+
+	// Dials for the single shared authority go to server A until the warm-up completes, then to server B.
+	var routeToPinned atomic.Bool
+	dial := func(ctx context.Context, network, _ string) (net.Conn, error) {
+		addr := warmedServer.Listener.Addr().String()
+		if routeToPinned.Load() {
+			addr = pinnedServer.Listener.Addr().String()
+		}
+		var d net.Dialer
+		return d.DialContext(ctx, network, addr)
+	}
+
+	callerTransport := &http.Transport{
+		DialContext:       dial,
+		ForceAttemptHTTP2: true,
+		TLSClientConfig:   &tls.Config{InsecureSkipVerify: true}, // #nosec G402 -- test transport; the derived client pins.
+	}
+	if _, err := http2.ConfigureTransports(callerTransport); err != nil {
+		t.Fatal(err)
+	}
+	callerClient := &http.Client{Transport: callerTransport}
+
+	const authority = "https://sf-pin.local:8443"
+	// Warm an HTTP/2 connection to server A for the shared authority, populating the caller's pool.
+	warmup, err := callerClient.Get(authority + "/")
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, _ = io.Copy(io.Discard, warmup.Body)
+	warmup.Body.Close()
+	if warmup.ProtoMajor != 2 {
+		t.Fatalf("expected the warm-up request to negotiate HTTP/2, got HTTP/%d.%d", warmup.ProtoMajor, warmup.ProtoMinor)
+	}
+	if got := atomic.LoadInt32(&warmedRequests); got != 1 {
+		t.Fatalf("expected the warm-up to reach server A once, got %d", got)
+	}
+
+	routeToPinned.Store(true)
+	setServiceFabricEnvironment(t, authority, serviceFabricServerThumbprint(pinnedServer))
+	resetServiceFabricCache(t)
+
+	client, err := New(SystemAssigned(), WithHTTPClient(callerClient), WithRetryPolicyDisabled())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AcquireToken(context.Background(), resource); err != nil {
+		t.Fatal(err)
+	}
+	if got := atomic.LoadInt32(&warmedRequests); got != 1 {
+		t.Fatalf("Service Fabric request reused the caller's pooled connection to server A (server A saw %d requests)", got)
+	}
+	if got := atomic.LoadInt32(&pinnedRequests); got == 0 {
+		t.Fatal("expected the Service Fabric request to reach the pinned server B")
+	}
 }
 
 func TestServiceFabricAcquireTokenWithPinnedCertificate(t *testing.T) {

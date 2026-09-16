@@ -56,6 +56,13 @@ func serviceFabricCertificateVerifiedHTTPClient(httpClient *http.Client) (*http.
 		return nil, errors.New("managed identity on Service Fabric does not support custom TLS verification")
 	}
 	derivedTransport := callerTransport.Clone()
+	// Give the derived transport its own HTTP/2 state so it can never serve a Service Fabric request over a
+	// connection from the caller's pool. golang.org/x/net/http2.ConfigureTransports (used by azure-sdk-for-go's
+	// default transport) installs an "h2" callback that retains the original connection pool, and Transport.Clone
+	// copies that callback by reference. Without clearing it, a pre-existing, unpinned connection to the same
+	// authority could be reused, bypassing the certificate pin below. Resetting TLSNextProto makes the standard
+	// library lazily re-establish HTTP/2 with a fresh pool governed by this transport's pinned TLS configuration.
+	derivedTransport.TLSNextProto = nil
 	tlsConfig := derivedTransport.TLSClientConfig.Clone()
 	if tlsConfig == nil {
 		tlsConfig = &tls.Config{}
