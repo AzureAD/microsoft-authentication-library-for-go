@@ -54,7 +54,7 @@ import (
 // identifiers, not secrets, and every one is overridable by flag or environment variable.
 const (
 	defaultClientID  = "163ffef9-a313-45b4-ab2f-c7e2f5e0e23e"
-	defaultAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c"
+	defaultAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c" // NOSONAR -- public tenant URL, not a credential.
 
 	// tokenExchangeScope is the audience leg 1 requests: it yields a federated assertion rather
 	// than a resource token. Mirrors MSAL .NET's TokenExchangeUrl.

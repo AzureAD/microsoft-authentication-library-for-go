@@ -24,7 +24,7 @@ import (
 // every one is overridable with a flag or an environment variable.
 const (
 	DefaultClientID  = "163ffef9-a313-45b4-ab2f-c7e2f5e0e23e"
-	DefaultAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c"
+	DefaultAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c" // NOSONAR -- public tenant URL, not a credential.
 	DefaultRegion    = "westus3"
 	DefaultScope     = "https://vault.azure.net/.default"
 )
