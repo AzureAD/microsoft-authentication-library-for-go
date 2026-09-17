@@ -358,7 +358,9 @@ func TestServiceFabricReusesHTTP2Transport(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = io.Copy(io.Discard, warmup.Body)
-	warmup.Body.Close()
+	if err = warmup.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if warmup.ProtoMajor != 2 {
 		t.Fatalf("expected the warm-up request to negotiate HTTP/2, got HTTP/%d.%d", warmup.ProtoMajor, warmup.ProtoMinor)
 	}
@@ -458,7 +460,9 @@ func TestServiceFabricDoesNotReuseCallerHTTP2Connection(t *testing.T) {
 		t.Fatal(err)
 	}
 	_, _ = io.Copy(io.Discard, warmup.Body)
-	warmup.Body.Close()
+	if err = warmup.Body.Close(); err != nil {
+		t.Fatal(err)
+	}
 	if warmup.ProtoMajor != 2 {
 		t.Fatalf("expected the warm-up request to negotiate HTTP/2, got HTTP/%d.%d", warmup.ProtoMajor, warmup.ProtoMinor)
 	}
