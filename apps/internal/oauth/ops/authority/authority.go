@@ -728,20 +728,37 @@ func detectRegion(ctx context.Context) string {
 	client := http.Client{
 		Timeout: time.Duration(2 * time.Second),
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, imdsEndpoint, nil)
+	return detectRegionWithClient(ctx, &client, imdsEndpoint)
+}
+
+func detectRegionWithClient(ctx context.Context, client *http.Client, endpoint string) string {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	req.Header.Set("Metadata", "true")
 	resp, err := client.Do(req)
 	if err == nil {
-		defer resp.Body.Close()
+		if resp.StatusCode == http.StatusOK {
+			response, readErr := io.ReadAll(resp.Body)
+			// A close error can't change the result after the response body has been consumed.
+			_ = resp.Body.Close()
+			if readErr != nil {
+				return ""
+			}
+			return parseRegionFromIMDSResponse(response)
+		}
+		_ = resp.Body.Close()
 	}
 	// If the request times out or there is an error, it is retried once
-	if err != nil || resp.StatusCode != http.StatusOK {
-		resp, err = client.Do(req)
-		if err != nil || resp.StatusCode != http.StatusOK {
-			return ""
-		}
+	resp, err = client.Do(req)
+	if err != nil {
+		return ""
+	}
+	if resp.StatusCode != http.StatusOK {
+		_ = resp.Body.Close()
+		return ""
 	}
 	response, err := io.ReadAll(resp.Body)
+	// A close error can't change the result after the response body has been consumed.
+	_ = resp.Body.Close()
 	if err != nil {
 		return ""
 	}

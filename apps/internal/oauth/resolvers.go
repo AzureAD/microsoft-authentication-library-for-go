@@ -77,9 +77,9 @@ func (m *authorityEndpoint) ResolveEndpoints(ctx context.Context, authorityInfo 
 		tenant := authorityInfo.Tenant
 
 		endpoints := authority.NewEndpoints(
-			strings.Replace(resp.AuthorizationEndpoint, "{tenant}", tenant, -1),
-			strings.Replace(resp.TokenEndpoint, "{tenant}", tenant, -1),
-			strings.Replace(resp.Issuer, "{tenant}", tenant, -1),
+			strings.ReplaceAll(resp.AuthorizationEndpoint, "{tenant}", tenant),
+			strings.ReplaceAll(resp.TokenEndpoint, "{tenant}", tenant),
+			strings.ReplaceAll(resp.Issuer, "{tenant}", tenant),
 			authorityInfo.Host)
 
 		aliases := m.addCachedEndpoints(authorityInfo, userPrincipalName, endpoints)

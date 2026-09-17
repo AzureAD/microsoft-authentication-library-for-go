@@ -27,6 +27,7 @@ type Config struct {
 
 // CreateConfig creates the Config struct from a json file.
 func CreateConfig(fileName string) *Config {
+	// #nosec G304 -- the sample intentionally loads the configuration path selected by its user.
 	data, err := os.ReadFile(fileName)
 	if err != nil {
 		log.Fatal(err)

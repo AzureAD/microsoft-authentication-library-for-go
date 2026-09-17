@@ -313,9 +313,10 @@ func TestAcquireTokenWithTenantID(t *testing.T) {
 					mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, test.tenant)))
 				}
 				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, test.tenant)))
-				if method == "devicecode" {
+				switch method {
+				case "devicecode":
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"device_code":"...","expires_in":600}`)))
-				} else if method == "password" {
+				case "password":
 					// user realm metadata
 					mockClient.AppendResponse(mock.WithBody([]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`)))
 				}
