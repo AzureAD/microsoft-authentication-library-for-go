@@ -20,6 +20,9 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	internaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/telemetry"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/version"
+	publictelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry"
 )
 
 const (
@@ -189,6 +192,7 @@ type Client struct {
 	cacheAccessorMu *sync.RWMutex
 	canRefresh      map[string]*atomic.Value
 	canRefreshMu    *sync.Mutex
+	metricsProvider publictelemetry.MetricsProvider
 }
 
 // Option is an optional argument to the New constructor.
@@ -202,6 +206,37 @@ func WithCacheAccessor(ca cache.ExportReplace) Option {
 		}
 		return nil
 	}
+}
+
+// WithMetricsProvider configures the privacy-safe metrics destination.
+func WithMetricsProvider(provider publictelemetry.MetricsProvider) Option {
+	return func(c *Client) error {
+		c.metricsProvider = provider
+		return nil
+	}
+}
+
+// StartTelemetry begins one caller-facing token acquisition measurement.
+func (b Client) StartTelemetry(
+	ctx context.Context,
+	apiID publictelemetry.APIID,
+	tokenType publictelemetry.TokenType,
+) (context.Context, *internaltelemetry.Acquisition) {
+	return internaltelemetry.Start(ctx, b.metricsProvider, apiID, tokenType, version.Version)
+}
+
+// CompleteTelemetry records one caller-facing token acquisition result.
+func (b Client) CompleteTelemetry(
+	ctx context.Context,
+	acquisition *internaltelemetry.Acquisition,
+	result AuthResult,
+	err error,
+) {
+	if acquisition == nil {
+		return
+	}
+	source := publictelemetry.TokenSource(result.Metadata.TokenSource)
+	acquisition.Complete(ctx, err == nil, source, result.ExpiresOn, internaltelemetry.ErrorCode(err))
 }
 
 // WithClientCapabilities allows configuring one or more client capabilities such as "CP1"
@@ -330,6 +365,10 @@ func (b Client) AuthCodeURL(ctx context.Context, clientID, redirectURI string, s
 
 func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilentParameters) (AuthResult, error) {
 	ar := AuthResult{}
+	refreshReason := publictelemetry.CacheRefreshReasonNotApplicable
+	if silent.Claims != "" {
+		refreshReason = publictelemetry.CacheRefreshReasonForceRefreshOrClaims
+	}
 	// when tenant == "", the caller didn't specify a tenant and WithTenant will choose the client's configured tenant
 	tenant := silent.TenantID
 	authParams, err := b.AuthParams.WithTenant(tenant)
@@ -345,6 +384,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	authParams.IsAppTokenCache = silent.IsAppCache
 	if silent.AuthnScheme != nil {
 		authParams.AuthnScheme = silent.AuthnScheme
+	}
+	if authParams.AuthnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, authParams.AuthnScheme.AccessTokenType())
 	}
 	if silent.CacheKeyComponents != nil {
 		authParams.CacheKeyComponents = silent.CacheKeyComponents
@@ -364,10 +406,14 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		b.cacheAccessorMu.RUnlock()
 	}
 	if err != nil {
+		internaltelemetry.ObserveErrorCode(ctx, "cache_error")
 		return ar, err
 	}
 	storageTokenResponse, err := m.Read(ctx, authParams)
 	if err != nil {
+		// Read can perform instance discovery before accessing the cache. Keep a
+		// more specific network/service classification recorded by that layer.
+		internaltelemetry.ObserveErrorCodeIfUnset(ctx, "cache_error")
 		return ar, err
 	}
 
@@ -394,6 +440,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 						switch silent.RequestType {
 						case accesstokens.ATConfidential:
 							if tr, er := b.Token.Credential(ctx, authParams, silent.Credential); er == nil {
+								internaltelemetry.ObserveCacheResult(ctx, publictelemetry.CacheLevelNone, publictelemetry.CacheRefreshReasonProactivelyRefreshed)
 								return b.AuthResultFromToken(ctx, authParams, tr)
 							}
 						case accesstokens.ATPublic:
@@ -401,6 +448,7 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 							if err != nil {
 								return ar, err
 							}
+							internaltelemetry.ObserveCacheResult(ctx, publictelemetry.CacheLevelNone, publictelemetry.CacheRefreshReasonProactivelyRefreshed)
 							return b.AuthResultFromToken(ctx, authParams, token)
 						case accesstokens.ATUnknown:
 							return ar, errors.New("silent request type cannot be ATUnknown")
@@ -408,12 +456,25 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 					}
 				}
 			}
+			cacheLevel := publictelemetry.CacheLevelL1
+			if b.cacheAccessor != nil {
+				cacheLevel = publictelemetry.CacheLevelUnknown
+			}
+			internaltelemetry.ObserveCacheResult(ctx, cacheLevel, publictelemetry.CacheRefreshReasonNotApplicable)
 			ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)
 			return ar, err
 		}
 	}
 
 	// redeem a cached refresh token, if available
+	if refreshReason == publictelemetry.CacheRefreshReasonNotApplicable {
+		if storageTokenResponse.AccessToken.Secret != "" {
+			refreshReason = publictelemetry.CacheRefreshReasonExpired
+		} else {
+			refreshReason = publictelemetry.CacheRefreshReasonNoCachedAccessToken
+		}
+	}
+	internaltelemetry.ObserveCacheResult(ctx, publictelemetry.CacheLevelNone, refreshReason)
 	if reflect.ValueOf(storageTokenResponse.RefreshToken).IsZero() {
 		return ar, errors.New("no token found")
 	}
@@ -526,6 +587,9 @@ func (b Client) AcquireTokenByUserFIC(ctx context.Context, params AcquireTokenBy
 }
 
 func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.AuthParams, token accesstokens.TokenResponse) (AuthResult, error) {
+	if authParams.AuthnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, authParams.AuthnScheme.AccessTokenType())
+	}
 	var m manager = b.manager
 	if authParams.AuthorizationType == authority.ATOnBehalfOf {
 		m = b.pmanager
@@ -536,19 +600,25 @@ func (b Client) AuthResultFromToken(ctx context.Context, authParams authority.Au
 		defer b.cacheAccessorMu.Unlock()
 		err := b.cacheAccessor.Replace(ctx, m, cache.ReplaceHints{PartitionKey: key})
 		if err != nil {
+			internaltelemetry.ObserveErrorCode(ctx, "cache_error")
 			return AuthResult{}, err
 		}
 	}
 	account, err := m.Write(authParams, token)
 	if err != nil {
+		internaltelemetry.ObserveErrorCode(ctx, "cache_error")
 		return AuthResult{}, err
 	}
 	ar, err := NewAuthResult(token, account)
-	if err == nil && b.cacheAccessor != nil {
-		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
-	}
 	if err != nil {
 		return AuthResult{}, err
+	}
+	if b.cacheAccessor != nil {
+		err = b.cacheAccessor.Export(ctx, b.manager, cache.ExportHints{PartitionKey: key})
+		if err != nil {
+			internaltelemetry.ObserveErrorCode(ctx, "cache_error")
+			return AuthResult{}, err
+		}
 	}
 
 	ar.AccessToken, err = authParams.AuthnScheme.FormatAccessToken(ar.AccessToken)

@@ -33,6 +33,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry"
 )
 
 // errorClient is an HTTP client for tests that should fail when confidential.Client sends a request
@@ -74,6 +75,23 @@ const (
 )
 
 var tokenScope = []string{"the_scope"}
+
+type metricsRecorder struct {
+	mu     sync.Mutex
+	events []telemetry.AuthenticationEvent
+}
+
+func (r *metricsRecorder) RecordAuthentication(_ context.Context, event telemetry.AuthenticationEvent) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.events = append(r.events, event)
+}
+
+func (r *metricsRecorder) snapshot() []telemetry.AuthenticationEvent {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return append([]telemetry.AuthenticationEvent(nil), r.events...)
+}
 
 func fakeClient(tk accesstokens.TokenResponse, credential Credential, fakeAuthority string, options ...Option) (Client, error) {
 	client, err := New(fakeAuthority, fakeClientID, credential, options...)
@@ -168,6 +186,47 @@ func TestAcquireTokenByCredential(t *testing.T) {
 		if tk.Metadata.TokenSource != TokenSourceCache {
 			t.Errorf("TestAcquireTokenByCredential(%s): unexpected token source %d", test.desc, tk.Metadata.TokenSource)
 		}
+	}
+}
+
+func TestAcquireTokenByCredentialMetrics(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	recorder := &metricsRecorder{}
+	client, err := fakeClient(accesstokens.TokenResponse{
+		AccessToken:   token,
+		ExpiresOn:     time.Now().Add(time.Hour),
+		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
+		TokenType:     authority.AccessTokenTypeBearer,
+	}, cred, fakeAuthority, WithMetricsProvider(recorder))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err = client.AcquireTokenByCredential(context.Background(), tokenScope); err != nil {
+		t.Fatal(err)
+	}
+	if _, err = client.AcquireTokenByCredential(context.Background(), tokenScope); err != nil {
+		t.Fatal(err)
+	}
+
+	events := recorder.snapshot()
+	if len(events) != 2 {
+		t.Fatalf("got %d metrics events, want 2", len(events))
+	}
+	if first := events[0]; !first.Succeeded ||
+		first.APIID != telemetry.APIIDAcquireTokenForClient ||
+		first.TokenSource != telemetry.TokenSourceIdentityProvider ||
+		first.CacheRefreshReason != telemetry.CacheRefreshReasonNoCachedAccessToken {
+		t.Fatalf("unexpected identity-provider event: %#v", first)
+	}
+	if second := events[1]; !second.Succeeded ||
+		second.APIID != telemetry.APIIDAcquireTokenForClient ||
+		second.TokenSource != telemetry.TokenSourceCache ||
+		second.CacheLevel != telemetry.CacheLevelL1 {
+		t.Fatalf("unexpected cache event: %#v", second)
 	}
 }
 

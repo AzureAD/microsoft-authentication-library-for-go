@@ -30,6 +30,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	internaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/telemetry"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry"
 )
 
 /*
@@ -262,6 +264,7 @@ type clientOptions struct {
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
 	httpClient                        ops.HTTPClient
+	metricsProvider                   telemetry.MetricsProvider
 }
 
 // Option is an optional argument to New().
@@ -287,6 +290,13 @@ func WithClientCapabilities(capabilities []string) Option {
 func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	return func(o *clientOptions) {
 		o.httpClient = httpClient
+	}
+}
+
+// WithMetricsProvider configures a privacy-safe authentication metrics destination.
+func WithMetricsProvider(provider telemetry.MetricsProvider) Option {
+	return func(o *clientOptions) {
+		o.metricsProvider = provider
 	}
 }
 
@@ -352,6 +362,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
 		base.WithRegionDetection(opts.azureRegion),
 		base.WithX5C(opts.sendX5C),
+		base.WithMetricsProvider(opts.metricsProvider),
 	}
 	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), baseOpts...)
 	if err != nil {
@@ -700,10 +711,16 @@ func WithSilentAccount(account Account) interface {
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
 // Options: [WithClaims], [WithClaimsFromClient], [WithSilentAccount], [WithTenantID]
-func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
+func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (result AuthResult, err error) {
+	ctx, acquisition := cca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenSilent, telemetry.TokenTypeBearer)
+	defer func() { cca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
+	}
+	if o.authnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, o.authnScheme.AccessTokenType())
 	}
 
 	if o.claims != "" {
@@ -754,10 +771,16 @@ type AcquireByUsernamePasswordOption interface {
 // NOTE: this flow is NOT recommended.
 //
 // Options: [WithClaims], [WithClaimsFromClient], [WithTenantID]
-func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
+func (cca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (result AuthResult, err error) {
+	ctx, acquisition := cca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenByUsernamePassword, telemetry.TokenTypeBearer)
+	defer func() { cca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenByUsernamePasswordOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
+	}
+	if o.authnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, o.authnScheme.AccessTokenType())
 	}
 	authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
@@ -822,7 +845,10 @@ func WithChallenge(challenge string) interface {
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
 // Options: [WithChallenge], [WithClaims], [WithClaimsFromClient], [WithTenantID]
-func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
+func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (result AuthResult, err error) {
+	ctx, acquisition := cca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenByAuthorizationCode, telemetry.TokenTypeBearer)
+	defer func() { cca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
@@ -861,11 +887,17 @@ type AcquireByCredentialOption interface {
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
 // Options: [WithClaims], [WithClaimsFromClient], [WithTenantID], [WithFMIPath], [WithAttribute]
-func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
+func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (result AuthResult, err error) {
+	ctx, acquisition := cca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenForClient, telemetry.TokenTypeBearer)
+	defer func() { cca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenByCredentialOptions{}
-	err := options.ApplyOptions(&o, opts)
+	err = options.ApplyOptions(&o, opts)
 	if err != nil {
 		return AuthResult{}, err
+	}
+	if o.authnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, o.authnScheme.AccessTokenType())
 	}
 	authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
@@ -880,6 +912,9 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	}
 	authParams.ExtraBodyParameters = o.extraBodyParameters
 	authParams.CacheKeyComponents = o.cacheKeyComponents
+	if o.claims != "" {
+		internaltelemetry.ObserveCacheResult(ctx, telemetry.CacheLevelNone, telemetry.CacheRefreshReasonForceRefreshOrClaims)
+	}
 	if o.claims == "" {
 		silentParameters := base.AcquireTokenSilentParameters{
 			Scopes:              scopes,
@@ -925,7 +960,10 @@ type AcquireOnBehalfOfOption interface {
 // Refer https://docs.microsoft.com/en-us/azure/active-directory/develop/v2-oauth2-on-behalf-of-flow.
 //
 // Options: [WithClaims], [WithClaimsFromClient], [WithTenantID]
-func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, opts ...AcquireOnBehalfOfOption) (AuthResult, error) {
+func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion string, scopes []string, opts ...AcquireOnBehalfOfOption) (result AuthResult, err error) {
+	ctx, acquisition := cca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenOnBehalfOf, telemetry.TokenTypeBearer)
+	defer func() { cca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenOnBehalfOfOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
@@ -1090,7 +1128,10 @@ func WithUserFICUsername(username string) interface {
 //     is required), [WithClaims], [WithClaimsFromClient], [WithTenantID].
 //
 // Options: [WithUserObjectID], [WithUserFICUsername], [WithClaims], [WithClaimsFromClient], [WithTenantID]
-func (cca Client) AcquireTokenByUserFederatedIdentityCredential(ctx context.Context, scopes []string, assertion string, opts ...AcquireByUserFICOption) (AuthResult, error) {
+func (cca Client) AcquireTokenByUserFederatedIdentityCredential(ctx context.Context, scopes []string, assertion string, opts ...AcquireByUserFICOption) (result AuthResult, err error) {
+	ctx, acquisition := cca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenByFederatedIdentityCredential, telemetry.TokenTypeBearer)
+	defer func() { cca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenByUserFICOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err

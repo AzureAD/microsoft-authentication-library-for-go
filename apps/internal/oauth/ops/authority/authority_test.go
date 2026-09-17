@@ -1139,7 +1139,7 @@ func TestIMDSEndpoint(t *testing.T) {
 	}
 }
 
-func TestDetectRegionDoesNotReadNonOKRetryBody(t *testing.T) {
+func TestDetectRegionConsumesNonOKRetryBody(t *testing.T) {
 	transport := &regionTransport{}
 	client := &http.Client{Transport: transport}
 
@@ -1150,8 +1150,8 @@ func TestDetectRegionDoesNotReadNonOKRetryBody(t *testing.T) {
 		t.Fatalf("expected 2 requests, got %d", len(transport.bodies))
 	}
 	for i, body := range transport.bodies {
-		if body.read {
-			t.Errorf("response body %d was read", i+1)
+		if !body.read {
+			t.Errorf("response body %d was not read", i+1)
 		}
 		if !body.closed {
 			t.Errorf("response body %d was not closed", i+1)
