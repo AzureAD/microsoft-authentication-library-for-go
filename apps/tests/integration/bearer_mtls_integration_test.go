@@ -48,10 +48,13 @@ func capturedTokenRequest(err error) (*url.URL, url.Values, error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	defer body.Close()
-	raw, err := io.ReadAll(body)
-	if err != nil {
-		return nil, nil, err
+	raw, readErr := io.ReadAll(body)
+	closeErr := body.Close()
+	if readErr != nil {
+		return nil, nil, readErr
+	}
+	if closeErr != nil {
+		return nil, nil, closeErr
 	}
 	form, err := url.ParseQuery(string(raw))
 	if err != nil {

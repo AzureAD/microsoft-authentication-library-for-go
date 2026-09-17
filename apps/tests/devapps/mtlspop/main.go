@@ -220,7 +220,7 @@ func run(cfg config) error {
 //     renegotiating. Go declines renegotiation by default and does not implement the TLS 1.3
 //     equivalent, post-handshake authentication, so without these the connection is torn down and
 //     the only symptom is a bare connection reset.
-func useToken(cfg config, result confidential.AuthResult) error {
+func useToken(cfg config, result confidential.AuthResult) (retErr error) {
 	section("using the token")
 
 	target := cfg.resource
@@ -273,7 +273,11 @@ func useToken(cfg config, result confidential.AuthResult) error {
 	if err != nil {
 		return fmt.Errorf("mTLS resource call to %s failed: %w", target, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("closing the resource response body: %w", err)
+		}
+	}()
 
 	kv("HTTP status", resp.Status)
 	if resp.StatusCode != http.StatusOK {
@@ -334,8 +338,12 @@ func (t traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	// is about to send.
 	if req.GetBody != nil {
 		if body, err := req.GetBody(); err == nil {
-			defer body.Close()
-			if raw, err := io.ReadAll(body); err == nil {
+			raw, readErr := io.ReadAll(body)
+			closeErr := body.Close()
+			if closeErr != nil {
+				kv("body inspection", fmt.Sprintf("closing the replay body failed: %v", closeErr))
+			}
+			if readErr == nil {
 				if form, err := url.ParseQuery(string(raw)); err == nil {
 					names := make([]string, 0, len(form))
 					for name := range form {
@@ -372,6 +380,7 @@ func loadCertificate(certPath string) (confidential.Credential, *x509.Certificat
 			"no certificate supplied: pass -cert <path-to-pem> or set MTLS_CERT_PATH to a PEM file " +
 				"containing the certificate and its private key")
 	}
+	// #nosec G304 -- the demo intentionally loads the certificate path selected by its user.
 	data, err := os.ReadFile(certPath)
 	if err != nil {
 		return confidential.Credential{}, nil, fmt.Errorf("reading certificate file %q failed: %w", certPath, err)

@@ -145,7 +145,11 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 			if err != nil {
 				t.Fatalf("handshake with a signer-only key failed: %v", err)
 			}
-			defer resp.Body.Close()
+			defer func() {
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("closing response body: %v", err)
+				}
+			}()
 			if resp.StatusCode != http.StatusOK {
 				t.Errorf("status = %d, want %d", resp.StatusCode, http.StatusOK)
 			}

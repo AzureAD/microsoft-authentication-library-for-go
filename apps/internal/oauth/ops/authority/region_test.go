@@ -33,10 +33,7 @@ func TestInfoResolveRegion(t *testing.T) {
 			resetDetectedRegion()
 			defer resetDetectedRegion()
 			if test.env != "" {
-				if err := os.Setenv(regionName, test.env); err != nil {
-					t.Fatal(err)
-				}
-				defer os.Unsetenv(regionName)
+				t.Setenv(regionName, test.env)
 			}
 
 			info := Info{Host: "login.microsoftonline.com", Tenant: "contoso", Region: test.region}
@@ -69,18 +66,13 @@ func TestDetectRegionEnvironmentIsNotMemoized(t *testing.T) {
 	resetDetectedRegion()
 	defer resetDetectedRegion()
 
-	if err := os.Setenv(regionName, "eastus"); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv(regionName)
+	t.Setenv(regionName, "eastus")
 	if got := detectRegion(context.Background()); got != "eastus" {
 		t.Fatalf("detectRegion = %q, want eastus", got)
 	}
 	// A second, equally valid region. The change has to be visible on the very next call, which is
 	// only possible if the environment is re-read rather than remembered from the first one.
-	if err := os.Setenv(regionName, "westus2"); err != nil {
-		t.Fatal(err)
-	}
+	t.Setenv(regionName, "westus2")
 	if got := detectRegion(context.Background()); got != "westus2" {
 		t.Fatalf("detectRegion after the environment changed = %q, want westus2", got)
 	}
@@ -96,10 +88,7 @@ func TestDetectRegionBlankEnvironmentResolvesToNothing(t *testing.T) {
 	resetDetectedRegion()
 	defer resetDetectedRegion()
 
-	if err := os.Setenv(regionName, "   "); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv(regionName)
+	t.Setenv(regionName, "   ")
 
 	if got := detectRegion(context.Background()); got != "" {
 		t.Fatalf("detectRegion with a blank REGION_NAME = %q, want empty", got)
@@ -273,10 +262,7 @@ func TestDetectRegionMemoizesDetection(t *testing.T) {
 
 	// A detection that ran to completion is remembered, so the probe isn't repeated.
 	resetDetectedRegion()
-	if err := os.Setenv(regionName, "northeurope"); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv(regionName)
+	t.Setenv(regionName, "northeurope")
 	info := Info{Region: autoDetectRegion}
 	info.ResolveRegion(context.Background())
 	if info.Region != "northeurope" {

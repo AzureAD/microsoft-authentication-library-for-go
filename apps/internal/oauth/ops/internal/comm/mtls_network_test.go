@@ -174,7 +174,9 @@ func TestBuildMtlsClientRefusesRedirectsByDefault(t *testing.T) {
 				}
 				resp, err := postAssertion(t, client.(*http.Client), originSrv.URL)
 				if resp != nil {
-					resp.Body.Close()
+					if err := resp.Body.Close(); err != nil {
+						t.Errorf("closing redirect response body: %v", err)
+					}
 				}
 				if err == nil {
 					t.Fatalf("custom factory client followed the %d redirect", status)
@@ -186,7 +188,9 @@ func TestBuildMtlsClientRefusesRedirectsByDefault(t *testing.T) {
 
 			resp, err := postAssertion(t, client, originSrv.URL)
 			if resp != nil {
-				resp.Body.Close()
+				if err := resp.Body.Close(); err != nil {
+					t.Errorf("closing redirect response body: %v", err)
+				}
 			}
 			if err == nil {
 				t.Fatalf("the client followed the %d redirect instead of refusing it", status)
@@ -230,7 +234,9 @@ func TestBuildMtlsClientHonorsCallerCheckRedirect(t *testing.T) {
 		}
 		resp, err := postAssertion(t, client, originSrv.URL)
 		if resp != nil {
-			resp.Body.Close()
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing redirect response body: %v", err)
+			}
 		}
 		if !errors.Is(err, callerErr) {
 			t.Fatalf("error = %v, want the caller's own redirect policy error - the caller's CheckRedirect was dropped", err)
@@ -251,7 +257,11 @@ func TestBuildMtlsClientHonorsCallerCheckRedirect(t *testing.T) {
 		if err != nil {
 			t.Fatalf("the caller's permissive redirect policy was overridden: %v", err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("closing redirect response body: %v", err)
+			}
+		}()
 		if resp.StatusCode != http.StatusOK {
 			t.Fatalf("status = %d, want 200", resp.StatusCode)
 		}
@@ -430,7 +440,11 @@ func TestBuildMtlsClientPreservesDialContext(t *testing.T) {
 	if err != nil {
 		t.Fatalf("the request through the caller's dialer failed: %v", err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing response body: %v", err)
+		}
+	}()
 
 	mu.Lock()
 	n := dialed
@@ -460,6 +474,7 @@ func TestBuildMtlsClientIsolatesSessionCachePerCertificate(t *testing.T) {
 	// One base transport, as an application configures it, carrying a session cache that every
 	// clone would otherwise share.
 	shared := tls.NewLRUClientSessionCache(8)
+	// #nosec G402 -- this test pins TLS 1.2 so session-ticket resumption is deterministic.
 	base := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
 		RootCAs:            rootsFor(srv),
 		ClientSessionCache: shared,
@@ -495,7 +510,11 @@ func TestBuildMtlsClientIsolatesSessionCachePerCertificate(t *testing.T) {
 		if err != nil {
 			t.Fatalf("%s request failed: %v", who, err)
 		}
-		defer resp.Body.Close()
+		defer func() {
+			if err := resp.Body.Close(); err != nil {
+				t.Errorf("%s response close failed: %v", who, err)
+			}
+		}()
 		if _, err := io.Copy(io.Discard, resp.Body); err != nil {
 			t.Fatalf("%s draining the response failed: %v", who, err)
 		}

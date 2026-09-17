@@ -13,7 +13,6 @@ import (
 	"encoding/base64"
 	"math/big"
 	"net/url"
-	"os"
 	"strings"
 	"testing"
 	"time"
@@ -100,10 +99,7 @@ func TestMtlsTokenEndpoint(t *testing.T) {
 	// Auto-detection reads REGION_NAME before probing IMDS, which lets the auto-detect case below
 	// exercise the real resolution path without a network call.
 	const detectedRegion = "centralus"
-	if err := os.Setenv(regionName, detectedRegion); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv(regionName)
+	t.Setenv(regionName, detectedRegion)
 
 	tests := []struct {
 		name string

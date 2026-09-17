@@ -74,6 +74,7 @@ func LoadCertificate(certPath string) (confidential.Credential, *x509.Certificat
 			"no certificate supplied: pass -cert <path-to-pem> or set MTLS_CERT_PATH to a PEM file " +
 				"containing the SN/I certificate and its private key")
 	}
+	// #nosec G304 -- the demo intentionally loads the certificate path selected by its user.
 	data, err := os.ReadFile(certPath)
 	if err != nil {
 		return confidential.Credential{}, nil, fmt.Errorf("reading certificate file %q failed: %w", certPath, err)

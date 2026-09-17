@@ -167,7 +167,11 @@ func requireTokenAcceptedByResource(t *testing.T, token string, bindingCert *tls
 	if err != nil {
 		t.Fatalf("mTLS resource call to %s failed: %s", graphMtlsResourceURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing mTLS resource response body: %v", err)
+		}
+	}()
 
 	if resp.StatusCode != http.StatusOK {
 		// Truncate the external response body before emitting it into (public) CI logs.
@@ -254,7 +258,11 @@ func requireTokenRejectedByResource(t *testing.T, token string, control mtlsNega
 		t.Fatalf("the negative control call to %s (%s) failed before any HTTP response was received: %s",
 			graphMtlsResourceURL, control.deviation, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil {
+			t.Errorf("closing negative control response body: %v", err)
+		}
+	}()
 
 	// Truncate the external response body before emitting it into (public) CI logs. Every marker
 	// sits in the first ~100 bytes of the resource's error envelope, well inside this limit.

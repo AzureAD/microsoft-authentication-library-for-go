@@ -29,7 +29,11 @@ func loadTestCert(t *testing.T) ([]*x509.Certificate, crypto.PrivateKey) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("closing test certificate: %v", err)
+		}
+	}()
 	pemData, err := io.ReadAll(f)
 	if err != nil {
 		t.Fatal(err)

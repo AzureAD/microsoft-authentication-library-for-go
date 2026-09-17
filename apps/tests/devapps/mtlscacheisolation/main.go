@@ -137,13 +137,13 @@ func run(args []string) error {
 		return fmt.Errorf("PoP #2 returned token_type %q; the Bearer acquisition contaminated the PoP entry", pop2.Metadata.TokenType)
 	}
 	if bearer2.Metadata.TokenType != "Bearer" {
-		return fmt.Errorf("Bearer #2 returned token_type %q; the PoP acquisition contaminated the Bearer entry", bearer2.Metadata.TokenType)
+		return fmt.Errorf("bearer #2 returned token_type %q; the PoP acquisition contaminated the Bearer entry", bearer2.Metadata.TokenType)
 	}
 	if pop2.AccessToken != pop1.AccessToken {
 		return fmt.Errorf("PoP #2 returned a different token than PoP #1; the PoP entry did not survive the interleaved Bearer acquisition")
 	}
 	if bearer2.AccessToken != bearer1.AccessToken {
-		return fmt.Errorf("Bearer #2 returned a different token than Bearer #1; the Bearer entry did not survive the interleaved PoP acquisition")
+		return fmt.Errorf("bearer #2 returned a different token than Bearer #1; the Bearer entry did not survive the interleaved PoP acquisition")
 	}
 	fmt.Println("  PASS  each repeat call returned its OWN earlier token, with its own token type,")
 	fmt.Println("        even though the other type was acquired in between.")

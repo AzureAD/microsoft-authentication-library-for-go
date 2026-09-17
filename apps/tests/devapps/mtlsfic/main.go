@@ -311,6 +311,7 @@ func run(certPath, clientID, authority, ficClientID, ficAuthority, exchangeScope
 // getCertDataFromFile does. It also returns the parsed leaf so the caller can print its thumbprint.
 // No certificate, key or secret is ever embedded or logged.
 func loadCertificate(certPath string) (confidential.Credential, *x509.Certificate, error) {
+	// #nosec G304 -- the demo intentionally loads the certificate path selected by its user.
 	data, err := os.ReadFile(certPath)
 	if err != nil {
 		return confidential.Credential{}, nil, fmt.Errorf("reading certificate file %q failed: %w", certPath, err)

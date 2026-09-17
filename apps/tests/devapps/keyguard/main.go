@@ -278,7 +278,7 @@ func printChain(signer *ncryptsigner.Signer) error {
 	return nil
 }
 
-func callResource(ctx context.Context, resourceURL, token string, bindingCert *tls.Certificate) error {
+func callResource(ctx context.Context, resourceURL, token string, bindingCert *tls.Certificate) (retErr error) {
 	// Re-checked here, not just in parseConfig: this function is the unit a reader lifts into their
 	// own program, and it is what actually puts the token on the network.
 	if err := requireHTTPS(resourceURL); err != nil {
@@ -309,7 +309,11 @@ func callResource(ctx context.Context, resourceURL, token string, bindingCert *t
 	if err != nil {
 		return fmt.Errorf("calling %s over mTLS failed: %w", resourceURL, err)
 	}
-	defer resp.Body.Close()
+	defer func() {
+		if err := resp.Body.Close(); err != nil && retErr == nil {
+			retErr = fmt.Errorf("closing the resource response body: %w", err)
+		}
+	}()
 
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 512))
 	fmt.Println("\n== resource ==")

@@ -144,7 +144,11 @@ func acquireForRegionDiscovery(t *testing.T, host, tenant string, mtlsPoP, autoD
 		if err := os.Setenv("REGION_NAME", "   "); err != nil {
 			t.Fatal(err)
 		}
-		defer os.Unsetenv("REGION_NAME")
+		defer func() {
+			if err := os.Unsetenv("REGION_NAME"); err != nil {
+				t.Errorf("unsetting REGION_NAME: %v", err)
+			}
+		}()
 	}
 
 	certs, key := loadTestCert(t)

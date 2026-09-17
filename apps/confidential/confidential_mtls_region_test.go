@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"os"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
@@ -27,10 +26,7 @@ func TestAcquireTokenByCredentialMtlsPoPAutoDetectedRegion(t *testing.T) {
 	const region = "centralus"
 	// detectRegion consults REGION_NAME before probing IMDS, which makes auto-detection deterministic
 	// here without a network call.
-	if err := os.Setenv("REGION_NAME", region); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv("REGION_NAME")
+	t.Setenv("REGION_NAME", region)
 
 	certs, key := loadTestCert(t)
 	cred, err := NewCredFromCert(certs, key)
@@ -80,10 +76,7 @@ func TestAcquireTokenByCredentialMtlsPoPAutoDetectedRegion(t *testing.T) {
 // what MSAL .NET documents too ("mTLS Proof-of-Possession does not require a region"), so only a
 // region that WAS detected must survive - an absent one must not become an error.
 func TestAcquireTokenByCredentialMtlsPoPUndetectedRegion(t *testing.T) {
-	if err := os.Setenv("REGION_NAME", ""); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv("REGION_NAME")
+	t.Setenv("REGION_NAME", "")
 
 	certs, key := loadTestCert(t)
 	cred, err := NewCredFromCert(certs, key)
@@ -127,10 +120,7 @@ func TestAcquireTokenByCredentialMtlsPoPUndetectedRegion(t *testing.T) {
 func TestAcquireTokenByCredentialMtlsPoPExplicitRegion(t *testing.T) {
 	const region = "westus2"
 	// A different value in the environment must not win over the explicit configuration.
-	if err := os.Setenv("REGION_NAME", "centralus"); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv("REGION_NAME")
+	t.Setenv("REGION_NAME", "centralus")
 
 	certs, key := loadTestCert(t)
 	cred, err := NewCredFromCert(certs, key)

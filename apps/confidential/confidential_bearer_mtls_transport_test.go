@@ -370,10 +370,13 @@ func capturedTokenRequest(err error) (*url.URL, url.Values, error) {
 	if err != nil {
 		return nil, nil, fmt.Errorf("replaying the captured request body: %w", err)
 	}
-	defer body.Close()
-	raw, err := io.ReadAll(body)
-	if err != nil {
-		return nil, nil, fmt.Errorf("reading the captured request body: %w", err)
+	raw, readErr := io.ReadAll(body)
+	closeErr := body.Close()
+	if readErr != nil {
+		return nil, nil, fmt.Errorf("reading the captured request body: %w", readErr)
+	}
+	if closeErr != nil {
+		return nil, nil, fmt.Errorf("closing the captured request body: %w", closeErr)
 	}
 	form, err := url.ParseQuery(string(raw))
 	if err != nil {

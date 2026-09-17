@@ -28,8 +28,11 @@ func rsaPublicBlob(t *testing.T, pub *rsa.PublicKey) []byte {
 	n := pub.N.Bytes()
 	blob := make([]byte, rsaKeyBlobHeaderLen+len(e)+len(n))
 	binary.LittleEndian.PutUint32(blob[0:4], bcryptRSAPublicMagic)
+	// #nosec G115 -- generated RSA test key bit lengths fit the CNG ULONG fixture field.
 	binary.LittleEndian.PutUint32(blob[4:8], uint32(pub.N.BitLen()))
+	// #nosec G115 -- an RSA public exponent fixture cannot approach the CNG ULONG limit.
 	binary.LittleEndian.PutUint32(blob[8:12], uint32(len(e)))
+	// #nosec G115 -- generated RSA test moduli cannot approach the CNG ULONG limit.
 	binary.LittleEndian.PutUint32(blob[12:16], uint32(len(n)))
 	copy(blob[rsaKeyBlobHeaderLen:], e)
 	copy(blob[rsaKeyBlobHeaderLen+len(e):], n)
@@ -119,6 +122,7 @@ func TestParseRSAPublicBlobRejects(t *testing.T) {
 		{"exponent too large for an int", mutate(func(b []byte) []byte {
 			// claim all but one byte of the payload is the exponent, which is far more than 31
 			// bits, while leaving the modulus non-empty so this reaches the exponent check
+			// #nosec G115 -- the fixed-size test fixture is far smaller than a CNG ULONG.
 			binary.LittleEndian.PutUint32(b[8:12], uint32(len(b)-rsaKeyBlobHeaderLen-1))
 			binary.LittleEndian.PutUint32(b[12:16], 1)
 			return b

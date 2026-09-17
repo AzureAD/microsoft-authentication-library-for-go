@@ -8,7 +8,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"net/http"
-	"os"
 	"strings"
 	"sync"
 	"testing"
@@ -64,10 +63,7 @@ func (c *blockingHTTPClient) count() int {
 // Instance discovery is disabled deliberately: that clears ValidateAuthority, which is the weakest
 // configuration and the one where validation is most likely to be skipped.
 func TestMtlsPoPInvalidForceRegionIsRejectedBeforeHTTP(t *testing.T) {
-	if err := os.Setenv("MSAL_FORCE_REGION", "hostile.example/x"); err != nil {
-		t.Fatal(err)
-	}
-	defer os.Unsetenv("MSAL_FORCE_REGION")
+	t.Setenv("MSAL_FORCE_REGION", "hostile.example/x")
 
 	certs, key := loadTestCert(t)
 	cred, err := NewCredFromCert(certs, key)
