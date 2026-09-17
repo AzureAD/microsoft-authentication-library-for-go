@@ -86,15 +86,20 @@ func makeResponseWithErrorData(err string, desc string) ([]byte, error) {
 
 func createMockFile(t *testing.T, path string, size int64) {
 	dir := filepath.Dir(path)
-	if err := os.MkdirAll(dir, 0755); err != nil {
+	if err := os.MkdirAll(dir, 0750); err != nil {
 		t.Fatalf("failed to create directory: %v", err)
 	}
 
+	// #nosec G304 -- path is a test-controlled fixture location.
 	f, err := os.Create(path)
 	if err != nil {
 		t.Fatalf("failed to create file: %v", err)
 	}
-	defer f.Close()
+	defer func() {
+		if err := f.Close(); err != nil {
+			t.Errorf("failed to close file: %v", err)
+		}
+	}()
 
 	if size > 0 {
 		if err := f.Truncate(size); err != nil {
@@ -106,7 +111,11 @@ func createMockFile(t *testing.T, path string, size int64) {
 	if _, err := f.WriteString("secret file data"); err != nil {
 		t.Fatalf("failed to write to file: %v", err)
 	}
-	t.Cleanup(func() { os.Remove(path) })
+	t.Cleanup(func() {
+		if err := os.Remove(path); err != nil {
+			t.Errorf("failed to remove test file: %v", err)
+		}
+	})
 }
 
 func setEnvVars(t *testing.T, source Source) {
@@ -261,7 +270,9 @@ func TestRetryFunction(t *testing.T) {
 			if err != nil {
 				t.Fatalf("Failed to read response body: %v", err)
 			}
-			finalResp.Body.Close()
+			if err := finalResp.Body.Close(); err != nil {
+				t.Fatalf("Failed to close response body: %v", err)
+			}
 			if string(bodyBytes) != tt.expectedBody {
 				t.Fatalf("Expected body %q, got %q", tt.expectedBody, bodyBytes)
 			}

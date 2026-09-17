@@ -4,24 +4,12 @@ linters:
   # enabled in addition to the v2 defaults
   enable:
     - gosec
-  # TODO: The findings below are temporarily suppressed so CI is green after the
-  # golangci-lint v2 upgrade. They should be fixed and these suppressions removed.
-  disable:
-    - errcheck
   exclusions:
     # Excluding configuration per-path, per-linter, per-text and per-source
     rules:
-      # Exclude some linters from running on tests files.
+      # Test fixtures intentionally use fake credential-like values and marshal
+      # fake access tokens. Keep those false positives narrow by rule.
       - path: _test\.go
         linters:
           - gosec
-      # TODO: temporary suppressions to be addressed separately after the v2 upgrade.
-      - linters:
-          - gosec
-        text: "G704|G304|G104"
-      - linters:
-          - staticcheck
-        text: "QF1001|QF1003|QF1004|QF1006|QF1012|ST1005"
-      - linters:
-          - govet
-        text: "inline: Constant reflect.Ptr"
+        text: "G101|G117"

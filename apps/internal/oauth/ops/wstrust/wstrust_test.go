@@ -88,7 +88,7 @@ func (f *fakeXMLCaller) compareBase(endpoint string, headers http.Header, qv url
 	}
 
 	gotValue := reflect.ValueOf(f.gotResp)
-	if gotValue.Kind() != reflect.Ptr {
+	if gotValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("resp cannot be a non-pointer type")
 	}
 	gotValue = gotValue.Elem()

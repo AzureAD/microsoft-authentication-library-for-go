@@ -33,6 +33,35 @@ type fakeJSONCaller struct {
 	gotResp     interface{}
 }
 
+type trackingBody struct {
+	read   bool
+	closed bool
+}
+
+func (b *trackingBody) Read([]byte) (int, error) {
+	b.read = true
+	return 0, io.EOF
+}
+
+func (b *trackingBody) Close() error {
+	b.closed = true
+	return nil
+}
+
+type regionTransport struct {
+	bodies []*trackingBody
+}
+
+func (t *regionTransport) RoundTrip(*http.Request) (*http.Response, error) {
+	body := &trackingBody{}
+	t.bodies = append(t.bodies, body)
+	return &http.Response{
+		StatusCode: http.StatusInternalServerError,
+		Body:       body,
+		Header:     make(http.Header),
+	}, nil
+}
+
 func (f *fakeJSONCaller) JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error {
 	if f.err {
 		return errors.New("error")
@@ -66,7 +95,7 @@ func (f *fakeJSONCaller) compare(endpoint string, headers http.Header, qv url.Va
 		return fmt.Errorf("body -want/+got:\n%s", diff)
 	}
 	gotValue := reflect.ValueOf(f.gotResp)
-	if gotValue.Kind() != reflect.Ptr {
+	if gotValue.Kind() != reflect.Pointer {
 		return fmt.Errorf("resp cannot be a non-pointer type")
 	}
 	gotValue = gotValue.Elem()
@@ -1107,5 +1136,25 @@ func TestIMDSEndpoint(t *testing.T) {
 	}
 	if strings.Contains(imdsEndpoint, "format=text") {
 		t.Errorf("imdsEndpoint should not request format=text, got %q", imdsEndpoint)
+	}
+}
+
+func TestDetectRegionDoesNotReadNonOKRetryBody(t *testing.T) {
+	transport := &regionTransport{}
+	client := &http.Client{Transport: transport}
+
+	if region := detectRegionWithClient(context.Background(), client, "http://169.254.169.254/metadata/instance/compute"); region != "" {
+		t.Fatalf("detectRegionWithClient() returned %q, want empty region", region)
+	}
+	if len(transport.bodies) != 2 {
+		t.Fatalf("expected 2 requests, got %d", len(transport.bodies))
+	}
+	for i, body := range transport.bodies {
+		if body.read {
+			t.Errorf("response body %d was read", i+1)
+		}
+		if !body.closed {
+			t.Errorf("response body %d was not closed", i+1)
+		}
 	}
 }

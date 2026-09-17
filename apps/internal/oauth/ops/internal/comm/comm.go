@@ -287,7 +287,7 @@ func (c *Client) do(ctx context.Context, req *http.Request) ([]byte, error) {
 
 // checkResp checks a response object o make sure it is a pointer to a struct.
 func (c *Client) checkResp(v reflect.Value) error {
-	if v.Kind() != reflect.Ptr {
+	if v.Kind() != reflect.Pointer {
 		return fmt.Errorf("bug: resp argument must a *struct, was %T", v.Interface())
 	}
 	v = v.Elem()

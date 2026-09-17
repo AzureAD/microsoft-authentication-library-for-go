@@ -489,7 +489,8 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (A
 		internaltelemetry.ObserveErrorCode(ctx, "transport_error")
 		return AuthResult{}, err
 	}
-	defer response.Body.Close()
+	// The response body is unused; a close error can't change its status or headers.
+	_ = response.Body.Close()
 
 	if response.StatusCode != http.StatusUnauthorized {
 		return AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
@@ -766,6 +767,7 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 
 func createAppServiceAuthRequest(ctx context.Context, id ID, resource string) (*http.Request, error) {
 	identityEndpoint := os.Getenv(identityEndpointEnvVar)
+	// #nosec G704 -- IDENTITY_ENDPOINT is supplied by the App Service managed identity host.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, identityEndpoint, nil)
 	if err != nil {
 		return nil, err
@@ -803,6 +805,7 @@ func createIMDSAuthRequest(ctx context.Context, id ID, resource string) (*http.R
 	}
 
 	msiEndpoint.RawQuery = msiParameters.Encode()
+	// #nosec G704 -- imdsDefaultEndpoint is a library constant for the Azure IMDS link-local endpoint.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http request %s", err)
@@ -836,6 +839,7 @@ func createAzureArcAuthRequest(ctx context.Context, id ID, resource string, key 
 	}
 
 	msiEndpoint.RawQuery = msiParameters.Encode()
+	// #nosec G704 -- IDENTITY_ENDPOINT is supplied by the Azure Arc managed identity host.
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, msiEndpoint.String(), nil)
 	if err != nil {
 		return nil, fmt.Errorf("error creating http request %s", err)

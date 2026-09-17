@@ -167,17 +167,24 @@ func GetSecret(ctx context.Context, vaultURL, secretName string) (string, error)
 	if err != nil {
 		return "", fmt.Errorf("key Vault request failed: %w", err)
 	}
-	defer resp.Body.Close()
 
 	if resp.StatusCode != 200 {
+		if err := resp.Body.Close(); err != nil {
+			return "", fmt.Errorf("key Vault returned status %d and its response body could not be closed: %w", resp.StatusCode, err)
+		}
 		return "", fmt.Errorf("key Vault returned status %d", resp.StatusCode)
 	}
 
 	var kvResp struct {
 		Value string `json:"value"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&kvResp); err != nil {
-		return "", err
+	decodeErr := json.NewDecoder(resp.Body).Decode(&kvResp)
+	closeErr := resp.Body.Close()
+	if decodeErr != nil {
+		return "", decodeErr
+	}
+	if closeErr != nil {
+		return "", fmt.Errorf("failed to close Key Vault response body: %w", closeErr)
 	}
 
 	return kvResp.Value, nil
@@ -268,6 +275,7 @@ func (u *UserConfig) GetPassword() (string, error) {
 
 // getCertDataFromFile loads certificate and private key from a PEM file
 func getCertDataFromFile(filePath string) ([]*x509.Certificate, crypto.PrivateKey, error) {
+	// #nosec G304 -- integration tests load certificate paths from their trusted lab configuration.
 	data, err := os.ReadFile(filePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("error reading certificate file: %w", err)

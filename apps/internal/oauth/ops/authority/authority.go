@@ -729,14 +729,18 @@ func detectRegion(ctx context.Context) string {
 	client := http.Client{
 		Timeout: time.Duration(2 * time.Second),
 	}
-	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, imdsEndpoint, nil)
+	return detectRegionWithClient(ctx, &client, imdsEndpoint)
+}
+
+func detectRegionWithClient(ctx context.Context, client *http.Client, endpoint string) string {
+	req, _ := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, nil)
 	req.Header.Set("Metadata", "true")
-	response, statusCode, err := regionRequest(ctx, &client, req)
+	response, statusCode, err := regionRequest(ctx, client, req)
 	if err == nil && statusCode == http.StatusOK {
 		return parseRegionFromIMDSResponse(response)
 	}
 	// If the request times out or there is an error, it is retried once
-	response, statusCode, err = regionRequest(ctx, &client, req)
+	response, statusCode, err = regionRequest(ctx, client, req)
 	if err != nil || statusCode != http.StatusOK {
 		return ""
 	}

@@ -5,7 +5,7 @@ package managedidentity
 
 import (
 	"context"
-	"crypto/sha1"
+	"crypto/sha1" // #nosec G505 -- Service Fabric defines certificate thumbprints as SHA-1.
 	"crypto/tls"
 	"encoding/hex"
 	"errors"
