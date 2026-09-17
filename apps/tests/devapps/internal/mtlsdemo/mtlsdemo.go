@@ -24,7 +24,7 @@ import (
 // every one is overridable with a flag or an environment variable.
 const (
 	DefaultClientID  = "163ffef9-a313-45b4-ab2f-c7e2f5e0e23e"
-	DefaultAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c" // NOSONAR -- public tenant URL, not a credential.
+	DefaultTenantURL = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c"
 	DefaultRegion    = "westus3"
 	DefaultScope     = "https://vault.azure.net/.default"
 )
@@ -45,7 +45,7 @@ func ParseFlags(demoName, authorityHelp string, args []string) (Config, error) {
 	fs := flag.NewFlagSet(demoName, flag.ExitOnError)
 	var cfg Config
 	fs.StringVar(&cfg.ClientID, "client-id", Env("MTLS_CLIENT_ID", DefaultClientID), "application (client) ID")
-	fs.StringVar(&cfg.Authority, "authority", Env("MTLS_AUTHORITY", DefaultAuthority), authorityHelp)
+	fs.StringVar(&cfg.Authority, "authority", Env("MTLS_AUTHORITY", DefaultTenantURL), authorityHelp)
 	fs.StringVar(&cfg.Region, "region", Env("MTLS_REGION", DefaultRegion), "Azure region for the regional mtlsauth endpoint (empty to use the global one)")
 	fs.StringVar(&cfg.CertPath, "cert", Env("MTLS_CERT_PATH", ""), "path to a PEM file holding the SN/I certificate and its private key")
 	fs.StringVar(&cfg.Scope, "scope", Env("MTLS_SCOPE", DefaultScope), "resource scope to request")

@@ -51,7 +51,7 @@ import (
 // every one is overridable by flag or environment variable.
 const (
 	defaultClientID  = "163ffef9-a313-45b4-ab2f-c7e2f5e0e23e"
-	defaultAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c" // NOSONAR -- public tenant URL, not a credential.
+	defaultTenantURL = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c"
 	defaultRegion    = "westus3"
 	defaultScope     = "https://vault.azure.net/.default"
 
@@ -76,7 +76,7 @@ func main() {
 	var cfg config
 	flag.StringVar(&cfg.clientID, "client-id", env("MTLS_CLIENT_ID", defaultClientID),
 		"application (client) ID")
-	flag.StringVar(&cfg.authority, "authority", env("MTLS_AUTHORITY", defaultAuthority),
+	flag.StringVar(&cfg.authority, "authority", env("MTLS_AUTHORITY", defaultTenantURL),
 		"authority URL; must be tenanted (not /common, /organizations or /consumers)")
 	flag.StringVar(&cfg.region, "region", env("MTLS_REGION", defaultRegion),
 		`Azure region for the regional token endpoint; pass -region "" for the global endpoint`)

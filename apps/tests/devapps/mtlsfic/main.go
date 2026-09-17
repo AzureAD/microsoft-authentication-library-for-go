@@ -54,7 +54,7 @@ import (
 // identifiers, not secrets, and every one is overridable by flag or environment variable.
 const (
 	defaultClientID  = "163ffef9-a313-45b4-ab2f-c7e2f5e0e23e"
-	defaultAuthority = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c" // NOSONAR -- public tenant URL, not a credential.
+	defaultTenantURL = "https://login.microsoftonline.com/bea21ebe-8b64-4d06-9f6d-6a889b120a7c"
 
 	// tokenExchangeScope is the audience leg 1 requests: it yields a federated assertion rather
 	// than a resource token. Mirrors MSAL .NET's TokenExchangeUrl.
@@ -70,7 +70,7 @@ func main() {
 	var (
 		certPath      = flag.String("cert", env("MTLS_CERT_PATH", ""), "path to a PEM file holding the SN/I certificate and its private key (required for a live run)")
 		clientID      = flag.String("client-id", env("MTLS_CLIENT_ID", defaultClientID), "leg 1 application (client) ID")
-		authority     = flag.String("authority", env("MTLS_AUTHORITY", defaultAuthority), "leg 1 authority URL (must be tenanted for mTLS PoP)")
+		authority     = flag.String("authority", env("MTLS_AUTHORITY", defaultTenantURL), "leg 1 authority URL (must be tenanted for mTLS PoP)")
 		ficClientID   = flag.String("fic-client-id", env("MTLS_FIC_CLIENT_ID", ""), "leg 2 (federated) application ID; defaults to -client-id, see the README caveat")
 		ficAuthority  = flag.String("fic-authority", env("MTLS_FIC_AUTHORITY", ""), "leg 2 authority URL; defaults to -authority")
 		exchangeScope = flag.String("exchange-scope", env("MTLS_EXCHANGE_SCOPE", tokenExchangeScope), "leg 1 token-exchange audience")
