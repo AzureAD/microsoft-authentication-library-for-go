@@ -411,7 +411,9 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 	}
 	storageTokenResponse, err := m.Read(ctx, authParams)
 	if err != nil {
-		internaltelemetry.ObserveErrorCode(ctx, "cache_error")
+		// Read can perform instance discovery before accessing the cache. Keep a
+		// more specific network/service classification recorded by that layer.
+		internaltelemetry.ObserveErrorCodeIfUnset(ctx, "cache_error")
 		return ar, err
 	}
 

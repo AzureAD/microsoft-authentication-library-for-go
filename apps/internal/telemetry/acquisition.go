@@ -76,6 +76,7 @@ func ObserveServiceError(ctx context.Context, data []byte) {
 		ErrorCodes []int  `json:"error_codes"`
 	}{}
 	if json.Unmarshal(data, &response) != nil {
+		a.SetServiceError("", "")
 		return
 	}
 	errorCode := boundedErrorCode(response.Error)
@@ -93,6 +94,21 @@ func ObserveErrorCode(ctx context.Context, errorCode string) {
 		return
 	}
 	a.SetServiceError(errorCode, "")
+}
+
+// ObserveErrorCodeIfUnset records an MSAL-owned error category unless a lower
+// layer has already recorded a more specific classification.
+func ObserveErrorCodeIfUnset(ctx context.Context, errorCode string) {
+	a, _ := ctx.Value(acquisitionKey{}).(*Acquisition)
+	if a == nil {
+		return
+	}
+	a.mu.Lock()
+	if a.event.ErrorCode == "" {
+		a.event.ErrorCode = errorCode
+		a.event.RawSTSErrorCode = ""
+	}
+	a.mu.Unlock()
 }
 
 func boundedErrorCode(value string) string {

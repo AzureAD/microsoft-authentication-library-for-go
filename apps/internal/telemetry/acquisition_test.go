@@ -125,6 +125,61 @@ func TestObserveServiceErrorRejectsUnboundedCode(t *testing.T) {
 	}
 }
 
+func TestUnparseableServiceErrorClearsEarlierPollingError(t *testing.T) {
+	provider := &recordingProvider{}
+	ctx, acquisition := Start(
+		context.Background(),
+		provider,
+		publictelemetry.APIIDAcquireTokenByDeviceCode,
+		publictelemetry.TokenTypeBearer,
+		"1.0.0",
+	)
+	ObserveServiceError(ctx, []byte(`{
+		"error":"authorization_pending",
+		"error_codes":[70016]
+	}`))
+	ObserveServiceError(ctx, []byte("not JSON"))
+	acquisition.Complete(
+		ctx,
+		false,
+		publictelemetry.TokenSourceIdentityProvider,
+		time.Time{},
+		"http_error",
+	)
+
+	event := provider.snapshot()[0]
+	if event.ErrorCode != "http_error" {
+		t.Fatalf("ErrorCode = %q, want http_error", event.ErrorCode)
+	}
+	if event.RawSTSErrorCode != "" {
+		t.Fatalf("RawSTSErrorCode = %q, want empty", event.RawSTSErrorCode)
+	}
+}
+
+func TestFallbackErrorCodeDoesNotReplaceSpecificError(t *testing.T) {
+	provider := &recordingProvider{}
+	ctx, acquisition := Start(
+		context.Background(),
+		provider,
+		publictelemetry.APIIDAcquireTokenSilent,
+		publictelemetry.TokenTypeBearer,
+		"1.0.0",
+	)
+	ObserveErrorCode(ctx, "transport_error")
+	ObserveErrorCodeIfUnset(ctx, "cache_error")
+	acquisition.Complete(
+		ctx,
+		false,
+		publictelemetry.TokenSourceIdentityProvider,
+		time.Time{},
+		"internal_error",
+	)
+
+	if got := provider.snapshot()[0].ErrorCode; got != "transport_error" {
+		t.Fatalf("ErrorCode = %q, want transport_error", got)
+	}
+}
+
 func TestTerminalCancellationOverridesPollingError(t *testing.T) {
 	provider := &recordingProvider{}
 	ctx, acquisition := Start(
