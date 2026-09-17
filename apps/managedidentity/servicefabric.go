@@ -24,7 +24,7 @@ import (
 // caller's behavior for other requests.
 func serviceFabricCertificateVerifiedHTTPClient(httpClient *http.Client) (*http.Client, error) {
 	if httpClient == nil {
-		return nil, errors.New("Service Fabric managed identity requires a non-nil *http.Client")
+		return nil, errors.New("managed identity on Service Fabric requires a non-nil *http.Client")
 	}
 	pin, err := serviceFabricThumbprint(os.Getenv(identityServerThumbprintEnvVar))
 	if err != nil {
