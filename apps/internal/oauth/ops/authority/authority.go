@@ -6,6 +6,7 @@ package authority
 import (
 	"context"
 	"crypto/sha256"
+	"crypto/tls"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
@@ -17,6 +18,7 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -33,6 +35,9 @@ const (
 	imdsEndpoint                      = "http://169.254.169.254/metadata/instance/compute?api-version=" + defaultAPIVersion
 	autoDetectRegion                  = "TryAutoDetect"
 	AccessTokenTypeBearer             = "Bearer"
+	// AccessTokenTypeMtlsPoP is the token_type ESTS returns for mutual-TLS bound
+	// proof-of-possession tokens.
+	AccessTokenTypeMtlsPoP = "mtls_pop"
 )
 
 // These are various hosts that host AAD Instance discovery endpoints.
@@ -50,6 +55,15 @@ var validRegion = regexp.MustCompile(`^[a-z](?:[a-z0-9-]{0,61}[a-z0-9])?$`)
 // jsonCaller is an interface that allows us to mock the JSONCall method.
 type jsonCaller interface {
 	JSONCall(ctx context.Context, endpoint string, headers http.Header, qv url.Values, body, resp interface{}) error
+}
+
+// EffectiveTokenEndpoint returns the final per-request endpoint when one has been resolved, or the
+// ordinary discovery endpoint for callers that construct AuthParams directly.
+func (p AuthParams) EffectiveTokenEndpoint() string {
+	if p.TokenEndpoint != "" {
+		return p.TokenEndpoint
+	}
+	return p.Endpoints.TokenEndpoint
 }
 
 // For backward compatibility, accept both old and new China endpoints for a transition period.
@@ -242,6 +256,9 @@ type AuthParams struct {
 	AuthorityInfo Info
 	CorrelationID string
 	Endpoints     Endpoints
+	// TokenEndpoint is the final endpoint for this request. Endpoints.TokenEndpoint remains the
+	// authority/discovery result; this field may contain the separately derived mTLS wire endpoint.
+	TokenEndpoint string
 	ClientID      string
 	// Redirecturi is used for auth flows that specify a redirect URI (e.g. local server for interactive auth flow).
 	Redirecturi   string
@@ -301,6 +318,31 @@ type AuthParams struct {
 	UserFederatedIdentityCredential string
 	// UserObjectID is the target user's object ID for user_fic flow (mutually exclusive with Username).
 	UserObjectID string
+	// IsMtlsPoP indicates the token request must be a mutual-TLS bound proof-of-possession
+	// request (token_type=mtls_pop). When set, MtlsBindingCert is presented as the client
+	// certificate in the TLS handshake to the token endpoint and the endpoint host is rewritten
+	// from login.* to mtlsauth.*.
+	IsMtlsPoP bool
+	// MtlsBindingCert is the certificate (with private key) presented as the client certificate
+	// during the mutual-TLS handshake when IsMtlsPoP is set. It is also surfaced to callers as
+	// AuthResult.BindingCertificate so they can present the same certificate to the resource.
+	MtlsBindingCert *tls.Certificate
+	// AssertionBoundToCallbackCert indicates the client assertion is itself bound to a certificate
+	// the application supplied alongside it, via a signed-assertion callback
+	// (confidential.NewCredFromSignedAssertionCallback). Such an assertion is sent with the jwt-pop
+	// client_assertion_type.
+	//
+	// This is deliberately narrower than "MtlsBindingCert != nil". A plain certificate credential
+	// also supplies a binding certificate, but its assertion is an ordinary private_key_jwt and stays
+	// jwt-bearer even when the request travels over the mutual-TLS transport (a Bearer-over-mTLS
+	// request from a certificate credential sets a binding cert but must stay jwt-bearer). See the
+	// assertion-type selection in FromAssertion for the MSAL .NET references on both credential kinds.
+	AssertionBoundToCallbackCert bool
+	// MtlsTransport requests Bearer-over-mTLS: MtlsBindingCert is presented as the client certificate
+	// on the TLS handshake and the endpoint host is rewritten from login.* to mtlsauth.*, but the
+	// token stays a plain Bearer token (no token_type=mtls_pop, no binding, no thumbprint fencing).
+	// It is independent of IsMtlsPoP; either flag routes the request over the mutual-TLS transport.
+	MtlsTransport bool
 }
 
 // NewAuthParams creates an authorization parameters object.
@@ -479,12 +521,15 @@ type ClientCapabilities struct {
 	asJSON string
 	// asMap is for merging the capabilities with challenge claims
 	asMap map[string]any
+	// values is the application-configured representation exposed to assertion callbacks.
+	values []string
 }
 
 func NewClientCapabilities(capabilities []string) (ClientCapabilities, error) {
 	c := ClientCapabilities{}
 	var err error
 	if len(capabilities) > 0 {
+		c.values = append([]string(nil), capabilities...)
 		cpbs := make([]string, len(capabilities))
 		for i := 0; i < len(cpbs); i++ {
 			cpbs[i] = fmt.Sprintf(`"%s"`, capabilities[i])
@@ -494,6 +539,11 @@ func NewClientCapabilities(capabilities []string) (ClientCapabilities, error) {
 		err = json.Unmarshal([]byte(c.asJSON), &c.asMap)
 	}
 	return c, err
+}
+
+// Values returns an independent copy of the configured capabilities.
+func (c ClientCapabilities) Values() []string {
+	return append([]string(nil), c.values...)
 }
 
 // Info consists of information about the authority.
@@ -673,7 +723,7 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 			return resp, fmt.Errorf("invalid region %q: region must be a lowercase ASCII DNS label of at most 63 characters", authorityInfo.Region)
 		}
 		region = authorityInfo.Region
-	} else if authorityInfo.Region == autoDetectRegion {
+	} else if authorityInfo.Region == autoDetectRegion && authorityInfo.AuthorityType != DSTS {
 		region = detectRegion(ctx)
 	}
 	if region != "" {
@@ -714,7 +764,45 @@ func (c Client) AADInstanceDiscovery(ctx context.Context, authorityInfo Info) (I
 	return resp, err
 }
 
+// detectedRegion memoizes IMDS auto-detection for the life of the process. Auto-detection is a
+// network probe whose answer is fixed for a given host, and the region is now resolved on every
+// acquisition (see Info.ResolveRegion), so without this a caller using WithAzureRegion with
+// AutoDetectRegion would re-probe the instance metadata endpoint on every token request that misses
+// the endpoint cache - up to two 2-second attempts each time when the probe can't be reached.
+// MSAL .NET caches auto-detection the same way, in RegionManager's static discovered-region field.
+var (
+	detectedRegionMu    sync.Mutex
+	detectedRegion      string
+	detectedRegionKnown bool
+	detectedRegionProbe *regionProbe
+)
+
+type regionProbe struct {
+	done   chan struct{}
+	region string
+}
+
+var probeRegion = detectRegionFromIMDS
+
+// ResolveRegion replaces the auto-detect sentinel with the region that was actually detected, so
+// that everything downstream reads a concrete value (or an empty string when detection found
+// nothing). Detection used to happen inside AADInstanceDiscovery against a by-value copy of Info,
+// which meant the result never reached the caller's AuthParams: MtlsTokenEndpoint still saw the
+// sentinel and fell back to the global mTLS host, throwing away a region that had been successfully
+// detected. MSAL .NET never has this problem because it resolves the region during parameter
+// initialization, before any host is built.
+//
+// Region resolution is deliberately idempotent: once the sentinel is replaced, calling this again is
+// a no-op, so an explicitly configured region is never overwritten.
+func (i *Info) ResolveRegion(ctx context.Context) {
+	if i == nil || i.Region != autoDetectRegion {
+		return
+	}
+	i.Region = detectRegion(ctx)
+}
+
 func detectRegion(ctx context.Context) string {
+	// The environment variable is authoritative and free to read, so it is never memoized.
 	region := os.Getenv(regionName)
 	if region != "" {
 		if validRegion.MatchString(region) {
@@ -722,6 +810,64 @@ func detectRegion(ctx context.Context) string {
 		}
 		return ""
 	}
+
+	if ctx.Err() != nil {
+		return ""
+	}
+
+	detectedRegionMu.Lock()
+	if detectedRegionKnown {
+		region := detectedRegion
+		detectedRegionMu.Unlock()
+		return region
+	}
+	probe := detectedRegionProbe
+	if probe == nil {
+		probe = &regionProbe{done: make(chan struct{})}
+		detectedRegionProbe = probe
+		//nolint:gosec // A process-wide bounded probe must outlive any one canceled waiter.
+		go func() {
+			// The bounded IMDS probe is process-wide rather than owned by its first waiter. A caller
+			// timing out must not cancel discovery for other acquisitions already waiting on it.
+			region := probeRegion(context.Background())
+			detectedRegionMu.Lock()
+			probe.region = region
+			detectedRegion = region
+			detectedRegionKnown = true
+			if detectedRegionProbe == probe {
+				detectedRegionProbe = nil
+			}
+			close(probe.done)
+			detectedRegionMu.Unlock()
+		}()
+	}
+	detectedRegionMu.Unlock()
+
+	select {
+	case <-probe.done:
+		return probe.region
+	case <-ctx.Done():
+		return ""
+	}
+}
+
+// resetDetectedRegion clears the memoized auto-detection result so tests can exercise detection
+// more than once in a process.
+func resetDetectedRegion() {
+	detectedRegionMu.Lock()
+	if probe := detectedRegionProbe; probe != nil {
+		done := probe.done
+		detectedRegionMu.Unlock()
+		<-done
+		detectedRegionMu.Lock()
+	}
+	detectedRegion = ""
+	detectedRegionKnown = false
+	detectedRegionProbe = nil
+	detectedRegionMu.Unlock()
+}
+
+func detectRegionFromIMDS(ctx context.Context) string {
 	// HTTP call to IMDS endpoint to get region
 	// Refer : https://identitydivision.visualstudio.com/DevEx/_git/AuthLibrariesApiReview?path=%2FPinAuthToRegion%2FAAD%20SDK%20Proposal%20to%20Pin%20Auth%20to%20region.md&_a=preview&version=GBdev
 	// Set a 2 second timeout for this http client which only does calls to IMDS endpoint

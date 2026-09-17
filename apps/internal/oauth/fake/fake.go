@@ -89,6 +89,12 @@ func (f *AccessTokens) FromAssertion(ctx context.Context, authParameters authori
 	}
 	return f.AccessToken, nil
 }
+func (f *AccessTokens) FromClientCertificate(ctx context.Context, authParameters authority.AuthParams) (accesstokens.TokenResponse, error) {
+	if f.Err {
+		return accesstokens.TokenResponse{}, fmt.Errorf("error")
+	}
+	return f.AccessToken, nil
+}
 func (f *AccessTokens) FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion, clientSecret string) (accesstokens.TokenResponse, error) {
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")

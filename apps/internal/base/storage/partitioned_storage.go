@@ -287,6 +287,10 @@ func (m *PartitionedManager) writeAccessToken(accessToken AccessToken, partition
 	if m.contract.AccessTokensPartition[partitionKey] == nil {
 		m.contract.AccessTokensPartition[partitionKey] = make(map[string]AccessToken)
 	}
+	// Same duplicate as the unpartitioned manager's, scoped to this partition; see
+	// evictSupersededAccessToken. This manager's readAccessToken also filters on struct fields
+	// only, so a stale entry under the pre-key-ID key would compete with the fresh one here too.
+	evictSupersededAccessToken(m.contract.AccessTokensPartition[partitionKey], key, accessToken)
 	m.contract.AccessTokensPartition[partitionKey][key] = accessToken
 	return nil
 }
