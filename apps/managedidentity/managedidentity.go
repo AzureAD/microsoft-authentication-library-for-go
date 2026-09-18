@@ -219,6 +219,8 @@ type AcquireTokenOptions struct {
 	// attestation requests that the binding key be attested before IMDS issues
 	// a certificate for it.
 	attestation bool
+	// attestationProvider securely loads the native attestation library.
+	attestationProvider AttestationProvider
 	// minStrength is the weakest key binding the caller will accept.
 	minStrength MtlsBindingStrength
 	// forceRefresh bypasses the token cache for this request.
@@ -234,6 +236,21 @@ type AcquireTokenOption func(o *AcquireTokenOptions)
 func WithClaims(claims string) AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
 		o.claims = claims
+	}
+}
+
+// WithAttestationProvider requests that the IMDSv2 binding key be attested
+// before IMDS issues a certificate for it. The provider is invoked lazily, only
+// when an attestation statement is actually needed.
+//
+// Use the provider from the optional
+// github.com/AzureAD/microsoft-authentication-library-for-go/attestation module.
+// A nil or failing provider causes acquisition to fail with
+// [ErrAttestationUnavailable]; it never downgrades to an unattested credential.
+func WithAttestationProvider(provider AttestationProvider) AcquireTokenOption {
+	return func(o *AcquireTokenOptions) {
+		o.attestation = true
+		o.attestationProvider = provider
 	}
 }
 
@@ -261,10 +278,13 @@ func WithClaims(claims string) AcquireTokenOption {
 // the binding key, so this option requires either [WithMtlsProofOfPossession] or
 // [WithRequestOverMtls]. Used on its own, or with a plain bearer-token request,
 // it returns [ErrAttestationRequiresMtls] rather than being quietly ignored.
+//
+// Deprecated: use WithSupport from the optional
+// github.com/AzureAD/microsoft-authentication-library-for-go/attestation module.
+// This compatibility option requires callers to deploy the native library
+// themselves.
 func WithAttestationSupport() AcquireTokenOption {
-	return func(o *AcquireTokenOptions) {
-		o.attestation = true
-	}
+	return WithAttestationProvider(defaultAttestationProvider)
 }
 
 // WithMtlsPoPMinStrength requires the host to be able to bind a token at least

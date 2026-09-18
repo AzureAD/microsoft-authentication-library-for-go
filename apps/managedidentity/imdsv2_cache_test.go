@@ -116,7 +116,7 @@ func TestMintGateCollapsesConcurrentIssuance(t *testing.T) {
 		go func() {
 			defer wg.Done()
 			<-start
-			_, _, err := v.getBindingCertificate(context.Background(), false)
+			_, _, err := v.getBindingCertificate(context.Background(), false, nil)
 			errs <- err
 		}()
 	}

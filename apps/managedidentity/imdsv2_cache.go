@@ -587,8 +587,8 @@ func certificateUsableForClientMtls(leaf *x509.Certificate) error {
 //
 // The returned certificate carries a reference the caller must release with
 // Close.
-func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bindingCertificate, string, error) {
-	return v.getBindingCertificateExcept(ctx, attested, nil)
+func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool, provider AttestationProvider) (*bindingCertificate, string, error) {
+	return v.getBindingCertificateExcept(ctx, attested, provider, nil)
 }
 
 // getBindingCertificateAfterRejection may restore a different certificate
@@ -597,14 +597,16 @@ func (v imdsV2) getBindingCertificate(ctx context.Context, attested bool) (*bind
 func (v imdsV2) getBindingCertificateAfterRejection(
 	ctx context.Context,
 	attested bool,
+	provider AttestationProvider,
 	rejectedDER []byte,
 ) (*bindingCertificate, string, error) {
-	return v.getBindingCertificateExcept(ctx, attested, rejectedDER)
+	return v.getBindingCertificateExcept(ctx, attested, provider, rejectedDER)
 }
 
 func (v imdsV2) getBindingCertificateExcept(
 	ctx context.Context,
 	attested bool,
+	provider AttestationProvider,
 	rejectedDER []byte,
 ) (*bindingCertificate, string, error) {
 	if !platformSupportsMtlsPoP() {
@@ -652,7 +654,7 @@ func (v imdsV2) getBindingCertificateExcept(
 		}
 	}
 
-	cert, err := v.issueBindingCertificate(ctx, correlationID, metadata, attested)
+	cert, err := v.issueBindingCertificate(ctx, correlationID, metadata, attested, provider)
 	if err != nil {
 		return nil, "", err
 	}
@@ -704,7 +706,7 @@ func (c *bindingCertCache) persist(key string, cert *bindingCertificate) {
 
 // issueBindingCertificate mints a key and exchanges a CSR for a certificate.
 // The caller holds the cache lock.
-func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID string, metadata csrMetadata, attested bool) (*bindingCertificate, error) {
+func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID string, metadata csrMetadata, attested bool, provider AttestationProvider) (*bindingCertificate, error) {
 	key, err := v.keyProvider.getOrCreateKey(bindingKeyName)
 	if err != nil {
 		return nil, err
@@ -728,10 +730,9 @@ func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID strin
 		return nil, err
 	}
 
-	// Attestation is attempted only when the caller opted in with
-	// WithAttestationSupport(), which mirrors MSAL .NET: without its optional
-	// attestation package the provider is unset and the credential request goes
-	// out non-attested.
+	// Attestation is attempted only when the caller supplied a provider, which
+	// mirrors MSAL .NET: without its optional attestation package the provider
+	// is unset and the credential request goes out non-attested.
 	//
 	// Once the caller has opted in, a failure to attest is fatal rather than a
 	// downgrade. Falling back would send a non-attested request on behalf of a
@@ -745,7 +746,7 @@ func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID strin
 			_ = key.Close()
 			return nil, err
 		}
-		attestationToken, err = attestKeyGuardCached(ctx, endpoint, metadata.ClientID, key, holder)
+		attestationToken, err = attestKeyGuardCached(ctx, endpoint, metadata.ClientID, key, holder, provider)
 		if err != nil {
 			_ = key.Close()
 			return nil, err

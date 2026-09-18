@@ -463,7 +463,7 @@ func TestIMDSv2AcceptsBareHostAttestationEndpoint(t *testing.T) {
 	fake.attestationEndpoint = "attestation.example"
 	var seen string
 	original := attestKeyGuardFn
-	attestKeyGuardFn = func(endpoint, clientID string, key bindingKey) (string, error) {
+	attestKeyGuardFn = func(endpoint, clientID string, key bindingKey, provider AttestationProvider) (string, error) {
 		seen = endpoint
 		return stubAttestationJWT(t, time.Now().Add(time.Hour)), nil
 	}
@@ -513,7 +513,7 @@ func TestIMDSv2NormalizesAttestationEndpointToTheValidatedOrigin(t *testing.T) {
 			var seen string
 			var attested bool
 			original := attestKeyGuardFn
-			attestKeyGuardFn = func(endpoint, clientID string, key bindingKey) (string, error) {
+			attestKeyGuardFn = func(endpoint, clientID string, key bindingKey, provider AttestationProvider) (string, error) {
 				seen = endpoint
 				attested = true
 				return stubAttestationJWT(t, time.Now().Add(time.Hour)), nil

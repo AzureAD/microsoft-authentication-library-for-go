@@ -97,7 +97,7 @@ func TestAttestationCancellationReleasesTheCallerAndTheKey(t *testing.T) {
 	var running sync.WaitGroup
 	running.Add(1)
 	original := attestKeyGuardFn
-	attestKeyGuardFn = func(string, string, bindingKey) (string, error) {
+	attestKeyGuardFn = func(string, string, bindingKey, AttestationProvider) (string, error) {
 		defer running.Done()
 		<-stuck
 		return "", errors.New("released")
@@ -111,7 +111,7 @@ func TestAttestationCancellationReleasesTheCallerAndTheKey(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	done := make(chan error, 1)
 	go func() {
-		_, err := attestKeyGuardCached(ctx, "https://attestation.example", "client", key, holder)
+		_, err := attestKeyGuardCached(ctx, "https://attestation.example", "client", key, holder, defaultAttestationProvider)
 		// The caller releases its own reference exactly as
 		// issueBindingCertificate does on the error path.
 		_ = key.Close()
@@ -156,7 +156,7 @@ func TestCancelledAttestationReleasesTheProcessWideTokenGate(t *testing.T) {
 	var running sync.WaitGroup
 	running.Add(1)
 	original := attestKeyGuardFn
-	attestKeyGuardFn = func(string, string, bindingKey) (string, error) {
+	attestKeyGuardFn = func(string, string, bindingKey, AttestationProvider) (string, error) {
 		defer running.Done()
 		<-stuck
 		return "", errors.New("released")
@@ -224,7 +224,7 @@ func TestAttestationInFlightCallsAreBounded(t *testing.T) {
 	var running sync.WaitGroup
 	running.Add(attestationMaxInFlight)
 	original := attestKeyGuardFn
-	attestKeyGuardFn = func(string, string, bindingKey) (string, error) {
+	attestKeyGuardFn = func(string, string, bindingKey, AttestationProvider) (string, error) {
 		defer running.Done()
 		<-stuck
 		return "", errors.New("released")
@@ -240,7 +240,7 @@ func TestAttestationInFlightCallsAreBounded(t *testing.T) {
 	// simply retrying after cancellation - would do.
 	for i := 0; i < attestationMaxInFlight; i++ {
 		ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
-		_, err := attestKeyGuardCached(ctx, fmt.Sprintf("https://attestation%d.example", i), "client", key, holder)
+		_, err := attestKeyGuardCached(ctx, fmt.Sprintf("https://attestation%d.example", i), "client", key, holder, defaultAttestationProvider)
 		cancel()
 		if !errors.Is(err, context.DeadlineExceeded) {
 			t.Fatalf("call %d returned %v, want the caller to give up", i, err)
@@ -249,7 +249,7 @@ func TestAttestationInFlightCallsAreBounded(t *testing.T) {
 
 	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
 	defer cancel()
-	_, err = attestKeyGuardCached(ctx, "https://attestation-overflow.example", "client", key, holder)
+	_, err = attestKeyGuardCached(ctx, "https://attestation-overflow.example", "client", key, holder, defaultAttestationProvider)
 	if !errors.Is(err, ErrAttestationBusy) {
 		t.Fatalf("the call past the cap returned %v, want ErrAttestationBusy", err)
 	}

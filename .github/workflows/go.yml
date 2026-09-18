@@ -55,12 +55,21 @@ jobs:
       - name: Build
         run: go build ./apps/...
 
+      - name: Build optional attestation module
+        working-directory: attestation
+        run: go build ./...
+
       # The test suite needs a newer toolchain than the library does: test code in this repo uses
       # sync/atomic types added in Go 1.19. That is a property of the tests, not of the module, so
       # 1.18 verifies the build -- which is the contract go.mod states -- and the rest run the tests.
       - name: Unit Tests
         if: matrix.go != '1.18'
         run: go test -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/...
+
+      - name: Test optional attestation module
+        if: matrix.go == '1.22'
+        working-directory: attestation
+        run: go test -race -short ./...
       # Intergration tests runs on ADO
       # - name: Integration Tests
       #   run: go test -race ./apps/tests/integration/...
@@ -106,6 +115,10 @@ jobs:
       - name: Build
         run: go build ./apps/...
 
+      - name: Build optional attestation module
+        working-directory: attestation
+        run: go build ./...
+
       # ./apps/tests/devapps/... is what reaches the KeyGuard packages; the other dev apps report
       # "no test files" and cost nothing.
       #
@@ -122,3 +135,10 @@ jobs:
         env:
           CGO_ENABLED: "1"
         run: go test -race -short ./apps/cache/... ./apps/confidential/... ./apps/public/... ./apps/internal/... ./apps/managedidentity/... ./apps/tests/devapps/...
+
+      - name: Test optional attestation module
+        if: matrix.go == '1.22'
+        working-directory: attestation
+        env:
+          CGO_ENABLED: "1"
+        run: go test -race -short ./...

@@ -22,13 +22,27 @@ import (
 // rejected. Attestation depends on AttestationClientLib.dll, a native component
 // that is distributed separately and is not part of this module.
 //
-// This only ever reaches a caller who asked for attestation with
-// WithAttestationSupport(), and it is an error rather than a downgrade: having
-// asked, the caller is not quietly handed a credential that lacks it. A caller
-// who did not ask never attempts attestation and never sees this.
+// This only ever reaches a caller who asked for attestation, and it is an error
+// rather than a downgrade: having asked, the caller is not quietly handed a
+// credential that lacks it. A caller who did not ask never attempts attestation
+// and never sees this.
 //
 // Match it with errors.Is.
 var ErrAttestationUnavailable = errors.New("managedidentity: KeyGuard attestation is not available on this host")
+
+// AttestationProvider loads the native KeyGuard attestation library.
+//
+// Implementations must return a platform-native module handle that remains
+// valid for the lifetime of the process. The managed identity package resolves
+// and calls the attestation entry points from that handle; providers are
+// responsible only for securely locating, verifying, and loading the library.
+//
+// Applications should normally use the provider supplied by the optional
+// github.com/AzureAD/microsoft-authentication-library-for-go/attestation module
+// rather than implement this interface.
+type AttestationProvider interface {
+	LoadAttestationLibrary() (uintptr, error)
+}
 
 // ErrAttestationBusy reports that too many native attestations are already in
 // flight for this process to start another.
@@ -171,7 +185,7 @@ func attestationCacheKey(endpoint string, key bindingKey) (string, error) {
 // Concurrent callers wanting the same statement join the same call rather than
 // starting their own, so abandoning a wait never multiplies the native calls; a
 // hard cap stops a caller that abandons repeatedly from accumulating them.
-func attestKeyGuardCached(ctx context.Context, endpoint, clientID string, key bindingKey, holder *sharedKeyCloser) (string, error) {
+func attestKeyGuardCached(ctx context.Context, endpoint, clientID string, key bindingKey, holder *sharedKeyCloser, provider AttestationProvider) (string, error) {
 	cacheKey, keyErr := attestationCacheKey(endpoint, key)
 	// A key that cannot be fingerprinted is still attestable; it just cannot be
 	// cached or collapsed with anything, since both are keyed by that
@@ -197,7 +211,7 @@ func attestKeyGuardCached(ctx context.Context, endpoint, clientID string, key bi
 			finishAttestation(cacheKey, call, "", errors.New("managedidentity: the binding key handle was released before attestation could start"))
 			return "", call.err
 		}
-		go runAttestation(call, cacheKey, endpoint, clientID, key, holder, cacheable)
+		go runAttestation(call, cacheKey, endpoint, clientID, key, holder, cacheable, provider)
 	}
 
 	select {
@@ -243,12 +257,12 @@ func finishAttestation(cacheKey string, call *attestationCall, token string, err
 
 // runAttestation performs the native call on its own goroutine and publishes the
 // result to everybody waiting on it.
-func runAttestation(call *attestationCall, cacheKey, endpoint, clientID string, key bindingKey, holder *sharedKeyCloser, cacheable bool) {
+func runAttestation(call *attestationCall, cacheKey, endpoint, clientID string, key bindingKey, holder *sharedKeyCloser, cacheable bool, provider AttestationProvider) {
 	// The handle stays alive for exactly as long as the native library can
 	// still touch it, whatever the caller that started this has done since.
 	defer func() { _ = holder.release() }()
 
-	token, err := attestKeyGuardFn(endpoint, clientID, key)
+	token, err := attestKeyGuardFn(endpoint, clientID, key, provider)
 	if err != nil {
 		finishAttestation(cacheKey, call, "", err)
 		return

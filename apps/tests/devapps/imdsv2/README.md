@@ -49,7 +49,7 @@ library. So the demo reports host capabilities *before* it tries anything:
 and when an acquisition does fail it names the cause, the fix, and the sentinel to match in code:
 
 ```
-imdsv2: AcquireToken failed: managedidentity: WithAttestationSupport requires
+imdsv2: AcquireToken failed: managedidentity: attestation requires
 WithMtlsProofOfPossession or WithRequestOverMtls
 
 == what this means ==

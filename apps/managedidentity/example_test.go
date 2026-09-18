@@ -125,34 +125,3 @@ func Example_handlingUnsupportedHosts() {
 		log.Fatal(err)
 	}
 }
-
-// Attestation is opt-in. Asking for it has IMDS bind the certificate to a Microsoft Azure
-// Attestation statement proving the private key lives in Virtualization-based Security, which a
-// resource can require.
-//
-// It needs AttestationClientLib.dll on the host. That library is native, is owned by the Azure
-// attestation team, and ships in the Microsoft.Azure.Security.KeyGuardAttestation package rather
-// than in this module, so deploying it alongside the binary is a step the application owns. MSAL
-// .NET gets it from the same package; NuGet copies it next to the executable, which Go has no
-// equivalent of.
-//
-// Having asked, a caller is never quietly handed a certificate without one: a host that cannot
-// attest returns ErrAttestationUnavailable instead of a weaker credential.
-func Example_attestedBinding() {
-	client, err := mi.New(mi.SystemAssigned())
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	result, err := client.AcquireToken(context.TODO(), "https://vault.azure.net",
-		mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
-	switch {
-	case errors.Is(err, mi.ErrAttestationUnavailable):
-		fmt.Println("AttestationClientLib.dll is not deployed on this host")
-		return
-	case err != nil:
-		log.Fatal(err)
-	}
-
-	fmt.Println(result.Metadata.TokenType) // "mtls_pop"
-}
