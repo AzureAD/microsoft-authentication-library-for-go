@@ -420,7 +420,12 @@ func TestRealKeyGuardRecoversStaleKeyByOverwriting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("openProvider: %v", err)
 	}
-	defer freeNCryptObject(provider)
+	adopted := false
+	defer func() {
+		if !adopted {
+			freeNCryptObject(provider)
+		}
+	}()
 	t.Cleanup(func() { _ = newKeyProvider().deleteKey(name) })
 
 	// Seed the container so the loop finds an existing key to call stale.
@@ -439,6 +444,7 @@ func TestRealKeyGuardRecoversStaleKeyByOverwriting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("resolveBindingKey: %v", err)
 	}
+	adopted = true
 	defer func() { _ = key.Close() }()
 
 	// Both probes - the initial one and the reopen that guards against
