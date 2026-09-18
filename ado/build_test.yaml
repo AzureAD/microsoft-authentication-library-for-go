@@ -135,12 +135,20 @@ stages:
               testRunTitle: "Integration Tests"
 
   # ──────────────────────────────────────────────
-  # Stage 4 — Managed Identity E2E Tests (IMDS v1)
+  # Stage 4 — Managed Identity E2E Tests (IMDS v1 and v2)
   #
   # Runs on the self-hosted "MISEManagedIdentity" VM (Windows), which has a
   # system-assigned managed identity plus the user-assigned managed identities
   # assigned to it and IMDS reachable. These are the SAME identities used by the
   # MSAL .NET IMDS E2E tests, so both SDKs exercise the same lab configuration.
+  #
+  # The -run filter selects both suites:
+  #   TestManagedIdentityImds  — IMDS v1 (bearer tokens)
+  #   TestIMDSv2*              — IMDS v2 (mTLS proof-of-possession, KeyGuard-bound)
+  # The v2 tests skip with an explicit reason when the agent serves IMDSv1 only,
+  # lacks Credential Guard, or has no identity assigned, so they cannot red the
+  # build on an agent that is not provisioned for them. Check the test log for
+  # skips before treating a green run as v2 coverage.
   #
   # Runs on every PR. Go is installed only when the VM does not already have it
   # (checked below) so we don't re-install Go on every run.
@@ -173,6 +181,181 @@ stages:
             inputs:
               version: $(goVersion)
           - task: PowerShell@2
+            displayName: "Fetch the KeyGuard attestation library"
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+            inputs:
+              targetType: "inline"
+              script: |
+                $ErrorActionPreference = "Stop"
+                # AttestationClientLib.dll is a closed-source native component that
+                # cannot be redistributed in this repository, so it is restored at
+                # test time from the same internal feed MSAL .NET builds against.
+                # Its absence is not fatal to the library: the credential request
+                # simply goes out non-attested. It is fatal to this stage, because
+                # a resource that requires attestation would then fail for a reason
+                # unrelated to the code under test.
+                $pkg = "microsoft.azure.security.keyguardattestation"
+                $ver = "1.1.5"
+                $dir = "$(Agent.TempDirectory)\kgatt"
+                New-Item -ItemType Directory -Force -Path $dir | Out-Null
+                $nupkg = "$dir\$pkg.$ver.nupkg"
+                $url = "https://pkgs.dev.azure.com/IdentityDivision/_packaging/IDDP_PublicPackages/nuget/v3/flat2/$pkg/$ver/$pkg.$ver.nupkg"
+                Invoke-WebRequest -Headers @{ Authorization = "Bearer $env:SYSTEM_ACCESSTOKEN" } -Uri $url -OutFile $nupkg
+                Write-Host "downloaded $((Get-Item $nupkg).Length) bytes"
+                # A .nupkg is a zip, but Expand-Archive rejects the extension, so
+                # unpack it through the API that goes by content instead of name.
+                Add-Type -AssemblyName System.IO.Compression.FileSystem
+                $extracted = "$dir\extracted"
+                if (Test-Path $extracted) { Remove-Item -Recurse -Force $extracted }
+                [IO.Compression.ZipFile]::ExtractToDirectory($nupkg, $extracted)
+                $native = "$extracted\runtimes\win-x64\native"
+                Get-ChildItem $native | ForEach-Object { Write-Host "  $($_.Name) $($_.Length) bytes" }
+                if (-not (Test-Path "$native\AttestationClientLib.dll")) {
+                  throw "AttestationClientLib.dll was not found in the package"
+                }
+                # Every native file staged below has to carry a valid Microsoft
+                # Authenticode signature. This is the one check that needs no
+                # setup outside this file - no pinned digest, no variable group,
+                # no queue-time flag - and it is worth having on its own: what is
+                # being assembled here is native code that will be loaded into a
+                # process holding a live managed identity token and a KeyGuard
+                # key handle, and a signature is something an attacker cannot
+                # forge for a file they substituted.
+                #
+                # It is not a supply-chain guarantee. It says the file came from
+                # Microsoft, not that it is the exact build this package intended,
+                # so it does not replace pinning the package by digest - that
+                # would need a trustworthy expected hash supplied from outside the
+                # repository, which is deliberately not required here.
+                function Assert-MicrosoftSigned([string]$path) {
+                  $sig = Get-AuthenticodeSignature -LiteralPath $path
+                  if ($sig.Status -ne "Valid") {
+                    throw "$path is not validly signed (status $($sig.Status))"
+                  }
+                  if ($sig.SignerCertificate.Subject -notmatch 'O=Microsoft Corporation') {
+                    throw "$path is signed by $($sig.SignerCertificate.Subject), not Microsoft"
+                  }
+                  Write-Host "  signature OK: $([IO.Path]::GetFileName($path))"
+                }
+                Write-Host "signatures:"
+                Assert-MicrosoftSigned "$native\AttestationClientLib.dll"
+                # Assemble everything the test step must place next to the test
+                # binary. The library is loaded with LoadLibraryEx and
+                # LOAD_LIBRARY_SEARCH_* flags, which replace the standard search
+                # order, so PATH is never consulted - neither for the library
+                # itself nor for the dependencies it imports. Publishing this
+                # directory on PATH leaves the files present but unloadable,
+                # which is exactly how this stage failed before.
+                $payload = "$dir\payload"
+                if (Test-Path $payload) { Remove-Item -Recurse -Force $payload }
+                New-Item -ItemType Directory -Force -Path $payload | Out-Null
+                Copy-Item "$native\AttestationClientLib.dll" $payload -Force
+                # AttestationClientLib.dll links against the Visual C++ runtime,
+                # which is not part of Windows. Its api-ms-win-crt-*.dll imports
+                # are API sets the apiset schema redirects to ucrtbase.dll in
+                # System32, so they are not files that need deploying; these are.
+                $vcRuntime = @("MSVCP140.dll", "VCRUNTIME140.dll", "VCRUNTIME140_1.dll")
+                $systemDir = Join-Path $env:WINDIR "System32"
+                # Cheap tiers first. Enumerating a Visual Studio installation
+                # recursively takes minutes, so it is only done if the runtime
+                # was not already found somewhere cheaper. These use the .NET
+                # methods rather than Test-Path because a PATH entry the agent
+                # account cannot stat makes Test-Path raise Access is denied
+                # even under -ErrorAction SilentlyContinue, which would fail the
+                # task; Directory.Exists and File.Exists just return false.
+                $cheapDirs = @($env:PATH -split ';' | Where-Object { $_ -and [IO.Directory]::Exists($_) })
+                $vsDirs = $null
+                function Get-VsRedistDirs {
+                  if ($null -ne $script:vsDirs) { return $script:vsDirs }
+                  Write-Host "  (searching Visual Studio redistributables)"
+                  $roots = @("C:\Program Files\Microsoft Visual Studio", "C:\Program Files (x86)\Microsoft Visual Studio")
+                  $script:vsDirs = @(Get-ChildItem -Path $roots -Filter "Microsoft.VC*.CRT" -Recurse -Directory -ErrorAction SilentlyContinue |
+                    Where-Object { $_.FullName -match '\\x64\\' } |
+                    Sort-Object @{ Expression = { $_.FullName -match '\\onecore\\' } }, FullName |
+                    ForEach-Object { $_.FullName })
+                  return $script:vsDirs
+                }
+                Write-Host "Visual C++ runtime:"
+                $unresolved = @()
+                foreach ($name in $vcRuntime) {
+                  if ([IO.File]::Exists((Join-Path $systemDir $name))) {
+                    Write-Host "  $name -> already in System32, the loader searches it"
+                    continue
+                  }
+                  $src = $null
+                  foreach ($d in $cheapDirs) {
+                    $c = Join-Path $d $name
+                    if ([IO.File]::Exists($c)) { $src = $c; break }
+                  }
+                  if (-not $src) {
+                    foreach ($d in (Get-VsRedistDirs)) {
+                      $c = Join-Path $d $name
+                      if ([IO.File]::Exists($c)) { $src = $c; break }
+                    }
+                  }
+                  if ($src) {
+                    # Verified wherever it came from. The discovery order is left
+                    # exactly as it was, including the %PATH% tier, because that
+                    # tier is what keeps this step fast and is what the stage has
+                    # been finding the runtime through; dropping it could fail a
+                    # build for a file that is genuinely present. The signature
+                    # check is what makes taking a file from a writable directory
+                    # acceptable, and it applies to every source equally.
+                    Assert-MicrosoftSigned $src
+                    Copy-Item -LiteralPath $src -Destination $payload -Force
+                    Write-Host "  $name -> staged from $src"
+                  } else {
+                    $unresolved += $name
+                    Write-Host "  $name -> NOT FOUND"
+                  }
+                }
+                if ($unresolved.Count -gt 0) {
+                  Write-Host "searched:"
+                  ($cheapDirs + (Get-VsRedistDirs)) | Select-Object -Unique | ForEach-Object { Write-Host "    $_" }
+                  throw ("the Visual C++ runtime required by AttestationClientLib.dll is missing: " + ($unresolved -join ", "))
+                }
+                # The remaining imports ship with Windows. Report them anyway so
+                # that if the load still fails the log names the absent one
+                # instead of costing another build to find out.
+                Write-Host "operating system dependencies:"
+                foreach ($name in @("ADVAPI32.dll", "CRYPT32.dll", "KERNEL32.dll", "Normaliz.dll", "USER32.dll",
+                                    "WLDAP32.dll", "WS2_32.dll", "ncrypt.dll", "tbs.dll", "ucrtbase.dll")) {
+                  $state = if ([IO.File]::Exists((Join-Path $systemDir $name))) { "present" } else { "ABSENT" }
+                  Write-Host "  $name -> $state"
+                }
+                Write-Host "payload:"
+                Get-ChildItem $payload | ForEach-Object { Write-Host "  $($_.Name) $($_.Length) bytes" }
+                Write-Host "##vso[task.setvariable variable=kgAttNativeDir]$payload"
+          - task: PowerShell@2
+            displayName: "Run KeyGuard and certificate store hardware tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                $ErrorActionPreference = "Stop"
+                # These drive the real VBS-isolated key through NCrypt and the real
+                # CurrentUser\My store through crypt32. They are the only automated
+                # coverage for that interop, and they are opt-in because they need
+                # KeyGuard hardware and mutate machine state, so this pool is the
+                # only place they can run at all. Left unset they skip, and a skipped
+                # test stage is indistinguishable from a passing one.
+                $env:MSAL_TEST_REAL_KEYGUARD = "1"
+                $env:MSAL_TEST_REAL_CERT_STORE = "1"
+                # The store tests scope every entry to an alias generated for the run
+                # and remove it in cleanup. The KeyGuard tests deliberately keep the
+                # key: the container is shared with MSAL .NET, and deleting it would
+                # invalidate every certificate either library has already persisted.
+                $output = & go test ./apps/managedidentity/ -run "RealKeyGuard|RealStore" -count=1 -v 2>&1
+                $exit = $LASTEXITCODE
+                $output | ForEach-Object { Write-Host $_ }
+                if ($exit -ne 0) { throw "KeyGuard/certificate store hardware tests failed" }
+                # Guard the opt-in itself. If either variable stopped being honoured
+                # the tests would skip, the step would exit 0, and the stage would go
+                # green having exercised none of this.
+                if ($output -match '^--- SKIP') { throw "hardware tests skipped even though the opt-in is set" }
+                if (-not ($output -match '^--- PASS')) { throw "no hardware tests ran" }
+          - task: PowerShell@2
             displayName: "Run Managed Identity IMDS E2E Tests"
             inputs:
               targetType: "inline"
@@ -184,7 +367,59 @@ stages:
                 go install gotest.tools/gotestsum
                 Pop-Location
                 $env:PATH = "$env:PATH;$(go env GOPATH)\bin"
-                gotestsum --junitfile "$(Build.SourcesDirectory)\mi-e2e-imds-tests.xml" -- -tags e2e -count=1 -run '^TestManagedIdentityImds$' ./apps/tests/e2e/...
+                # This agent is provisioned for managed identity, so an IMDSv2 environment skip is a
+                # regression rather than a legitimate gap. Without this the tests would skip and the
+                # stage would still report green, which looks identical to real coverage.
+                $env:IMDSV2_E2E_REQUIRED = "true"
+                # The MISEManagedIdentity pool is the same pool MSAL .NET runs its IMDSv2 E2E stage
+                # on, so the identity and the token-binding vault below are already provisioned on
+                # this agent and are the same ones .NET asserts against. Keeping both libraries on
+                # one environment is what makes a cross-language parity claim meaningful.
+                $env:IMDSV2_E2E_USER_ASSIGNED_CLIENT_ID = "6325cd32-9911-41f3-819c-416cdf9104e7"
+                $env:IMDSV2_E2E_VAULT = "tokenbindingdemo.vault.azure.net"
+                $env:IMDSV2_E2E_SECRET = "boundsecret"
+                # `go test` runs the test binary out of a temporary build directory
+                # whose name is not predictable, so the attestation library cannot
+                # be placed in the application directory the loader searches.
+                # Compile the binary to a known directory instead and deploy the
+                # payload beside it, which is how a Go service ships it.
+                $native = "$(kgAttNativeDir)"
+                if (-not $native -or -not (Test-Path $native)) {
+                  throw "the attestation payload directory was not published by the fetch step"
+                }
+                $binDir = "$(Agent.TempDirectory)\e2ebin"
+                if (Test-Path $binDir) { Remove-Item -Recurse -Force $binDir }
+                New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+                $testBin = "$binDir\e2e.test.exe"
+                go test -c -tags e2e -o $testBin ./apps/tests/e2e
+                if ($LASTEXITCODE -ne 0) { throw "failed to build the e2e test binary" }
+                Copy-Item "$native\*" $binDir -Force
+                # Presence on PATH was what the previous revision checked, and a
+                # file on PATH is unreachable to this loader. Assert every staged
+                # file landed in a directory the loader actually searches.
+                foreach ($f in Get-ChildItem $native) {
+                  if (-not [IO.File]::Exists((Join-Path $binDir $f.Name))) {
+                    throw "$($f.Name) was not deployed next to the test binary"
+                  }
+                }
+                Write-Host "deployed next to the test binary:"
+                Get-ChildItem $binDir | ForEach-Object { Write-Host "  $($_.Name)" }
+                $pkg = "github.com/AzureAD/microsoft-authentication-library-for-go/apps/tests/e2e"
+                # Quote every -test.* argument: PowerShell drops everything after
+                # the dot in an unquoted native-command argument.
+                $runArgs = @(
+                  "-t", "-p", $pkg, $testBin,
+                  "-test.v=test2json",
+                  "-test.count=1",
+                  '-test.run=^(TestManagedIdentityImds$|TestIMDSv2)'
+                )
+                # Run from the package directory so relative paths resolve the way
+                # they do under `go test`.
+                Push-Location "$(Build.SourcesDirectory)\apps\tests\e2e"
+                gotestsum --junitfile "$(Build.SourcesDirectory)\mi-e2e-imds-tests.xml" --raw-command -- go tool test2json @runArgs
+                $testExit = $LASTEXITCODE
+                Pop-Location
+                if ($testExit -ne 0) { throw "managed identity IMDS e2e tests failed" }
           - task: PublishTestResults@2
             displayName: "Publish MI E2E test results"
             condition: succeededOrFailed()
