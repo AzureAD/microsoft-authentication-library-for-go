@@ -510,28 +510,41 @@ The two options are mutually exclusive; combining them returns `ErrMtlsPoPAndBea
 
 ### Attestation
 
-`WithAttestationSupport()` asks IMDS to attest the binding key before it issues a certificate, so
-the certificate carries proof that the private key lives in a KeyGuard trustlet. Use it when the
-resource requires an attested credential:
+KeyGuard attestation is an optional module. Add it only to applications whose resources require an
+attested credential:
+
+```sh
+go get github.com/AzureAD/microsoft-authentication-library-for-go/attestation
+```
+
+Then import the module and pass its option with either mTLS acquisition mode:
 
 ```go
+import (
+    "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
+    "github.com/AzureAD/microsoft-authentication-library-for-go/attestation"
+)
+
 result, err := client.AcquireToken(ctx, scope,
     managedidentity.WithMtlsProofOfPossession(),
-    managedidentity.WithAttestationSupport(),
+    attestation.WithSupport(),
 )
 ```
 
-Attestation needs `AttestationClientLib.dll`, a native Windows component published in the
-`Microsoft.Azure.Security.KeyGuardAttestation` package under `runtimes/win-x64/native`. It is not
-part of this module — deploy it next to the host executable or install it into `System32`. Those are
-the only two locations searched. MSAL .NET has the same deployment requirement; it just gets the
-file automatically through NuGet's native-asset convention, which Go has no equivalent for.
+The optional module uses `go:embed` to carry the authentic `AttestationClientLib.dll` from
+`Microsoft.Azure.Security.KeyGuardAttestation` 1.1.5. A Windows amd64 application that imports it
+contains the DLL bytes in its executable; no manual DLL deployment is required. On first use it
+materializes the asset under the current user's LocalAppData at
+`Microsoft\MSAL\attestation\1.1.5\win-x64\AttestationClientLib.dll`. Extraction is process- and
+thread-safe, uses a temporary file plus atomic replacement, and verifies the pinned SHA-256 and the
+Microsoft Authenticode signature before loading the DLL by absolute path. The loader does not
+search the working directory or `%PATH%`, and does not fall back to another DLL.
 
-Without the option nothing is attested and the credential request goes out non-attested, matching
-MSAL .NET when its optional `Microsoft.Identity.Client.KeyAttestation` package is not referenced.
-With it, a failure to attest is an **error, not a downgrade** — a caller that asked for attestation
-is never silently given a credential that lacks it. MSAL .NET does the same, raising
-`attestation_failed` rather than falling back.
+Applications that do not import the optional module do not link or embed the DLL. Without the
+option nothing is attested and the credential request goes out non-attested, matching the separate
+extension model in other MSALs. With it, a failure to extract, verify, load, initialize, or attest
+is an **error, not a downgrade** — a caller that asked for attestation is never silently given a
+credential that lacks it.
 
 Attested and non-attested certificates are cached separately, so opting in never reuses a
 certificate that was issued without attestation.
@@ -658,8 +671,8 @@ hosts. Failures are typed so you can branch on them with `errors.Is`:
 | `ErrMtlsPoPNotSupportedInIMDSv1` | The host serves IMDSv1 only. There is **no silent downgrade** to an unbound token. |
 | `ErrMtlsPoPNotSupportedForSource` | The identity source (App Service, Cloud Shell, Azure Arc, …) has no v2 credential endpoint. |
 | `ErrMtlsPoPAndBearerExclusive` | `WithMtlsProofOfPossession()` and `WithRequestOverMtls()` were both set. |
-| `ErrAttestationRequiresMtls` | `WithAttestationSupport()` was set without one of the two mTLS options, where it would have no effect. |
-| `ErrAttestationUnavailable` | Attestation was requested but `AttestationClientLib.dll` could not be loaded. |
+| `ErrAttestationRequiresMtls` | The attestation option was set without one of the two mTLS options, where it would have no effect. |
+| `ErrAttestationUnavailable` | Attestation was requested but the native library could not be extracted, verified, loaded, or initialized. |
 | `ErrMinStrengthNotMet` | The host's binding strength is below the floor set by `WithMtlsPoPMinStrength()`. |
 | `ErrMinStrengthRequiresMtls` | `WithMtlsPoPMinStrength()` was set without one of the two mTLS options, where it would have no effect. |
 

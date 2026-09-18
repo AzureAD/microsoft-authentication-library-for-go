@@ -4,6 +4,7 @@
 package managedidentity
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,11 +51,51 @@ type attestationLib struct {
 	freeAttestationToken    uintptr
 }
 
-var (
-	attestationLibOnce sync.Once
-	attestationLibVal  *attestationLib
-	attestationLibErr  error
-)
+type attestationLibResult struct {
+	lib *attestationLib
+	err error
+}
+
+type attestationProviderError struct {
+	cause error
+}
+
+func (e *attestationProviderError) Error() string {
+	return fmt.Sprintf("managedidentity: loading the attestation library: %v", e.cause)
+}
+
+func (e *attestationProviderError) Unwrap() error {
+	return e.cause
+}
+
+func (e *attestationProviderError) Is(target error) bool {
+	return target == ErrAttestationUnavailable
+}
+
+func wrapAttestationProviderError(err error) error {
+	if errors.Is(err, ErrAttestationUnavailable) {
+		return err
+	}
+	return &attestationProviderError{cause: err}
+}
+
+var attestationLibraries = struct {
+	sync.Mutex
+	byHandle map[windows.Handle]attestationLibResult
+}{
+	byHandle: map[windows.Handle]attestationLibResult{},
+}
+
+// deployedAttestationProvider preserves the provisional #662 behavior for
+// WithAttestationSupport. New applications should use the optional attestation
+// module, whose provider returns a verified handle loaded by absolute path.
+type deployedAttestationProvider struct {
+	once   sync.Once
+	handle windows.Handle
+	err    error
+}
+
+var defaultAttestationProvider AttestationProvider = &deployedAttestationProvider{}
 
 // attestationLog collects what the native library reports. The library is a
 // black box whose failures are otherwise a bare integer, so its own diagnostics
@@ -183,15 +224,15 @@ func attestationLogThunk(ctx uintptr, tag *byte, level uintptr, function *byte, 
 	return 0
 }
 
-// loadAttestationLib resolves the native library once. A missing library is
-// reported as ErrAttestationUnavailable so the caller can tell a deployment gap
-// apart from a real failure, while a library that is present but unusable
-// produces a real error.
-func loadAttestationLib() (*attestationLib, error) {
-	attestationLibOnce.Do(func() {
-		handle, err := windows.LoadLibraryEx(attestationLibName, 0,
+// LoadAttestationLibrary resolves a manually deployed library once. A missing
+// library is reported as ErrAttestationUnavailable so the caller can tell a
+// deployment gap apart from a real failure, while a library that is present but
+// unusable produces a real error.
+func (p *deployedAttestationProvider) LoadAttestationLibrary() (uintptr, error) {
+	p.once.Do(func() {
+		p.handle, p.err = windows.LoadLibraryEx(attestationLibName, 0,
 			loadLibrarySearchApplicationDir|loadLibrarySearchSystem32|loadLibrarySearchDefaultDirs)
-		if err != nil {
+		if p.err != nil {
 			// A failed load reports ERROR_MOD_NOT_FOUND whether the library
 			// itself is absent or one of its own dependencies is, so the error
 			// alone cannot tell a host that never deployed it from a host that
@@ -200,44 +241,73 @@ func loadAttestationLib() (*attestationLib, error) {
 			// fallback, because silently downgrading a deployment that meant to
 			// attest would resurface as an unexplained rejection from IMDS.
 			if path, findErr := findAttestationLib(); findErr == nil {
-				attestationLibErr = fmt.Errorf("loading %s: %v; the library is present but could not be loaded, which usually means a dependency is missing, such as the Visual C++ runtime (MSVCP140.dll, VCRUNTIME140.dll)", path, err)
+				p.err = fmt.Errorf("loading %s: %v; the library is present but could not be loaded, which usually means a dependency is missing, such as the Visual C++ runtime (MSVCP140.dll, VCRUNTIME140.dll)", path, p.err)
 				return
 			}
-			attestationLibErr = fmt.Errorf("%w: loading %s: %v", ErrAttestationUnavailable, attestationLibName, err)
+			p.err = fmt.Errorf("%w: loading %s: %v", ErrAttestationUnavailable, attestationLibName, p.err)
 			return
 		}
-		var initLib, attest, free uintptr
-		for _, p := range []struct {
-			name string
-			addr *uintptr
-		}{
-			{"InitAttestationLib", &initLib},
-			{"AttestKeyGuardImportKey", &attest},
-			{"FreeAttestationToken", &free},
-		} {
-			addr, err := windows.GetProcAddress(handle, p.name)
-			if err != nil {
-				attestationLibErr = fmt.Errorf("%w: %s is missing %s: %v", ErrAttestationUnavailable, attestationLibName, p.name, err)
-				return
-			}
-			*p.addr = addr
-		}
-
-		info := attestationLogInfo{log: windows.NewCallback(attestationLogThunk)}
-		if r, _, err := syscall.SyscallN(initLib, uintptr(unsafe.Pointer(&info))); r != 0 {
-			// #nosec G115 -- the native library returns a 32-bit HRESULT-style
-			// status widened into a uintptr by the syscall ABI, so narrowing it
-			// back to int32 restores the value the library actually returned.
-			attestationLibErr = fmt.Errorf("managedidentity: InitAttestationLib returned %d: %v", int32(r), err)
-			return
-		}
-		// info holds a pointer to a Go callback for the lifetime of the process.
-		// The library is deliberately never uninitialised: doing so would race
-		// with any in-flight attestation on another goroutine, and the process
-		// exiting reclaims it anyway.
-		attestationLibVal = &attestationLib{attestKeyGuardImportKey: attest, freeAttestationToken: free}
 	})
-	return attestationLibVal, attestationLibErr
+	return uintptr(p.handle), p.err
+}
+
+// loadAttestationLib resolves and initializes the entry points from the exact
+// module handle supplied by the caller's provider. Results are cached by handle,
+// so two providers never silently substitute one loaded module for another.
+func loadAttestationLib(provider AttestationProvider) (*attestationLib, error) {
+	if provider == nil {
+		return nil, wrapAttestationProviderError(errors.New("the attestation provider is nil"))
+	}
+	rawHandle, err := provider.LoadAttestationLibrary()
+	if err != nil {
+		return nil, wrapAttestationProviderError(err)
+	}
+	if rawHandle == 0 {
+		return nil, wrapAttestationProviderError(errors.New("the attestation provider returned an invalid library handle"))
+	}
+	handle := windows.Handle(rawHandle)
+
+	attestationLibraries.Lock()
+	defer attestationLibraries.Unlock()
+	if result, ok := attestationLibraries.byHandle[handle]; ok {
+		return result.lib, result.err
+	}
+
+	var initLib, attest, free uintptr
+	result := attestationLibResult{}
+	for _, p := range []struct {
+		name string
+		addr *uintptr
+	}{
+		{"InitAttestationLib", &initLib},
+		{"AttestKeyGuardImportKey", &attest},
+		{"FreeAttestationToken", &free},
+	} {
+		addr, err := windows.GetProcAddress(handle, p.name)
+		if err != nil {
+			result.err = fmt.Errorf("%w: the attestation library is missing %s: %v", ErrAttestationUnavailable, p.name, err)
+			attestationLibraries.byHandle[handle] = result
+			return nil, result.err
+		}
+		*p.addr = addr
+	}
+
+	info := attestationLogInfo{log: windows.NewCallback(attestationLogThunk)}
+	if r, _, err := syscall.SyscallN(initLib, uintptr(unsafe.Pointer(&info))); r != 0 {
+		// #nosec G115 -- the native library returns a 32-bit HRESULT-style
+		// status widened into a uintptr by the syscall ABI, so narrowing it
+		// back to int32 restores the value the library actually returned.
+		result.err = fmt.Errorf("%w: InitAttestationLib returned %d: %v", ErrAttestationUnavailable, int32(r), err)
+		attestationLibraries.byHandle[handle] = result
+		return nil, result.err
+	}
+	// info holds a pointer to a Go callback for the lifetime of the process.
+	// The library is deliberately never uninitialised: doing so would race
+	// with any in-flight attestation on another goroutine, and the process
+	// exiting reclaims it anyway.
+	result.lib = &attestationLib{attestKeyGuardImportKey: attest, freeAttestationToken: free}
+	attestationLibraries.byHandle[handle] = result
+	return result.lib, nil
 }
 
 // findAttestationLib reports where the library is deployed, so a load failure
@@ -265,7 +335,7 @@ func findAttestationLib() (string, error) {
 // returns ErrAttestationUnavailable when the library is not deployed, so the
 // caller can tell an undeployed library apart from a statement the service
 // refused.
-func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
+func attestKeyGuard(endpoint, clientID string, key bindingKey, provider AttestationProvider) (string, error) {
 	// Only a VBS-isolated key can be attested: MAA has nothing to vouch for
 	// when the private material never entered a trustlet. A caller who asked
 	// for attestation and holds a software or TPM key is told so rather than
@@ -277,7 +347,7 @@ func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
 	if !ok {
 		return "", fmt.Errorf("%w: the binding key is not a CNG key", ErrAttestationUnavailable)
 	}
-	lib, err := loadAttestationLib()
+	lib, err := loadAttestationLib(provider)
 	if err != nil {
 		return "", err
 	}

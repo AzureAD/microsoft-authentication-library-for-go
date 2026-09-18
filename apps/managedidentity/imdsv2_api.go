@@ -112,8 +112,8 @@ func (o AcquireTokenOptions) stampCacheComponents(params *authority.AuthParams) 
 		params.CacheKeyComponents = map[string]string{}
 	}
 	// .NET records whether an attestation provider was supplied as "1" or "0".
-	// Go's attestation opt-in is the same statement: WithAttestationSupport is
-	// what makes the credential request carry an attestation token.
+	// Go's attestation opt-in is the same statement: a supplied provider is what
+	// makes the credential request carry an attestation token.
 	attested := "0"
 	if o.attestation {
 		attested = "1"
@@ -235,7 +235,7 @@ func (c Client) acquireTokenForIMDSv2(
 		return AuthResult{}, err
 	}
 
-	binding, key, err := v.getBindingCertificate(ctx, o.attestation)
+	binding, key, err := v.getBindingCertificate(ctx, o.attestation, o.attestationProvider)
 	if err != nil {
 		return AuthResult{}, err
 	}
@@ -265,7 +265,7 @@ func (c Client) acquireTokenForIMDSv2(
 			// The certificate changed while caller code ran outside the gate.
 			// Re-resolve it before sending anything. In particular, a token
 			// rejection for the old certificate must not evict the replacement.
-			current, _, err := v.getBindingCertificate(ctx, o.attestation)
+			current, _, err := v.getBindingCertificate(ctx, o.attestation, o.attestationProvider)
 			if err != nil {
 				return nil, AuthResult{}, false, err
 			}
@@ -294,9 +294,9 @@ func (c Client) acquireTokenForIMDSv2(
 		var reminted *bindingCertificate
 		if evicted {
 			reminted, _, err = v.getBindingCertificateAfterRejection(
-				ctx, o.attestation, rejectedDER)
+				ctx, o.attestation, o.attestationProvider, rejectedDER)
 		} else {
-			reminted, _, err = v.getBindingCertificate(ctx, o.attestation)
+			reminted, _, err = v.getBindingCertificate(ctx, o.attestation, o.attestationProvider)
 		}
 		if err != nil {
 			return AuthResult{}, err

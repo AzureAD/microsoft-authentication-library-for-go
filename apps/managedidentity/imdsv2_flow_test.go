@@ -15,6 +15,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"math/big"
 	"net/http"
@@ -709,12 +710,21 @@ func withStubAttestation(t *testing.T, token string, err error) *int {
 	t.Helper()
 	calls := 0
 	original := attestKeyGuardFn
-	attestKeyGuardFn = func(endpoint, clientID string, key bindingKey) (string, error) {
+	attestKeyGuardFn = func(endpoint, clientID string, key bindingKey, provider AttestationProvider) (string, error) {
 		calls++
 		return token, err
 	}
 	t.Cleanup(func() { attestKeyGuardFn = original })
 	return &calls
+}
+
+type testAttestationProvider struct {
+	handle uintptr
+	err    error
+}
+
+func (p *testAttestationProvider) LoadAttestationLibrary() (uintptr, error) {
+	return p.handle, p.err
 }
 
 func TestIMDSv2SendsNoAttestationTokenWithoutOptIn(t *testing.T) {
@@ -770,6 +780,41 @@ func TestIMDSv2FailsWhenAttestationUnavailable(t *testing.T) {
 	for _, call := range fake.calls {
 		if call == "issue" {
 			t.Fatal("a credential request was sent even though attestation failed")
+		}
+	}
+}
+
+func TestIMDSv2AttestationProviderFailureFailsClosed(t *testing.T) {
+	withCleanCaches(t)
+	fake := newIMDSFake(t)
+	provider := &testAttestationProvider{
+		err: fmt.Errorf("%w: test extraction failure", ErrAttestationUnavailable),
+	}
+	var seen AttestationProvider
+	original := attestKeyGuardFn
+	attestKeyGuardFn = func(endpoint, clientID string, key bindingKey, got AttestationProvider) (string, error) {
+		seen = got
+		_, err := got.LoadAttestationLibrary()
+		return "", err
+	}
+	t.Cleanup(func() { attestKeyGuardFn = original })
+	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
+
+	_, err := client.AcquireToken(
+		context.Background(),
+		"https://vault.azure.net",
+		WithMtlsProofOfPossession(),
+		WithAttestationProvider(provider),
+	)
+	if !errors.Is(err, ErrAttestationUnavailable) {
+		t.Fatalf("error = %v, want it to wrap ErrAttestationUnavailable", err)
+	}
+	if seen != provider {
+		t.Fatalf("native attestation received provider %T, want %T", seen, provider)
+	}
+	for _, call := range fake.calls {
+		if call == "issue" {
+			t.Fatal("a credential request was sent after the attestation provider failed")
 		}
 	}
 }
@@ -844,7 +889,7 @@ func withCountedAttestation(t *testing.T, tokenFor func() string) *int {
 	t.Helper()
 	calls := 0
 	original := attestKeyGuardFn
-	attestKeyGuardFn = func(endpoint, clientID string, key bindingKey) (string, error) {
+	attestKeyGuardFn = func(endpoint, clientID string, key bindingKey, provider AttestationProvider) (string, error) {
 		calls++
 		return tokenFor(), nil
 	}
@@ -915,7 +960,7 @@ func TestAttestationCollapsesConcurrentMisses(t *testing.T) {
 	var calls int32
 	release := make(chan struct{})
 	original := attestKeyGuardFn
-	attestKeyGuardFn = func(endpoint, clientID string, k bindingKey) (string, error) {
+	attestKeyGuardFn = func(endpoint, clientID string, k bindingKey, provider AttestationProvider) (string, error) {
 		// Only the first caller holds the door open. A caller that was not
 		// collapsed arrives here while it is held and is counted.
 		if atomic.AddInt32(&calls, 1) == 1 {
@@ -938,7 +983,7 @@ func TestAttestationCollapsesConcurrentMisses(t *testing.T) {
 			ready <- struct{}{}
 			<-start
 			got[i], errs[i] = attestKeyGuardCached(
-				context.Background(), "https://attestation.example", "client", key, holder)
+				context.Background(), "https://attestation.example", "client", key, holder, defaultAttestationProvider)
 		}(i)
 	}
 	for i := 0; i < callers; i++ {

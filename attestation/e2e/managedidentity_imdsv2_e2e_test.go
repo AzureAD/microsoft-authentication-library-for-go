@@ -19,7 +19,8 @@
 // machine that has a managed identity assigned and serves IMDSv2. They skip cleanly everywhere
 // else, because there is no way to fake any of those things without also invalidating the test.
 //
-//	go test -tags e2e -run IMDSv2 -v ./apps/tests/e2e/...
+//	cd attestation
+//	go test -tags e2e -run IMDSv2 -v ./e2e
 //
 // Optional environment variables:
 //
@@ -30,22 +31,31 @@
 //	                                    turn every environment skip below into a failure. Without it
 //	                                    a misconfigured agent reports the same green result as a
 //	                                    fully working one.
+//	IMDSV2_E2E_COLD_ATTESTATION         require this process to execute the native attestation path
+//	                                    instead of accepting persisted-certificate reuse.
 package e2e
 
 import (
 	"context"
+	"crypto/sha256"
 	"crypto/tls"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
+	"unsafe"
 
 	mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
+	attestation "github.com/AzureAD/microsoft-authentication-library-for-go/attestation"
+	"golang.org/x/sys/windows"
 )
 
 // A certificate-bound token can only be issued for a resource that has opted in to accepting one.
@@ -55,8 +65,25 @@ import (
 // accept bound tokens and are the two resources MSAL .NET uses for the same coverage. Azure Resource
 // Manager does not, so it cannot stand in here.
 const (
-	imdsV2Resource      = "https://graph.microsoft.com"
-	imdsV2VaultResource = "https://vault.azure.net"
+	imdsV2Resource                     = "https://graph.microsoft.com"
+	imdsV2VaultResource                = "https://vault.azure.net"
+	attestationDLLName                 = "AttestationClientLib.dll"
+	attestationDLLVersion              = "1.1.5"
+	expectedAttestationDLLSHA256       = "90dfcce20e1a74519b49796eeee17e6e59a257c3acf754f454a49380d28a568b"
+	maxWindowsModulePathUTF16CodeUnits = 32768
+)
+
+var (
+	getModuleHandleW = windows.NewLazySystemDLL("kernel32.dll").NewProc("GetModuleHandleW")
+
+	deliveryState struct {
+		sync.Once
+		path          string
+		existedBefore bool
+		hashBefore    string
+		modTimeBefore time.Time
+		err           error
+	}
 )
 
 // imdsV2Required reports whether this environment is expected to complete the IMDSv2 flow.
@@ -96,6 +123,7 @@ func skipOrFail(t *testing.T, format string, args ...interface{}) {
 // assertion the same acquisition.
 func skipUnlessIMDSv2(t *testing.T) mi.AuthResult {
 	t.Helper()
+	prepareOptionalAttestationDelivery(t)
 	source, srcErr := mi.GetSource()
 	if srcErr != nil || source != mi.DefaultToIMDS {
 		skipOrFail(t, "not an IMDS host (source=%v err=%v)", source, srcErr)
@@ -107,9 +135,10 @@ func skipUnlessIMDSv2(t *testing.T) mi.AuthResult {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
-	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
+	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), attestation.WithSupport())
 	switch {
 	case err == nil:
+		verifyOptionalAttestationDelivery(t)
 		return res
 	case errors.Is(err, mi.ErrMtlsPoPNotSupportedInIMDSv1):
 		skipOrFail(t, "this host serves IMDSv1 only")
@@ -118,13 +147,206 @@ func skipUnlessIMDSv2(t *testing.T) mi.AuthResult {
 	case errors.Is(err, mi.ErrMtlsNotSupportedForPlatform):
 		skipOrFail(t, "this platform cannot produce a KeyGuard key")
 	case errors.Is(err, mi.ErrAttestationUnavailable):
-		skipOrFail(t, "AttestationClientLib.dll is not on this host, so the attested path cannot run")
+		skipOrFail(t, "the optional embedded attestation library is unavailable: %v", err)
 	case strings.Contains(err.Error(), "identity_not_found"):
 		skipOrFail(t, "no managed identity is assigned to this host")
 	default:
 		t.Fatalf("IMDSv2 acquisition failed for a reason that is not an environment gap: %v", err)
 	}
 	return mi.AuthResult{}
+}
+
+func prepareOptionalAttestationDelivery(t *testing.T) {
+	t.Helper()
+	deliveryState.Do(func() {
+		localAppData := os.Getenv("LOCALAPPDATA")
+		if localAppData == "" {
+			deliveryState.err = errors.New("LOCALAPPDATA is not set")
+			return
+		}
+		deliveryState.path = filepath.Join(localAppData, "Microsoft", "MSAL", "attestation",
+			attestationDLLVersion, "win-x64", attestationDLLName)
+		if !filepath.IsAbs(deliveryState.path) {
+			deliveryState.err = fmt.Errorf("expected attestation path %q is not absolute", deliveryState.path)
+			return
+		}
+
+		executable, err := os.Executable()
+		if err != nil {
+			deliveryState.err = fmt.Errorf("finding the test executable: %w", err)
+			return
+		}
+		workingDirectory, err := os.Getwd()
+		if err != nil {
+			deliveryState.err = fmt.Errorf("finding the test working directory: %w", err)
+			return
+		}
+		for label, directory := range map[string]string{
+			"application directory": filepath.Dir(executable),
+			"working directory":     workingDirectory,
+		} {
+			candidate := filepath.Join(directory, attestationDLLName)
+			if _, err := os.Stat(candidate); err == nil {
+				deliveryState.err = fmt.Errorf("%s unexpectedly contains %s", label, candidate)
+				return
+			} else if !errors.Is(err, os.ErrNotExist) {
+				deliveryState.err = fmt.Errorf("checking %s for an unexpected attestation DLL: %w", label, err)
+				return
+			}
+		}
+
+		info, err := os.Stat(deliveryState.path)
+		if errors.Is(err, os.ErrNotExist) {
+			return
+		}
+		if err != nil {
+			deliveryState.err = fmt.Errorf("inspecting the pre-existing attestation DLL: %w", err)
+			return
+		}
+		deliveryState.existedBefore = true
+		deliveryState.modTimeBefore = info.ModTime()
+		deliveryState.hashBefore, deliveryState.err = fileSHA256(deliveryState.path)
+	})
+	if deliveryState.err != nil {
+		t.Fatal(deliveryState.err)
+	}
+}
+
+func verifyOptionalAttestationDelivery(t *testing.T) {
+	t.Helper()
+	info, err := os.Stat(deliveryState.path)
+	if err != nil {
+		t.Fatalf("inspecting the materialized attestation DLL: %v", err)
+	}
+	hash, err := fileSHA256(deliveryState.path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if hash != expectedAttestationDLLSHA256 {
+		t.Fatalf("materialized attestation DLL SHA-256 = %s, want %s", hash, expectedAttestationDLLSHA256)
+	}
+
+	materialization := optionalAttestationMaterialization(info.ModTime())
+	loadedPath, err := loadedModulePath(attestationDLLName)
+	if err != nil {
+		// WithSupport is deliberately lazy. A later process can restore the
+		// previously attested certificate and never need a new attestation
+		// statement, so the native library won't be loaded in that process.
+		// Accept that only when the exact pinned file predated this run and
+		// wasn't rewritten; a fresh or repaired materialization must be loaded.
+		if canReusePersistedAttestedCredential(materialization, err, coldAttestationRequired()) {
+			t.Logf("optional attestation credential reuse verified: the unchanged pinned DLL remains at %q; "+
+				"the native module wasn't loaded because no new attestation statement was needed",
+				deliveryState.path)
+			return
+		}
+		t.Fatal(err)
+	}
+	if !filepath.IsAbs(loadedPath) {
+		t.Fatalf("loaded attestation path %q is not absolute", loadedPath)
+	}
+	loadedInfo, err := os.Stat(loadedPath)
+	if err != nil {
+		t.Fatalf("stating loaded attestation path %q: %v", loadedPath, err)
+	}
+	if !os.SameFile(info, loadedInfo) {
+		t.Fatalf("loaded attestation path = %q, want versioned LocalAppData path %q", loadedPath, deliveryState.path)
+	}
+
+	if coldAttestationRequired() {
+		t.Log("cold optional attestation path verified: persisted-certificate reuse was disabled and the native module executed")
+	}
+	t.Logf("optional attestation delivery verified: %s; loaded absolute path %q; SHA-256 %s",
+		materialization, loadedPath, hash)
+}
+
+func optionalAttestationMaterialization(modTimeAfter time.Time) string {
+	if !deliveryState.existedBefore {
+		return "fresh extraction"
+	}
+	if deliveryState.hashBefore == expectedAttestationDLLSHA256 &&
+		deliveryState.modTimeBefore.Equal(modTimeAfter) {
+		return "verified reuse"
+	}
+	return "repaired extraction"
+}
+
+func coldAttestationRequired() bool {
+	required, err := strconv.ParseBool(os.Getenv("IMDSV2_E2E_COLD_ATTESTATION"))
+	return err == nil && required
+}
+
+func canReusePersistedAttestedCredential(materialization string, moduleErr error, cold bool) bool {
+	return !cold && materialization == "verified reuse" && errors.Is(moduleErr, windows.ERROR_MOD_NOT_FOUND)
+}
+
+func TestDeliveryVerificationAllowsUnloadedModuleOnlyForVerifiedReuse(t *testing.T) {
+	missing := fmt.Errorf("GetModuleHandleW: %w", windows.ERROR_MOD_NOT_FOUND)
+	for _, test := range []struct {
+		name            string
+		materialization string
+		err             error
+		cold            bool
+		want            bool
+	}{
+		{"verified reuse", "verified reuse", missing, false, true},
+		{"cold verified reuse", "verified reuse", missing, true, false},
+		{"fresh extraction", "fresh extraction", missing, false, false},
+		{"repaired extraction", "repaired extraction", missing, false, false},
+		{"different loader error", "verified reuse", windows.ERROR_INVALID_HANDLE, false, false},
+		{"no loader error", "verified reuse", nil, false, false},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			if got := canReusePersistedAttestedCredential(test.materialization, test.err, test.cold); got != test.want {
+				t.Fatalf("canReusePersistedAttestedCredential(%q, %v, %t) = %t, want %t",
+					test.materialization, test.err, test.cold, got, test.want)
+			}
+		})
+	}
+}
+
+func fileSHA256(path string) (digest string, err error) {
+	// The path is the deterministic LocalAppData destination assembled above.
+	//nolint:gosec
+	file, err := os.Open(path)
+	if err != nil {
+		return "", fmt.Errorf("opening %q to hash it: %w", path, err)
+	}
+	defer func() {
+		if closeErr := file.Close(); closeErr != nil && err == nil {
+			err = fmt.Errorf("closing %q after hashing it: %w", path, closeErr)
+		}
+	}()
+	hash := sha256.New()
+	if _, err := io.Copy(hash, file); err != nil {
+		return "", fmt.Errorf("hashing %q: %w", path, err)
+	}
+	return hex.EncodeToString(hash.Sum(nil)), nil
+}
+
+func loadedModulePath(name string) (string, error) {
+	nameUTF16, err := windows.UTF16PtrFromString(name)
+	if err != nil {
+		return "", fmt.Errorf("encoding module name: %w", err)
+	}
+	// GetModuleHandleW observes an already-loaded module without incrementing its reference count.
+	//nolint:gosec
+	handle, _, callErr := getModuleHandleW.Call(uintptr(unsafe.Pointer(nameUTF16)))
+	if handle == 0 {
+		return "", fmt.Errorf("GetModuleHandleW(%q): %w", name, callErr)
+	}
+	for size := uint32(256); size <= maxWindowsModulePathUTF16CodeUnits; size *= 2 {
+		buffer := make([]uint16, size)
+		length, err := windows.GetModuleFileName(windows.Handle(handle), &buffer[0], size)
+		if length == 0 {
+			return "", fmt.Errorf("GetModuleFileNameW(%q): %w", name, err)
+		}
+		if length < size-1 {
+			return windows.UTF16ToString(buffer[:length]), nil
+		}
+	}
+	return "", fmt.Errorf("loaded module path for %q exceeds %d UTF-16 code units",
+		name, maxWindowsModulePathUTF16CodeUnits)
 }
 
 // TestIMDSv2SystemAssignedBoundToken acquires a certificate-bound token for the system-assigned
@@ -160,6 +382,8 @@ func TestIMDSv2SystemAssignedBoundToken(t *testing.T) {
 	if res.ExpiresOn.Before(time.Now()) {
 		t.Fatalf("the token is already expired: %s", res.ExpiresOn)
 	}
+	t.Log("genuine KeyGuard attestation succeeded; IMDSv2 issued a binding certificate; " +
+		"Entra returned token_type=mtls_pop over mTLS")
 }
 
 // TestIMDSv2UserAssignedBoundToken runs the same acquisition against a user-assigned identity.
@@ -177,7 +401,7 @@ func TestIMDSv2UserAssignedBoundToken(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
+	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), attestation.WithSupport())
 	if err != nil {
 		t.Fatalf("AcquireToken: %v", err)
 	}
@@ -201,7 +425,7 @@ func TestIMDSv2BearerOverMtls(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithRequestOverMtls(), mi.WithAttestationSupport())
+	res, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithRequestOverMtls(), attestation.WithSupport())
 	if err != nil {
 		t.Fatalf("AcquireToken: %v", err)
 	}
@@ -235,11 +459,11 @@ func TestIMDSv2TokenIsServedFromCache(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 
-	first, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
+	first, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), attestation.WithSupport())
 	if err != nil {
 		t.Fatalf("first AcquireToken: %v", err)
 	}
-	second, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
+	second, err := client.AcquireToken(ctx, imdsV2Resource, mi.WithMtlsProofOfPossession(), attestation.WithSupport())
 	if err != nil {
 		t.Fatalf("second AcquireToken: %v", err)
 	}
@@ -281,7 +505,7 @@ func TestIMDSv2CallsBoundResource(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	res, err := client.AcquireToken(ctx, imdsV2VaultResource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
+	res, err := client.AcquireToken(ctx, imdsV2VaultResource, mi.WithMtlsProofOfPossession(), attestation.WithSupport())
 	if err != nil {
 		t.Fatalf("AcquireToken: %v", err)
 	}
@@ -336,7 +560,7 @@ func TestIMDSv2BoundTokenIsRejectedWithoutCertificate(t *testing.T) {
 	ctx, cancel := context.WithTimeout(context.Background(), 90*time.Second)
 	defer cancel()
 
-	res, err := client.AcquireToken(ctx, imdsV2VaultResource, mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport())
+	res, err := client.AcquireToken(ctx, imdsV2VaultResource, mi.WithMtlsProofOfPossession(), attestation.WithSupport())
 	if err != nil {
 		t.Fatalf("AcquireToken: %v", err)
 	}
@@ -374,6 +598,9 @@ func TestIMDSv2BoundTokenIsRejectedWithoutCertificate(t *testing.T) {
 // TLS 1.2 keeps the exchange on the renegotiation path, and RenegotiateOnceAsClient lets Go answer
 // it. .NET and curl hit none of this because schannel renegotiates natively.
 func getBoundSecret(ctx context.Context, url, token string, cert tls.Certificate) (string, int, error) {
+	// Key Vault asks for the client certificate through TLS 1.2 renegotiation; Go doesn't support
+	// the equivalent TLS 1.3 post-handshake authentication. See the protocol explanation above.
+	//nolint:gosec
 	tlsConfig := &tls.Config{
 		MinVersion:    tls.VersionTLS12,
 		MaxVersion:    tls.VersionTLS12,
@@ -399,6 +626,8 @@ func getBoundSecret(ctx context.Context, url, token string, cert tls.Certificate
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
 	}
 
+	// This E2E test intentionally calls the operator-provided Key Vault URL.
+	//nolint:gosec
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
 		return "", 0, err
@@ -406,15 +635,20 @@ func getBoundSecret(ctx context.Context, url, token string, cert tls.Certificate
 	req.Header.Set("Authorization", "mtls_pop "+token)
 	req.Header.Set("x-ms-tokenboundauth", "true")
 
+	// This E2E test intentionally calls the operator-provided Key Vault URL.
+	//nolint:gosec
 	resp, err := client.Do(req)
 	if err != nil {
 		return "", 0, fmt.Errorf("%w [the resource asked for a client certificate: %t; a certificate was supplied to send: %t]",
 			err, certRequested, len(cert.Certificate) > 0)
 	}
-	defer resp.Body.Close()
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	closeErr := resp.Body.Close()
 	if err != nil {
 		return "", resp.StatusCode, err
+	}
+	if closeErr != nil {
+		return "", resp.StatusCode, fmt.Errorf("closing the vault response body: %w", closeErr)
 	}
 	return string(body), resp.StatusCode, nil
 }

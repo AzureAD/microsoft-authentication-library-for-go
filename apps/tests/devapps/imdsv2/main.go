@@ -245,6 +245,7 @@ func acquireOptions(cfg config) ([]managedidentity.AcquireTokenOption, error) {
 	}
 
 	if cfg.attest {
+		//nolint:staticcheck // SA1019: this root-module dev app intentionally exercises the deprecated manual-deployment path.
 		opts = append(opts, managedidentity.WithAttestationSupport())
 	}
 	if cfg.minStrength != "" {
@@ -479,7 +480,8 @@ func explain(err error) {
 			managedidentity.ErrAttestationUnavailable,
 			"ErrAttestationUnavailable",
 			"Attestation was required but this host cannot produce an attested KeyGuard key.",
-			"AttestationClientLib.dll must be present in the application directory or System32. " +
+			"Applications should import the optional attestation module and use attestation.WithSupport() " +
+				"so AttestationClientLib.dll is embedded, verified and extracted automatically. " +
 				"Drop -attest to issue an unattested credential instead.",
 		},
 		{

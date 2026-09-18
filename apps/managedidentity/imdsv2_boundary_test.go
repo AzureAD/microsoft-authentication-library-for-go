@@ -438,7 +438,7 @@ func TestFactoryWaiterDoesNotEvictAConcurrentCertificateReplacement(t *testing.T
 		retryEnabled: client.retryPolicyEnabled,
 		baseEndpoint: imdsV2BaseEndpoint(),
 	}
-	rejected, _, err := v.getBindingCertificate(context.Background(), false)
+	rejected, _, err := v.getBindingCertificate(context.Background(), false, nil)
 	if err != nil {
 		t.Fatalf("seeding certificate X: %v", err)
 	}

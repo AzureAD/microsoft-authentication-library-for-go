@@ -54,17 +54,17 @@ var ErrMtlsPoPNotSupportedForSource = errors.New(
 var ErrMtlsPoPAndBearerExclusive = errors.New(
 	"managedidentity: WithMtlsProofOfPossession and WithRequestOverMtls cannot be combined; choose one")
 
-// ErrAttestationRequiresMtls is returned when WithAttestationSupport is used on
-// its own. Attestation only has meaning for a binding key, and a binding key is
-// only minted on the IMDSv2 certificate path, so the option cannot be satisfied
-// unless the request also selects that path. Returning an error rather than
-// ignoring the option keeps the guarantee WithAttestationSupport documents: a
-// caller that asked for attestation is never silently given a credential that
-// lacks it.
+// ErrAttestationRequiresMtls is returned when an attestation provider is used
+// on its own. Attestation only has meaning for a binding key, and a binding key
+// is only minted on the IMDSv2 certificate path, so the option cannot be
+// satisfied unless the request also selects that path. Returning an error
+// rather than ignoring the option keeps the fail-closed guarantee: a caller
+// that asked for attestation is never silently given a credential that lacks
+// it.
 //
 // Match it with errors.Is.
 var ErrAttestationRequiresMtls = errors.New(
-	"managedidentity: WithAttestationSupport requires WithMtlsProofOfPossession or WithRequestOverMtls")
+	"managedidentity: attestation requires WithMtlsProofOfPossession or WithRequestOverMtls")
 
 // keyType describes how well protected a binding key is.
 type keyType int
