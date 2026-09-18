@@ -118,7 +118,7 @@ func TestMtlsPoPAloneStillWorks(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 	)
 	if err != nil {
 		t.Fatal(err)

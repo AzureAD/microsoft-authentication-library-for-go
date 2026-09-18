@@ -228,21 +228,50 @@ Notes:
   `http.RoundTripper` (a tracing, retry, pinning or request-signing wrapper), or an `*http.Transport`
   that sets `DialTLS`/`DialTLSContext`, cannot carry the binding certificate into the handshake;
   rather than silently rerouting a credential-bearing request onto `http.DefaultTransport`, mTLS
-  token requests fail with an error pointing at `WithMtlsHTTPClient`. Redirects are refused on that
-  leg unless the `WithHTTPClient` client sets `CheckRedirect`, because a 307 or 308 would replay the
-  request body and present the binding certificate to the redirect target.
-- **`WithMtlsHTTPClient` is required when the value you pass to `WithHTTPClient` is not an
-  `*http.Client`.** `WithHTTPClient` takes an interface (`Do` + `CloseIdleConnections`), but a TLS
-  client certificate can only be installed through `*http.Transport`, so any other implementation is
-  rejected before the request is sent. It is not an escape hatch for exotic setups: a wrapper type
-  that satisfies the interface without being an `*http.Client` reaches this error on the first mTLS
-  request. Note that a caller who reaches MSAL through a library that constructs the confidential
-  client itself cannot supply either option unless that library forwards them.
-- **Custom mTLS factories are cached by MSAL per certificate thumbprint.** Each factory return must
-  present the certificate supplied to that invocation; one static client configured for a different
-  certificate is invalid. MSAL shallow-copies the returned `*http.Client`, installs the same default
-  redirect refusal when `CheckRedirect` is nil, preserves an explicit policy, and does not close the
-  caller-owned/aliased transport during internal cache eviction.
+  token requests fail with an error pointing at `MtlsHTTPClientFactory`. Redirects are refused on
+  that leg unless the base client sets `CheckRedirect`, because a 307 or 308 would replay the request
+  body and present the binding certificate to the redirect target.
+- **Wrappers implement `confidential.MtlsHTTPClientFactory` on the value passed to
+  `WithHTTPClient`.** MSAL supplies an `augment` callback closed over its exact certificate snapshot.
+  The factory calls it exactly once and synchronously with a non-nil base `*http.Client`, then returns
+  a middleware/pipeline client whose `Do` terminates through the augmented client or transport:
+
+  ```go
+  type middlewareClient struct {
+      client *http.Client
+  }
+
+  func (c *middlewareClient) Do(req *http.Request) (*http.Response, error) {
+      // Apply tracing, retry, policy, etc. before the augmented transport.
+      return c.client.Do(req)
+  }
+
+  func (c *middlewareClient) CloseIdleConnections() {
+      c.client.CloseIdleConnections()
+  }
+
+  func (c *middlewareClient) NewMtlsClient(
+      augment func(*http.Client) (*http.Client, error),
+  ) (confidential.HTTPClient, error) {
+      specialized, err := augment(c.client)
+      if err != nil {
+          return nil, err
+      }
+      return &middlewareClient{client: specialized}, nil
+  }
+
+  app, err := confidential.New(authority, clientID, cred,
+      confidential.WithHTTPClient(&middlewareClient{client: &http.Client{}}))
+  ```
+
+  An opaque wrapper without this capability fails before request transmission instead of falling
+  back to a default transport. MSAL also rejects a missing/repeated callback invocation, a nil base,
+  a nil result, and swallowed augmentation errors.
+- **Factory results are cached by MSAL per certificate thumbprint.** Repeated use of one certificate
+  reuses one specialized client and connection pool; different certificates receive independent
+  clients and TLS session caches and can be used concurrently. `NewMtlsClient` must therefore be
+  concurrency safe but must not add another certificate cache. `CloseIdleConnections` on each
+  returned wrapper must reach its augmented client so MSAL's cache cleanup releases the right pool.
 - **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. For the
   mTLS token endpoint the legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are
@@ -311,7 +340,8 @@ Notes:
   on the wire.
 - **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
   TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
-  `WithMtlsHTTPClient` remains available if you need to own the handshake for other reasons.
+  A custom `MtlsHTTPClientFactory` is needed only when preserving an HTTP wrapper or middleware
+  pipeline around that built-in certificate configuration.
 - **The signer lives in your code**: MSAL adds no platform-specific dependencies and ships no signer
   implementation. Implement `crypto.Signer` over your key provider (NCrypt, TPM 2.0, PKCS#11, KMS,
   ...) and hand it to MSAL. Obtaining that signer is the platform-specific part, and it's the part
@@ -423,7 +453,7 @@ Notes:
   closed if the callback omits the certificate.
 - The **authority requirements and transport rules** above apply here too, because the request still
   goes to `mtlsauth.*`: it needs a tenanted AAD authority on a known `login.*` host, and a
-  `WithHTTPClient` value that is not an `*http.Client` still requires `WithMtlsHTTPClient`.
+  `WithHTTPClient` value that is not an `*http.Client` must implement `MtlsHTTPClientFactory`.
 
 ## Community Help and Support
 

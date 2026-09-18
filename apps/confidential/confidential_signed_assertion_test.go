@@ -102,10 +102,10 @@ func newMtlsHandshakeServer(t *testing.T, body []byte) *mtlsHandshakeServer {
 	return s
 }
 
-// clientFactory returns a WithMtlsHTTPClient factory that builds a real mTLS client from the
-// certificate MSAL hands it and routes every request to the test server regardless of the URL's host.
-// The certificate is taken from the factory argument (never captured from the test) so the handshake
-// proves which certificate MSAL selected.
+// clientFactory builds a real mTLS test client from the certificate MSAL installed through the test
+// adapter and routes every request to the test server regardless of the URL's host. The certificate
+// is taken from the adapter (never captured from the test) so the handshake proves which certificate
+// MSAL selected.
 func (s *mtlsHandshakeServer) clientFactory() func(tls.Certificate) *http.Client {
 	addr := s.srv.Listener.Addr().String()
 	return func(cert tls.Certificate) *http.Client {
@@ -199,7 +199,7 @@ func handshakeTestClient(t *testing.T, cred Credential, srv *mtlsHandshakeServer
 	lmo := "login.microsoftonline.com"
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
-		WithMtlsHTTPClient(srv.clientFactory()),
+		withTestMtlsClient(srv.clientFactory()),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -598,7 +598,7 @@ func TestSignedAssertionCallbackCertificatePartitionsCache(t *testing.T) {
 	factoryA, factoryB := srvA.clientFactory(), srvB.clientFactory()
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
-		WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
+		withTestMtlsClient(func(cert tls.Certificate) *http.Client {
 			if cert.Leaf != nil && cert.Leaf.Equal(second) {
 				return factoryB(cert)
 			}

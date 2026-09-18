@@ -145,7 +145,7 @@ func TestSendCertificateOverMtlsSignedCallbackUsesFinalEndpointAndOptions(t *tes
 
 				client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 					WithHTTPClient(mockClient),
-					WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+					withTestMtlsClient(mockMtlsFactory(mockClient)),
 					WithInstanceDiscovery(false),
 					WithSendCertificateOverMtls(),
 				)
@@ -174,7 +174,7 @@ func TestSendCertificateOverMtlsSignedCallbackUsesFinalEndpointAndOptions(t *tes
 					var factoryCert tls.Certificate
 					client, err := New("https://login.microsoftonline.com/tenant", fakeClientID, cred,
 						WithHTTPClient(router),
-						WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
+						withTestMtlsClient(func(cert tls.Certificate) *http.Client {
 							factoryCert = cert
 							return &http.Client{Transport: bearerMtlsRoundTripper{router: router}}
 						}),
@@ -513,7 +513,7 @@ func TestSendCertificateOverMtls_SignedAssertion_RealHandshake(t *testing.T) {
 	tenant, lmo := "tenant", "login.microsoftonline.com"
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
-		WithMtlsHTTPClient(srv.clientFactory()),
+		withTestMtlsClient(srv.clientFactory()),
 		WithSendCertificateOverMtls(),
 	)
 	if err != nil {

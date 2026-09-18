@@ -52,21 +52,44 @@ func mtlsPoPTokenBody(accessToken string, expiresIn int) []byte {
 	))
 }
 
-// mockRoundTripper adapts a mock HTTP client to http.RoundTripper so tests can install it through the
-// public WithMtlsHTTPClient option, which takes a concrete *http.Client rather than an internal
-// interface. Going through the public option keeps these tests on exactly the code path an external
-// consumer uses.
+// mockRoundTripper adapts a mock HTTP client to http.RoundTripper so existing request-shape fixtures
+// can use it as their specialized mTLS client.
 type mockRoundTripper struct{ client *mock.Client }
 
 func (rt mockRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	return rt.client.Do(req)
 }
 
-// mockMtlsFactory returns a factory in the public WithMtlsHTTPClient shape that routes every mTLS
-// token request to the supplied mock.
+// mockMtlsFactory routes every mTLS token request to the supplied mock.
 func mockMtlsFactory(c *mock.Client) func(tls.Certificate) *http.Client {
 	return func(tls.Certificate) *http.Client {
 		return &http.Client{Transport: mockRoundTripper{client: c}}
+	}
+}
+
+// mtlsTestFactoryClient adapts the certificate-aware factories used by the original mTLS request
+// fixtures to the augmenter contract. Focused factory tests below exercise a real wrapper that
+// terminates through the augmented transport; this shim keeps unrelated request-shape tests small.
+type mtlsTestFactoryClient struct {
+	HTTPClient
+	factory func(tls.Certificate) *http.Client
+}
+
+func (c *mtlsTestFactoryClient) NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
+	augmented, err := augment(&http.Client{})
+	if err != nil {
+		return nil, err
+	}
+	transport := augmented.Transport.(*http.Transport)
+	return c.factory(transport.TLSClientConfig.Certificates[0]), nil
+}
+
+// withTestMtlsClient wraps the HTTP client installed by preceding options with the mTLS factory
+// capability. Production callers implement MtlsHTTPClientFactory on the client they pass directly
+// to WithHTTPClient.
+func withTestMtlsClient(factory func(tls.Certificate) *http.Client) Option {
+	return func(o *clientOptions) {
+		o.httpClient = &mtlsTestFactoryClient{HTTPClient: o.httpClient, factory: factory}
 	}
 }
 
@@ -87,7 +110,7 @@ func TestAcquireTokenByCredentialMtlsPoP(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -200,7 +223,7 @@ func TestAcquireTokenByCredentialFICMtlsPoP(t *testing.T) {
 		// callback moves endpoint resolution ahead of the cache read, which reverses the order of
 		// the two discovery calls.
 		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
-		WithMtlsHTTPClient(mockMtlsFactory(mtlsMock)),
+		withTestMtlsClient(mockMtlsFactory(mtlsMock)),
 	)
 	if err != nil {
 		t.Fatal(err)

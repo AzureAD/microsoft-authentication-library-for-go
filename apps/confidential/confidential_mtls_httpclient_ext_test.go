@@ -4,45 +4,28 @@
 package confidential_test
 
 import (
-	"crypto/tls"
 	"net/http"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
 
-// TestWithMtlsHTTPClientIsCallableExternally is a compile-time regression test for
-// WithMtlsHTTPClient, which is the only way to use mTLS proof-of-possession when the client passed
-// to WithHTTPClient is not an *http.Client — the situation every azidentity caller is in.
-//
-// This file is package confidential_test, so it is a genuine external consumer: it can only name
-// exported identifiers of apps/confidential and cannot import anything under apps/internal. The
-// option previously took func(tls.Certificate) ops.HTTPClient, where ops.HTTPClient was a type alias
-// for an interface declared in apps/internal/oauth/ops/internal/comm. A type alias does not launder
-// internal-ness, and Go function types are invariant in their result type, so no external module
-// could construct a value of that function type — the one supported override did not compile for
-// consumers.
-//
-// Passing a plain func(tls.Certificate) *http.Client literal below is the whole point: if the
-// signature ever regresses to an internal type, this file stops compiling.
-//
-// MSAL .NET's equivalent, IMsalMtlsHttpClientFactory with
-// GetHttpClient(X509Certificate2) -> HttpClient, is public on every target framework, so this is also
-// a parity fix.
-func TestWithMtlsHTTPClientIsCallableExternally(t *testing.T) {
-	called := false
-	factory := func(cert tls.Certificate) *http.Client {
-		called = true
-		return &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					Certificates: []tls.Certificate{cert},
-					MinVersion:   tls.VersionTLS12,
-				},
-			},
-		}
-	}
+// externalMtlsFactory is a genuine external implementation: this package can't import anything
+// under apps/internal, so this compile-time assertion protects the public contract's usability.
+type externalMtlsFactory struct {
+	*http.Client
+	calls int
+}
 
+func (f *externalMtlsFactory) NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (confidential.HTTPClient, error) {
+	f.calls++
+	return augment(&http.Client{})
+}
+
+var _ confidential.MtlsHTTPClientFactory = (*externalMtlsFactory)(nil)
+
+func TestMtlsHTTPClientFactoryIsImplementableExternally(t *testing.T) {
+	factory := &externalMtlsFactory{Client: &http.Client{}}
 	cred, err := confidential.NewCredFromSecret("secret")
 	if err != nil {
 		t.Fatalf("NewCredFromSecret() failed: %s", err)
@@ -51,23 +34,14 @@ func TestWithMtlsHTTPClientIsCallableExternally(t *testing.T) {
 		"https://login.microsoftonline.com/tenant",
 		"client-id",
 		cred,
-		confidential.WithMtlsHTTPClient(factory),
+		confidential.WithHTTPClient(factory),
 	); err != nil {
-		t.Fatalf("New() with WithMtlsHTTPClient failed: %s", err)
+		t.Fatalf("New() with an MtlsHTTPClientFactory failed: %s", err)
 	}
 
-	// The option only installs the factory; nothing invokes it until an mTLS PoP token request runs.
-	if called {
-		t.Error("the factory must not be invoked at construction time")
-	}
-
-	// A nil factory must be accepted and must leave MSAL on its built-in client builder.
-	if _, err := confidential.New(
-		"https://login.microsoftonline.com/tenant",
-		"client-id",
-		cred,
-		confidential.WithMtlsHTTPClient(nil),
-	); err != nil {
-		t.Fatalf("New() with a nil mTLS factory failed: %s", err)
+	// Construction only detects the capability. The per-certificate cache invokes it lazily on the
+	// first mutual-TLS token request.
+	if factory.calls != 0 {
+		t.Errorf("NewMtlsClient was called %d times during construction, want 0", factory.calls)
 	}
 }

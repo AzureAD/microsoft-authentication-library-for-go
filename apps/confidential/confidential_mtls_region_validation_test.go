@@ -75,7 +75,7 @@ func TestMtlsPoPInvalidForceRegionIsRejectedBeforeHTTP(t *testing.T) {
 	client, err := New(fmt.Sprintf(authorityFmt, "login.microsoftonline.com", "tenant"), fakeClientID, cred,
 		WithHTTPClient(blocked),
 		WithInstanceDiscovery(false),
-		WithMtlsHTTPClient(func(tls.Certificate) *http.Client {
+		withTestMtlsClient(func(tls.Certificate) *http.Client {
 			return &http.Client{Transport: blocked}
 		}),
 	)

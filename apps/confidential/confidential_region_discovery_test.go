@@ -162,7 +162,7 @@ func acquireForRegionDiscovery(t *testing.T, host, tenant string, mtlsPoP, autoD
 	var acquireOpts []AcquireByCredentialOption
 	if mtlsPoP {
 		client.tokenBody = mtlsPoPTokenBody("mtls-access-token", 3600)
-		opts = append(opts, WithMtlsHTTPClient(func(tls.Certificate) *http.Client {
+		opts = append(opts, withTestMtlsClient(func(tls.Certificate) *http.Client {
 			return &http.Client{Transport: routingTransport{client: client}}
 		}))
 		acquireOpts = append(acquireOpts, WithMtlsProofOfPossession())
