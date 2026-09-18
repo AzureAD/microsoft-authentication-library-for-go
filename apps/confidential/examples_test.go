@@ -9,10 +9,58 @@ import (
 	"crypto/tls"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
 )
+
+type exampleMiddlewareClient struct {
+	client *http.Client
+}
+
+func (c *exampleMiddlewareClient) Do(req *http.Request) (*http.Response, error) {
+	// Apply middleware before terminating through MSAL's augmented client.
+	// #nosec G704 -- this adapter intentionally forwards MSAL's request to its configured HTTP client.
+	return c.client.Do(req)
+}
+
+func (c *exampleMiddlewareClient) CloseIdleConnections() {
+	c.client.CloseIdleConnections()
+}
+
+func (c *exampleMiddlewareClient) NewMtlsClient(
+	augment func(*http.Client) (*http.Client, error),
+) (confidential.HTTPClient, error) {
+	specialized, err := augment(c.client)
+	if err != nil {
+		return nil, err
+	}
+	return &exampleMiddlewareClient{client: specialized}, nil
+}
+
+func ExampleMtlsHTTPClientFactory() {
+	// This compile/configuration example demonstrates factory wiring only. A client-secret
+	// credential can't perform an mTLS acquisition, and this example doesn't attempt one.
+	cred, err := confidential.NewCredFromSecret("client_secret")
+	if err != nil {
+		// TODO: handle error
+	}
+	httpClient := &exampleMiddlewareClient{client: &http.Client{}}
+	client, err := confidential.New(
+		"https://login.microsoftonline.com/your_tenant",
+		"client_id",
+		cred,
+		confidential.WithHTTPClient(httpClient),
+	)
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// On each certificate cache miss, MSAL calls NewMtlsClient and supplies the certificate-specific
+	// augmenter. Repeated requests with the same certificate reuse the returned middleware client.
+	_ = client
+}
 
 // This example demonstrates the general pattern for authenticating with MSAL Go:
 //   - create a client (only necessary at application start--it's best to reuse client instances)

@@ -30,7 +30,7 @@ func TestCertificateMtlsCacheHitDoesNotResolveTokenEndpoint(t *testing.T) {
 	online.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("cached-token", "", "", "", 3600, 0)))
 	first, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(online),
-		WithMtlsHTTPClient(mockMtlsFactory(online)),
+		withTestMtlsClient(mockMtlsFactory(online)),
 		WithInstanceDiscovery(false),
 		WithSendCertificateOverMtls(),
 		WithCache(&cache),
@@ -46,7 +46,7 @@ func TestCertificateMtlsCacheHitDoesNotResolveTokenEndpoint(t *testing.T) {
 	var factoryCalls int32
 	second, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(offline),
-		WithMtlsHTTPClient(func(tls.Certificate) *http.Client {
+		withTestMtlsClient(func(tls.Certificate) *http.Client {
 			atomic.AddInt32(&factoryCalls, 1)
 			return &http.Client{}
 		}),

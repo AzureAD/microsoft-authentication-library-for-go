@@ -24,9 +24,15 @@ import (
 type recordingClient struct {
 	mu     sync.Mutex
 	closed int
+	did    int
 }
 
-func (r *recordingClient) Do(*http.Request) (*http.Response, error) { return nil, nil }
+func (r *recordingClient) Do(*http.Request) (*http.Response, error) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	r.did++
+	return nil, nil
+}
 
 func (r *recordingClient) CloseIdleConnections() {
 	r.mu.Lock()
@@ -38,6 +44,12 @@ func (r *recordingClient) closeCount() int {
 	r.mu.Lock()
 	defer r.mu.Unlock()
 	return r.closed
+}
+
+func (r *recordingClient) doCount() int {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return r.did
 }
 
 type recordingTransport struct {
@@ -274,23 +286,66 @@ func TestBuildMtlsClientRejectsOpaqueTransport(t *testing.T) {
 			if client != nil {
 				t.Errorf("BuildMtlsClient returned a client (%T) alongside an error", client)
 			}
-			if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
-				t.Errorf("error does not name WithMtlsHTTPClient: %v", err)
+			if !strings.Contains(err.Error(), "MtlsHTTPClientFactory") {
+				t.Errorf("error does not name MtlsHTTPClientFactory: %v", err)
 			}
 		})
+	}
+}
+
+// TestMtlsClientFactoryRejectsTypedNilTransport covers an interface containing a nil
+// *http.Transport. The type assertion succeeds for this value, so the augmenter must reject it
+// before transport validation dereferences it.
+func TestMtlsClientFactoryRejectsTypedNilTransport(t *testing.T) {
+	cert := parseableTestCert(t, 27)
+	var transport *http.Transport
+	returned := &recordingClient{}
+	c := &Client{}
+	c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
+		_, _ = augment(&http.Client{Transport: transport})
+		return returned, nil
+	})
+
+	got, err := c.mtlsClient(&cert)
+	if err == nil {
+		t.Fatal("mtlsClient with a typed-nil *http.Transport = nil error, want an error")
+	}
+	if got != nil {
+		t.Errorf("mtlsClient returned %T alongside an error", got)
+	}
+	if !strings.Contains(err.Error(), "nil *http.Transport") {
+		t.Errorf("error = %v, want typed-nil transport explanation", err)
+	}
+	if n := returned.doCount(); n != 0 {
+		t.Errorf("factory client transmitted %d requests, want 0", n)
+	}
+	if n := returned.closeCount(); n != 1 {
+		t.Errorf("rejected factory client had CloseIdleConnections called %d times, want 1", n)
 	}
 }
 
 // TestMtlsClientPropagatesBuildError pins that the failure reaches the caller of a token request
 // rather than being swallowed into a cached client.
 func TestMtlsClientPropagatesBuildError(t *testing.T) {
-	c := &Client{client: &recordingClient{}}
+	base := &recordingClient{}
+	c := &Client{client: base}
 	certValue := parseableTestCert(t, 13)
 	cert := &certValue
-	if _, err := c.mtlsClient(cert); err == nil {
-		t.Fatal("mtlsClient with an opaque base client = nil error, want an error")
-	} else if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
-		t.Errorf("error does not name WithMtlsHTTPClient: %v", err)
+	var response struct{}
+	err := c.URLFormCallWithCertificate(
+		context.Background(),
+		"https://example.invalid/token",
+		url.Values{"grant_type": {"client_credentials"}},
+		&response,
+		cert,
+	)
+	if err == nil {
+		t.Fatal("token request with an opaque base client = nil error, want an error")
+	} else if !strings.Contains(err.Error(), "MtlsHTTPClientFactory") {
+		t.Errorf("error does not name MtlsHTTPClientFactory: %v", err)
+	}
+	if got := base.doCount(); got != 0 {
+		t.Errorf("opaque base transmitted %d requests, want 0", got)
 	}
 	c.mtlsMu.Lock()
 	size := len(c.mtlsClients)
@@ -358,7 +413,7 @@ func TestMtlsClientFactoryNotCalledUnderLock(t *testing.T) {
 	certB := &certBValue
 
 	c := &Client{}
-	c.SetMtlsClientFactory(func(cert tls.Certificate) HTTPClient {
+	c.setTestMtlsClientFactory(func(cert tls.Certificate) HTTPClient {
 		if cert.Leaf != nil && cert.Leaf.SerialNumber.Int64() == 16 {
 			// Re-enter the Client from inside the factory.
 			if _, err := c.mtlsClient(certB); err != nil {
@@ -382,80 +437,131 @@ func TestMtlsClientFactoryNotCalledUnderLock(t *testing.T) {
 	}
 }
 
-// TestMtlsClientConcurrentSameCertPublishesOneClient covers the double-check publish. Many
-// goroutines racing on the same thumbprint must all end up with the same client, and no client may
-// be closed: they all came from the caller's factory, which owns their lifetime. Closing a race
-// loser here is what breaks a memoizing factory, where the "loser" is the same object as the winner.
+// TestMtlsClientConcurrentSameCertPublishesOneClient covers the double-check publish. Every
+// goroutine reaches the factory before any factory may return, so all of them construct clients and
+// contend to publish the same thumbprint. They must all receive one winner, and every specialized
+// race loser must have its idle pool closed.
 func TestMtlsClientConcurrentSameCertPublishesOneClient(t *testing.T) {
 	certValue := parseableTestCert(t, 18)
 	cert := &certValue
 
+	const goroutines = 16
+	arrived := make(chan struct{}, goroutines)
+	release := make(chan struct{})
+	var releaseOnce sync.Once
+	releaseBuilders := func() {
+		releaseOnce.Do(func() { close(release) })
+	}
+	t.Cleanup(releaseBuilders)
+
 	var mu sync.Mutex
-	built := []*recordingClient{}
+	built := make([]*recordingClient, 0, goroutines)
 	c := &Client{}
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		rc := &recordingClient{}
 		mu.Lock()
 		built = append(built, rc)
 		mu.Unlock()
-		// Widen the window between building and publishing so losers are likely.
-		time.Sleep(time.Millisecond)
+		arrived <- struct{}{}
+		<-release
 		return recordingHTTPClient(rc)
 	})
 
-	const goroutines = 16
-	results := make(chan HTTPClient, goroutines)
-	var wg sync.WaitGroup
+	type result struct {
+		client HTTPClient
+		err    error
+	}
+	results := make(chan result, goroutines)
 	for i := 0; i < goroutines; i++ {
-		wg.Add(1)
 		go func() {
-			defer wg.Done()
 			got, err := c.mtlsClient(cert)
-			if err != nil {
-				t.Errorf("mtlsClient failed: %v", err)
-				results <- nil
-				return
-			}
-			results <- got
+			results <- result{client: got, err: err}
 		}()
 	}
-	wg.Wait()
-	close(results)
+
+	arrivalGuard := time.NewTimer(10 * time.Second)
+	defer arrivalGuard.Stop()
+	for i := 0; i < goroutines; i++ {
+		select {
+		case <-arrived:
+		case <-arrivalGuard.C:
+			t.Fatalf("%d of %d same-certificate factory builds reached the publication barrier", i, goroutines)
+		}
+	}
+	mu.Lock()
+	builtBeforeRelease := len(built)
+	mu.Unlock()
+	if builtBeforeRelease < 2 {
+		t.Fatalf("factory built %d clients before release, want multiple clients in the publication race", builtBeforeRelease)
+	}
+	if builtBeforeRelease != goroutines {
+		t.Fatalf("factory built %d clients before release, want %d", builtBeforeRelease, goroutines)
+	}
+	releaseBuilders()
 
 	var winner HTTPClient
-	for got := range results {
-		if got == nil {
-			t.Fatal("mtlsClient returned nil")
-		}
-		if winner == nil {
-			winner = got
-		} else if got != winner {
-			t.Fatal("concurrent callers got different clients for the same thumbprint")
+	completionGuard := time.NewTimer(10 * time.Second)
+	defer completionGuard.Stop()
+	for i := 0; i < goroutines; i++ {
+		select {
+		case result := <-results:
+			if result.err != nil {
+				t.Fatalf("mtlsClient failed: %v", result.err)
+			}
+			if result.client == nil {
+				t.Fatal("mtlsClient returned nil")
+			}
+			if winner == nil {
+				winner = result.client
+			} else if result.client != winner {
+				t.Fatal("concurrent callers got different clients for the same thumbprint")
+			}
+		case <-completionGuard.C:
+			t.Fatalf("%d of %d same-certificate callers completed after release", i, goroutines)
 		}
 	}
 
 	mu.Lock()
-	defer mu.Unlock()
-	for _, rc := range built {
-		if n := rc.closeCount(); n != 0 {
-			t.Errorf("a factory-supplied client was closed %d times, want 0", n)
+	allBuilt := append([]*recordingClient(nil), built...)
+	mu.Unlock()
+	if len(allBuilt) != goroutines {
+		t.Fatalf("factory built %d clients, want %d", len(allBuilt), goroutines)
+	}
+	winnerClient, ok := winner.(*http.Client)
+	if !ok {
+		t.Fatalf("winner = %T, want *http.Client", winner)
+	}
+	winnerTransport, ok := winnerClient.Transport.(recordingTransport)
+	if !ok {
+		t.Fatalf("winner transport = %T, want recordingTransport", winnerClient.Transport)
+	}
+	losers := 0
+	for _, rc := range allBuilt {
+		want := 1
+		if rc == winnerTransport.recorder {
+			want = 0
+		} else {
+			losers++
 		}
+		if n := rc.closeCount(); n != want {
+			t.Errorf("specialized client CloseIdleConnections calls = %d, want %d", n, want)
+		}
+	}
+	if losers != goroutines-1 {
+		t.Fatalf("publication race produced %d losers, want %d", losers, goroutines-1)
 	}
 }
 
 // TestMtlsClientCacheCapClears pins the cap-then-clear policy, which is exact parity with MSAL .NET's
 // SimpleHttpClientFactory.CheckAndManageCache (clear at 1000, no eviction ordering, no disposal).
 //
-// The clients here all came from a caller-supplied factory, so none of them may be closed: a factory
-// is free to memoize, in which case every entry in the cache - and the newcomer that just tripped
-// the cap - is the same *http.Client, and "closing the evicted entries" would tear down the pool of
-// the client being returned. MSAL closes only pools it created; see
-// TestMtlsClientCacheCapClosesOnlyMsalBuiltClients for that half.
+// Factory clients are created specifically for one cache entry, so clearing the cache must close
+// every discarded specialized client while leaving the newly published one open.
 func TestMtlsClientCacheCapClears(t *testing.T) {
 	var mu sync.Mutex
 	built := []*recordingClient{}
 	c := &Client{}
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		rc := &recordingClient{}
 		mu.Lock()
 		built = append(built, rc)
@@ -496,25 +602,27 @@ func TestMtlsClientCacheCapClears(t *testing.T) {
 		t.Fatalf("factory produced %d clients, want %d", len(built), maxMtlsClients+1)
 	}
 	for i, rc := range built {
-		if n := rc.closeCount(); n != 0 {
-			t.Fatalf("factory-supplied client %d had CloseIdleConnections called %d times, want 0: MSAL must not close a pool the caller owns", i, n)
+		want := 1
+		if i == maxMtlsClients {
+			want = 0
+		}
+		if n := rc.closeCount(); n != want {
+			t.Fatalf("specialized client %d had CloseIdleConnections called %d times, want %d", i, n, want)
 		}
 	}
 }
 
-// TestMtlsClientCacheCapClosesOnlyMsalBuiltClients is the other half of the ownership rule: a client
-// MSAL built (no factory installed) still has its keep-alive sockets released when the cap clears it,
-// because nothing else in the process holds a reference to reclaim them. The cache is seeded directly
-// so both provenances can be observed with recording clients.
-func TestMtlsClientCacheCapClosesOnlyMsalBuiltClients(t *testing.T) {
+// TestMtlsClientCacheCapClosesBuiltAndSpecializedClients verifies that both direct and factory-built
+// cache entries release their idle pools when the cap clears.
+func TestMtlsClientCacheCapClosesBuiltAndSpecializedClients(t *testing.T) {
 	msalBuilt := &recordingClient{}
-	callerOwned := &recordingClient{}
+	specialized := &recordingClient{}
 
 	c := &Client{}
 	c.mtlsMu.Lock()
 	c.mtlsClients = map[string]mtlsCacheEntry{
-		"msal-built":   {client: msalBuilt, owned: true},
-		"caller-owned": {client: callerOwned, owned: false},
+		"msal-built":  {client: msalBuilt, owned: true},
+		"specialized": {client: specialized, owned: true},
 	}
 	for i := 0; len(c.mtlsClients) < maxMtlsClients; i++ {
 		c.mtlsClients["filler-"+strconv.Itoa(i)] = mtlsCacheEntry{client: &recordingClient{}, owned: true}
@@ -537,44 +645,46 @@ func TestMtlsClientCacheCapClosesOnlyMsalBuiltClients(t *testing.T) {
 	if n := msalBuilt.closeCount(); n != 1 {
 		t.Errorf("MSAL-built client had CloseIdleConnections called %d times, want 1", n)
 	}
-	if n := callerOwned.closeCount(); n != 0 {
-		t.Errorf("caller-supplied client had CloseIdleConnections called %d times, want 0", n)
+	if n := specialized.closeCount(); n != 1 {
+		t.Errorf("specialized client had CloseIdleConnections called %d times, want 1", n)
 	}
 }
 
-// TestMtlsClientRaceLoserKeepsCallerClientOpen covers the other eviction path. A factory that
-// memoizes returns the same client to both racers, so the loser closing "its" client would close the
-// exact object it is about to hand back. The interleaving is forced by publishing the winner from
-// inside the factory, which mtlsClient invokes outside mtlsMu.
-func TestMtlsClientRaceLoserKeepsCallerClientOpen(t *testing.T) {
+// TestMtlsClientRaceLoserClosesSpecializedClient covers the other eviction path. The interleaving
+// is forced by publishing a winner from inside the factory, which mtlsClient invokes outside mtlsMu.
+func TestMtlsClientRaceLoserClosesSpecializedClient(t *testing.T) {
 	certValue := parseableTestCert(t, 20)
 	cert := &certValue
 	sum := sha256.Sum256(cert.Certificate[0])
 	key := base64.RawURLEncoding.EncodeToString(sum[:])
 
-	shared := &recordingClient{}
+	winner := &recordingClient{}
+	loser := &recordingClient{}
 	c := &Client{}
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		c.mtlsMu.Lock()
 		if c.mtlsClients == nil {
 			c.mtlsClients = map[string]mtlsCacheEntry{}
 		}
 		if _, ok := c.mtlsClients[key]; !ok {
-			c.mtlsClients[key] = mtlsCacheEntry{client: shared}
+			c.mtlsClients[key] = mtlsCacheEntry{client: winner, owned: true}
 		}
 		c.mtlsMu.Unlock()
-		return recordingHTTPClient(shared)
+		return loser
 	})
 
 	got, err := c.mtlsClient(cert)
 	if err != nil {
 		t.Fatalf("mtlsClient failed: %v", err)
 	}
-	if got != shared {
-		t.Fatalf("mtlsClient returned %p, want the published client %p", got, shared)
+	if got != winner {
+		t.Fatalf("mtlsClient returned %p, want the published client %p", got, winner)
 	}
-	if n := shared.closeCount(); n != 0 {
-		t.Errorf("the client returned to the caller had CloseIdleConnections called %d times, want 0", n)
+	if n := winner.closeCount(); n != 0 {
+		t.Errorf("published client had CloseIdleConnections called %d times, want 0", n)
+	}
+	if n := loser.closeCount(); n != 1 {
+		t.Errorf("race loser had CloseIdleConnections called %d times, want 1", n)
 	}
 }
 
@@ -596,10 +706,10 @@ func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
 
 	c := &Client{}
 	var swapped bool
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		if !swapped {
 			swapped = true
-			c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return currentClient })
+			c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient { return currentClient })
 			return retiredClient
 		}
 		t.Error("the retired factory was consulted again after being replaced")
@@ -624,9 +734,8 @@ func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
 			t.Error("the cache published a client built by the retired factory")
 		}
 	}
-	// The discarded client came from the caller's factory, so MSAL must not close it either.
-	if n := retired.closeCount(); n != 0 {
-		t.Errorf("discarded caller-supplied client had CloseIdleConnections called %d times, want 0", n)
+	if n := retired.closeCount(); n != 1 {
+		t.Errorf("discarded specialized client had CloseIdleConnections called %d times, want 1", n)
 	}
 }
 
@@ -642,12 +751,12 @@ func TestSetMtlsClientFactoryClosesDiscardedClients(t *testing.T) {
 	cert := &certValue
 	rc := &recordingClient{}
 	c := &Client{}
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return recordingHTTPClient(rc) })
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient { return recordingHTTPClient(rc) })
 	if _, err := c.mtlsClient(cert); err != nil {
 		t.Fatalf("mtlsClient failed: %v", err)
 	}
 
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient { return &http.Client{} })
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient { return &http.Client{} })
 	if n := rc.closeCount(); n != 1 {
 		t.Errorf("discarded client had CloseIdleConnections called %d times, want 1", n)
 	}
@@ -666,7 +775,7 @@ func TestMtlsClientRejectsTypedNilFactoryResult(t *testing.T) {
 	certValue := parseableTestCert(t, 23)
 	cert := &certValue
 	c := &Client{}
-	c.SetMtlsClientFactory(func(tls.Certificate) HTTPClient {
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		var typedNil *http.Client
 		return typedNil
 	})

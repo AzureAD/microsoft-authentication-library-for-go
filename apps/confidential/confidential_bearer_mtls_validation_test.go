@@ -154,7 +154,7 @@ func newBearerMtlsClient(t *testing.T, cred Credential, authorityURI string, ext
 	router := &bearerMtlsRouter{host: u.Host, tenant: strings.Trim(u.Path, "/")}
 	opts := append([]Option{
 		WithHTTPClient(router),
-		WithMtlsHTTPClient(routerMtlsFactory(router)),
+		withTestMtlsClient(routerMtlsFactory(router)),
 		WithSendCertificateOverMtls(),
 	}, extra...)
 	client, err := New(authorityURI, fakeClientID, cred, opts...)

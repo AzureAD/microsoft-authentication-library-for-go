@@ -7,9 +7,12 @@ import (
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"net/http"
 	"reflect"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/certutil"
@@ -22,42 +25,29 @@ import (
 // avoids carrying an LRU for a map that holds a single entry in the common case.
 const maxMtlsClients = 1000
 
-// MtlsClientFactory optionally builds an HTTPClient whose transport presents cert as the client
-// certificate during the mutual-TLS handshake. It is the public override hook
-// (confidential.WithMtlsHTTPClient), which is required whenever the client passed to
-// confidential.WithHTTPClient is not an *http.Client - a wrapper type may satisfy the HTTPClient
-// interface without being able to have a client certificate installed on it. When unset, MSAL
-// auto-builds and caches a client per certificate.
-//
-// The clients a factory returns belong to the caller. MSAL shallow-copies a concrete *http.Client,
-// caches the copy per certificate thumbprint, and never closes its aliased transport during internal
-// cache housekeeping. A non-*http.Client result is rejected because its redirect policy cannot be
-// inspected or made fail-closed.
-type MtlsClientFactory func(cert tls.Certificate) HTTPClient
+// MtlsClientFactory asks the configured HTTP client to wrap a base client after augment installs the
+// exact binding certificate and MSAL's transport requirements. The returned client is cached per
+// certificate thumbprint and may preserve middleware around the augmented transport.
+type MtlsClientFactory func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error)
 
 // mtlsCacheEntry is one cached per-certificate mTLS client plus the provenance that decides whether
 // MSAL may close its idle connections.
 type mtlsCacheEntry struct {
 	client HTTPClient
-	// owned reports whether BuildMtlsClient produced client, in which case MSAL created its
-	// connection pool and may tear it down when the entry is discarded. A factory result is
-	// shallow-copied, so its transport can still be caller-owned and aliased elsewhere. Closing it
-	// during MSAL's own cache housekeeping would reach into application state MSAL does not own.
+	// owned reports whether this client was created for this cache entry. Both BuildMtlsClient and
+	// MtlsClientFactory create per-certificate clients whose idle pools must be closed when dropped.
 	owned bool
 }
 
-// SetMtlsClientFactory installs a custom factory for building mTLS clients. It is intended to be
-// called during construction, before any concurrent token calls. The assignment is guarded by mtlsMu
-// (paired with the read in mtlsClient) and resets the per-certificate client cache so cached clients
-// can't mix factories. Bumping mtlsGeneration lets an mtlsClient call that is building outside the
-// lock notice the swap instead of publishing a client from the previous factory into the fresh map.
+// SetMtlsClientFactory installs the configured HTTP client's mTLS factory capability. It is intended
+// to be called during construction, before any concurrent token calls. The assignment is guarded by
+// mtlsMu (paired with the read in mtlsClient) and resets the per-certificate client cache so cached
+// clients can't mix factories. Bumping mtlsGeneration lets an mtlsClient call that is building
+// outside the lock notice the swap instead of publishing a client from the previous factory into the
+// fresh map.
 //
 // The discarded clients are asked to close their idle connections, because Go's http.Transport holds
-// keep-alive sockets that nothing else will reclaim. Unlike mtlsClient's eviction paths, this one
-// closes caller-supplied clients too, and deliberately so: it is an explicit caller-initiated
-// lifecycle event - the application is retiring the factory that produced them - rather than MSAL's
-// own invisible cache housekeeping, and nothing is published afterwards, so this can never close a
-// client it is about to hand back.
+// keep-alive sockets that nothing else will reclaim.
 func (c *Client) SetMtlsClientFactory(factory MtlsClientFactory) {
 	c.mtlsMu.Lock()
 	discarded := c.mtlsClients
@@ -66,7 +56,7 @@ func (c *Client) SetMtlsClientFactory(factory MtlsClientFactory) {
 	c.mtlsGeneration++
 	c.mtlsMu.Unlock()
 
-	// Outside the lock: CloseIdleConnections on a caller-supplied client is arbitrary code that may
+	// Outside the lock: CloseIdleConnections on a specialized client is arbitrary code that may
 	// call back into this Client, and mtlsMu is a plain sync.Mutex.
 	for _, entry := range discarded {
 		closeIdleConnections(entry.client)
@@ -81,7 +71,7 @@ func (c *Client) SetMtlsClientFactory(factory MtlsClientFactory) {
 // caller's proxy, dialer and root CAs survive on mTLS token requests. When base is shaped so that
 // the binding certificate cannot actually reach the handshake - an opaque http.RoundTripper, or an
 // *http.Transport that owns the handshake through DialTLS/DialTLSContext - this returns an error
-// naming confidential.WithMtlsHTTPClient instead of quietly rerouting the request; see
+// naming confidential.MtlsHTTPClientFactory instead of quietly rerouting the request; see
 // cloneBaseTransport. Dropping the caller's transport unconditionally was a real parity gap: MSAL
 // .NET's HttpManager routes through the configured IMsalHttpClientFactory on every branch and never
 // builds from a hidden default.
@@ -156,8 +146,7 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error
 // A caller who did set CheckRedirect has stated a policy, and MSAL does not silently override
 // explicit caller configuration - the same rule cloneBaseTransport exists to honor. If that policy
 // permits a redirect then the credential and the binding certificate do reach the target; owning
-// redirect handling means owning that, and confidential.WithMtlsHTTPClient is the hook for callers
-// who want to own the whole leg.
+// redirect handling means owning that.
 func mtlsCheckRedirect(base HTTPClient) func(req *http.Request, via []*http.Request) error {
 	if hc, ok := base.(*http.Client); ok && hc != nil && hc.CheckRedirect != nil {
 		return hc.CheckRedirect
@@ -170,7 +159,7 @@ func refuseMtlsRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) > 0 && via[len(via)-1].URL != nil {
 		from = via[len(via)-1].URL.Redacted()
 	}
-	return fmt.Errorf("mTLS proof-of-possession token request to %s was redirected to %s; refusing to follow it, because a 307 or 308 replays the request body carrying the client credential and the mutual-TLS handshake would present the binding certificate to the redirect target. Set CheckRedirect on the client passed to WithHTTPClient, or use WithMtlsHTTPClient, to own redirect handling on this leg", from, req.URL.Redacted())
+	return fmt.Errorf("mTLS proof-of-possession token request to %s was redirected to %s; refusing to follow it, because a 307 or 308 replays the request body carrying the client credential and the mutual-TLS handshake would present the binding certificate to the redirect target. Set CheckRedirect on the *http.Client passed to WithHTTPClient, or on the base client passed to the MtlsHTTPClientFactory augmenter, to own redirect handling on this leg", from, req.URL.Redacted())
 }
 
 // cloneBaseTransport returns a private copy of the transport mTLS requests should build on: the
@@ -184,8 +173,8 @@ func refuseMtlsRedirect(req *http.Request, via []*http.Request) error {
 // http.DefaultTransport would yield a token request that works while silently leaving the caller's
 // network path: mandatory proxy routing, certificate pinning, auditing, request signing and egress
 // policy would all be bypassed for the one request that carries a client credential. Documenting
-// that fallback does not make it safe, so this fails instead and points at WithMtlsHTTPClient,
-// which is how a caller keeps ownership of this leg.
+// that fallback does not make it safe, so this fails instead and points at
+// confidential.MtlsHTTPClientFactory, which is how a wrapper keeps ownership of this leg.
 //
 // An *http.Transport with DialTLS or DialTLSContext set is rejected for the same reason one layer
 // down. net/http hands the entire TLS handshake to those hooks and documents that TLSClientConfig
@@ -218,12 +207,15 @@ func cloneBaseTransport(base HTTPClient) (*http.Transport, error) {
 	if !isNilClient(base) {
 		hc, ok := base.(*http.Client)
 		if !ok {
-			return nil, fmt.Errorf("mTLS proof-of-possession cannot use the configured HTTP client: %T is not an *http.Client, so the binding certificate cannot be installed on its transport, and falling back to the default transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls it enforces. Use WithMtlsHTTPClient to supply a client that presents the binding certificate", base)
+			return nil, fmt.Errorf("mTLS proof-of-possession cannot use the configured HTTP client: %T is not an *http.Client and does not implement confidential.MtlsHTTPClientFactory, so the binding certificate cannot be installed on its transport, and falling back to the default transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls it enforces", base)
 		}
 		if hc.Transport != nil {
 			t, ok := hc.Transport.(*http.Transport)
 			if !ok {
-				return nil, fmt.Errorf("mTLS proof-of-possession cannot use the configured HTTP client: its Transport is a %T, not an *http.Transport, so the binding certificate cannot be installed on it, and falling back to the default transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls that wrapper enforces. Use WithMtlsHTTPClient to supply a client that presents the binding certificate", hc.Transport)
+				return nil, fmt.Errorf("mTLS proof-of-possession cannot use the configured HTTP client: its Transport is a %T, not an *http.Transport, so the binding certificate cannot be installed on it, and falling back to the default transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls that wrapper enforces. Pass a confidential.MtlsHTTPClientFactory to WithHTTPClient so the wrapper can preserve that transport around an MSAL-augmented base client", hc.Transport)
+			}
+			if t == nil {
+				return nil, fmt.Errorf("mTLS proof-of-possession cannot use the configured HTTP client: its Transport is a nil *http.Transport, so the binding certificate cannot be installed on it, and falling back to the default transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls that wrapper enforces. Pass a confidential.MtlsHTTPClientFactory to WithHTTPClient so the wrapper can preserve that transport around an MSAL-augmented base client")
 			}
 			if err := rejectTLSDialHooks(t, "the configured HTTP client's *http.Transport", callerHookRemedy); err != nil {
 				return nil, err
@@ -249,13 +241,13 @@ func cloneBaseTransport(base HTTPClient) (*http.Transport, error) {
 	return nil, fmt.Errorf("mTLS proof-of-possession cannot use http.DefaultTransport because it is a %T, not an *http.Transport: something in this process replaced the package-level variable, and falling back to a freshly constructed transport would route a credential-bearing token request outside any proxy, pinning, auditing or egress controls it enforces, and would ignore HTTP_PROXY, HTTPS_PROXY and NO_PROXY. %s", http.DefaultTransport, defaultHookRemedy)
 }
 
-// Remedies for rejectTLSDialHooks. Both point at WithMtlsHTTPClient, but only the caller-transport
+// Remedies for rejectTLSDialHooks. Both point at MtlsHTTPClientFactory, but only the caller-transport
 // case may imply the application installed the hook: http.DefaultTransport is an exported
 // package-level variable that anything in the process can patch, so MSAL must not tell a caller they
 // configured something they did not.
 const (
-	callerHookRemedy  = "Use WithMtlsHTTPClient to supply a client that presents the binding certificate"
-	defaultHookRemedy = "MSAL did not configure this transport - http.DefaultTransport is an exported package-level variable and something else in this process installed the hook on it. Use WithMtlsHTTPClient to supply a client that presents the binding certificate, or pass your own *http.Transport with WithHTTPClient"
+	callerHookRemedy  = "Pass a confidential.MtlsHTTPClientFactory to WithHTTPClient so it can preserve this network path around an MSAL-augmented base client"
+	defaultHookRemedy = "MSAL did not configure this transport - http.DefaultTransport is an exported package-level variable and something else in this process installed the hook on it. Pass your own *http.Transport with WithHTTPClient, or pass a confidential.MtlsHTTPClientFactory that supplies a safe base client to the augmenter"
 )
 
 // rejectTLSDialHooks fails when transport establishes TLS itself. http.Transport.Clone copies
@@ -281,6 +273,138 @@ func rejectTLSDialHooks(t *http.Transport, source, remedy string) error {
 	return fmt.Errorf("mTLS proof-of-possession cannot use %s because it sets %s: net/http then establishes TLS through that hook and ignores TLSClientConfig, so the binding certificate would never be offered (or a different one would be) and the TLS 1.2 minimum, RootCAs and TLSHandshakeTimeout would all be silently dropped. %s", source, hook, remedy)
 }
 
+// buildMtlsClientFromFactory validates the synchronous augmentation contract and returns the
+// middleware-capable client the configured HTTP client created for one certificate snapshot.
+func buildMtlsClientFromFactory(factory MtlsClientFactory, cert tls.Certificate) (HTTPClient, error) {
+	var (
+		mu             sync.Mutex
+		augmentCalls   int
+		augmentErr     error
+		augmented      *http.Client
+		factoryDone    bool
+		lateInvocation = errors.New("mTLS HTTP client factory called augment after NewMtlsClient returned; augment must be called exactly once and synchronously")
+	)
+	augment := func(base *http.Client) (*http.Client, error) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		if factoryDone {
+			return nil, lateInvocation
+		}
+		augmentCalls++
+		if augmentCalls > 1 {
+			err := fmt.Errorf("mTLS HTTP client factory called augment %d times; it must call augment exactly once", augmentCalls)
+			augmentErr = combineMtlsErrors(augmentErr, err)
+			return nil, err
+		}
+		if base == nil {
+			err := errors.New("mTLS HTTP client factory called augment with a nil base *http.Client; it must supply a non-nil base client")
+			augmentErr = combineMtlsErrors(augmentErr, err)
+			return nil, err
+		}
+
+		var err error
+		augmented, err = BuildMtlsClient(cert, base)
+		if err != nil {
+			augmentErr = combineMtlsErrors(augmentErr, err)
+		}
+		return augmented, err
+	}
+
+	produced, factoryErr := factory(augment)
+
+	mu.Lock()
+	factoryDone = true
+	calls := augmentCalls
+	recordedAugmentErr := augmentErr
+	built := augmented
+	mu.Unlock()
+
+	var contractErr error
+	if calls != 1 {
+		contractErr = fmt.Errorf("mTLS HTTP client factory must call augment exactly once and synchronously, got %d calls", calls)
+	}
+	var resultErr error
+	if isNilClient(produced) {
+		resultErr = errors.New("mTLS HTTP client factory returned a nil client")
+	}
+	if factoryErr != nil {
+		factoryErr = fmt.Errorf("mTLS HTTP client factory failed: %w", factoryErr)
+	}
+	err := combineMtlsErrors(factoryErr, recordedAugmentErr, contractErr, resultErr)
+	if err == nil {
+		return produced, nil
+	}
+
+	// A failed factory never publishes a client. Prefer closing its returned wrapper so its
+	// CloseIdleConnections implementation can reach the augmented pool; if it returned nil after a
+	// successful augment, close that otherwise-unreachable pool directly.
+	if !isNilClient(produced) {
+		closeIdleConnections(produced)
+	} else if built != nil {
+		built.CloseIdleConnections()
+	}
+	return nil, err
+}
+
+// mtlsErrors retains every relevant factory/augmentation error on Go versions predating
+// errors.Join. Is and As search every constituent so callers can still identify either failure.
+type mtlsErrors struct {
+	errs []error
+}
+
+func (e mtlsErrors) Error() string {
+	messages := make([]string, len(e.errs))
+	for i, err := range e.errs {
+		messages[i] = err.Error()
+	}
+	return strings.Join(messages, "; ")
+}
+
+func (e mtlsErrors) Unwrap() error {
+	return e.errs[0]
+}
+
+func (e mtlsErrors) Is(target error) bool {
+	for _, err := range e.errs {
+		if errors.Is(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func (e mtlsErrors) As(target interface{}) bool {
+	for _, err := range e.errs {
+		if errors.As(err, target) {
+			return true
+		}
+	}
+	return false
+}
+
+func combineMtlsErrors(errs ...error) error {
+	combined := make([]error, 0, len(errs))
+	for _, err := range errs {
+		if err == nil {
+			continue
+		}
+		if nested, ok := err.(mtlsErrors); ok {
+			combined = append(combined, nested.errs...)
+			continue
+		}
+		combined = append(combined, err)
+	}
+	switch len(combined) {
+	case 0:
+		return nil
+	case 1:
+		return combined[0]
+	default:
+		return mtlsErrors{errs: combined}
+	}
+}
+
 // mtlsClient returns an HTTPClient bound to cert, building and caching one per certificate thumbprint
 // so repeated mTLS PoP calls reuse the same connection pool.
 func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
@@ -291,9 +415,8 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 		return nil, fmt.Errorf("mTLS proof-of-possession binding certificate is missing its private key")
 	}
 	// Everything below works from a private deep copy. The cache key is a digest of
-	// Certificate[0], and the certificate is then handed to a caller-supplied factory or to
-	// BuildMtlsClient, both of which take it by value -- a shallow copy that shares the backing
-	// arrays. Anything still holding those arrays could rewrite them after the key was computed,
+	// Certificate[0], and BuildMtlsClient then receives it by value -- a shallow copy that shares
+	// the backing arrays. Anything still holding those arrays could rewrite them after the key was computed,
 	// leaving the cached client presenting bytes that no longer match the thumbprint it is filed
 	// under, and the token bound to a certificate MSAL never saw. Copying first makes the key and
 	// the presented bytes derive from the same immutable snapshot.
@@ -325,21 +448,12 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 		// this Client would deadlock permanently, and a merely slow factory would serialize creation
 		// for every other certificate. MSAL .NET builds outside its lock too: SimpleHttpClientFactory
 		// evaluates CreateMtlsHttpClient(cert) before GetOrAdd is entered.
-		entry := mtlsCacheEntry{owned: factory == nil}
+		entry := mtlsCacheEntry{owned: true}
 		if factory != nil {
-			produced := factory(*pinned)
-			if isNilClient(produced) {
-				return nil, fmt.Errorf("mTLS proof-of-possession client factory returned a nil client")
+			entry.client, err = buildMtlsClientFromFactory(factory, *pinned)
+			if err != nil {
+				return nil, err
 			}
-			hc, ok := produced.(*http.Client)
-			if !ok {
-				return nil, fmt.Errorf("mTLS proof-of-possession client factory returned %T; a concrete *http.Client is required so MSAL can refuse redirects by default", produced)
-			}
-			copied := *hc
-			if copied.CheckRedirect == nil {
-				copied.CheckRedirect = refuseMtlsRedirect
-			}
-			entry.client = &copied
 		} else {
 			built, err := BuildMtlsClient(*pinned, base)
 			if err != nil {
@@ -386,9 +500,7 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 	}
 }
 
-// discardMtlsClient releases a client mtlsClient built but will not publish. Only a client MSAL
-// built is closed; a factory result's transport remains caller-owned even though MSAL copied the
-// surrounding *http.Client. See mtlsCacheEntry.
+// discardMtlsClient releases a client mtlsClient built but will not publish.
 func discardMtlsClient(entry mtlsCacheEntry) {
 	if entry.owned {
 		closeIdleConnections(entry.client)
@@ -413,10 +525,7 @@ func closeIdleConnections(client HTTPClient) {
 //	return c
 //
 // produces: client == nil is false because the interface carries a type, so without this check the
-// value would be cached and then panic on Do. The public option
-// (confidential.WithMtlsHTTPClient) returns a concrete *http.Client and normalizes nil before it
-// reaches here, but in-module factories still hand over an HTTPClient interface directly, so the
-// guard stays.
+// value would be cached and then panic on Do.
 func isNilClient(client HTTPClient) bool {
 	if client == nil {
 		return true

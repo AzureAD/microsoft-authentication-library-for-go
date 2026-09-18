@@ -121,11 +121,9 @@ func run(cfg config) error {
 		opts = append(opts, confidential.WithAzureRegion(cfg.region))
 	}
 	if cfg.trace {
-		// WithMtlsHTTPClient overrides how the mutual-TLS client is built. It is required whenever
-		// the client passed to WithHTTPClient is not an *http.Client - notably when an application
-		// reaches MSAL through Azure's azidentity. Here it is used only to observe the token
-		// request; the transport it builds mirrors the one MSAL builds by default.
-		opts = append(opts, confidential.WithMtlsHTTPClient(tracingMtlsClient))
+		// The wrapper implements MtlsHTTPClientFactory, so MSAL can install the selected certificate
+		// on its base client while retaining the wrapper around the specialized transport.
+		opts = append(opts, confidential.WithHTTPClient(&traceClient{client: &http.Client{}}))
 	}
 
 	// The authority must be tenanted. /common, /organizations and /consumers are rejected up front,
@@ -306,30 +304,22 @@ func refuseResourceRedirect(req *http.Request, via []*http.Request) error {
 	return fmt.Errorf("refusing resource redirect to %s because it could replay the bound token and client certificate", req.URL.Redacted())
 }
 
-// tracingMtlsClient builds the mutual-TLS client used for the token request and wraps its transport
-// so the request can be described on screen. The transport mirrors what MSAL builds by default
-// (binding certificate installed, TLS 1.2 floor); only the tracing wrapper is added.
-func tracingMtlsClient(cert tls.Certificate) *http.Client {
-	base := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		},
-	}
-	return &http.Client{Transport: traceTransport{base: base}}
-}
-
-// traceTransport prints what the mutual-TLS token request looks like on the wire. It exists so the
-// two non-obvious claims about this flow can be observed rather than taken on faith: the token
-// endpoint host is mtlsauth.*, not login.*, and the body carries no client_assertion.
+// traceClient prints what the mutual-TLS token request looks like on the wire. It exists so the two
+// non-obvious claims about this flow can be observed rather than taken on faith: the token endpoint
+// host is mtlsauth.*, not login.*, and the body carries no client_assertion.
 //
-// Only the token request travels on this transport. Instance and tenant discovery go over the
-// ordinary HTTP client, so exactly one request is traced.
-type traceTransport struct {
-	base http.RoundTripper
+// Only the specialized client returned by NewMtlsClient traces. Instance and tenant discovery use
+// the original wrapper, so exactly one request is traced.
+type traceClient struct {
+	client *http.Client
+	trace  bool
 }
 
-func (t traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (c *traceClient) Do(req *http.Request) (*http.Response, error) {
+	if !c.trace {
+		// #nosec G704 -- this adapter intentionally forwards MSAL's request to its configured HTTP client.
+		return c.client.Do(req)
+	}
 	section("token request (mutual-TLS leg)")
 	kv("method", req.Method)
 	kv("endpoint host", req.URL.Host)
@@ -363,7 +353,20 @@ func (t traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 	fmt.Println("  The client certificate is presented on this handshake; that is what authenticates the")
 	fmt.Println("  client and binds the token, which is why no client_assertion is needed.")
-	return t.base.RoundTrip(req)
+	// #nosec G704 -- this adapter intentionally forwards MSAL's request to its configured HTTP client.
+	return c.client.Do(req)
+}
+
+func (c *traceClient) CloseIdleConnections() {
+	c.client.CloseIdleConnections()
+}
+
+func (c *traceClient) NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (confidential.HTTPClient, error) {
+	augmented, err := augment(c.client)
+	if err != nil {
+		return nil, err
+	}
+	return &traceClient{client: augmented, trace: true}, nil
 }
 
 // The helpers below are duplicated rather than shared. A demo package shared across the mTLS pull

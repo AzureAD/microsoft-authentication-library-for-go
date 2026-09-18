@@ -505,12 +505,46 @@ type clientOptions struct {
 	authority, azureRegion                              string
 	capabilities                                        []string
 	disableInstanceDiscovery, sendX5C, sendCertOverMtls bool
-	httpClient                                          ops.HTTPClient
-	mtlsHTTPClientFactory                               ops.MtlsClientFactory
+	httpClient                                          HTTPClient
 }
 
 // Option is an optional argument to New().
 type Option func(o *clientOptions)
+
+// HTTPClient represents an HTTP client.
+type HTTPClient interface {
+	// Do sends an HTTP request and returns an HTTP response.
+	Do(req *http.Request) (*http.Response, error)
+
+	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
+	CloseIdleConnections()
+}
+
+// MtlsHTTPClientFactory is an [HTTPClient] that can create the specialized clients MSAL uses for
+// mutual-TLS token requests. MSAL detects this capability on the value passed to [WithHTTPClient]
+// and calls NewMtlsClient when a binding certificate misses its internal cache.
+//
+// NewMtlsClient must call augment exactly once, synchronously, with a non-nil base [*http.Client].
+// The callback returns a copy configured with MSAL's exact certificate snapshot, TLS requirements,
+// isolated session cache, and redirect policy. NewMtlsClient may wrap that client with middleware or
+// a pipeline, but every returned client's Do method must ultimately send through the augmented
+// client or its transport. Its CloseIdleConnections method must reach the specialized client's
+// connection pool.
+//
+// MSAL mechanically rejects an augment call that is missing, repeated, late, or given a nil base,
+// rejects a nil returned client, and returns recorded augmentation errors and factory errors. It
+// can't inspect arbitrary middleware to verify that Do routes through the augmented client or that
+// CloseIdleConnections reaches its connection pool; the factory is responsible for honoring those
+// two obligations.
+//
+// NewMtlsClient must be concurrency safe. Concurrent initial cache misses can invoke it more than
+// once for the same certificate, as well as for different certificates. MSAL publishes one client
+// per certificate and closes and discards successfully constructed clients that lose a same-
+// certificate publication race. Implementations should not add another certificate cache.
+type MtlsHTTPClientFactory interface {
+	HTTPClient
+	NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error)
+}
 
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
 func WithCache(accessor cache.ExportReplace) Option {
@@ -528,21 +562,21 @@ func WithClientCapabilities(capabilities []string) Option {
 	}
 }
 
-// WithHTTPClient allows for a custom HTTP client to be set.
-//
-// A plain HTTP client cannot carry the client certificate required for mTLS proof-of-possession
-// (see [WithMtlsProofOfPossession]); use [WithMtlsHTTPClient] to override the mTLS transport.
+// WithHTTPClient allows for a custom HTTP client to be set. For mutual-TLS token requests (see
+// [WithMtlsProofOfPossession] and [WithSendCertificateOverMtls]), MSAL either derives a specialized
+// client directly from an [*http.Client] or uses the [MtlsHTTPClientFactory] capability implemented
+// by this value.
 //
 // On that mutual-TLS leg MSAL installs the binding certificate on a copy of this client's transport,
 // which carries the caller's configuration across only when Transport is an [*http.Transport] - the
 // type that holds Proxy, DialContext and TLSClientConfig (including RootCAs). Shapes that cannot
 // carry the certificate into the handshake are rejected rather than quietly rerouted, and mTLS token
-// requests then fail with an error naming [WithMtlsHTTPClient]:
+// requests then fail with an error naming [MtlsHTTPClientFactory]:
 //
 //   - an httpClient that is not an [*http.Client] at all. This parameter is an interface, so any
 //     wrapper implementing Do and CloseIdleConnections is accepted here, but a TLS client
-//     certificate can only be installed through [*http.Transport], so such a wrapper must set
-//     [WithMtlsHTTPClient] to use mTLS proof-of-possession;
+//     certificate can only be installed through [*http.Transport], so such a wrapper must implement
+//     [MtlsHTTPClientFactory] to use mutual TLS;
 //   - a custom [http.RoundTripper], such as a tracing, retry, pinning or request-signing wrapper,
 //     because a TLS client certificate can only be installed through [*http.Transport], and
 //     substituting [http.DefaultTransport] would send a credential-bearing request outside whatever
@@ -554,59 +588,13 @@ func WithClientCapabilities(capabilities []string) Option {
 // builds on a clone of [http.DefaultTransport]. That clone is checked for TLS dial hooks too, since
 // [http.DefaultTransport] is an exported package-level variable anything in the process can patch.
 //
-// Redirects are refused on the mutual-TLS leg unless this client sets CheckRedirect. A 307 or 308
-// would replay the token request body, which carries a client credential, and present the binding
-// certificate to the redirect target. Setting CheckRedirect here takes ownership of that decision.
-func WithHTTPClient(httpClient ops.HTTPClient) Option {
+// Redirects are refused on the mutual-TLS leg unless the direct [*http.Client], or the base
+// [*http.Client] a factory passes to augment, sets CheckRedirect. A 307 or 308 would replay the token
+// request body, which carries a client credential, and present the binding certificate to the
+// redirect target. Setting CheckRedirect on that base takes ownership of the decision.
+func WithHTTPClient(httpClient HTTPClient) Option {
 	return func(o *clientOptions) {
 		o.httpClient = httpClient
-	}
-}
-
-// WithMtlsHTTPClient overrides how the mutual-TLS client is built for mTLS proof-of-possession
-// token requests (see [WithMtlsProofOfPossession]). The factory receives the binding certificate and
-// must return an [http.Client] whose transport presents that certificate during the TLS handshake.
-//
-// This option is REQUIRED whenever the value passed to [WithHTTPClient] is not an [*http.Client].
-// [WithHTTPClient] accepts an interface, but a TLS client certificate can only be installed through
-// [*http.Transport], so MSAL rejects any other implementation rather than reroute a
-// credential-bearing request onto [http.DefaultTransport] and out of whatever proxy, pinning,
-// auditing or egress controls the caller's client enforces. Owning the TLS handshake for its own
-// sake is the other, rarer reason to set it.
-//
-// It isn't needed for non-exportable keys: the binding certificate arrives here as a
-// [tls.Certificate] whose PrivateKey only has to implement [crypto.Signer], and a signer supplied
-// through [NewCredFromTLSCertificate] is passed straight to the built-in transport, which crypto/tls
-// signs with on both TLS 1.2 and 1.3. A KeyGuard, CNG or HSM-backed key is presented on the
-// handshake like any other.
-//
-// When unset, MSAL auto-builds and caches an mTLS client per certificate thumbprint.
-//
-// MSAL caches each factory result per certificate thumbprint, so the factory doesn't need to
-// memoize. Every returned client must present the certificate supplied to that invocation; one
-// static client configured for a different certificate is invalid. MSAL shallow-copies the returned
-// *http.Client and installs a default redirect refusal when CheckRedirect is nil, without mutating
-// caller-owned client state. An explicit non-nil redirect policy is preserved. The transport remains
-// caller-owned/aliased and isn't closed during invisible internal cache eviction.
-//
-// The binding certificate comes from whichever route supplied it: a [NewCredFromCert] or
-// [NewCredFromTLSCertificate] credential, or the BindingCertificate field of the [SignedAssertion]
-// returned by a [NewCredFromSignedAssertionCallback] credential.
-func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) Option {
-	return func(o *clientOptions) {
-		if factory == nil {
-			o.mtlsHTTPClientFactory = nil
-			return
-		}
-		o.mtlsHTTPClientFactory = func(cert tls.Certificate) ops.HTTPClient {
-			client := factory(cert)
-			if client == nil {
-				// Return an untyped nil rather than an interface wrapping a nil *http.Client, so
-				// the internal nil check sees it instead of caching a client that panics on Do.
-				return nil
-			}
-			return client
-		}
 	}
 }
 
@@ -712,8 +700,10 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		base.WithX5C(opts.sendX5C),
 	}
 	tokenClient := oauth.New(opts.httpClient)
-	if opts.mtlsHTTPClientFactory != nil {
-		tokenClient.SetMtlsClientFactory(opts.mtlsHTTPClientFactory)
+	if factory, ok := opts.httpClient.(MtlsHTTPClientFactory); ok {
+		tokenClient.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (ops.HTTPClient, error) {
+			return factory.NewMtlsClient(augment)
+		})
 	}
 	base, err := base.New(clientID, opts.authority, tokenClient, baseOpts...)
 	if err != nil {
@@ -1579,8 +1569,9 @@ func WithAttribute(attrValue string) interface {
 // call. A credential that cannot present a client certificate is reported first, so that error is
 // what a caller sees even when the authority is also unsupported.
 //
-// [WithMtlsHTTPClient] is required when the value passed to [WithHTTPClient] is not an
-// [*http.Client].
+// When the value passed to [WithHTTPClient] is not an [*http.Client], it must implement
+// [MtlsHTTPClientFactory] so MSAL can preserve its middleware around the certificate-bearing
+// transport.
 //
 // An AAD authority's login.* host must belong to a known Microsoft cloud before its mtlsauth.*
 // endpoint is derived; [WithInstanceDiscovery](false) turns that check off along with the rest of
