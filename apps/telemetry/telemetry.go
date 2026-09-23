@@ -4,7 +4,7 @@
 // Package telemetry defines the privacy-safe metrics contract emitted by MSAL.
 //
 // MSAL doesn't configure an observability backend. Applications can provide a
-// MetricsProvider through client options, for example by using the optional
+// MetricsRecorder through client options, for example by using the optional
 // OpenTelemetry integration.
 package telemetry
 
@@ -13,9 +13,9 @@ import (
 	"time"
 )
 
-// MetricsProvider receives one event for each completed token acquisition.
+// MetricsRecorder receives one event for each completed token acquisition.
 // Implementations must be safe for concurrent use and return promptly.
-type MetricsProvider interface {
+type MetricsRecorder interface {
 	RecordAuthentication(context.Context, AuthenticationEvent)
 }
 

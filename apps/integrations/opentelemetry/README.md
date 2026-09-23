@@ -8,7 +8,7 @@ Configure an OpenTelemetry SDK in the application, create an adapter with its
 meter provider, and pass the adapter to an MSAL client:
 
 ```go
-metrics, err := msalotel.New(meterProvider)
+recorder, err := msalotel.New(meterProvider)
 if err != nil {
     return err
 }
@@ -16,7 +16,7 @@ client, err := confidential.New(
     authority,
     clientID,
     credential,
-    confidential.WithMetricsProvider(metrics),
+    confidential.WithMetricsRecorder(recorder),
 )
 ```
 

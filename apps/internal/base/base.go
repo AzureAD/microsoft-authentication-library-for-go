@@ -192,7 +192,7 @@ type Client struct {
 	cacheAccessorMu *sync.RWMutex
 	canRefresh      map[string]*atomic.Value
 	canRefreshMu    *sync.Mutex
-	metricsProvider publictelemetry.MetricsProvider
+	metricsRecorder publictelemetry.MetricsRecorder
 }
 
 // Option is an optional argument to the New constructor.
@@ -208,10 +208,10 @@ func WithCacheAccessor(ca cache.ExportReplace) Option {
 	}
 }
 
-// WithMetricsProvider configures the privacy-safe metrics destination.
-func WithMetricsProvider(provider publictelemetry.MetricsProvider) Option {
+// WithMetricsRecorder configures the privacy-safe metrics destination.
+func WithMetricsRecorder(recorder publictelemetry.MetricsRecorder) Option {
 	return func(c *Client) error {
-		c.metricsProvider = provider
+		c.metricsRecorder = recorder
 		return nil
 	}
 }
@@ -222,7 +222,7 @@ func (b Client) StartTelemetry(
 	apiID publictelemetry.APIID,
 	tokenType publictelemetry.TokenType,
 ) (context.Context, *internaltelemetry.Acquisition) {
-	return internaltelemetry.Start(ctx, b.metricsProvider, apiID, tokenType, version.Version)
+	return internaltelemetry.Start(ctx, b.metricsRecorder, apiID, tokenType, version.Version)
 }
 
 // CompleteTelemetry records one caller-facing token acquisition result.

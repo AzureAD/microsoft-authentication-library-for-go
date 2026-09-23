@@ -69,7 +69,7 @@ type clientOptions struct {
 	capabilities             []string
 	disableInstanceDiscovery bool
 	httpClient               ops.HTTPClient
-	metricsProvider          telemetry.MetricsProvider
+	metricsRecorder          telemetry.MetricsRecorder
 }
 
 func (p *clientOptions) validate() error {
@@ -116,10 +116,10 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
-// WithMetricsProvider configures a privacy-safe authentication metrics destination.
-func WithMetricsProvider(provider telemetry.MetricsProvider) Option {
+// WithMetricsRecorder configures a privacy-safe authentication metrics destination.
+func WithMetricsRecorder(recorder telemetry.MetricsRecorder) Option {
 	return func(o *clientOptions) {
-		o.metricsProvider = provider
+		o.metricsRecorder = recorder
 	}
 }
 
@@ -150,7 +150,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), base.WithCacheAccessor(opts.accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.disableInstanceDiscovery), base.WithMetricsProvider(opts.metricsProvider))
+	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), base.WithCacheAccessor(opts.accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.disableInstanceDiscovery), base.WithMetricsRecorder(opts.metricsRecorder))
 	if err != nil {
 		return Client{}, err
 	}

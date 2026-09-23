@@ -94,8 +94,8 @@ func CanonicalTagsByMetric() map[string][]string {
 	return tags
 }
 
-// Provider translates MSAL authentication events into OpenTelemetry metrics.
-type Provider struct {
+// Recorder translates MSAL authentication events into OpenTelemetry metrics.
+type Recorder struct {
 	successCounter             metric.Int64Counter
 	failureCounter             metric.Int64Counter
 	totalDurationHistogram     metric.Int64Histogram
@@ -104,8 +104,8 @@ type Provider struct {
 	remainingLifetimeHistogram metric.Int64Histogram
 }
 
-// New creates an MSAL metrics provider using meterProvider.
-func New(meterProvider metric.MeterProvider) (*Provider, error) {
+// New creates an MSAL metrics recorder using meterProvider.
+func New(meterProvider metric.MeterProvider) (*Recorder, error) {
 	if meterProvider == nil {
 		return nil, fmt.Errorf("meter provider cannot be nil")
 	}
@@ -158,7 +158,7 @@ func New(meterProvider metric.MeterProvider) (*Provider, error) {
 		return nil, fmt.Errorf("create %s: %w", remainingLifetimeHistogramName, err)
 	}
 
-	return &Provider{
+	return &Recorder{
 		successCounter:             successCounter,
 		failureCounter:             failureCounter,
 		totalDurationHistogram:     totalDuration,
@@ -168,23 +168,23 @@ func New(meterProvider metric.MeterProvider) (*Provider, error) {
 	}, nil
 }
 
-// RecordAuthentication implements telemetry.MetricsProvider.
-func (p *Provider) RecordAuthentication(ctx context.Context, event msaltelemetry.AuthenticationEvent) {
+// RecordAuthentication implements telemetry.MetricsRecorder.
+func (r *Recorder) RecordAuthentication(ctx context.Context, event msaltelemetry.AuthenticationEvent) {
 	metricCtx := trace.ContextWithSpanContext(ctx, trace.SpanContext{})
 	if event.Succeeded {
-		p.successCounter.Add(metricCtx, 1, metric.WithAttributes(successAttributes(event)...))
+		r.successCounter.Add(metricCtx, 1, metric.WithAttributes(successAttributes(event)...))
 	} else {
-		p.failureCounter.Add(metricCtx, 1, metric.WithAttributes(failureAttributes(event)...))
+		r.failureCounter.Add(metricCtx, 1, metric.WithAttributes(failureAttributes(event)...))
 	}
 
-	p.totalDurationHistogram.Record(
+	r.totalDurationHistogram.Record(
 		metricCtx,
 		event.TotalDuration.Milliseconds(),
 		metric.WithAttributes(totalDurationAttributes(event)...),
 	)
 
 	if event.HTTPDuration > 0 {
-		p.httpDurationHistogram.Record(
+		r.httpDurationHistogram.Record(
 			metricCtx,
 			event.HTTPDuration.Milliseconds(),
 			metric.WithAttributes(httpDurationAttributes(event)...),
@@ -193,7 +193,7 @@ func (p *Provider) RecordAuthentication(ctx context.Context, event msaltelemetry
 
 	if event.Succeeded && event.TokenSource == msaltelemetry.TokenSourceCache &&
 		event.CacheLevel == msaltelemetry.CacheLevelL1 {
-		p.l1CacheDurationHistogram.Record(
+		r.l1CacheDurationHistogram.Record(
 			metricCtx,
 			event.TotalDuration.Microseconds(),
 			metric.WithAttributes(l1CacheAttributes(event)...),
@@ -202,7 +202,7 @@ func (p *Provider) RecordAuthentication(ctx context.Context, event msaltelemetry
 
 	if event.Succeeded {
 		remaining := max(time.Until(event.ExpiresOn).Seconds(), 0)
-		p.remainingLifetimeHistogram.Record(
+		r.remainingLifetimeHistogram.Record(
 			metricCtx,
 			int64(remaining),
 			metric.WithAttributes(remainingLifetimeAttributes(event)...),

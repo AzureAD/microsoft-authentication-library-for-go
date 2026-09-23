@@ -17,7 +17,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-func TestProviderEmitsV2Schema(t *testing.T) {
+func TestRecorderEmitsV2Schema(t *testing.T) {
 	reader := metric.NewManualReader()
 	meterProvider := metric.NewMeterProvider(metric.WithReader(reader))
 	t.Cleanup(func() {
@@ -25,7 +25,7 @@ func TestProviderEmitsV2Schema(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	provider, err := New(meterProvider)
+	recorder, err := New(meterProvider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestProviderEmitsV2Schema(t *testing.T) {
 		TokenType:          msaltelemetry.TokenTypeBearer,
 		TotalDuration:      25 * time.Millisecond,
 	}
-	provider.RecordAuthentication(context.Background(), event)
+	recorder.RecordAuthentication(context.Background(), event)
 
 	var data metricdata.ResourceMetrics
 	if err := reader.Collect(context.Background(), &data); err != nil {
@@ -257,7 +257,7 @@ func TestCanonicalTagsMatchRecordedAttributes(t *testing.T) {
 	}
 }
 
-func TestProviderFailureHasStableRawSTSErrorTag(t *testing.T) {
+func TestRecorderFailureHasStableRawSTSErrorTag(t *testing.T) {
 	reader := metric.NewManualReader()
 	meterProvider := metric.NewMeterProvider(metric.WithReader(reader))
 	t.Cleanup(func() {
@@ -265,12 +265,12 @@ func TestProviderFailureHasStableRawSTSErrorTag(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	provider, err := New(meterProvider)
+	recorder, err := New(meterProvider)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	provider.RecordAuthentication(context.Background(), msaltelemetry.AuthenticationEvent{
+	recorder.RecordAuthentication(context.Background(), msaltelemetry.AuthenticationEvent{
 		APIID:         msaltelemetry.APIIDAcquireTokenForClient,
 		ErrorCode:     "invalid_client",
 		MSALVersion:   "1.10.0",
@@ -311,7 +311,7 @@ func TestProviderFailureHasStableRawSTSErrorTag(t *testing.T) {
 	t.Fatal("MsalFailure wasn't emitted")
 }
 
-func TestProviderExemplarsExcludeTraceAndSpanIDs(t *testing.T) {
+func TestRecorderExemplarsExcludeTraceAndSpanIDs(t *testing.T) {
 	reader := metric.NewManualReader()
 	meterProvider := metric.NewMeterProvider(
 		metric.WithReader(reader),
@@ -322,7 +322,7 @@ func TestProviderExemplarsExcludeTraceAndSpanIDs(t *testing.T) {
 			t.Error(err)
 		}
 	})
-	provider, err := New(meterProvider)
+	recorder, err := New(meterProvider)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -333,7 +333,7 @@ func TestProviderExemplarsExcludeTraceAndSpanIDs(t *testing.T) {
 		TraceFlags: trace.FlagsSampled,
 	})
 	ctx := trace.ContextWithSpanContext(context.Background(), spanContext)
-	provider.RecordAuthentication(ctx, msaltelemetry.AuthenticationEvent{
+	recorder.RecordAuthentication(ctx, msaltelemetry.AuthenticationEvent{
 		APIID:         msaltelemetry.APIIDAcquireTokenForClient,
 		CacheLevel:    msaltelemetry.CacheLevelL1,
 		ExpiresOn:     time.Now().Add(time.Hour),
@@ -345,7 +345,7 @@ func TestProviderExemplarsExcludeTraceAndSpanIDs(t *testing.T) {
 		TokenType:     msaltelemetry.TokenTypeBearer,
 		TotalDuration: time.Millisecond,
 	})
-	provider.RecordAuthentication(ctx, msaltelemetry.AuthenticationEvent{
+	recorder.RecordAuthentication(ctx, msaltelemetry.AuthenticationEvent{
 		APIID:         msaltelemetry.APIIDAcquireTokenForClient,
 		ErrorCode:     "invalid_client",
 		HTTPDuration:  time.Millisecond,

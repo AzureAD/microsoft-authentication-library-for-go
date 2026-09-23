@@ -39,7 +39,7 @@ func run(ctx context.Context) error {
 	defer func() {
 		_ = meterProvider.Shutdown(context.Background())
 	}()
-	metrics, err := msalotel.New(meterProvider)
+	recorder, err := msalotel.New(meterProvider)
 	if err != nil {
 		return err
 	}
@@ -53,7 +53,7 @@ func run(ctx context.Context) error {
 		authority,
 		clientID,
 		credential,
-		confidential.WithMetricsProvider(metrics),
+		confidential.WithMetricsRecorder(recorder),
 	)
 	if err != nil {
 		return err
@@ -78,7 +78,7 @@ func run(ctx context.Context) error {
 		authority,
 		clientID,
 		invalidCredential,
-		confidential.WithMetricsProvider(metrics),
+		confidential.WithMetricsRecorder(recorder),
 	)
 	if err != nil {
 		return err

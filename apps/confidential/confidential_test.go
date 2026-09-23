@@ -200,7 +200,7 @@ func TestAcquireTokenByCredentialMetrics(t *testing.T) {
 		ExpiresOn:     time.Now().Add(time.Hour),
 		GrantedScopes: accesstokens.Scopes{Slice: tokenScope},
 		TokenType:     authority.AccessTokenTypeBearer,
-	}, cred, fakeAuthority, WithMetricsProvider(recorder))
+	}, cred, fakeAuthority, WithMetricsRecorder(recorder))
 	if err != nil {
 		t.Fatal(err)
 	}

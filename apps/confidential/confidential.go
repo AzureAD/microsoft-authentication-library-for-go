@@ -264,7 +264,7 @@ type clientOptions struct {
 	capabilities                      []string
 	disableInstanceDiscovery, sendX5C bool
 	httpClient                        ops.HTTPClient
-	metricsProvider                   telemetry.MetricsProvider
+	metricsRecorder                   telemetry.MetricsRecorder
 }
 
 // Option is an optional argument to New().
@@ -293,10 +293,10 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
-// WithMetricsProvider configures a privacy-safe authentication metrics destination.
-func WithMetricsProvider(provider telemetry.MetricsProvider) Option {
+// WithMetricsRecorder configures a privacy-safe authentication metrics destination.
+func WithMetricsRecorder(recorder telemetry.MetricsRecorder) Option {
 	return func(o *clientOptions) {
-		o.metricsProvider = provider
+		o.metricsRecorder = recorder
 	}
 }
 
@@ -362,7 +362,7 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 		base.WithInstanceDiscovery(!opts.disableInstanceDiscovery),
 		base.WithRegionDetection(opts.azureRegion),
 		base.WithX5C(opts.sendX5C),
-		base.WithMetricsProvider(opts.metricsProvider),
+		base.WithMetricsRecorder(opts.metricsRecorder),
 	}
 	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), baseOpts...)
 	if err != nil {

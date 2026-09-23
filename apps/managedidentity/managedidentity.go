@@ -185,7 +185,7 @@ type Client struct {
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	canRefresh         *atomic.Value
-	metricsProvider    telemetry.MetricsProvider
+	metricsRecorder    telemetry.MetricsRecorder
 }
 
 type AcquireTokenOptions struct {
@@ -217,10 +217,10 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 	}
 }
 
-// WithMetricsProvider configures a privacy-safe authentication metrics destination.
-func WithMetricsProvider(provider telemetry.MetricsProvider) ClientOption {
+// WithMetricsRecorder configures a privacy-safe authentication metrics destination.
+func WithMetricsRecorder(recorder telemetry.MetricsRecorder) ClientOption {
 	return func(c *Client) {
-		c.metricsProvider = provider
+		c.metricsRecorder = recorder
 	}
 }
 
@@ -404,7 +404,7 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	if _, ok := c.miType.(systemAssignedValue); ok {
 		apiID = telemetry.APIIDAcquireTokenForSystemAssignedIdentity
 	}
-	ctx, acquisition := internaltelemetry.Start(ctx, c.metricsProvider, apiID, telemetry.TokenTypeBearer, version.Version)
+	ctx, acquisition := internaltelemetry.Start(ctx, c.metricsRecorder, apiID, telemetry.TokenTypeBearer, version.Version)
 	defer func() {
 		if acquisition != nil {
 			acquisition.Complete(

@@ -22,25 +22,25 @@ type acquisitionKey struct{}
 // Acquisition accumulates measurements for one caller-facing token acquisition.
 type Acquisition struct {
 	mu        sync.Mutex
-	provider  publictelemetry.MetricsProvider
+	recorder  publictelemetry.MetricsRecorder
 	event     publictelemetry.AuthenticationEvent
 	started   time.Time
 	completed bool
 }
 
-// Start adds a new acquisition to ctx. A nil provider keeps the path disabled.
+// Start adds a new acquisition to ctx. A nil recorder keeps the path disabled.
 func Start(
 	ctx context.Context,
-	provider publictelemetry.MetricsProvider,
+	recorder publictelemetry.MetricsRecorder,
 	apiID publictelemetry.APIID,
 	tokenType publictelemetry.TokenType,
 	msalVersion string,
 ) (context.Context, *Acquisition) {
-	if provider == nil {
+	if recorder == nil {
 		return ctx, nil
 	}
 	a := &Acquisition{
-		provider: provider,
+		recorder: recorder,
 		started:  time.Now(),
 		event: publictelemetry.AuthenticationEvent{
 			APIID:       apiID,
@@ -252,10 +252,10 @@ func (a *Acquisition) Complete(
 		a.event.ErrorCode = errorCode
 	}
 	event := a.event
-	provider := a.provider
+	recorder := a.recorder
 	a.mu.Unlock()
 
-	if provider != nil {
-		provider.RecordAuthentication(ctx, event)
+	if recorder != nil {
+		recorder.RecordAuthentication(ctx, event)
 	}
 }
