@@ -43,6 +43,24 @@ func writeTestResponse(t *testing.T, w http.ResponseWriter, body string) {
 	}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(req *http.Request) (*http.Response, error) {
+	return f(req)
+}
+
+func rewriteClient(srv *httptest.Server) *http.Client {
+	client := srv.Client()
+	client.Transport = roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		clone := req.Clone(req.Context())
+		clone.URL.Scheme = "http"
+		clone.URL.Host = srv.Listener.Addr().String()
+		clone.Host = ""
+		return http.DefaultTransport.RoundTrip(clone)
+	})
+	return client
+}
+
 func newTestAuthorityInfo(host, canonicalURI, tenant string) authority.Info {
 	return authority.Info{
 		Host:                  host,
@@ -368,5 +386,114 @@ func TestResolveEndpoints_IssuerValidation(t *testing.T) {
 	_, err := resolver.ResolveEndpoints(context.Background(), info, "")
 	if err == nil {
 		t.Fatal("expected issuer validation error, got nil")
+	}
+}
+
+func TestResolveEndpoints_UsesDiscoveredAliases(t *testing.T) {
+	var callCount int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/common/discovery/instance":
+			writeTestResponse(t, w, `{
+				"tenant_discovery_endpoint": "https://issuer.alias/openid",
+				"metadata": [{
+					"preferred_network": "authority.example",
+					"preferred_cache": "authority.example",
+					"aliases": ["authority.example", "issuer.alias"]
+				}, {
+					"preferred_network": "unrelated.example",
+					"preferred_cache": "unrelated.example",
+					"aliases": ["unrelated.example", "unrelated-alias.example"]
+				}]
+			}`)
+		case "/openid":
+			writeTestResponse(t, w, tenantDiscoveryJSON("issuer.alias"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	resolver := newAuthorityEndpoint(ops.New(rewriteClient(srv)))
+	info := newTestAuthorityInfo("authority.example", "https://authority.example/common/", "common")
+	info.ValidateAuthority = true
+
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err != nil {
+		t.Fatalf("ResolveEndpoints() unexpected error: %v", err)
+	}
+	if !resolver.cache[info.CanonicalAuthorityURI].Aliases["issuer.alias"] {
+		t.Fatal("expected discovered alias in endpoint cache")
+	}
+
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err != nil {
+		t.Fatalf("cached ResolveEndpoints() unexpected error: %v", err)
+	}
+	if got := atomic.LoadInt32(&callCount); got != 2 {
+		t.Fatalf("expected one discovery and one tenant request, got %d total requests", got)
+	}
+}
+
+func TestResolveEndpoints_DoesNotCacheInvalidIssuer(t *testing.T) {
+	var callCount int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/common/discovery/instance":
+			writeTestResponse(t, w, `{
+				"tenant_discovery_endpoint": "https://issuer.alias/openid",
+				"metadata": [{
+					"preferred_network": "authority.example",
+					"preferred_cache": "authority.example",
+					"aliases": ["authority.example", "issuer.alias"]
+				}, {
+					"preferred_network": "unrelated.example",
+					"preferred_cache": "unrelated.example",
+					"aliases": ["unrelated.example", "invalid.example"]
+				}]
+			}`)
+		case "/openid":
+			writeTestResponse(t, w, tenantDiscoveryJSON("invalid.example"))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer srv.Close()
+
+	resolver := newAuthorityEndpoint(ops.New(rewriteClient(srv)))
+	info := newTestAuthorityInfo("authority.example", "https://authority.example/common/", "common")
+	info.ValidateAuthority = true
+
+	for i := 0; i < 2; i++ {
+		if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err == nil {
+			t.Fatalf("call %d: expected issuer validation error", i+1)
+		}
+	}
+	if _, ok := resolver.cache[info.CanonicalAuthorityURI]; ok {
+		t.Fatal("invalid endpoints were cached")
+	}
+	if got := atomic.LoadInt32(&callCount); got != 4 {
+		t.Fatalf("expected both calls to repeat discovery and tenant requests, got %d total requests", got)
+	}
+}
+
+func TestResolveEndpoints_UsesRegionalAliases(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		writeTestResponse(t, w, tenantDiscoveryJSON("westus.authority.example"))
+	}))
+	defer srv.Close()
+
+	resolver := newAuthorityEndpoint(ops.New(rewriteClient(srv)))
+	info := newTestAuthorityInfo("authority.example", "https://authority.example/common/", "common")
+	info.Region = "westus"
+
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err != nil {
+		t.Fatalf("ResolveEndpoints() unexpected error: %v", err)
+	}
+	if !resolver.cache[info.CanonicalAuthorityURI].Aliases["westus.authority.example"] {
+		t.Fatal("expected regional alias in endpoint cache")
 	}
 }
