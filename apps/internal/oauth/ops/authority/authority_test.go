@@ -752,6 +752,12 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			expectError: false,
 		},
 		{
+			desc:        "issuer host matches authority case-insensitively",
+			issuer:      "https://LOGIN.MICROSOFTONLINE.COM/tenant-id",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: false,
+		},
+		{
 			desc:        "issuer matches authority with trailing slash in issuer",
 			issuer:      "https://login.microsoftonline.com/tenant-id/",
 			authority:   "https://login.microsoftonline.com/tenant-id",
@@ -816,6 +822,13 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			expectError: false,
 		},
 		{
+			desc:        "issuer matches an alias case-insensitively",
+			issuer:      "https://ALIAS1.EXAMPLE.COM/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true},
+			expectError: false,
+		},
+		{
 			desc:        "issuer doesn't match any alias",
 			issuer:      "https://unknown.example.com/tenant-id",
 			authority:   "https://contoso.com/tenant-id",
@@ -832,7 +845,7 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 		// Test cases for regional authority scenarios where instance discovery isn't performed
 		{
 			desc:        "regional authority with trusted issuer host (no aliases)",
-			issuer:      "https://login.microsoftonline.com/tenant-id",
+			issuer:      "https://LOGIN.MICROSOFTONLINE.COM/tenant-id",
 			authority:   "https://westus2.login.microsoft.com/tenant-id",
 			aliases:     nil,
 			expectError: false,
@@ -865,8 +878,8 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			aliases:     nil,
 			expectError: false,
 		}, {
-			desc:        "regional authority subdomain with matching trusted issuer",
-			issuer:      "https://login.dummy-uri.com/tenant-id",
+			desc:        "regional authority subdomain matches issuer case-insensitively",
+			issuer:      "https://LOGIN.DUMMY-URI.COM/tenant-id",
 			authority:   "https://region.login.dummy-uri.com/tenant-id",
 			aliases:     nil,
 			expectError: false,
