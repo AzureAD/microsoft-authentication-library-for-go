@@ -492,6 +492,114 @@ func TestAppTokenProactiveRefreshCachePartitionKey(t *testing.T) {
 	}
 }
 
+func TestProactiveRefreshBoundaries(t *testing.T) {
+	tests := []struct {
+		name              string
+		requestType       accesstokens.AppType
+		authorizationType authority.AuthorizeType
+		isAppCache        bool
+		tokenError        bool
+		wantRefreshed     bool
+		wantError         bool
+	}{
+		{
+			name:              "app cache takes precedence",
+			requestType:       accesstokens.ATUnknown,
+			authorizationType: authority.ATOnBehalfOf,
+			isAppCache:        true,
+			wantRefreshed:     true,
+		},
+		{
+			name:              "on behalf of takes precedence over request type",
+			requestType:       accesstokens.ATUnknown,
+			authorizationType: authority.ATOnBehalfOf,
+			wantRefreshed:     true,
+		},
+		{
+			name:          "confidential delegated refresh succeeds",
+			requestType:   accesstokens.ATConfidential,
+			wantRefreshed: true,
+		},
+		{
+			name:          "public delegated refresh succeeds",
+			requestType:   accesstokens.ATPublic,
+			wantRefreshed: true,
+		},
+		{
+			name:          "app refresh failure falls back to cache",
+			requestType:   accesstokens.ATConfidential,
+			isAppCache:    true,
+			tokenError:    true,
+			wantRefreshed: false,
+		},
+		{
+			name:              "on behalf of refresh failure falls back to cache",
+			requestType:       accesstokens.ATConfidential,
+			authorizationType: authority.ATOnBehalfOf,
+			tokenError:        true,
+			wantRefreshed:     false,
+		},
+		{
+			name:          "confidential refresh failure falls back to cache",
+			requestType:   accesstokens.ATConfidential,
+			tokenError:    true,
+			wantRefreshed: false,
+		},
+		{
+			name:          "public refresh failure is returned",
+			requestType:   accesstokens.ATPublic,
+			tokenError:    true,
+			wantRefreshed: false,
+			wantError:     true,
+		},
+		{
+			name:        "unknown request type is rejected",
+			requestType: accesstokens.ATUnknown,
+			wantError:   true,
+		},
+		{
+			name:        "unsupported request type is rejected",
+			requestType: accesstokens.AppType(99),
+			wantError:   true,
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			client := fakeClient(t)
+			client.Token.AccessTokens.(*fake.AccessTokens).Err = test.tokenError
+			authParams := client.AuthParams
+			authParams.AuthorizationType = test.authorizationType
+			authParams.Scopes = testScopes
+			authParams.UserAssertion = "assertion"
+			credential := &accesstokens.Credential{Secret: "secret"}
+
+			token, refreshed, err := client.proactiveRefresh(
+				context.Background(),
+				AcquireTokenSilentParameters{
+					RequestType:       test.requestType,
+					AuthorizationType: test.authorizationType,
+					IsAppCache:        test.isAppCache,
+					Credential:        credential,
+					UserAssertion:     authParams.UserAssertion,
+				},
+				authParams,
+				accesstokens.RefreshToken{Secret: fakeRefreshToken},
+			)
+
+			if (err != nil) != test.wantError {
+				t.Fatalf("unexpected error state: got %v, want error %t", err, test.wantError)
+			}
+			if refreshed != test.wantRefreshed {
+				t.Fatalf("refreshed = %t, want %t", refreshed, test.wantRefreshed)
+			}
+			if refreshed && token.AccessToken != fakeAccessToken {
+				t.Fatalf("access token = %q, want %q", token.AccessToken, fakeAccessToken)
+			}
+		})
+	}
+}
+
 func TestCreateAuthenticationResult(t *testing.T) {
 	future := time.Now().Add(400 * time.Second)
 
