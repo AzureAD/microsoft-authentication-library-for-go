@@ -493,6 +493,11 @@ func TestAppTokenProactiveRefreshCachePartitionKey(t *testing.T) {
 }
 
 func TestProactiveRefreshBoundaries(t *testing.T) {
+	type expectedCalls struct {
+		credential int
+		onBehalfOf int
+		refresh    int
+	}
 	tests := []struct {
 		name              string
 		requestType       accesstokens.AppType
@@ -501,6 +506,7 @@ func TestProactiveRefreshBoundaries(t *testing.T) {
 		tokenError        bool
 		wantRefreshed     bool
 		wantError         bool
+		wantCalls         expectedCalls
 	}{
 		{
 			name:              "app cache takes precedence",
@@ -508,22 +514,26 @@ func TestProactiveRefreshBoundaries(t *testing.T) {
 			authorizationType: authority.ATOnBehalfOf,
 			isAppCache:        true,
 			wantRefreshed:     true,
+			wantCalls:         expectedCalls{credential: 1},
 		},
 		{
 			name:              "on behalf of takes precedence over request type",
 			requestType:       accesstokens.ATUnknown,
 			authorizationType: authority.ATOnBehalfOf,
 			wantRefreshed:     true,
+			wantCalls:         expectedCalls{onBehalfOf: 1},
 		},
 		{
 			name:          "confidential delegated refresh succeeds",
 			requestType:   accesstokens.ATConfidential,
 			wantRefreshed: true,
+			wantCalls:     expectedCalls{refresh: 1},
 		},
 		{
 			name:          "public delegated refresh succeeds",
 			requestType:   accesstokens.ATPublic,
 			wantRefreshed: true,
+			wantCalls:     expectedCalls{refresh: 1},
 		},
 		{
 			name:          "app refresh failure falls back to cache",
@@ -531,6 +541,7 @@ func TestProactiveRefreshBoundaries(t *testing.T) {
 			isAppCache:    true,
 			tokenError:    true,
 			wantRefreshed: false,
+			wantCalls:     expectedCalls{credential: 1},
 		},
 		{
 			name:              "on behalf of refresh failure falls back to cache",
@@ -538,12 +549,14 @@ func TestProactiveRefreshBoundaries(t *testing.T) {
 			authorizationType: authority.ATOnBehalfOf,
 			tokenError:        true,
 			wantRefreshed:     false,
+			wantCalls:         expectedCalls{onBehalfOf: 1},
 		},
 		{
 			name:          "confidential refresh failure falls back to cache",
 			requestType:   accesstokens.ATConfidential,
 			tokenError:    true,
 			wantRefreshed: false,
+			wantCalls:     expectedCalls{refresh: 1},
 		},
 		{
 			name:          "public refresh failure is returned",
@@ -551,6 +564,7 @@ func TestProactiveRefreshBoundaries(t *testing.T) {
 			tokenError:    true,
 			wantRefreshed: false,
 			wantError:     true,
+			wantCalls:     expectedCalls{refresh: 1},
 		},
 		{
 			name:        "unknown request type is rejected",
@@ -595,6 +609,15 @@ func TestProactiveRefreshBoundaries(t *testing.T) {
 			}
 			if refreshed && token.AccessToken != fakeAccessToken {
 				t.Fatalf("access token = %q, want %q", token.AccessToken, fakeAccessToken)
+			}
+			fakeTokens := client.Token.AccessTokens.(*fake.AccessTokens)
+			gotCalls := expectedCalls{
+				credential: fakeTokens.ClientCredentialCalls,
+				onBehalfOf: fakeTokens.OnBehalfOfCalls,
+				refresh:    fakeTokens.RefreshTokenCalls,
+			}
+			if gotCalls != test.wantCalls {
+				t.Fatalf("grant calls = %+v, want %+v", gotCalls, test.wantCalls)
 			}
 		})
 	}
