@@ -128,6 +128,48 @@ Acquiring tokens with MSAL Go follows this general pattern. There might be some 
     accessToken := result.AccessToken
     ```
 
+## OpenTelemetry metrics
+
+MSAL Go can report privacy-safe token acquisition metrics through the
+[`telemetry.MetricsRecorder`](https://pkg.go.dev/github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry)
+interface. Configure a recorder with `confidential.WithMetricsRecorder`,
+`public.WithMetricsRecorder`, or `managedidentity.WithMetricsRecorder`.
+Authentication behavior is unchanged when no recorder is configured.
+
+The optional [OpenTelemetry integration](apps/integrations/opentelemetry)
+emits MSAL.NET-compatible success, failure, latency, cache, HTTP, and remaining
+token lifetime metrics. It is a separate Go 1.25 module so the core MSAL module
+retains Go 1.18 compatibility and doesn't depend on OpenTelemetry. Applications
+configure and own the OpenTelemetry SDK and exporter.
+
+For example, an application can connect the optional adapter to an
+OpenTelemetry SDK and stdout exporter:
+
+```go
+exporter, err := stdoutmetric.New()
+if err != nil {
+    return err
+}
+reader := metric.NewPeriodicReader(exporter)
+meterProvider := metric.NewMeterProvider(metric.WithReader(reader))
+defer meterProvider.Shutdown(context.Background())
+
+recorder, err := msalotel.New(meterProvider)
+if err != nil {
+    return err
+}
+client, err := confidential.New(
+    authority,
+    clientID,
+    credential,
+    confidential.WithMetricsRecorder(recorder),
+)
+```
+
+See the [integration documentation](apps/integrations/opentelemetry) and
+[runnable example](apps/integrations/opentelemetry/example) for complete setup
+and emitted output.
+
 ## Loading Certificates from PEM
 
 `confidential.CertFromPEM` loads a certificate and an **unencrypted** private key from PEM data for

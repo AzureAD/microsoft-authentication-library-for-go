@@ -39,6 +39,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	internaltelemetry "github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/telemetry"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/telemetry"
 	"github.com/google/uuid"
 	"github.com/pkg/browser"
 )
@@ -67,6 +69,7 @@ type clientOptions struct {
 	capabilities             []string
 	disableInstanceDiscovery bool
 	httpClient               ops.HTTPClient
+	metricsRecorder          telemetry.MetricsRecorder
 }
 
 func (p *clientOptions) validate() error {
@@ -113,6 +116,13 @@ func WithHTTPClient(httpClient ops.HTTPClient) Option {
 	}
 }
 
+// WithMetricsRecorder configures a privacy-safe authentication metrics destination.
+func WithMetricsRecorder(recorder telemetry.MetricsRecorder) Option {
+	return func(o *clientOptions) {
+		o.metricsRecorder = recorder
+	}
+}
+
 // WithInstanceDiscovery set to false to disable authority validation (to support private cloud scenarios)
 func WithInstanceDiscovery(enabled bool) Option {
 	return func(o *clientOptions) {
@@ -140,7 +150,7 @@ func New(clientID string, options ...Option) (Client, error) {
 		return Client{}, err
 	}
 
-	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), base.WithCacheAccessor(opts.accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.disableInstanceDiscovery))
+	base, err := base.New(clientID, opts.authority, oauth.New(opts.httpClient), base.WithCacheAccessor(opts.accessor), base.WithClientCapabilities(opts.capabilities), base.WithInstanceDiscovery(!opts.disableInstanceDiscovery), base.WithMetricsRecorder(opts.metricsRecorder))
 	if err != nil {
 		return Client{}, err
 	}
@@ -335,10 +345,16 @@ func WithSilentAccount(account Account) interface {
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
 // Options: [WithClaims], [WithSilentAccount], [WithTenantID]
-func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
+func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (result AuthResult, err error) {
+	ctx, acquisition := pca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenSilent, telemetry.TokenTypeBearer)
+	defer func() { pca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
+	}
+	if o.authnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, o.authnScheme.AccessTokenType())
 	}
 	// an account is required to find user tokens in the cache
 	if reflect.ValueOf(o.account).IsZero() {
@@ -373,10 +389,16 @@ type AcquireByUsernamePasswordOption interface {
 //
 // AcquireTokenByUsernamePassword acquires a security token from the authority, via Username/Password Authentication.
 // Options: [WithClaims], [WithTenantID]
-func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (AuthResult, error) {
+func (pca Client) AcquireTokenByUsernamePassword(ctx context.Context, scopes []string, username, password string, opts ...AcquireByUsernamePasswordOption) (result AuthResult, err error) {
+	ctx, acquisition := pca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenByUsernamePassword, telemetry.TokenTypeBearer)
+	defer func() { pca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenByUsernamePasswordOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
+	}
+	if o.authnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, o.authnScheme.AccessTokenType())
 	}
 	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
@@ -407,15 +429,19 @@ type DeviceCode struct {
 	// Result holds the information about the device code (such as the code).
 	Result DeviceCodeResult
 
-	authParams authority.AuthParams
-	client     Client
-	dc         oauth.DeviceCode
+	authParams  authority.AuthParams
+	client      Client
+	dc          oauth.DeviceCode
+	acquisition *internaltelemetry.Acquisition
 }
 
 // AuthenticationResult retreives the AuthenticationResult once the user enters the code
 // on the second device. Until then it blocks until the .AcquireTokenByDeviceCode() context
 // is cancelled or the token expires.
-func (d DeviceCode) AuthenticationResult(ctx context.Context) (AuthResult, error) {
+func (d DeviceCode) AuthenticationResult(ctx context.Context) (result AuthResult, err error) {
+	ctx = internaltelemetry.Continue(ctx, d.acquisition)
+	defer func() { d.client.base.CompleteTelemetry(ctx, d.acquisition, result, err) }()
+
 	token, err := d.dc.Token(ctx)
 	if err != nil {
 		return AuthResult{}, err
@@ -438,12 +464,15 @@ type AcquireByDeviceCodeOption interface {
 //
 // Options: [WithClaims], [WithTenantID]
 func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string, opts ...AcquireByDeviceCodeOption) (DeviceCode, error) {
+	ctx, acquisition := pca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenByDeviceCode, telemetry.TokenTypeBearer)
 	o := acquireTokenByDeviceCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
+		pca.base.CompleteTelemetry(ctx, acquisition, AuthResult{}, err)
 		return DeviceCode{}, err
 	}
 	authParams, err := pca.base.AuthParams.WithTenant(o.tenantID)
 	if err != nil {
+		pca.base.CompleteTelemetry(ctx, acquisition, AuthResult{}, err)
 		return DeviceCode{}, err
 	}
 	authParams.Scopes = scopes
@@ -452,10 +481,11 @@ func (pca Client) AcquireTokenByDeviceCode(ctx context.Context, scopes []string,
 
 	dc, err := pca.base.Token.DeviceCode(ctx, authParams)
 	if err != nil {
+		pca.base.CompleteTelemetry(ctx, acquisition, AuthResult{}, err)
 		return DeviceCode{}, err
 	}
 
-	return DeviceCode{Result: dc.Result, authParams: authParams, client: pca, dc: dc}, nil
+	return DeviceCode{Result: dc.Result, authParams: authParams, client: pca, dc: dc, acquisition: acquisition}, nil
 }
 
 // acquireTokenByAuthCodeOptions contains the optional parameters used to acquire an access token using the authorization code flow.
@@ -495,7 +525,10 @@ func WithChallenge(challenge string) interface {
 // The specified redirect URI must be the same URI that was used when the authorization code was requested.
 //
 // Options: [WithChallenge], [WithClaims], [WithTenantID]
-func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (AuthResult, error) {
+func (pca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redirectURI string, scopes []string, opts ...AcquireByAuthCodeOption) (result AuthResult, err error) {
+	ctx, acquisition := pca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenByAuthorizationCode, telemetry.TokenTypeBearer)
+	defer func() { pca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := acquireTokenByAuthCodeOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
@@ -669,10 +702,16 @@ func WithOpenURL(openURL func(url string) error) interface {
 // https://docs.microsoft.com/en-us/azure/active-directory/develop/msal-authentication-flows#interactive-and-non-interactive-authentication
 //
 // Options: [WithDomainHint], [WithLoginHint], [WithOpenURL], [WithRedirectURI], [WithTenantID]
-func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (AuthResult, error) {
+func (pca Client) AcquireTokenInteractive(ctx context.Context, scopes []string, opts ...AcquireInteractiveOption) (result AuthResult, err error) {
+	ctx, acquisition := pca.base.StartTelemetry(ctx, telemetry.APIIDAcquireTokenInteractive, telemetry.TokenTypeBearer)
+	defer func() { pca.base.CompleteTelemetry(ctx, acquisition, result, err) }()
+
 	o := interactiveAuthOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
+	}
+	if o.authnScheme != nil {
+		internaltelemetry.ObserveTokenType(ctx, o.authnScheme.AccessTokenType())
 	}
 	// the code verifier is a random 32-byte sequence that's been base-64 encoded without padding.
 	// it's used to prevent MitM attacks during auth code flow, see https://tools.ietf.org/html/rfc7636

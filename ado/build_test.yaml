@@ -80,7 +80,37 @@ stages:
               testRunTitle: "Unit Tests"
 
   # ──────────────────────────────────────────────
-  # Stage 3 — Integration Tests
+  # Stage 3 — OpenTelemetry Adapter
+  # ──────────────────────────────────────────────
+  - stage: OpenTelemetry
+    displayName: "OpenTelemetry"
+    dependsOn: []
+    jobs:
+      - job: OpenTelemetry
+        displayName: "Test OpenTelemetry Adapter"
+        pool:
+          vmImage: "ubuntu-latest"
+        steps:
+          - task: GoTool@0
+            inputs:
+              version: "1.25"
+          - task: Bash@3
+            displayName: "Test adapter"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(Build.SourcesDirectory)/apps/integrations/opentelemetry"
+              script: |
+                set -e
+                go test -race ./...
+          - task: Go@0
+            displayName: "Build example"
+            inputs:
+              command: "build"
+              arguments: "./..."
+              workingDirectory: "$(Build.SourcesDirectory)/apps/integrations/opentelemetry/example"
+
+  # ──────────────────────────────────────────────
+  # Stage 4 — Integration Tests
   # ──────────────────────────────────────────────
   - stage: IntegrationTests
     displayName: "Integration Tests"
@@ -135,7 +165,7 @@ stages:
               testRunTitle: "Integration Tests"
 
   # ──────────────────────────────────────────────
-  # Stage 4 — Managed Identity E2E Tests (IMDS v1)
+  # Stage 5 — Managed Identity E2E Tests (IMDS v1)
   #
   # Runs on the self-hosted "MISEManagedIdentity" VM (Windows), which has a
   # system-assigned managed identity plus the user-assigned managed identities
@@ -194,7 +224,7 @@ stages:
               testRunTitle: "MI E2E – IMDS"
 
   # ──────────────────────────────────────────────
-  # Stage 5 — Managed Identity E2E Tests (Azure Arc)
+  # Stage 6 — Managed Identity E2E Tests (Azure Arc)
   #
   # Runs on the self-hosted "MISEAZUREARC" pool, an Azure Arc-enabled machine.
   # Azure Arc supports the system-assigned identity only. Mirrors the MSAL .NET
