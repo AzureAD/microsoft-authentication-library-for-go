@@ -2588,6 +2588,64 @@ func TestFMICacheIsolation(t *testing.T) {
 	}
 }
 
+func TestAttributeCacheIsolation(t *testing.T) {
+	for _, fmiPath := range []string{"", "test/fmi/path"} {
+		t.Run(fmt.Sprintf("fmi=%t", fmiPath != ""), func(t *testing.T) {
+			cache := make(testCache)
+			mockClient := mock.NewClient()
+			cred, err := NewCredFromSecret(fakeSecret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			lmo, tenant := "login.microsoftonline.com", "test-tenant"
+			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+				WithCache(&cache), WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+			if err != nil {
+				t.Fatal(err)
+			}
+			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+			attributes := []string{`{"color":"blue"}`, `{"color":"red"}`}
+			tokens := []string{"attribute-a-token", "attribute-b-token"}
+			requests := 0
+			for i := range attributes {
+				expected := attributes[i]
+				mockClient.AppendResponse(
+					mock.WithBody(mock.GetAccessTokenBody(tokens[i], "", "", "", 3600, 0)),
+					mock.WithCallback(func(r *http.Request) {
+						requests++
+						if err := r.ParseForm(); err != nil {
+							t.Fatal(err)
+						}
+						if r.Method != http.MethodPost || r.Form.Get("attributes") != expected || r.Form.Get("fmi_path") != fmiPath {
+							t.Fatalf("unexpected token request: method=%s attributes=%q fmi_path=%q", r.Method, r.Form.Get("attributes"), r.Form.Get("fmi_path"))
+						}
+					}),
+				)
+			}
+			for i, index := range []int{0, 1, 0, 1} {
+				opts := []AcquireByCredentialOption{WithAttribute(attributes[index])}
+				if fmiPath != "" {
+					opts = append(opts, WithFMIPath(fmiPath))
+				}
+				ar, err := client.AcquireTokenByCredential(context.Background(), tokenScope, opts...)
+				if err != nil {
+					t.Fatal(err)
+				}
+				source := TokenSourceIdentityProvider
+				if i >= 2 {
+					source = TokenSourceCache
+				}
+				if ar.AccessToken != tokens[index] || ar.Metadata.TokenSource != source {
+					t.Fatalf("acquisition %d: got token %q source %d, want %q source %d", i, ar.AccessToken, ar.Metadata.TokenSource, tokens[index], source)
+				}
+			}
+			if requests != 2 {
+				t.Fatalf("expected two token requests, got %d", requests)
+			}
+		})
+	}
+}
+
 // TestWithAttribute validates that the WithAttribute option correctly passes
 // the attribute value to extraBodyParameters in the token request
 func TestWithAttribute(t *testing.T) {
