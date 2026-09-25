@@ -376,6 +376,62 @@ func TestAcquireTokenOnBehalfOf(t *testing.T) {
 	}
 }
 
+func TestAcquireTokenOnBehalfOfProactiveRefreshUsesDelegatedGrant(t *testing.T) {
+	originalNow := base.Now
+	defer func() { base.Now = originalNow }()
+
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	lmo := "login.microsoftonline.com"
+	tenant := "tenant"
+	assertion := "assertion"
+	initialToken := "obo-initial"
+	refreshedToken := "obo-refreshed"
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(initialToken, "", "rt", "", 86400, 1)))
+
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err = client.AcquireTokenOnBehalfOf(ctx, assertion, tokenScope); err != nil {
+		t.Fatal(err)
+	}
+
+	refreshedAt := originalNow().Add(2 * time.Second)
+	base.Now = func() time.Time { return refreshedAt }
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(refreshedToken, "", "rt", "", 86400, 0)), mock.WithCallback(func(req *http.Request) {
+		if err := req.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if got := req.Form.Get("grant_type"); got != "urn:ietf:params:oauth:grant-type:jwt-bearer" {
+			t.Fatalf("expected on-behalf-of grant, got %q", got)
+		}
+		if got := req.Form.Get("requested_token_use"); got != "on_behalf_of" {
+			t.Fatalf("expected on_behalf_of token use, got %q", got)
+		}
+		if got := req.Form.Get("assertion"); got != assertion {
+			t.Fatalf("expected original user assertion %q, got %q", assertion, got)
+		}
+		if got := req.Form.Get("client_secret"); got != fakeSecret {
+			t.Fatalf("expected client secret %q, got %q", fakeSecret, got)
+		}
+	}))
+
+	result, err := client.AcquireTokenOnBehalfOf(ctx, assertion, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccessToken != refreshedToken {
+		t.Fatalf("expected refreshed token %q, got %q", refreshedToken, result.AccessToken)
+	}
+}
+
 func TestAcquireTokenByAssertionCallback(t *testing.T) {
 	calls := 0
 	key := contextKey{}
@@ -522,7 +578,17 @@ func TestAcquireTokenByAuthCodeTokenExpiry(t *testing.T) {
 	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
 	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(newAccessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(newAccessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)), mock.WithCallback(func(req *http.Request) {
+		if err := req.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if got := req.Form.Get("grant_type"); got != "refresh_token" {
+			t.Fatalf("expected refresh token grant, got %q", got)
+		}
+		if got := req.Form.Get("refresh_token"); got != "rt" {
+			t.Fatalf("expected refresh token %q, got %q", "rt", got)
+		}
+	}))
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, "common"), fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
 	if err != nil {
