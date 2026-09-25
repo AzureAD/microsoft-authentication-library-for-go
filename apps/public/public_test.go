@@ -1158,7 +1158,14 @@ func TestAcquireTokenSilentWithRefreshOnIsExpired(t *testing.T) {
 	mockClient := mock.NewClient()
 	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, "common")))
 	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("new-"+accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("new-"+accessToken, mock.GetIDToken(homeTenant, fmt.Sprintf(authorityFmt, lmo, homeTenant)), "rt", clientInfo, 36000, 1000)), mock.WithCallback(func(req *http.Request) {
+		if err := req.ParseForm(); err != nil {
+			t.Fatal(err)
+		}
+		if got := req.Form.Get("grant_type"); got != "refresh_token" {
+			t.Fatalf("expected refresh token grant, got %q", got)
+		}
+	}))
 
 	client, err := New("common",
 		WithAuthority(fmt.Sprintf(authorityFmt, lmo, "common")),
