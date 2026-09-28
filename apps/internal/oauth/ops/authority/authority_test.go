@@ -299,33 +299,44 @@ func TestAADInstanceDiscovery(t *testing.T) {
 func TestAADInstanceDiscoveryWithRegion(t *testing.T) {
 	client := Client{&fakeJSONCaller{}}
 	region := "region"
-	discoveryPath := "tenant/v2.0/.well-known/openid-configuration"
-	publicCloudEndpoint := fmt.Sprintf("https://%s.login.microsoft.com/%s", region, discoveryPath)
-	for _, test := range []struct{ host, expectedEndpoint string }{
-		{"login.chinacloudapi.cn", fmt.Sprintf("https://%s.login.chinacloudapi.cn/%s", region, discoveryPath)},
-		{"login.microsoft.com", publicCloudEndpoint},
-		{"login.microsoftonline.com", publicCloudEndpoint},
-		{"login.windows.net", publicCloudEndpoint},
-		{"login.windows-ppe.net", fmt.Sprintf("https://%s.login.windows-ppe.net/%s", region, discoveryPath)},
-		{"sts.windows.net", publicCloudEndpoint},
+	for _, test := range []struct {
+		host                 string
+		expectedRegionalHost string
+		expectedAliases      []string
+	}{
+		{"login.microsoft.com", "region.login.microsoft.com", []string{"region.login.microsoft.com", "login.microsoft.com"}},
+		{"login.microsoftonline.com", "region.login.microsoft.com", []string{"region.login.microsoft.com", "login.microsoftonline.com"}},
+		{"login.windows.net", "region.login.microsoft.com", []string{"region.login.microsoft.com", "login.windows.net"}},
+		{"sts.windows.net", "region.login.microsoft.com", []string{"region.login.microsoft.com", "sts.windows.net"}},
+		{"login.partner.microsoftonline.cn", "region.login.partner.microsoftonline.cn", []string{"region.login.partner.microsoftonline.cn", "login.partner.microsoftonline.cn"}},
+		{"login.chinacloudapi.cn", "region.login.partner.microsoftonline.cn", []string{"region.login.partner.microsoftonline.cn", "login.partner.microsoftonline.cn", "login.chinacloudapi.cn"}},
+		{"login.microsoftonline.us", "region.login.microsoftonline.us", []string{"region.login.microsoftonline.us", "login.microsoftonline.us"}},
+		{"login.usgovcloudapi.net", "region.login.microsoftonline.us", []string{"region.login.microsoftonline.us", "login.microsoftonline.us", "login.usgovcloudapi.net"}},
+		{"login.sovcloud-identity.fr", "region.login.sovcloud-identity.fr", []string{"region.login.sovcloud-identity.fr", "login.sovcloud-identity.fr"}},
+		{"login.windows-ppe.net", "region.login.windows-ppe.net", []string{"region.login.windows-ppe.net", "login.windows-ppe.net"}},
 	} {
 		t.Run(test.host, func(t *testing.T) {
 			authInfo := Info{Host: test.host, Tenant: "tenant", Region: region}
 			resp, err := client.AADInstanceDiscovery(context.Background(), authInfo)
 			if err != nil {
-				t.Errorf("AADInstanceDiscoveryWithRegion failing with %s", err)
+				t.Fatalf("AADInstanceDiscoveryWithRegion failed: %v", err)
 			}
-			expectedPreferredNetwork := fmt.Sprintf("%v.%v", region, test.host)
-			expectedPreferredCache := test.host
-			if resp.TenantDiscoveryEndpoint != test.expectedEndpoint {
-				t.Errorf("AADInstanceDiscoveryWithRegion incorrect TenantDiscoveryEndpoint: got: %s, want: %s", resp.TenantDiscoveryEndpoint, test.expectedEndpoint)
+			expectedEndpoint := fmt.Sprintf("https://%s/tenant/v2.0/.well-known/openid-configuration", test.expectedRegionalHost)
+			if resp.TenantDiscoveryEndpoint != expectedEndpoint {
+				t.Errorf("TenantDiscoveryEndpoint = %q, want %q", resp.TenantDiscoveryEndpoint, expectedEndpoint)
 			}
-			if resp.Metadata[0].PreferredNetwork != expectedPreferredNetwork {
-				t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Network got: %s, want: %s", resp.Metadata[0].PreferredNetwork, expectedPreferredNetwork)
+			if len(resp.Metadata) != 1 {
+				t.Fatalf("len(Metadata) = %d, want 1", len(resp.Metadata))
 			}
-			if resp.Metadata[0].PreferredCache != expectedPreferredCache {
-				t.Errorf("AADInstanceDiscoveryWithRegion incorrect Preferred Cache got: %s, want: %s", resp.Metadata[0].PreferredCache, expectedPreferredCache)
-
+			metadata := resp.Metadata[0]
+			if metadata.PreferredNetwork != test.expectedRegionalHost {
+				t.Errorf("PreferredNetwork = %q, want %q", metadata.PreferredNetwork, test.expectedRegionalHost)
+			}
+			if metadata.PreferredCache != test.host {
+				t.Errorf("PreferredCache = %q, want %q", metadata.PreferredCache, test.host)
+			}
+			if !reflect.DeepEqual(metadata.Aliases, test.expectedAliases) {
+				t.Errorf("Aliases = %v, want %v", metadata.Aliases, test.expectedAliases)
 			}
 		})
 	}
@@ -752,6 +763,12 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			expectError: false,
 		},
 		{
+			desc:        "issuer host matches authority case-insensitively",
+			issuer:      "https://LOGIN.MICROSOFTONLINE.COM/tenant-id",
+			authority:   "https://login.microsoftonline.com/tenant-id",
+			expectError: false,
+		},
+		{
 			desc:        "issuer matches authority with trailing slash in issuer",
 			issuer:      "https://login.microsoftonline.com/tenant-id/",
 			authority:   "https://login.microsoftonline.com/tenant-id",
@@ -816,6 +833,13 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			expectError: false,
 		},
 		{
+			desc:        "issuer matches an alias case-insensitively",
+			issuer:      "https://ALIAS1.EXAMPLE.COM/tenant-id",
+			authority:   "https://contoso.com/tenant-id",
+			aliases:     map[string]bool{"alias1.example.com": true},
+			expectError: false,
+		},
+		{
 			desc:        "issuer doesn't match any alias",
 			issuer:      "https://unknown.example.com/tenant-id",
 			authority:   "https://contoso.com/tenant-id",
@@ -832,7 +856,7 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 		// Test cases for regional authority scenarios where instance discovery isn't performed
 		{
 			desc:        "regional authority with trusted issuer host (no aliases)",
-			issuer:      "https://login.microsoftonline.com/tenant-id",
+			issuer:      "https://LOGIN.MICROSOFTONLINE.COM/tenant-id",
 			authority:   "https://westus2.login.microsoft.com/tenant-id",
 			aliases:     nil,
 			expectError: false,
@@ -865,8 +889,8 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 			aliases:     nil,
 			expectError: false,
 		}, {
-			desc:        "regional authority subdomain with matching trusted issuer",
-			issuer:      "https://login.dummy-uri.com/tenant-id",
+			desc:        "regional authority subdomain matches issuer case-insensitively",
+			issuer:      "https://LOGIN.DUMMY-URI.COM/tenant-id",
 			authority:   "https://region.login.dummy-uri.com/tenant-id",
 			aliases:     nil,
 			expectError: false,

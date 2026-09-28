@@ -35,6 +35,10 @@ type AccessTokens struct {
 	// Set this to true to have all APIs return an error.
 	Err bool
 
+	ClientCredentialCalls int
+	OnBehalfOfCalls       int
+	RefreshTokenCalls     int
+
 	// Result is for use with FromDeviceCodeResult. On each call it returns
 	// the next item in this slice. They must be either an error or nil.
 	Result []error
@@ -66,6 +70,7 @@ func (f *AccessTokens) FromAuthCode(ctx context.Context, req accesstokens.AuthCo
 	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromRefreshToken(ctx context.Context, appType accesstokens.AppType, authParams authority.AuthParams, cc *accesstokens.Credential, refreshToken string) (accesstokens.TokenResponse, error) {
+	f.RefreshTokenCalls++
 	if f.FromRefreshTokenCallback != nil {
 		f.FromRefreshTokenCallback(appType, authParams, cc, refreshToken)
 	}
@@ -75,6 +80,7 @@ func (f *AccessTokens) FromRefreshToken(ctx context.Context, appType accesstoken
 	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromClientSecret(ctx context.Context, authParameters authority.AuthParams, clientSecret string) (accesstokens.TokenResponse, error) {
+	f.ClientCredentialCalls++
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}
@@ -90,6 +96,7 @@ func (f *AccessTokens) FromAssertion(ctx context.Context, authParameters authori
 	return f.AccessToken, nil
 }
 func (f *AccessTokens) FromUserAssertionClientSecret(ctx context.Context, authParameters authority.AuthParams, userAssertion, clientSecret string) (accesstokens.TokenResponse, error) {
+	f.OnBehalfOfCalls++
 	if f.Err {
 		return accesstokens.TokenResponse{}, fmt.Errorf("error")
 	}

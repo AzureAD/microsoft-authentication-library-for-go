@@ -52,6 +52,12 @@ func newTestAuthorityInfo(host, canonicalURI, tenant string) authority.Info {
 	}
 }
 
+type roundTripFunc func(*http.Request) (*http.Response, error)
+
+func (f roundTripFunc) RoundTrip(r *http.Request) (*http.Response, error) {
+	return f(r)
+}
+
 func TestResolveEndpoints_BasicResolution(t *testing.T) {
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -368,5 +374,122 @@ func TestResolveEndpoints_IssuerValidation(t *testing.T) {
 	_, err := resolver.ResolveEndpoints(context.Background(), info, "")
 	if err == nil {
 		t.Fatal("expected issuer validation error, got nil")
+	}
+}
+
+func TestResolveEndpoints_IssuerValidationFailureNotCached(t *testing.T) {
+	var callCount int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		writeTestResponse(t, w, tenantDiscoveryJSON("evil.example.com"))
+	}))
+	defer srv.Close()
+
+	resolver := newAuthorityEndpoint(ops.New(srv.Client()))
+	info := newTestAuthorityInfo("login.microsoftonline.com", srv.URL+"/common/", "common")
+
+	for i := 1; i <= 2; i++ {
+		if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err == nil {
+			t.Fatalf("call %d: expected issuer validation error, got nil", i)
+		}
+	}
+
+	if count := atomic.LoadInt32(&callCount); count != 2 {
+		t.Fatalf("expected 2 HTTP calls because rejected endpoints aren't cached, got %d", count)
+	}
+}
+
+func TestResolveEndpoints_ValidResponseAfterIssuerValidationFailureIsCached(t *testing.T) {
+	var callCount int32
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		n := atomic.AddInt32(&callCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		if n == 1 {
+			writeTestResponse(t, w, tenantDiscoveryJSON("evil.example.com"))
+			return
+		}
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
+	}))
+	defer srv.Close()
+
+	resolver := newAuthorityEndpoint(ops.New(srv.Client()))
+	info := newTestAuthorityInfo("login.microsoftonline.com", srv.URL+"/common/", "common")
+
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err == nil {
+		t.Fatal("first call: expected issuer validation error, got nil")
+	}
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err != nil {
+		t.Fatalf("second call: unexpected error: %v", err)
+	}
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err != nil {
+		t.Fatalf("third call: unexpected error: %v", err)
+	}
+
+	if count := atomic.LoadInt32(&callCount); count != 2 {
+		t.Fatalf("expected the valid response to be cached after 2 HTTP calls, got %d", count)
+	}
+}
+
+func TestResolveEndpoints_UsesInstanceDiscoveryAliases(t *testing.T) {
+	var callCount int32
+	var srv *httptest.Server
+
+	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&callCount, 1)
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Path == "/common/discovery/instance" {
+			writeTestResponse(t, w, fmt.Sprintf(`{
+				"tenant_discovery_endpoint": %q,
+				"metadata": [{
+					"preferred_network": "issuer.example.com",
+					"preferred_cache": "authority.example.com",
+					"aliases": ["AUTHORITY.EXAMPLE.COM", "issuer.example.com"]
+				}]
+			}`, srv.URL+"/common/v2.0/.well-known/openid-configuration"))
+			return
+		}
+		writeTestResponse(t, w, tenantDiscoveryJSON("ISSUER.EXAMPLE.COM"))
+	}))
+	defer srv.Close()
+
+	client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+		cloned := r.Clone(r.Context())
+		u := *r.URL
+		u.Scheme = "http"
+		u.Host = srv.Listener.Addr().String()
+		cloned.URL = &u
+		return http.DefaultTransport.RoundTrip(cloned)
+	})}
+	resolver := newAuthorityEndpoint(ops.New(client))
+	info := newTestAuthorityInfo("authority.example.com", "https://authority.example.com/common/", "common")
+	info.ValidateAuthority = true
+
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err != nil {
+		t.Fatalf("first call: unexpected error: %v", err)
+	}
+	if _, err := resolver.ResolveEndpoints(context.Background(), info, ""); err != nil {
+		t.Fatalf("second call: unexpected error: %v", err)
+	}
+
+	if count := atomic.LoadInt32(&callCount); count != 2 {
+		t.Fatalf("expected one instance discovery and one tenant discovery request, got %d", count)
+	}
+}
+
+func TestAliasesFromMetadataScopesToAuthority(t *testing.T) {
+	metadata := []authority.InstanceDiscoveryMetadata{
+		{Aliases: []string{"authority.example.com", "issuer.example.com"}},
+		{Aliases: []string{"other.example.com", "unrelated.example.com"}},
+	}
+
+	aliases := aliasesFromMetadata(metadata, "AUTHORITY.EXAMPLE.COM")
+	if !aliases["issuer.example.com"] {
+		t.Fatal("expected aliases from the matching metadata entry")
+	}
+	if aliases["unrelated.example.com"] {
+		t.Fatal("unexpected alias from an unrelated metadata entry")
 	}
 }

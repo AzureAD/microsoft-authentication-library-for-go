@@ -124,6 +124,7 @@ func main() {
 Tokens acquired with FMI are **automatically isolated** in the cache. This means:
 
 - Tokens with different FMI paths are cached separately
+- Exact `WithAttribute` strings participate in cache identity with or without FMI; different values are cached separately
 - FMI tokens don't interfere with regular (non-FMI) tokens
 - Silent token acquisition works seamlessly with cached FMI tokens
 
@@ -149,6 +150,4 @@ cachedResult, err := app.AcquireTokenByCredential(ctx, scopes,
 
 - Use the special client ID `urn:microsoft:identity:fmi` for FMI scenarios
 - The FMI credential is typically obtained from an RMA (Resource Management API) service  
-- Cache isolation is handled automatically - no manual cache management needed
-
-
+- On upgrade, purge or rotate affected caches and recreate clients; the fix does not clean up legacy entries. Do not share a cache namespace between affected and fixed versions.
