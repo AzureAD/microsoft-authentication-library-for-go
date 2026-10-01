@@ -47,11 +47,13 @@ const (
 // thing its negative control changed. The three markers are mutually exclusive, which is what stops
 // a control that started failing for some other reason from passing anyway.
 //
-// All three were captured from the live resource. Mirrors MSAL .NET PR #6167, which asserts on
-// mtlsMissingCertMarker.
+// All three were captured from the live resource. The missing-certificate marker remains compatible
+// with the historical prefixed diagnostic asserted by MSAL .NET PR #6167.
 const (
-	// mtlsMissingCertMarker: no client certificate was presented on the handshake at all.
-	mtlsMissingCertMarker = "MtlsMissingClientCertificate"
+	// mtlsMissingCertMarker: no client certificate was presented on the handshake at all. Graph
+	// historically returned "MtlsMissingClientCertificate" and now returns "MissingClientCertificate";
+	// matching the shared suffix keeps this control specific while accepting both forms.
+	mtlsMissingCertMarker = "MissingClientCertificate"
 
 	// mtlsWrongSchemeMarker: the binding certificate was presented, but the token was offered under
 	// "Bearer", a scheme that carries no proof-of-possession. Distinct from mtlsMissingCertMarker
