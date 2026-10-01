@@ -826,8 +826,13 @@ func TestAttestationDiagnosticsAreRedacted(t *testing.T) {
 		"eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ." +
 		"SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5cSflKxwRJSMeKKF2QT4fwpMeJf36POk"
 	line := "[Error] attest AttestKeyGuard:120 MAA rejected the token " + jwt
+	lines := make([]string, attestationDetailMaxLines+5)
+	for i := range lines {
+		lines[i] = fmt.Sprintf("setup diagnostic %d", i)
+	}
+	lines[len(lines)-1] = line
 
-	got := redactAttestationDetail(line)
+	got := attestationDetail(lines)
 	if strings.Contains(got, jwt) {
 		t.Fatal("a credential-shaped value survived redaction")
 	}
@@ -868,19 +873,30 @@ func TestAttestationLogLinesAreBounded(t *testing.T) {
 	}
 }
 
-// The whole transcript is capped as well, and how many were dropped is
-// reported rather than silently lost.
+// The whole transcript is capped as well. Leading context and terminal
+// diagnostics survive, while the omitted middle is counted rather than
+// silently lost.
 func TestAttestationDetailIsBounded(t *testing.T) {
 	lines := make([]string, attestationDetailMaxLines*3)
 	for i := range lines {
-		lines[i] = "diagnostic line"
+		lines[i] = fmt.Sprintf("diagnostic line [%03d]", i)
 	}
 	detail := attestationDetail(lines)
 	if strings.Count(detail, "diagnostic line") != attestationDetailMaxLines {
 		t.Fatalf("rendered %d lines, want %d", strings.Count(detail, "diagnostic line"), attestationDetailMaxLines)
 	}
-	if !strings.Contains(detail, "more lines omitted") {
-		t.Fatalf("the omission was not reported: %q", detail)
+	leading := attestationDetailMaxLines / 2
+	trailing := attestationDetailMaxLines - leading
+	for i := range lines {
+		got := strings.Contains(detail, lines[i])
+		want := i < leading || i >= len(lines)-trailing
+		if got != want {
+			t.Fatalf("line %d presence = %t, want %t: %q", i, got, want, detail)
+		}
+	}
+	omission := fmt.Sprintf("...(%d more lines omitted)", len(lines)-attestationDetailMaxLines)
+	if strings.Count(detail, omission) != 1 {
+		t.Fatalf("omission marker count = %d, want 1: %q", strings.Count(detail, omission), detail)
 	}
 	if attestationDetail(nil) != "" {
 		t.Error("an empty transcript should render as nothing")

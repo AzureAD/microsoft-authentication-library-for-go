@@ -196,7 +196,7 @@ stages:
                 # a resource that requires attestation would then fail for a reason
                 # unrelated to the code under test.
                 $pkg = "microsoft.azure.security.keyguardattestation"
-                $ver = "1.1.5"
+                $ver = "1.1.7"
                 $dir = "$(Agent.TempDirectory)\kgatt"
                 New-Item -ItemType Directory -Force -Path $dir | Out-Null
                 $nupkg = "$dir\$pkg.$ver.nupkg"

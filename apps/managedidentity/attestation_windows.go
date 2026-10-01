@@ -148,20 +148,22 @@ func attestationDetail(lines []string) string {
 	if len(lines) == 0 {
 		return ""
 	}
-	omitted := 0
+	redacted := make([]string, 0, attestationDetailMaxLines+1)
+	appendRedacted := func(lines []string) {
+		for _, line := range lines {
+			redacted = append(redacted, redactAttestationDetail(line))
+		}
+	}
 	if len(lines) > attestationDetailMaxLines {
-		omitted = len(lines) - attestationDetailMaxLines
-		lines = lines[:attestationDetailMaxLines]
+		leading := attestationDetailMaxLines / 2
+		trailing := attestationDetailMaxLines - leading
+		appendRedacted(lines[:leading])
+		redacted = append(redacted, fmt.Sprintf("...(%d more lines omitted)", len(lines)-attestationDetailMaxLines))
+		appendRedacted(lines[len(lines)-trailing:])
+	} else {
+		appendRedacted(lines)
 	}
-	redacted := make([]string, 0, len(lines))
-	for _, line := range lines {
-		redacted = append(redacted, redactAttestationDetail(line))
-	}
-	detail := strings.Join(redacted, "; ")
-	if omitted > 0 {
-		detail = fmt.Sprintf("%s; ...(%d more lines omitted)", detail, omitted)
-	}
-	return detail
+	return strings.Join(redacted, "; ")
 }
 
 // attestationLogThunk is the native logging callback. The pointer arguments are
