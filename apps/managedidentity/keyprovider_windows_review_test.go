@@ -817,6 +817,25 @@ func TestBindingKeyCreateFlagsDoNotOverwrite(t *testing.T) {
 	}
 }
 
+// The native attestation call synchronously invokes a Go logger while holding
+// pointer arguments. Resolved procedures route those calls through Proc.Call,
+// whose uintptr escape contract keeps the pointed-to storage off a movable Go
+// stack. These assignments are a compile-time guard against storing raw
+// addresses and calling them directly.
+func TestAttestationLibraryStoresResolvedProcedures(t *testing.T) {
+	lib := attestationLib{}
+	procedures := map[string]*windows.Proc{
+		"InitAttestationLib":      lib.initAttestationLib,
+		"AttestKeyGuardImportKey": lib.attestKeyGuardImportKey,
+		"FreeAttestationToken":    lib.freeAttestationToken,
+	}
+	for name, proc := range procedures {
+		if proc != nil {
+			t.Fatalf("zero-value %s procedure = %v, want nil", name, proc)
+		}
+	}
+}
+
 // The native library's diagnostics reach error strings, which callers log. It
 // fetches its own managed identity token to call MAA and returns an MAA
 // statement, and its log messages are free to quote either, so anything

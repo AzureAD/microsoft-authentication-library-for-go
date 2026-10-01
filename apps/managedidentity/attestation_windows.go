@@ -11,7 +11,6 @@ import (
 	"runtime"
 	"strings"
 	"sync"
-	"syscall"
 	"unsafe"
 
 	"golang.org/x/sys/windows"
@@ -46,8 +45,9 @@ type attestationLogInfo struct {
 var nativeLogLevels = [...]string{"error", "warn", "info", "debug"}
 
 type attestationLib struct {
-	attestKeyGuardImportKey uintptr
-	freeAttestationToken    uintptr
+	initAttestationLib      *windows.Proc
+	attestKeyGuardImportKey *windows.Proc
+	freeAttestationToken    *windows.Proc
 }
 
 var (
@@ -208,25 +208,26 @@ func loadAttestationLib() (*attestationLib, error) {
 			attestationLibErr = fmt.Errorf("%w: loading %s: %v", ErrAttestationUnavailable, attestationLibName, err)
 			return
 		}
-		var initLib, attest, free uintptr
+		dll := &windows.DLL{Name: attestationLibName, Handle: handle}
+		lib := &attestationLib{}
 		for _, p := range []struct {
 			name string
-			addr *uintptr
+			proc **windows.Proc
 		}{
-			{"InitAttestationLib", &initLib},
-			{"AttestKeyGuardImportKey", &attest},
-			{"FreeAttestationToken", &free},
+			{"InitAttestationLib", &lib.initAttestationLib},
+			{"AttestKeyGuardImportKey", &lib.attestKeyGuardImportKey},
+			{"FreeAttestationToken", &lib.freeAttestationToken},
 		} {
-			addr, err := windows.GetProcAddress(handle, p.name)
+			proc, err := dll.FindProc(p.name)
 			if err != nil {
 				attestationLibErr = fmt.Errorf("%w: %s is missing %s: %v", ErrAttestationUnavailable, attestationLibName, p.name, err)
 				return
 			}
-			*p.addr = addr
+			*p.proc = proc
 		}
 
 		info := attestationLogInfo{log: windows.NewCallback(attestationLogThunk)}
-		if r, _, err := syscall.SyscallN(initLib, uintptr(unsafe.Pointer(&info))); r != 0 {
+		if r, _, err := lib.initAttestationLib.Call(uintptr(unsafe.Pointer(&info))); r != 0 {
 			// #nosec G115 -- the native library returns a 32-bit HRESULT-style
 			// status widened into a uintptr by the syscall ABI, so narrowing it
 			// back to int32 restores the value the library actually returned.
@@ -237,7 +238,7 @@ func loadAttestationLib() (*attestationLib, error) {
 		// The library is deliberately never uninitialised: doing so would race
 		// with any in-flight attestation on another goroutine, and the process
 		// exiting reclaims it anyway.
-		attestationLibVal = &attestationLib{attestKeyGuardImportKey: attest, freeAttestationToken: free}
+		attestationLibVal = lib
 	})
 	return attestationLibVal, attestationLibErr
 }
@@ -317,7 +318,11 @@ func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
 	var token *byte
 	// authToken and clientPayload are null: the library fetches its own managed
 	// identity token from IMDS, which is what MSAL .NET passes too.
-	r, _, callErr := syscall.SyscallN(lib.attestKeyGuardImportKey,
+	//
+	// Proc.Call makes pointer arguments escape to stable heap storage. This
+	// matters because the native call invokes the Go logger synchronously; that
+	// callback can grow the Go stack while the library still holds &token.
+	r, _, callErr := lib.attestKeyGuardImportKey.Call(
 		uintptr(unsafe.Pointer(endpointPtr)),
 		0,
 		0,
@@ -340,7 +345,7 @@ func attestKeyGuard(endpoint, clientID string, key bindingKey) (string, error) {
 	freeToken := token
 	defer func() {
 		if freeToken != nil {
-			_, _, _ = syscall.SyscallN(lib.freeAttestationToken, uintptr(unsafe.Pointer(freeToken)))
+			_, _, _ = lib.freeAttestationToken.Call(uintptr(unsafe.Pointer(freeToken)))
 			freeToken = nil
 		}
 	}()
