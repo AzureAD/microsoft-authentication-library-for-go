@@ -20,7 +20,8 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/internal/grant"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
+	"github.com/google/go-cmp/cmp/cmpopts"
 )
 
 var testAuthorityEndpoints = authority.NewEndpoints(
@@ -60,7 +61,7 @@ func (f *fakeURLCaller) compare(endpoint string, qv url.Values) error {
 	if f.gotEndpoint != endpoint {
 		return fmt.Errorf("got endpoint == %s, want endpoint == %s", f.gotEndpoint, endpoint)
 	}
-	if diff := pretty.Compare(qv, f.gotQV); diff != "" {
+	if diff := cmp.Diff(qv, f.gotQV); diff != "" {
 		return fmt.Errorf("qv -want/+got:\n%s", diff)
 	}
 	return nil
@@ -983,8 +984,13 @@ func TestTokenResponseUnmarshal(t *testing.T) {
 		if got.ExpiresOn.Unix() != test.want.ExpiresOn.Unix() {
 			t.Errorf("TestCreateTokenResponse: got %v, want %v", got.ExpiresOn.Unix(), test.want.ExpiresOn.Unix())
 		}
-		// Note: IncludeUnexported prevents minor differences in time.Time due to internal fields.
-		if diff := (&pretty.Config{IncludeUnexported: false}).Compare(test.want, got); diff != "" {
+		// ExpiresOn is checked by Unix time above; ignore dynamic time-based fields here.
+		if diff := cmp.Diff(
+			test.want,
+			got,
+			cmpopts.IgnoreUnexported(time.Time{}),
+			cmpopts.IgnoreFields(TokenResponse{}, "RefreshOn", "ExpiresOn", "ExtExpiresOn", "scopesComputed"),
+		); diff != "" {
 			t.Errorf("TestCreateTokenResponse: -want/+got:\n%s", diff)
 		}
 	}
@@ -1118,7 +1124,7 @@ func TestComputeScopes(t *testing.T) {
 
 	for _, test := range tests {
 		test.input.ComputeScope(test.authParams)
-		if diff := pretty.Compare(test.want, test.input); diff != "" {
+		if diff := cmp.Diff(test.want, test.input, cmp.AllowUnexported(TokenResponse{}), cmpopts.EquateEmpty()); diff != "" {
 			t.Errorf("TestComputeScopes(%s): -want/+got:\n%s", test.desc, diff)
 		}
 	}

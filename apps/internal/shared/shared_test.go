@@ -9,7 +9,7 @@ import (
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/json"
 
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 var (
@@ -49,7 +49,7 @@ func TestAccountUnmarshal(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestAccountUnmarshal: -want/+got:\n%s", diff)
 	}
 }
@@ -97,7 +97,7 @@ func TestAccountMarshal(t *testing.T) {
 		panic(err)
 	}
 
-	if diff := pretty.Compare(want, got); diff != "" {
+	if diff := cmp.Diff(want, got); diff != "" {
 		t.Errorf("TestAccountMarshal: -want/+got:\n%s", diff)
 	}
 }

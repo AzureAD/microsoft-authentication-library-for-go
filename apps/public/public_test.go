@@ -24,7 +24,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/wstrust"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
-	"github.com/kylelemons/godebug/pretty"
+	"github.com/google/go-cmp/cmp"
 )
 
 const authorityFmt = "https://%s/%s"
@@ -577,7 +577,7 @@ func TestWithCache(t *testing.T) {
 	if actual := len(accounts); actual != 1 {
 		t.Fatalf("expected 1 account but cache contains %d", actual)
 	}
-	if diff := pretty.Compare(account, accounts[0]); diff != "" {
+	if diff := cmp.Diff(account, accounts[0]); diff != "" {
 		t.Fatal(diff)
 	}
 
@@ -651,7 +651,7 @@ func TestWithClaims(t *testing.T) {
 			if err := json.Unmarshal([]byte(claims[0]), &actual); err != nil {
 				t.Fatal(err)
 			}
-			if diff := pretty.Compare(expected, actual); diff != "" {
+			if diff := cmp.Diff(expected, actual); diff != "" {
 				t.Fatal(diff)
 			}
 		}
