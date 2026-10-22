@@ -79,6 +79,19 @@ const attestationExpiryBuffer = 5 * time.Minute
 // an unbounded number of stuck native calls, each pinning a key handle.
 const attestationMaxInFlight = 4
 
+// attestationWaitTimeout bounds how long one caller waits for native
+// attestation.
+//
+// The native call cannot be cancelled, so timing out only releases this caller;
+// the worker keeps running, retains the binding key, and publishes its result to
+// the cache when it eventually returns. The bound matches the default duration
+// used for one managed identity HTTP attempt, so context.Background cannot hold
+// the process-wide token gate forever while still allowing a slow MAA round
+// trip. A shorter caller deadline continues to win.
+//
+// It is a variable so tests can shrink it; nothing outside tests assigns to it.
+var attestationWaitTimeout = 100 * time.Second
+
 type attestationCacheEntry struct {
 	token   string
 	expires time.Time
@@ -156,12 +169,13 @@ func attestationCacheKey(endpoint string, key bindingKey) (string, error) {
 // The native call cannot be interrupted. It reaches into the VBS trustlet and
 // then makes its own HTTPS round trip to MAA using a managed identity token it
 // fetches itself, and nothing in that path takes a Go context or a deadline. It
-// is therefore run on a goroutine of its own, so ctx bounds how long this caller
-// waits rather than how long the work takes. That distinction is what matters
-// for the process-wide token gate: an acquisition holds that gate for its whole
-// duration, so a caller that could not give up here would hold it - and every
-// other managed identity acquisition in the process - for as long as the native
-// library stayed inside the trustlet.
+// is therefore run on a goroutine of its own, so ctx or
+// attestationWaitTimeout bounds how long this caller waits rather than how long
+// the work takes. That distinction is what matters for the process-wide token
+// gate: an acquisition holds that gate for its whole duration, so a caller that
+// could not give up here would hold it - and every other managed identity
+// acquisition in the process - for as long as the native library stayed inside
+// the trustlet.
 //
 // holder is the reference count on the binding key handle. The worker takes a
 // reference before it starts and drops it when it returns, so a caller that
@@ -200,14 +214,16 @@ func attestKeyGuardCached(ctx context.Context, endpoint, clientID string, key bi
 		go runAttestation(call, cacheKey, endpoint, clientID, key, holder, cacheable)
 	}
 
+	waitCtx, cancel := context.WithTimeout(ctx, attestationWaitTimeout)
+	defer cancel()
 	select {
 	case <-call.done:
 		return call.token, call.err
-	case <-ctx.Done():
+	case <-waitCtx.Done():
 		// The work continues without this caller. It is already accounted for
 		// by the in-flight cap, and its result will still be cached, so the
 		// next caller pays nothing for having been abandoned here.
-		return "", ctx.Err()
+		return "", waitCtx.Err()
 	}
 }
 

@@ -67,6 +67,148 @@ func TestRestoreNeverProvisionsAKey(t *testing.T) {
 // Attestation: cancellation, bounding, and freshness.
 // ---------------------------------------------------------------------------
 
+// A context without a deadline is ordinary for AcquireToken. It must still stop
+// waiting for a native call that never returns, while the worker retains the key
+// until native code has actually finished with it.
+func TestAttestationWaitIsBoundedAndKeyLivesUntilWorkerCompletion(t *testing.T) {
+	clearAttestationCache()
+	t.Cleanup(clearAttestationCache)
+
+	restoreTimeout := attestationWaitTimeout
+	attestationWaitTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { attestationWaitTimeout = restoreTimeout })
+
+	signer, err := rsa.GenerateKey(rand.Reader, csrKeyBits)
+	if err != nil {
+		t.Fatal(err)
+	}
+	closed := make(chan struct{})
+	var closeOnce sync.Once
+	key := bindingKey{Signer: signer, Type: keyTypeKeyGuard, Close: func() error {
+		closeOnce.Do(func() { close(closed) })
+		return nil
+	}}
+	holder := shareKey(&key)
+
+	started := make(chan struct{})
+	releaseWorker := make(chan struct{})
+	var releaseOnce sync.Once
+	var running sync.WaitGroup
+	running.Add(1)
+	original := attestKeyGuardFn
+	attestKeyGuardFn = func(string, string, bindingKey) (string, error) {
+		defer running.Done()
+		close(started)
+		<-releaseWorker
+		return "", errors.New("released")
+	}
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseWorker) })
+		running.Wait()
+		attestKeyGuardFn = original
+	})
+
+	done := make(chan error, 1)
+	go func() {
+		_, err := attestKeyGuardCached(
+			context.Background(), "https://attestation.example", "client", key, holder)
+		// This is the caller's reference, released on the same error path as
+		// issueBindingCertificate.
+		_ = key.Close()
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the native attestation worker did not start")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("attestKeyGuardCached returned %v, want context.DeadlineExceeded", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("context.Background waited indefinitely for native attestation")
+	}
+
+	select {
+	case <-closed:
+		t.Fatal("the binding key was released while the native worker was still using it")
+	default:
+	}
+
+	releaseOnce.Do(func() { close(releaseWorker) })
+	select {
+	case <-closed:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the binding key was not released after the native worker completed")
+	}
+}
+
+// An acquisition holds the process-wide token gate while it waits for
+// attestation. The library-side wait bound must therefore release that gate even
+// when the caller used context.Background and the native worker remains stuck.
+func TestTimedOutAttestationReleasesTheProcessWideTokenGate(t *testing.T) {
+	withCleanCaches(t)
+	fake := newIMDSFake(t)
+
+	restoreTimeout := attestationWaitTimeout
+	attestationWaitTimeout = 100 * time.Millisecond
+	t.Cleanup(func() { attestationWaitTimeout = restoreTimeout })
+
+	started := make(chan struct{})
+	releaseWorker := make(chan struct{})
+	var releaseOnce sync.Once
+	var running sync.WaitGroup
+	running.Add(1)
+	original := attestKeyGuardFn
+	attestKeyGuardFn = func(string, string, bindingKey) (string, error) {
+		defer running.Done()
+		close(started)
+		<-releaseWorker
+		return "", errors.New("released")
+	}
+	t.Cleanup(func() {
+		releaseOnce.Do(func() { close(releaseWorker) })
+		running.Wait()
+		attestKeyGuardFn = original
+	})
+
+	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
+	done := make(chan error, 1)
+	go func() {
+		_, err := client.AcquireToken(context.Background(), "https://vault.azure.net",
+			WithMtlsProofOfPossession(), WithAttestationSupport())
+		done <- err
+	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the acquisition did not start native attestation")
+	}
+	select {
+	case err := <-done:
+		if !errors.Is(err, context.DeadlineExceeded) {
+			t.Fatalf("AcquireToken returned %v, want context.DeadlineExceeded", err)
+		}
+	case <-time.After(5 * time.Second):
+		t.Fatal("AcquireToken with context.Background remained behind stuck attestation")
+	}
+
+	release, ok := tryAcquireMITokenGate()
+	if !ok {
+		t.Fatal("the process-wide token gate remained held after the attestation wait timed out")
+	}
+	release()
+
+	if _, err := client.AcquireToken(
+		context.Background(), "https://storage.azure.com", WithRequestOverMtls()); err != nil {
+		t.Fatalf("an unrelated managed identity acquisition remained blocked: %v", err)
+	}
+}
+
 // A caller whose context ends must stop waiting for the native attestation,
 // which cannot be interrupted, and must not block on releasing the binding key
 // while that call is still using the handle. Holding either would hold the
