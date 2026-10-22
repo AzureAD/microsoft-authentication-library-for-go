@@ -301,6 +301,11 @@ func isNilPointer(v any) bool {
 // certificate on AuthResult. A nil BindingCertificate keeps the regular token endpoint and
 // jwt-bearer assertion type.
 //
+// This ordering validates the current credential snapshot even when a Bearer cache entry doesn't
+// depend on the certificate. Callback errors or an unusable binding certificate fail the acquisition
+// rather than falling back to an otherwise valid cached token. Keep the callback efficient and
+// reliable, typically by using the first leg's own token cache.
+//
 // The callback must always return a non-empty assertion. [WithMtlsProofOfPossession] and
 // [WithSendCertificateOverMtls] also require a binding certificate and fail locally when it is
 // absent, rather than silently downgrading the requested transport or token type.

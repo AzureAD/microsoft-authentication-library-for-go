@@ -17,8 +17,9 @@ The application carries a certificate-bound assertion from the first call into t
 The binding certificate controls leg 2's assertion type and transport independently of the final
 token type. If leg 2 omits `WithMtlsProofOfPossession()`, it still presents the certificate and sends
 `jwt-pop` over mTLS, but requires a normal Bearer response, uses the Bearer cache partition, and
-returns no `BindingCertificate`. This demo selects the final-`mtls_pop` variant so it can also call
-the certificate-bound Graph resource over mTLS.
+returns no `BindingCertificate`. This demo selects the final-`mtls_pop` variant and inspects the
+token's binding metadata and certificate thumbprints. It defaults to a Key Vault scope and does not
+call a resource or validate Graph access.
 
 The points the demo exists to make, each verifiable in this branch's source:
 

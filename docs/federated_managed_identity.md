@@ -208,13 +208,24 @@ cred := confidential.NewCredFromSignedAssertionCallback(
 app, err := confidential.New(authority, clientID, cred)
 // No binding-certificate option is needed: the credential supplies it with the assertion.
 // Add WithMtlsProofOfPossession() only when the final token must also be certificate-bound.
-result, err := app.AcquireTokenByCredential(ctx, []string{"your-resource/.default"})
+result, err := app.AcquireTokenByCredential(
+    ctx,
+    []string{"your-resource/.default"},
+    confidential.WithFMIPath("YourFmiPath/CredentialPath"),
+)
 ```
 
 MSAL invokes the callback exactly once per supported confidential-client acquisition, including
 cache hits, to create one immutable assertion/certificate snapshot. The snapshot selects the TLS
 connection and assertion type before cache lookup. A final Bearer token uses the normal Bearer cache
 entry; an `mtls_pop` token uses a separate token-type entry partitioned by certificate.
+
+Resolving the callback before a Bearer cache lookup is a credential-validation policy, not a
+requirement of the cache key: MSAL validates the current assertion/certificate snapshot rather than
+letting a cached token mask a callback error or an unusable binding certificate. Consequently, a
+callback failure prevents returning even an otherwise valid cached Bearer token. Keep the callback
+efficient and reliable, normally by using leg 1's own token cache. Applications that require
+cache-first availability should account for this tradeoff when choosing this credential.
 
 Notes:
 
