@@ -447,7 +447,117 @@ stages:
               testRunTitle: "MI E2E – IMDS"
 
   # ──────────────────────────────────────────────
-  # Stage 5 — Managed Identity E2E Tests (Azure Arc)
+  # Stage 5 — KeyGuard SNI mTLS E2E Tests
+  #
+  # Runs on the same self-hosted "MISEManagedIdentity" VM as MSAL .NET's
+  # non-exportable VBS-key suite. The lab certificate is already installed in
+  # LocalMachine\My and registered with the shared SN/I application.
+  #
+  # This stage is unconditional. Missing provisioning, skipped tests, or a
+  # mismatched test filter are failures rather than silent loss of coverage.
+  # ──────────────────────────────────────────────
+  - stage: KeyGuardE2E
+    displayName: "KeyGuard E2E – Non-exportable VBS key"
+    dependsOn: [] # Builds from source — independent of the Build stage
+    jobs:
+      - job: RunKeyGuardE2ETests
+        displayName: "KeyGuard SNI mTLS E2E Tests"
+        pool:
+          name: "MISEManagedIdentity"
+        steps:
+          - task: PowerShell@2
+            displayName: "Check for Go"
+            inputs:
+              targetType: "inline"
+              script: |
+                $go = Get-Command go -ErrorAction SilentlyContinue
+                if ($go) {
+                  Write-Host "Go already installed: $(go version)"
+                  Write-Host "##vso[task.setvariable variable=goInstalled]true"
+                } else {
+                  Write-Host "Go not found on agent; it will be installed."
+                  Write-Host "##vso[task.setvariable variable=goInstalled]false"
+                }
+          - task: GoTool@0
+            displayName: "Install Go (only if missing)"
+            condition: eq(variables['goInstalled'], 'false')
+            inputs:
+              version: $(goVersion)
+          - task: PowerShell@2
+            displayName: "Run KeyGuard SNI mTLS E2E Tests"
+            inputs:
+              targetType: "inline"
+              workingDirectory: "$(System.DefaultWorkingDirectory)"
+              script: |
+                $ErrorActionPreference = "Stop"
+                go version
+                Push-Location "$(Build.SourcesDirectory)\build\tools"
+                go install gotest.tools/gotestsum
+                Pop-Location
+                $env:PATH = "$env:PATH;$(go env GOPATH)\bin"
+
+                # Match the certificate selection used by MSAL .NET's SNI mTLS
+                # suite on this pool. The Go test independently verifies that the
+                # selected private key is VBS-isolated and that its chain is usable.
+                $certificate = Get-ChildItem -Path Cert:\LocalMachine\My |
+                  Where-Object {
+                    $_.GetNameInfo([System.Security.Cryptography.X509Certificates.X509NameType]::SimpleName, $false) -eq "LabAuth.MSIDLab.com" -and
+                    $_.HasPrivateKey
+                  } |
+                  Sort-Object -Property NotBefore -Descending |
+                  Select-Object -First 1
+
+                $env:KEYGUARD_E2E_STORE_LOCATION = "LocalMachine"
+                $env:KEYGUARD_E2E_STORE_NAME = "My"
+                if ($null -ne $certificate) {
+                  $env:KEYGUARD_E2E_THUMBPRINT = $certificate.GetCertHashString("SHA256")
+                  Write-Host "Using $($certificate.Subject), valid through $($certificate.NotAfter.ToUniversalTime().ToString('u'))"
+                } else {
+                  Remove-Item Env:KEYGUARD_E2E_THUMBPRINT -ErrorAction SilentlyContinue
+                  Write-Host "No LabAuth.MSIDLab.com certificate with a private key was found in LocalMachine\My; the required tests will report the prerequisite failure."
+                }
+
+                $junitFile = "$(Build.SourcesDirectory)\keyguard-e2e-tests.xml"
+                $eventsFile = "$(Build.SourcesDirectory)\keyguard-e2e-events.json"
+                gotestsum --junitfile $junitFile --jsonfile $eventsFile -- `
+                  -tags e2e -count=1 -run '^TestKeyGuard' -v ./apps/tests/e2e/...
+                $testExit = $LASTEXITCODE
+
+                if (-not (Test-Path $eventsFile)) {
+                  throw "KeyGuard E2E run did not produce the expected test event log"
+                }
+                $events = @(Get-Content $eventsFile | ForEach-Object { $_ | ConvertFrom-Json })
+                $skipped = @($events | Where-Object {
+                  $_.Action -eq "skip" -and $_.Test -like "TestKeyGuard*"
+                })
+                if ($skipped.Count -gt 0) {
+                  throw "KeyGuard E2E tests skipped: $($skipped.Test -join ', ')"
+                }
+                if ($testExit -ne 0) {
+                  throw "KeyGuard E2E tests failed"
+                }
+
+                $required = @(
+                  "TestKeyGuardMtlsPoPEndToEnd",
+                  "TestKeyGuardSignerBackedAssertionSucceeds"
+                )
+                $passed = @($events | Where-Object {
+                  $_.Action -eq "pass" -and $_.Test -like "TestKeyGuard*"
+                } | Select-Object -ExpandProperty Test -Unique)
+                $missing = @($required | Where-Object { $passed -notcontains $_ })
+                if ($missing.Count -gt 0) {
+                  throw "Required KeyGuard E2E tests did not run and pass: $($missing -join ', ')"
+                }
+          - task: PublishTestResults@2
+            displayName: "Publish KeyGuard E2E test results"
+            condition: succeededOrFailed()
+            inputs:
+              testResultsFormat: "JUnit"
+              testResultsFiles: "**/keyguard-e2e-tests.xml"
+              testRunTitle: "KeyGuard E2E – Non-exportable VBS key"
+
+  # ──────────────────────────────────────────────
+  # Stage 6 — Managed Identity E2E Tests (Azure Arc)
   #
   # Runs on the self-hosted "MISEAZUREARC" pool, an Azure Arc-enabled machine.
   # Azure Arc supports the system-assigned identity only. Mirrors the MSAL .NET

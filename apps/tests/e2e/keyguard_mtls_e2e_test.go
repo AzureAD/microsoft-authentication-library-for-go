@@ -15,8 +15,8 @@
 // for a non-exportable VBS-protected certificate, including the negative case where the same bound
 // token is presented without the client certificate.
 //
-// These tests compile and run only with the "e2e" build tag, on Windows, and only when a KeyGuard
-// certificate thumbprint is supplied:
+// These tests compile and run only with the "e2e" build tag, on Windows, and require a KeyGuard
+// certificate thumbprint:
 //
 //	$env:KEYGUARD_E2E_THUMBPRINT = "<sha256 thumbprint>"
 //	go test -tags e2e -run KeyGuard -v ./apps/tests/e2e/...
@@ -84,9 +84,13 @@ func envOrDefault(name, fallback string) string {
 func openKeyGuardSigner(t *testing.T) *ncryptsigner.Signer {
 	t.Helper()
 
+	if testing.Short() {
+		t.Skip("skipping KeyGuard E2E test in short mode")
+	}
+
 	thumbprint := os.Getenv(keyguardThumbprintEnv)
 	if thumbprint == "" {
-		t.Skipf("set %s to the SHA-256 thumbprint of a KeyGuard (VBS-isolated) certificate to run this test; "+
+		t.Fatalf("%s is required and must contain the SHA-256 thumbprint of a KeyGuard (VBS-isolated) certificate; "+
 			"see apps/tests/devapps/keyguard/README.md for provisioning", keyguardThumbprintEnv)
 	}
 	storeLocation := envOrDefault(keyguardStoreLocationEnv, keyguardDefaultStoreLocation)
