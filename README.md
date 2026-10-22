@@ -232,9 +232,12 @@ Notes:
   that leg unless the base client sets `CheckRedirect`, because a 307 or 308 would replay the request
   body and present the binding certificate to the redirect target.
 - **Wrappers implement `confidential.MtlsHTTPClientFactory` on the value passed to
-  `WithHTTPClient`.** MSAL supplies an `augment` callback closed over its exact certificate snapshot.
-  The factory calls it exactly once and synchronously with a non-nil base `*http.Client`, then returns
-  a middleware/pipeline client whose `Do` terminates through the augmented client or transport:
+  `WithHTTPClient`.** On a certificate cache miss, the factory returns a fresh
+  `confidential.ClientConfigurer`. MSAL then calls `ConfigureClient` with an `augment` callback
+  closed over its exact certificate snapshot. The configurer calls it exactly once and synchronously
+  with a non-nil base `*http.Client`, then retains the returned client behind its middleware. The
+  clone preserves proxy routing, dialers, roots, timeouts and pool settings; MSAL owns the binding
+  certificate, TLS minimum, TLS session cache and redirect policy on that clone:
 
   ```go
   type middlewareClient struct {
@@ -250,14 +253,21 @@ Notes:
       c.client.CloseIdleConnections()
   }
 
-  func (c *middlewareClient) NewMtlsClient(
+  func (c *middlewareClient) ConfigureClient(
       augment func(*http.Client) (*http.Client, error),
-  ) (confidential.HTTPClient, error) {
+  ) error {
       specialized, err := augment(c.client)
       if err != nil {
-          return nil, err
+          return err
       }
-      return &middlewareClient{client: specialized}, nil
+      c.client = specialized
+      return nil
+  }
+
+  func (c *middlewareClient) NewMtlsClient() (confidential.ClientConfigurer, error) {
+      // Return a new adapter. ConfigureClient changes this field, so returning c would let one
+      // certificate overwrite the client used by another certificate and by ordinary requests.
+      return &middlewareClient{client: c.client}, nil
   }
 
   app, err := confidential.New(authority, clientID, cred,
@@ -265,13 +275,18 @@ Notes:
   ```
 
   An opaque wrapper without this capability fails before request transmission instead of falling
-  back to a default transport. MSAL also rejects a missing/repeated callback invocation, a nil base,
-  a nil result, and swallowed augmentation errors.
+  back to a default transport. MSAL rejects a nil factory result; a missing, repeated, late, or
+  nil-base callback invocation; and factory, configurer, and augmenter errors. It trusts the
+  configurer to route `Do` through the augmented client and forward `CloseIdleConnections` to its
+  pool because arbitrary middleware cannot be inspected.
 - **Factory results are cached by MSAL per certificate thumbprint.** Repeated use of one certificate
   reuses one specialized client and connection pool; different certificates receive independent
-  clients and TLS session caches and can be used concurrently. `NewMtlsClient` must therefore be
-  concurrency safe but must not add another certificate cache. `CloseIdleConnections` on each
-  returned wrapper must reach its augmented client so MSAL's cache cleanup releases the right pool.
+  adapters, transports, connection pools, and TLS session caches and can be used concurrently.
+  Concurrent initial misses for the same certificate may create more than one adapter; MSAL
+  publishes one and closes the losers. `NewMtlsClient` must therefore be concurrency safe, return a
+  fresh independently configurable adapter, and not add another certificate cache. MSAL augments
+  copies, so the original client and transport remain unchanged. `CloseIdleConnections` on each
+  configured adapter must reach its augmented client so cache cleanup releases the right pool.
 - **Sovereign clouds** are supported. `login.microsoftonline.us` (US Gov) and
   `login.partner.microsoftonline.cn` (China) rewrite to `mtlsauth.*` like the public cloud. For the
   mTLS token endpoint the legacy hostnames `login.usgovcloudapi.net` and `login.chinacloudapi.cn` are

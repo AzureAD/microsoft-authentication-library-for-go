@@ -58,16 +58,34 @@ func parseableTestCert(t *testing.T, serial int64) tls.Certificate {
 	return tls.Certificate{Certificate: [][]byte{der}, PrivateKey: testKey, Leaf: leaf}
 }
 
+type testClientConfigurer struct {
+	HTTPClient
+	configure func(func(*http.Client) (*http.Client, error)) error
+}
+
+func (c *testClientConfigurer) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
+	if c.configure == nil {
+		return nil
+	}
+	return c.configure(augment)
+}
+
 // setTestMtlsClientFactory adapts certificate-aware fixtures from the original override to the
-// augmenter contract. Focused tests exercise contract failures and middleware behavior directly.
+// certificate-scoped ClientConfigurer contract. Focused tests exercise contract failures and
+// middleware behavior directly.
 func (c *Client) setTestMtlsClientFactory(factory func(tls.Certificate) HTTPClient) {
-	c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-		augmented, err := augment(&http.Client{})
-		if err != nil {
-			return nil, err
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+		configurer := &testClientConfigurer{}
+		configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+			augmented, err := augment(&http.Client{})
+			if err != nil {
+				return err
+			}
+			transport := augmented.Transport.(*http.Transport)
+			configurer.HTTPClient = factory(transport.TLSClientConfig.Certificates[0])
+			return nil
 		}
-		transport := augmented.Transport.(*http.Transport)
-		return factory(transport.TLSClientConfig.Certificates[0]), nil
+		return configurer, nil
 	})
 }
 
@@ -321,12 +339,19 @@ func TestMtlsClientCachePerThumbprint(t *testing.T) {
 
 	t.Run("different certificates isolate pools and session caches", func(t *testing.T) {
 		shared := tls.NewLRUClientSessionCache(0)
-		base := &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
+		baseTransport := &http.Transport{TLSClientConfig: &tls.Config{
 			ClientSessionCache: shared,
-		}}}
+		}}
+		base := &http.Client{Transport: baseTransport}
 		c := &Client{}
-		c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-			return augment(base)
+		c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+			configurer := &testClientConfigurer{}
+			configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+				var err error
+				configurer.HTTPClient, err = augment(base)
+				return err
+			}
+			return configurer, nil
 		})
 
 		clientA, err := c.mtlsClient(certA)
@@ -340,8 +365,8 @@ func TestMtlsClientCachePerThumbprint(t *testing.T) {
 		if clientA == clientB {
 			t.Fatal("different certificates shared an HTTP client")
 		}
-		httpA := clientA.(*http.Client)
-		httpB := clientB.(*http.Client)
+		httpA := clientA.(*testClientConfigurer).HTTPClient.(*http.Client)
+		httpB := clientB.(*testClientConfigurer).HTTPClient.(*http.Client)
 		transportA := httpA.Transport.(*http.Transport)
 		transportB := httpB.Transport.(*http.Transport)
 		if transportA == transportB {
@@ -354,6 +379,18 @@ func TestMtlsClientCachePerThumbprint(t *testing.T) {
 		}
 		if cacheA == shared || cacheB == shared || cacheA == cacheB {
 			t.Fatal("different certificates shared TLS session state")
+		}
+		if base.Transport != baseTransport {
+			t.Fatal("factory configuration replaced the application's original transport")
+		}
+		if baseTransport.TLSClientConfig.ClientSessionCache != shared {
+			t.Fatal("factory configuration replaced the application's original TLS session cache")
+		}
+		if len(baseTransport.TLSClientConfig.Certificates) != 0 {
+			t.Fatal("factory configuration installed a binding certificate on the application's original transport")
+		}
+		if base.CheckRedirect != nil {
+			t.Fatal("factory configuration changed the application's original redirect policy")
 		}
 
 		reusedA, err := c.mtlsClient(certA)
@@ -386,7 +423,7 @@ func TestMtlsClientRejectsNilFactoryResult(t *testing.T) {
 	certValue := parseableTestCert(t, 4)
 	cert := &certValue
 	c := &Client{}
-	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient { return nil })
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) { return nil, nil })
 	if _, err := c.mtlsClient(cert); err == nil {
 		t.Error("mtlsClient with nil-returning factory = nil error, want error")
 	}
@@ -395,101 +432,144 @@ func TestMtlsClientRejectsNilFactoryResult(t *testing.T) {
 func TestMtlsClientFactoryContractFailsClosed(t *testing.T) {
 	certValue := parseableTestCert(t, 26)
 	factoryErr := errors.New("factory failed")
+	configurerErr := errors.New("configurer failed")
 
 	type state struct {
 		augmentErr error
+		late       func(*http.Client) (*http.Client, error)
 	}
 	tests := []struct {
-		name           string
-		factory        func(*recordingClient, *state) MtlsClientFactory
-		want           []string
-		wantFactoryErr bool
-		wantAugmentErr bool
-		returnsClient  bool
+		name              string
+		factory           func(*recordingClient, *state) MtlsClientFactory
+		want              []string
+		wantFactoryErr    bool
+		wantConfigurerErr bool
+		wantAugmentErr    bool
+		invokeLate        bool
 	}{
 		{
 			name: "no augment call",
 			factory: func(client *recordingClient, _ *state) MtlsClientFactory {
-				return func(func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					return client, nil
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{HTTPClient: client}, nil
 				}
 			},
-			want:          []string{"exactly once", "got 0 calls"},
-			returnsClient: true,
+			want: []string{"exactly once", "got 0 calls"},
 		},
 		{
 			name: "multiple augment calls",
 			factory: func(client *recordingClient, _ *state) MtlsClientFactory {
-				return func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					_, _ = augment(&http.Client{})
-					_, _ = augment(&http.Client{})
-					return client, nil
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{
+						HTTPClient: client,
+						configure: func(augment func(*http.Client) (*http.Client, error)) error {
+							_, _ = augment(&http.Client{})
+							_, _ = augment(&http.Client{})
+							return nil
+						},
+					}, nil
 				}
 			},
-			want:          []string{"called augment 2 times", "exactly once"},
-			returnsClient: true,
+			want: []string{"called augment 2 times", "exactly once"},
 		},
 		{
 			name: "nil base",
 			factory: func(client *recordingClient, _ *state) MtlsClientFactory {
-				return func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					_, _ = augment(nil)
-					return client, nil
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{
+						HTTPClient: client,
+						configure: func(augment func(*http.Client) (*http.Client, error)) error {
+							_, _ = augment(nil)
+							return nil
+						},
+					}, nil
 				}
 			},
-			want:          []string{"nil base *http.Client"},
-			returnsClient: true,
+			want: []string{"nil base *http.Client"},
 		},
 		{
 			name: "nil result",
 			factory: func(_ *recordingClient, _ *state) MtlsClientFactory {
-				return func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					if _, err := augment(&http.Client{}); err != nil {
-						return nil, err
-					}
+				return func() (MtlsClientConfigurer, error) {
 					return nil, nil
 				}
 			},
-			want: []string{"returned a nil client"},
+			want: []string{"returned a nil ClientConfigurer"},
 		},
 		{
 			name: "factory error",
 			factory: func(client *recordingClient, _ *state) MtlsClientFactory {
-				return func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					if _, err := augment(&http.Client{}); err != nil {
-						return nil, err
-					}
-					return client, factoryErr
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{HTTPClient: client}, factoryErr
 				}
 			},
 			want:           []string{"factory failed"},
 			wantFactoryErr: true,
-			returnsClient:  true,
+		},
+		{
+			name: "configurer error",
+			factory: func(client *recordingClient, _ *state) MtlsClientFactory {
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{
+						HTTPClient: client,
+						configure: func(augment func(*http.Client) (*http.Client, error)) error {
+							_, _ = augment(&http.Client{})
+							return configurerErr
+						},
+					}, nil
+				}
+			},
+			want:              []string{"ConfigureClient failed", "configurer failed"},
+			wantConfigurerErr: true,
 		},
 		{
 			name: "swallowed augmentation error",
 			factory: func(client *recordingClient, s *state) MtlsClientFactory {
-				return func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					_, s.augmentErr = augment(&http.Client{Transport: notATransport{}})
-					return client, nil
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{
+						HTTPClient: client,
+						configure: func(augment func(*http.Client) (*http.Client, error)) error {
+							_, s.augmentErr = augment(&http.Client{Transport: notATransport{}})
+							return nil
+						},
+					}, nil
 				}
 			},
 			want:           []string{"not an *http.Transport"},
 			wantAugmentErr: true,
-			returnsClient:  true,
 		},
 		{
-			name: "factory and augmentation errors",
+			name: "configurer and augmentation errors",
 			factory: func(client *recordingClient, s *state) MtlsClientFactory {
-				return func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					_, s.augmentErr = augment(nil)
-					return client, factoryErr
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{
+						HTTPClient: client,
+						configure: func(augment func(*http.Client) (*http.Client, error)) error {
+							_, s.augmentErr = augment(nil)
+							return configurerErr
+						},
+					}, nil
 				}
 			},
-			want:           []string{"nil base *http.Client", "factory failed"},
-			wantFactoryErr: true,
-			wantAugmentErr: true,
-			returnsClient:  true,
+			want:              []string{"nil base *http.Client", "configurer failed"},
+			wantConfigurerErr: true,
+			wantAugmentErr:    true,
+		},
+		{
+			name: "late augment call",
+			factory: func(client *recordingClient, s *state) MtlsClientFactory {
+				return func() (MtlsClientConfigurer, error) {
+					return &testClientConfigurer{
+						HTTPClient: client,
+						configure: func(augment func(*http.Client) (*http.Client, error)) error {
+							s.late = augment
+							return nil
+						},
+					}, nil
+				}
+			},
+			want:       []string{"exactly once", "got 0 calls"},
+			invokeLate: true,
 		},
 	}
 
@@ -519,18 +599,25 @@ func TestMtlsClientFactoryContractFailsClosed(t *testing.T) {
 			if test.wantFactoryErr && !errors.Is(err, factoryErr) {
 				t.Errorf("error %v doesn't preserve factory error %v", err, factoryErr)
 			}
+			if test.wantConfigurerErr && !errors.Is(err, configurerErr) {
+				t.Errorf("error %v doesn't preserve configurer error %v", err, configurerErr)
+			}
 			if test.wantAugmentErr && !errors.Is(err, state.augmentErr) {
 				t.Errorf("error %v doesn't preserve augmentation error %v", err, state.augmentErr)
+			}
+			if test.invokeLate {
+				if state.late == nil {
+					t.Fatal("ConfigureClient didn't retain the augmenter for the late-call assertion")
+				}
+				if _, lateErr := state.late(&http.Client{}); lateErr == nil || !strings.Contains(lateErr.Error(), "after ConfigureClient returned") {
+					t.Errorf("late augment error = %v, want ConfigureClient timing error", lateErr)
+				}
 			}
 			if got := returned.doCount(); got != 0 {
 				t.Errorf("specialized client transmitted %d requests, want 0", got)
 			}
-			wantClosed := 0
-			if test.returnsClient {
-				wantClosed = 1
-			}
-			if got := returned.closeCount(); got != wantClosed {
-				t.Errorf("specialized client CloseIdleConnections calls = %d, want %d", got, wantClosed)
+			if got := returned.closeCount(); got != 0 {
+				t.Errorf("failed configurer closed the application-owned base client %d times, want 0", got)
 			}
 		})
 	}
@@ -539,12 +626,14 @@ func TestMtlsClientFactoryContractFailsClosed(t *testing.T) {
 func TestMtlsClientUsesFactoryCapability(t *testing.T) {
 	certValue := parseableTestCert(t, 5)
 	cert := &certValue
-	sentinel := &recordingClient{}
+	sentinel := &testClientConfigurer{}
+	sentinel.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+		var err error
+		sentinel.HTTPClient, err = augment(&http.Client{})
+		return err
+	}
 	c := &Client{}
-	c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-		if _, err := augment(&http.Client{}); err != nil {
-			return nil, err
-		}
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
 		return sentinel, nil
 	})
 
@@ -562,15 +651,21 @@ func TestMtlsClientUsesFactoryCapability(t *testing.T) {
 		transport := &http.Transport{}
 		caller := &http.Client{Transport: transport, Timeout: 17 * time.Second}
 		c := &Client{}
-		c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-			return augment(caller)
+		c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+			configurer := &testClientConfigurer{}
+			configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+				var err error
+				configurer.HTTPClient, err = augment(caller)
+				return err
+			}
+			return configurer, nil
 		})
 
 		gotClient, err := c.mtlsClient(cert)
 		if err != nil {
 			t.Fatal(err)
 		}
-		got := gotClient.(*http.Client)
+		got := gotClient.(*testClientConfigurer).HTTPClient.(*http.Client)
 		if got == caller {
 			t.Fatal("augment returned the caller's base client without copying it")
 		}
@@ -596,14 +691,21 @@ func TestMtlsClientUsesFactoryCapability(t *testing.T) {
 			CheckRedirect: func(*http.Request, []*http.Request) error { return explicitErr },
 		}
 		c = &Client{}
-		c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-			return augment(explicit)
+		c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+			configurer := &testClientConfigurer{}
+			configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+				var err error
+				configurer.HTTPClient, err = augment(explicit)
+				return err
+			}
+			return configurer, nil
 		})
 		gotClient, err = c.mtlsClient(cert)
 		if err != nil {
 			t.Fatal(err)
 		}
-		if err := gotClient.(*http.Client).CheckRedirect(req, nil); !errors.Is(err, explicitErr) {
+		configured := gotClient.(*testClientConfigurer).HTTPClient.(*http.Client)
+		if err := configured.CheckRedirect(req, nil); !errors.Is(err, explicitErr) {
 			t.Fatalf("explicit redirect policy returned %v, want %v", err, explicitErr)
 		}
 		if explicit.CheckRedirect == nil {
@@ -613,12 +715,13 @@ func TestMtlsClientUsesFactoryCapability(t *testing.T) {
 
 	t.Run("factory can return opaque middleware client", func(t *testing.T) {
 		certValue := parseableTestCert(t, 25)
-		sentinel := &recordingClient{}
+		sentinel := &testClientConfigurer{HTTPClient: &recordingClient{}}
+		sentinel.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+			_, err := augment(&http.Client{})
+			return err
+		}
 		c := &Client{}
-		c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-			if _, err := augment(&http.Client{}); err != nil {
-				return nil, err
-			}
+		c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
 			return sentinel, nil
 		})
 		got, err := c.mtlsClient(&certValue)
@@ -626,7 +729,7 @@ func TestMtlsClientUsesFactoryCapability(t *testing.T) {
 			t.Fatal(err)
 		}
 		if got != sentinel {
-			t.Fatal("factory's middleware client wasn't preserved")
+			t.Fatal("factory's ClientConfigurer wasn't preserved")
 		}
 	})
 }

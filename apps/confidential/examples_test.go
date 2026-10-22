@@ -29,14 +29,17 @@ func (c *exampleMiddlewareClient) CloseIdleConnections() {
 	c.client.CloseIdleConnections()
 }
 
-func (c *exampleMiddlewareClient) NewMtlsClient(
-	augment func(*http.Client) (*http.Client, error),
-) (confidential.HTTPClient, error) {
+func (c *exampleMiddlewareClient) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
 	specialized, err := augment(c.client)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &exampleMiddlewareClient{client: specialized}, nil
+	c.client = specialized
+	return nil
+}
+
+func (c *exampleMiddlewareClient) NewMtlsClient() (confidential.ClientConfigurer, error) {
+	return &exampleMiddlewareClient{client: c.client}, nil
 }
 
 func ExampleMtlsHTTPClientFactory() {
@@ -57,8 +60,9 @@ func ExampleMtlsHTTPClientFactory() {
 		// TODO: handle error
 	}
 
-	// On each certificate cache miss, MSAL calls NewMtlsClient and supplies the certificate-specific
-	// augmenter. Repeated requests with the same certificate reuse the returned middleware client.
+	// On each certificate cache miss, MSAL calls NewMtlsClient for a fresh adapter and then calls its
+	// ConfigureClient method with the certificate-specific augmenter. Repeated requests with the same
+	// certificate reuse the configured adapter.
 	_ = client
 }
 

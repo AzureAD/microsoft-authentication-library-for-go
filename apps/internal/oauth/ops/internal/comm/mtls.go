@@ -25,10 +25,18 @@ import (
 // avoids carrying an LRU for a map that holds a single entry in the common case.
 const maxMtlsClients = 1000
 
-// MtlsClientFactory asks the configured HTTP client to wrap a base client after augment installs the
-// exact binding certificate and MSAL's transport requirements. The returned client is cached per
-// certificate thumbprint and may preserve middleware around the augmented transport.
-type MtlsClientFactory func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error)
+// MtlsClientConfigurer is a fresh HTTP adapter that MSAL can configure for one binding certificate.
+// ConfigureClient must install the client returned by augment without bypassing its transport or
+// redirect policy.
+type MtlsClientConfigurer interface {
+	HTTPClient
+	ConfigureClient(augment func(*http.Client) (*http.Client, error)) error
+}
+
+// MtlsClientFactory creates a fresh, independently configurable HTTP adapter for one binding
+// certificate. The configured client is cached per certificate thumbprint and may preserve
+// middleware around the augmented transport.
+type MtlsClientFactory func() (MtlsClientConfigurer, error)
 
 // mtlsCacheEntry is one cached per-certificate mTLS client plus the provenance that decides whether
 // MSAL may close its idle connections.
@@ -159,7 +167,7 @@ func refuseMtlsRedirect(req *http.Request, via []*http.Request) error {
 	if len(via) > 0 && via[len(via)-1].URL != nil {
 		from = via[len(via)-1].URL.Redacted()
 	}
-	return fmt.Errorf("mTLS proof-of-possession token request to %s was redirected to %s; refusing to follow it, because a 307 or 308 replays the request body carrying the client credential and the mutual-TLS handshake would present the binding certificate to the redirect target. Set CheckRedirect on the *http.Client passed to WithHTTPClient, or on the base client passed to the MtlsHTTPClientFactory augmenter, to own redirect handling on this leg", from, req.URL.Redacted())
+	return fmt.Errorf("mTLS proof-of-possession token request to %s was redirected to %s; refusing to follow it, because a 307 or 308 replays the request body carrying the client credential and the mutual-TLS handshake would present the binding certificate to the redirect target. Set CheckRedirect on the *http.Client passed to WithHTTPClient, or on the base client a MtlsHTTPClientFactory ClientConfigurer passes to its augmenter, to own redirect handling on this leg", from, req.URL.Redacted())
 }
 
 // cloneBaseTransport returns a private copy of the transport mTLS requests should build on: the
@@ -247,7 +255,7 @@ func cloneBaseTransport(base HTTPClient) (*http.Transport, error) {
 // configured something they did not.
 const (
 	callerHookRemedy  = "Pass a confidential.MtlsHTTPClientFactory to WithHTTPClient so it can preserve this network path around an MSAL-augmented base client"
-	defaultHookRemedy = "MSAL did not configure this transport - http.DefaultTransport is an exported package-level variable and something else in this process installed the hook on it. Pass your own *http.Transport with WithHTTPClient, or pass a confidential.MtlsHTTPClientFactory that supplies a safe base client to the augmenter"
+	defaultHookRemedy = "MSAL did not configure this transport - http.DefaultTransport is an exported package-level variable and something else in this process installed the hook on it. Pass your own *http.Transport with WithHTTPClient, or pass a confidential.MtlsHTTPClientFactory whose ClientConfigurer supplies a safe base client to the augmenter"
 )
 
 // rejectTLSDialHooks fails when transport establishes TLS itself. http.Transport.Clone copies
@@ -273,32 +281,44 @@ func rejectTLSDialHooks(t *http.Transport, source, remedy string) error {
 	return fmt.Errorf("mTLS proof-of-possession cannot use %s because it sets %s: net/http then establishes TLS through that hook and ignores TLSClientConfig, so the binding certificate would never be offered (or a different one would be) and the TLS 1.2 minimum, RootCAs and TLSHandshakeTimeout would all be silently dropped. %s", source, hook, remedy)
 }
 
-// buildMtlsClientFromFactory validates the synchronous augmentation contract and returns the
-// middleware-capable client the configured HTTP client created for one certificate snapshot.
+// buildMtlsClientFromFactory creates one certificate-scoped adapter, validates its synchronous
+// ConfigureClient contract, and returns the configured middleware-capable client.
 func buildMtlsClientFromFactory(factory MtlsClientFactory, cert tls.Certificate) (HTTPClient, error) {
+	configurer, factoryErr := factory()
+	var resultErr error
+	if isNilClient(configurer) {
+		resultErr = errors.New("mTLS HTTP client factory returned a nil ClientConfigurer")
+	}
+	if factoryErr != nil {
+		factoryErr = fmt.Errorf("mTLS HTTP client factory failed: %w", factoryErr)
+	}
+	if err := combineMtlsErrors(factoryErr, resultErr); err != nil {
+		return nil, err
+	}
+
 	var (
 		mu             sync.Mutex
 		augmentCalls   int
 		augmentErr     error
 		augmented      *http.Client
-		factoryDone    bool
-		lateInvocation = errors.New("mTLS HTTP client factory called augment after NewMtlsClient returned; augment must be called exactly once and synchronously")
+		configurerDone bool
+		lateInvocation = errors.New("mTLS HTTP ClientConfigurer called augment after ConfigureClient returned; augment must be called exactly once and synchronously")
 	)
 	augment := func(base *http.Client) (*http.Client, error) {
 		mu.Lock()
 		defer mu.Unlock()
 
-		if factoryDone {
+		if configurerDone {
 			return nil, lateInvocation
 		}
 		augmentCalls++
 		if augmentCalls > 1 {
-			err := fmt.Errorf("mTLS HTTP client factory called augment %d times; it must call augment exactly once", augmentCalls)
+			err := fmt.Errorf("mTLS HTTP ClientConfigurer called augment %d times; ConfigureClient must call augment exactly once", augmentCalls)
 			augmentErr = combineMtlsErrors(augmentErr, err)
 			return nil, err
 		}
 		if base == nil {
-			err := errors.New("mTLS HTTP client factory called augment with a nil base *http.Client; it must supply a non-nil base client")
+			err := errors.New("mTLS HTTP ClientConfigurer called augment with a nil base *http.Client; ConfigureClient must supply a non-nil base client")
 			augmentErr = combineMtlsErrors(augmentErr, err)
 			return nil, err
 		}
@@ -311,10 +331,10 @@ func buildMtlsClientFromFactory(factory MtlsClientFactory, cert tls.Certificate)
 		return augmented, err
 	}
 
-	produced, factoryErr := factory(augment)
+	configurerErr := configurer.ConfigureClient(augment)
 
 	mu.Lock()
-	factoryDone = true
+	configurerDone = true
 	calls := augmentCalls
 	recordedAugmentErr := augmentErr
 	built := augmented
@@ -322,26 +342,20 @@ func buildMtlsClientFromFactory(factory MtlsClientFactory, cert tls.Certificate)
 
 	var contractErr error
 	if calls != 1 {
-		contractErr = fmt.Errorf("mTLS HTTP client factory must call augment exactly once and synchronously, got %d calls", calls)
+		contractErr = fmt.Errorf("mTLS HTTP ClientConfigurer.ConfigureClient must call augment exactly once and synchronously, got %d calls", calls)
 	}
-	var resultErr error
-	if isNilClient(produced) {
-		resultErr = errors.New("mTLS HTTP client factory returned a nil client")
+	if configurerErr != nil {
+		configurerErr = fmt.Errorf("mTLS HTTP ClientConfigurer.ConfigureClient failed: %w", configurerErr)
 	}
-	if factoryErr != nil {
-		factoryErr = fmt.Errorf("mTLS HTTP client factory failed: %w", factoryErr)
-	}
-	err := combineMtlsErrors(factoryErr, recordedAugmentErr, contractErr, resultErr)
+	err := combineMtlsErrors(configurerErr, recordedAugmentErr, contractErr)
 	if err == nil {
-		return produced, nil
+		return configurer, nil
 	}
 
-	// A failed factory never publishes a client. Prefer closing its returned wrapper so its
-	// CloseIdleConnections implementation can reach the augmented pool; if it returned nil after a
-	// successful augment, close that otherwise-unreachable pool directly.
-	if !isNilClient(produced) {
-		closeIdleConnections(produced)
-	} else if built != nil {
+	// A failed configuration never publishes its adapter. Close only the private client MSAL built:
+	// before successful configuration the adapter may still forward CloseIdleConnections to the
+	// application's shared base client, whose pool MSAL must not disturb.
+	if built != nil {
 		built.CloseIdleConnections()
 	}
 	return nil, err
@@ -531,8 +545,11 @@ func isNilClient(client HTTPClient) bool {
 		return true
 	}
 	v := reflect.ValueOf(client)
+	if v.Kind() == reflect.TypeOf((*struct{})(nil)).Kind() {
+		return v.IsNil()
+	}
 	switch v.Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface, reflect.UnsafePointer:
+	case reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface, reflect.UnsafePointer:
 		return v.IsNil()
 	default:
 		return false

@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/confidential"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
 
 // externalMtlsFactory is a genuine external implementation: this package can't import anything
@@ -17,12 +18,26 @@ type externalMtlsFactory struct {
 	calls int
 }
 
-func (f *externalMtlsFactory) NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (confidential.HTTPClient, error) {
+func (f *externalMtlsFactory) NewMtlsClient() (managedidentity.ClientConfigurer, error) {
 	f.calls++
-	return augment(&http.Client{})
+	return &externalMtlsConfigurer{Client: &http.Client{}}, nil
+}
+
+type externalMtlsConfigurer struct {
+	*http.Client
+}
+
+func (c *externalMtlsConfigurer) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
+	configured, err := augment(c.Client)
+	if err != nil {
+		return err
+	}
+	c.Client = configured
+	return nil
 }
 
 var _ confidential.MtlsHTTPClientFactory = (*externalMtlsFactory)(nil)
+var _ confidential.ClientConfigurer = (*externalMtlsConfigurer)(nil)
 
 func TestMtlsHTTPClientFactoryIsImplementableExternally(t *testing.T) {
 	factory := &externalMtlsFactory{Client: &http.Client{}}

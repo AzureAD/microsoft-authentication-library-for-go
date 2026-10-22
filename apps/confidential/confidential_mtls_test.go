@@ -68,20 +68,31 @@ func mockMtlsFactory(c *mock.Client) func(tls.Certificate) *http.Client {
 }
 
 // mtlsTestFactoryClient adapts the certificate-aware factories used by the original mTLS request
-// fixtures to the augmenter contract. Focused factory tests below exercise a real wrapper that
-// terminates through the augmented transport; this shim keeps unrelated request-shape tests small.
+// fixtures to the certificate-scoped ClientConfigurer contract. Focused factory tests below
+// exercise a real wrapper that terminates through the augmented transport; this shim keeps
+// unrelated request-shape tests small.
 type mtlsTestFactoryClient struct {
 	HTTPClient
 	factory func(tls.Certificate) *http.Client
 }
 
-func (c *mtlsTestFactoryClient) NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
+func (c *mtlsTestFactoryClient) NewMtlsClient() (ClientConfigurer, error) {
+	return &mtlsTestConfigurer{factory: c.factory}, nil
+}
+
+type mtlsTestConfigurer struct {
+	*http.Client
+	factory func(tls.Certificate) *http.Client
+}
+
+func (c *mtlsTestConfigurer) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
 	augmented, err := augment(&http.Client{})
 	if err != nil {
-		return nil, err
+		return err
 	}
 	transport := augmented.Transport.(*http.Transport)
-	return c.factory(transport.TLSClientConfig.Certificates[0]), nil
+	c.Client = c.factory(transport.TLSClientConfig.Certificates[0])
+	return nil
 }
 
 // withTestMtlsClient wraps the HTTP client installed by preceding options with the mTLS factory

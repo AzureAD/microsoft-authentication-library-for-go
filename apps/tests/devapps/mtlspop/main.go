@@ -121,8 +121,9 @@ func run(cfg config) error {
 		opts = append(opts, confidential.WithAzureRegion(cfg.region))
 	}
 	if cfg.trace {
-		// The wrapper implements MtlsHTTPClientFactory, so MSAL can install the selected certificate
-		// on its base client while retaining the wrapper around the specialized transport.
+		// The wrapper implements MtlsHTTPClientFactory, so MSAL can create a fresh adapter, install
+		// the selected certificate on its base client, and retain the wrapper around the specialized
+		// transport.
 		opts = append(opts, confidential.WithHTTPClient(&traceClient{client: &http.Client{}}))
 	}
 
@@ -308,7 +309,7 @@ func refuseResourceRedirect(req *http.Request, via []*http.Request) error {
 // non-obvious claims about this flow can be observed rather than taken on faith: the token endpoint
 // host is mtlsauth.*, not login.*, and the body carries no client_assertion.
 //
-// Only the specialized client returned by NewMtlsClient traces. Instance and tenant discovery use
+// Only the specialized adapter returned by NewMtlsClient traces. Instance and tenant discovery use
 // the original wrapper, so exactly one request is traced.
 type traceClient struct {
 	client *http.Client
@@ -361,12 +362,17 @@ func (c *traceClient) CloseIdleConnections() {
 	c.client.CloseIdleConnections()
 }
 
-func (c *traceClient) NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (confidential.HTTPClient, error) {
+func (c *traceClient) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
 	augmented, err := augment(c.client)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	return &traceClient{client: augmented, trace: true}, nil
+	c.client = augmented
+	return nil
+}
+
+func (c *traceClient) NewMtlsClient() (confidential.ClientConfigurer, error) {
+	return &traceClient{client: c.client, trace: true}, nil
 }
 
 // The helpers below are duplicated rather than shared. A demo package shared across the mTLS pull

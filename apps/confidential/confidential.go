@@ -34,6 +34,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/options"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/shared"
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
 
 /*
@@ -262,8 +263,11 @@ func isNilPointer(v any) bool {
 		return true
 	}
 	rv := reflect.ValueOf(v)
+	if rv.Kind() == reflect.TypeOf((*struct{})(nil)).Kind() {
+		return rv.IsNil()
+	}
 	switch rv.Kind() {
-	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface, reflect.UnsafePointer:
+	case reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.Interface, reflect.UnsafePointer:
 		return rv.IsNil()
 	default:
 		return false
@@ -520,30 +524,38 @@ type HTTPClient interface {
 	CloseIdleConnections()
 }
 
-// MtlsHTTPClientFactory is an [HTTPClient] that can create the specialized clients MSAL uses for
+// ClientConfigurer is the released client-configuration contract shared with
+// [managedidentity.ClientConfigurer]. The alias lets an HTTP adapter use the same ConfigureClient
+// implementation for Service Fabric and certificate-scoped confidential-client construction.
+type ClientConfigurer = managedidentity.ClientConfigurer
+
+// MtlsHTTPClientFactory is an [HTTPClient] that creates fresh [ClientConfigurer] instances for
 // mutual-TLS token requests. MSAL detects this capability on the value passed to [WithHTTPClient]
 // and calls NewMtlsClient when a binding certificate misses its internal cache.
 //
-// NewMtlsClient must call augment exactly once, synchronously, with a non-nil base [*http.Client].
-// The callback returns a copy configured with MSAL's exact certificate snapshot, TLS requirements,
-// isolated session cache, and redirect policy. NewMtlsClient may wrap that client with middleware or
-// a pipeline, but every returned client's Do method must ultimately send through the augmented
-// client or its transport. Its CloseIdleConnections method must reach the specialized client's
-// connection pool.
+// NewMtlsClient must return a new, independently configurable adapter. MSAL calls its
+// ConfigureClient method with an augmenter closed over the exact certificate snapshot. ConfigureClient
+// must call the augmenter exactly once, synchronously, with a non-nil base [*http.Client], then route
+// Do and CloseIdleConnections through the returned specialized client while preserving the
+// adapter's middleware or pipeline. The augmenter clones the base client and transport, preserving
+// application networking policy such as proxy routing, dialers, roots, timeouts, and pool settings.
+// MSAL intentionally owns the binding certificate, TLS minimum, TLS session cache, and redirect
+// policy on the clone.
 //
-// MSAL mechanically rejects an augment call that is missing, repeated, late, or given a nil base,
-// rejects a nil returned client, and returns recorded augmentation errors and factory errors. It
-// can't inspect arbitrary middleware to verify that Do routes through the augmented client or that
-// CloseIdleConnections reaches its connection pool; the factory is responsible for honoring those
-// two obligations.
+// MSAL mechanically rejects a nil factory result and an augmenter call that is missing, repeated,
+// late, or given a nil base, and propagates factory, ConfigureClient, and augmenter errors. It can't
+// inspect arbitrary middleware to verify that Do routes through the augmented client or that
+// CloseIdleConnections reaches its connection pool; the configurer is responsible for honoring
+// those two obligations.
 //
 // NewMtlsClient must be concurrency safe. Concurrent initial cache misses can invoke it more than
 // once for the same certificate, as well as for different certificates. MSAL publishes one client
-// per certificate and closes and discards successfully constructed clients that lose a same-
-// certificate publication race. Implementations should not add another certificate cache.
+// per certificate and closes and discards configured clients that lose a same-certificate
+// publication race. It never calls ConfigureClient on the factory object passed to WithHTTPClient,
+// and implementations should not mutate or reuse that object as the per-certificate result.
 type MtlsHTTPClientFactory interface {
 	HTTPClient
-	NewMtlsClient(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error)
+	NewMtlsClient() (ClientConfigurer, error)
 }
 
 // WithCache provides an accessor that will read and write authentication data to an externally managed cache.
@@ -589,9 +601,10 @@ func WithClientCapabilities(capabilities []string) Option {
 // [http.DefaultTransport] is an exported package-level variable anything in the process can patch.
 //
 // Redirects are refused on the mutual-TLS leg unless the direct [*http.Client], or the base
-// [*http.Client] a factory passes to augment, sets CheckRedirect. A 307 or 308 would replay the token
-// request body, which carries a client credential, and present the binding certificate to the
-// redirect target. Setting CheckRedirect on that base takes ownership of the decision.
+// [*http.Client] a [ClientConfigurer] passes to its augmenter, sets CheckRedirect. A 307 or 308
+// would replay the token request body, which carries a client credential, and present the binding
+// certificate to the redirect target. Setting CheckRedirect on that base takes ownership of the
+// decision.
 func WithHTTPClient(httpClient HTTPClient) Option {
 	return func(o *clientOptions) {
 		o.httpClient = httpClient
@@ -701,8 +714,9 @@ func New(authority, clientID string, cred Credential, options ...Option) (Client
 	}
 	tokenClient := oauth.New(opts.httpClient)
 	if factory, ok := opts.httpClient.(MtlsHTTPClientFactory); ok {
-		tokenClient.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (ops.HTTPClient, error) {
-			return factory.NewMtlsClient(augment)
+		tokenClient.SetMtlsClientFactory(func() (ops.MtlsClientConfigurer, error) {
+			configurer, err := factory.NewMtlsClient()
+			return configurer, err
 		})
 	}
 	base, err := base.New(clientID, opts.authority, tokenClient, baseOpts...)

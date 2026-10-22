@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -154,6 +155,15 @@ func (c *middlewareMtlsClient) CloseIdleConnections() {
 	c.client.CloseIdleConnections()
 }
 
+func (c *middlewareMtlsClient) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
+	configured, err := augment(c.client)
+	if err != nil {
+		return err
+	}
+	c.client = configured
+	return nil
+}
+
 func (c *middlewareMtlsClient) snapshot() (calls, closed int) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -167,22 +177,28 @@ func TestMtlsClientFactoryPreservesMiddlewareAndAugmentedTransport(t *testing.T)
 	recorder := &tlsRecorder{}
 	server := startTLSServer(t, recorder.handler(http.StatusOK, ""), 0)
 	cert := newBindingCert(t, "factory-selected-cert")
-	base := &http.Client{Transport: &http.Transport{
+	proxyURL := &url.URL{Scheme: "http", Host: "proxy.example:8080"}
+	baseTransport := &http.Transport{
+		Proxy: func(req *http.Request) (*url.URL, error) {
+			if req.URL.Host == "proxy-check.example" {
+				return proxyURL, nil
+			}
+			return nil, nil
+		},
+		MaxIdleConns:    7,
 		TLSClientConfig: &tls.Config{RootCAs: rootsFor(server)},
-	}}
+	}
+	base := &http.Client{Transport: baseTransport}
+	original := &middlewareMtlsClient{client: base}
 
 	var (
 		factoryCalls int
 		specialized  *middlewareMtlsClient
 	)
 	c := &Client{}
-	c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
 		factoryCalls++
-		augmented, err := augment(base)
-		if err != nil {
-			return nil, err
-		}
-		specialized = &middlewareMtlsClient{client: augmented}
+		specialized = &middlewareMtlsClient{client: original.client}
 		return specialized, nil
 	})
 
@@ -192,6 +208,29 @@ func TestMtlsClientFactoryPreservesMiddlewareAndAugmentedTransport(t *testing.T)
 	}
 	if client != specialized {
 		t.Fatal("mtlsClient did not preserve the factory's middleware wrapper")
+	}
+	if specialized == original {
+		t.Fatal("factory returned its shared adapter instead of a fresh certificate-scoped adapter")
+	}
+	if specialized.client == base {
+		t.Fatal("ConfigureClient left the fresh adapter on the application's original client")
+	}
+	if original.client != base || base.Transport != baseTransport {
+		t.Fatal("ConfigureClient mutated the application's original adapter or client")
+	}
+	if len(baseTransport.TLSClientConfig.Certificates) != 0 {
+		t.Fatal("ConfigureClient installed the binding certificate on the application's original transport")
+	}
+	configuredTransport, ok := specialized.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("configured transport = %T, want *http.Transport", specialized.client.Transport)
+	}
+	proxy, err := configuredTransport.Proxy(mustRequest(t, "https://proxy-check.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxy != proxyURL || configuredTransport.MaxIdleConns != baseTransport.MaxIdleConns {
+		t.Fatal("ConfigureClient did not preserve the application's proxy or connection-pool policy")
 	}
 	response, err := client.Do(mustRequest(t, server.URL))
 	if err != nil {
@@ -208,6 +247,9 @@ func TestMtlsClientFactoryPreservesMiddlewareAndAugmentedTransport(t *testing.T)
 	if calls != 1 || closed != 0 {
 		t.Fatalf("specialized client calls/closed = %d/%d, want 1/0", calls, closed)
 	}
+	if calls, closed := original.snapshot(); calls != 0 || closed != 0 {
+		t.Fatalf("original adapter calls/closed = %d/%d, want 0/0", calls, closed)
+	}
 	hits := recorder.snapshot()
 	if len(hits) != 1 {
 		t.Fatalf("server requests = %d, want 1", len(hits))
@@ -221,8 +263,14 @@ func TestMtlsClientFactoryPreservesMiddlewareAndAugmentedTransport(t *testing.T)
 
 	// Replacing the construction-time factory is the deterministic cache-cleanup hook used by these
 	// internal tests. It must reach the specialized wrapper and therefore its augmented transport.
-	c.SetMtlsClientFactory(func(func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-		return &http.Client{}, nil
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+		configurer := &testClientConfigurer{}
+		configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+			var err error
+			configurer.HTTPClient, err = augment(&http.Client{})
+			return err
+		}
+		return configurer, nil
 	})
 	_, closed = specialized.snapshot()
 	if closed != 1 {
@@ -270,16 +318,23 @@ func TestBuildMtlsClientRefusesRedirectsByDefault(t *testing.T) {
 				cert := newBindingCert(t, "factory-binding-cert")
 
 				c := &Client{}
-				c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-					return augment(&http.Client{Transport: &http.Transport{
-						TLSClientConfig: &tls.Config{RootCAs: roots},
-					}})
+				c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+					configurer := &testClientConfigurer{}
+					configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+						var err error
+						configurer.HTTPClient, err = augment(&http.Client{Transport: &http.Transport{
+							TLSClientConfig: &tls.Config{RootCAs: roots},
+						}})
+						return err
+					}
+					return configurer, nil
 				})
 				client, err := c.mtlsClient(&cert)
 				if err != nil {
 					t.Fatal(err)
 				}
-				resp, err := postAssertion(t, client.(*http.Client), originSrv.URL)
+				configured := client.(*testClientConfigurer).HTTPClient.(*http.Client)
+				resp, err := postAssertion(t, configured, originSrv.URL)
 				if resp != nil {
 					if err := resp.Body.Close(); err != nil {
 						t.Errorf("closing redirect response body: %v", err)

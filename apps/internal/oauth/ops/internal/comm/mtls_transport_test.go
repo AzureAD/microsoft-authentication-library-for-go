@@ -301,9 +301,14 @@ func TestMtlsClientFactoryRejectsTypedNilTransport(t *testing.T) {
 	var transport *http.Transport
 	returned := &recordingClient{}
 	c := &Client{}
-	c.SetMtlsClientFactory(func(augment func(*http.Client) (*http.Client, error)) (HTTPClient, error) {
-		_, _ = augment(&http.Client{Transport: transport})
-		return returned, nil
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+		return &testClientConfigurer{
+			HTTPClient: returned,
+			configure: func(augment func(*http.Client) (*http.Client, error)) error {
+				_, _ = augment(&http.Client{Transport: transport})
+				return nil
+			},
+		}, nil
 	})
 
 	got, err := c.mtlsClient(&cert)
@@ -319,8 +324,8 @@ func TestMtlsClientFactoryRejectsTypedNilTransport(t *testing.T) {
 	if n := returned.doCount(); n != 0 {
 		t.Errorf("factory client transmitted %d requests, want 0", n)
 	}
-	if n := returned.closeCount(); n != 1 {
-		t.Errorf("rejected factory client had CloseIdleConnections called %d times, want 1", n)
+	if n := returned.closeCount(); n != 0 {
+		t.Errorf("rejected configurer closed its application-owned base client %d times, want 0", n)
 	}
 }
 
@@ -527,9 +532,13 @@ func TestMtlsClientConcurrentSameCertPublishesOneClient(t *testing.T) {
 	if len(allBuilt) != goroutines {
 		t.Fatalf("factory built %d clients, want %d", len(allBuilt), goroutines)
 	}
-	winnerClient, ok := winner.(*http.Client)
+	winnerConfigurer, ok := winner.(*testClientConfigurer)
 	if !ok {
-		t.Fatalf("winner = %T, want *http.Client", winner)
+		t.Fatalf("winner = %T, want *testClientConfigurer", winner)
+	}
+	winnerClient, ok := winnerConfigurer.HTTPClient.(*http.Client)
+	if !ok {
+		t.Fatalf("configured winner = %T, want *http.Client", winnerConfigurer.HTTPClient)
 	}
 	winnerTransport, ok := winnerClient.Transport.(recordingTransport)
 	if !ok {
@@ -720,7 +729,11 @@ func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
 	if err != nil {
 		t.Fatalf("mtlsClient failed: %v", err)
 	}
-	if got.(*http.Client).Transport != currentClient.Transport {
+	gotConfigurer, ok := got.(*testClientConfigurer)
+	if !ok {
+		t.Fatalf("mtlsClient returned %T, want *testClientConfigurer", got)
+	}
+	if gotConfigurer.HTTPClient.(*http.Client).Transport != currentClient.Transport {
 		t.Fatalf("mtlsClient returned a client from the retired factory")
 	}
 	c.mtlsMu.Lock()
@@ -730,7 +743,11 @@ func TestMtlsClientDiscardsClientFromRetiredFactory(t *testing.T) {
 		t.Fatalf("cache holds %d entries, want 1", len(cached))
 	}
 	for _, entry := range cached {
-		if entry.client.(*http.Client).Transport != currentClient.Transport {
+		configurer, ok := entry.client.(*testClientConfigurer)
+		if !ok {
+			t.Fatalf("cache holds %T, want *testClientConfigurer", entry.client)
+		}
+		if configurer.HTTPClient.(*http.Client).Transport != currentClient.Transport {
 			t.Error("the cache published a client built by the retired factory")
 		}
 	}
@@ -775,9 +792,9 @@ func TestMtlsClientRejectsTypedNilFactoryResult(t *testing.T) {
 	certValue := parseableTestCert(t, 23)
 	cert := &certValue
 	c := &Client{}
-	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
-		var typedNil *http.Client
-		return typedNil
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+		var typedNil *testClientConfigurer
+		return typedNil, nil
 	})
 	if _, err := c.mtlsClient(cert); err == nil {
 		t.Error("mtlsClient with a typed-nil-returning factory = nil error, want error")

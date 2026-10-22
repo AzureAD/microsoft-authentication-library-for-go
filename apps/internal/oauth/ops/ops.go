@@ -28,9 +28,11 @@ import (
 // It's usually an *http.Client from the standard library.
 type HTTPClient = comm.HTTPClient
 
-// MtlsClientFactory asks a capable configured HTTP client to wrap a base client after MSAL augments
-// it for one binding certificate.
+// MtlsClientFactory creates a fresh adapter MSAL configures for one binding certificate.
 type MtlsClientFactory = comm.MtlsClientFactory
+
+// MtlsClientConfigurer is a fresh HTTP adapter MSAL configures for one binding certificate.
+type MtlsClientConfigurer = comm.MtlsClientConfigurer
 
 // REST provides REST clients for communicating with various backends used by MSAL.
 type REST struct {
