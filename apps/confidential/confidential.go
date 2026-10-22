@@ -1083,7 +1083,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		return AuthResult{}, errors.New("WithSilentAccount option is required")
 	}
 
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	var resolvedEndpoints authority.Endpoints
@@ -1223,7 +1223,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 		return AuthResult{}, err
 	}
 
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	var resolvedEndpoints authority.Endpoints
@@ -1303,7 +1303,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	// must see the fully populated request (notably FMIPath, derived from ExtraBodyParameters).
 	authParams.ExtraBodyParameters = o.extraBodyParameters
 	authParams.CacheKeyComponents = o.cacheKeyComponents
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	if o.isMtlsPoP {
@@ -1426,7 +1426,7 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	var resolvedEndpoints authority.Endpoints
