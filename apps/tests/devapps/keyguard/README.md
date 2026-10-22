@@ -236,7 +236,8 @@ chain building degraded to leaf-only and `x5c` will carry no intermediates.
 
 The same flow is asserted by `apps/tests/e2e/keyguard_mtls_e2e_test.go`, which additionally checks
 the token's `cnf["x5t#S256"]` claim and the negative case where the bound token is presented without
-the client certificate. It is behind the `e2e` build tag and skips unless a thumbprint is supplied:
+the client certificate. It is behind the `e2e` build tag and fails with a prerequisite error unless
+a thumbprint is supplied:
 
 ```powershell
 $env:KEYGUARD_E2E_THUMBPRINT = "0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF0123456789ABCDEF"
