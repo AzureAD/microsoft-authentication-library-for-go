@@ -609,6 +609,20 @@ func TestIMDSv2ReportsUnreachableMetadataService(t *testing.T) {
 	}
 }
 
+// The Entra leg is an ordinary outbound HTTPS request and must follow the
+// standard library's environment proxy policy. A nil Proxy function forces
+// direct routing and breaks hosts whose only path to Entra is HTTPS_PROXY.
+func TestDefaultIMDSv2MtlsClientUsesEnvironmentProxy(t *testing.T) {
+	client := newMtlsHTTPClient(tls.Certificate{})
+	transport, ok := client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport", client.Transport)
+	}
+	if transport.Proxy == nil {
+		t.Fatal("the default mTLS transport bypasses environment proxy settings")
+	}
+}
+
 func TestIMDSv2ReusesOneHTTPClientPerCertificate(t *testing.T) {
 	cert := selfSignedTLSCertificate(t)
 	first := mtlsHTTPClient(cert)

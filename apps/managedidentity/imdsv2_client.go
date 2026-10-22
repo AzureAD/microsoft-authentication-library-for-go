@@ -695,6 +695,7 @@ func newMtlsHTTPClient(cert tls.Certificate) *http.Client {
 		Timeout:       mtlsClientTimeout,
 		CheckRedirect: refuseIMDSv2Redirect,
 		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
 			TLSClientConfig: &tls.Config{
 				// GetClientCertificate rather than Certificates: Go filters
 				// Certificates against the certificate authorities the server
