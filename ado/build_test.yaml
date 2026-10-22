@@ -145,10 +145,9 @@ stages:
   # The -run filter selects both suites:
   #   TestManagedIdentityImds  — IMDS v1 (bearer tokens)
   #   TestIMDSv2*              — IMDS v2 (mTLS proof-of-possession, KeyGuard-bound)
-  # The v2 tests skip with an explicit reason when the agent serves IMDSv1 only,
-  # lacks Credential Guard, or has no identity assigned, so they cannot red the
-  # build on an agent that is not provisioned for them. Check the test log for
-  # skips before treating a green run as v2 coverage.
+  # Selecting this stage requires the complete IMDSv2 lab. Missing platform,
+  # identity, attestation, or resource prerequisites fail the selected tests.
+  # The run also verifies that all seven top-level tests passed with zero skips.
   #
   # Runs on every PR. Go is installed only when the VM does not already have it
   # (checked below) so we don't re-install Go on every run.
@@ -367,10 +366,6 @@ stages:
                 go install gotest.tools/gotestsum
                 Pop-Location
                 $env:PATH = "$env:PATH;$(go env GOPATH)\bin"
-                # This agent is provisioned for managed identity, so an IMDSv2 environment skip is a
-                # regression rather than a legitimate gap. Without this the tests would skip and the
-                # stage would still report green, which looks identical to real coverage.
-                $env:IMDSV2_E2E_REQUIRED = "true"
                 # The MISEManagedIdentity pool is the same pool MSAL .NET runs its IMDSv2 E2E stage
                 # on, so the identity and the token-binding vault below are already provisioned on
                 # this agent and are the same ones .NET asserts against. Keeping both libraries on
@@ -415,11 +410,34 @@ stages:
                 )
                 # Run from the package directory so relative paths resolve the way
                 # they do under `go test`.
+                $jsonFile = "$(Build.SourcesDirectory)\mi-e2e-imds-tests.json"
                 Push-Location "$(Build.SourcesDirectory)\apps\tests\e2e"
-                gotestsum --junitfile "$(Build.SourcesDirectory)\mi-e2e-imds-tests.xml" --raw-command -- go tool test2json @runArgs
+                gotestsum --junitfile "$(Build.SourcesDirectory)\mi-e2e-imds-tests.xml" --jsonfile $jsonFile --raw-command -- go tool test2json @runArgs
                 $testExit = $LASTEXITCODE
                 Pop-Location
                 if ($testExit -ne 0) { throw "managed identity IMDS e2e tests failed" }
+                $events = @(Get-Content -LiteralPath $jsonFile | ForEach-Object { $_ | ConvertFrom-Json })
+                $skipped = @($events | Where-Object { $_.Action -eq "skip" -and $_.Test })
+                if ($skipped.Count -gt 0) {
+                  $names = ($skipped.Test | Sort-Object -Unique) -join ", "
+                  throw "managed identity IMDS e2e tests skipped: $names"
+                }
+                $expected = @(
+                  "TestManagedIdentityImds",
+                  "TestIMDSv2SystemAssignedBoundToken",
+                  "TestIMDSv2UserAssignedBoundToken",
+                  "TestIMDSv2BearerOverMtls",
+                  "TestIMDSv2TokenIsServedFromCache",
+                  "TestIMDSv2CallsBoundResource",
+                  "TestIMDSv2BoundTokenIsRejectedWithoutCertificate"
+                )
+                $passed = @($events |
+                  Where-Object { $_.Action -eq "pass" -and $_.Test } |
+                  ForEach-Object { $_.Test })
+                $missing = @($expected | Where-Object { $_ -notin $passed })
+                if ($missing.Count -gt 0) {
+                  throw "required managed identity IMDS e2e tests did not pass: $($missing -join ', ')"
+                }
           - task: PublishTestResults@2
             displayName: "Publish MI E2E test results"
             condition: succeededOrFailed()
