@@ -51,7 +51,7 @@ const (
 // mtlsMissingCertMarker.
 const (
 	// mtlsMissingCertMarker: no client certificate was presented on the handshake at all.
-	mtlsMissingCertMarker = "MtlsMissingClientCertificate"
+	mtlsMissingCertMarker = "MissingClientCertificate"
 
 	// mtlsWrongSchemeMarker: the binding certificate was presented, but the token was offered under
 	// "Bearer", a scheme that carries no proof-of-possession. Distinct from mtlsMissingCertMarker
