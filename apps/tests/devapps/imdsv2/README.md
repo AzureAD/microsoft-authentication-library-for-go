@@ -95,6 +95,11 @@ go run ./apps/tests/devapps/imdsv2 -id-type client -id <client-id>
 go run ./apps/tests/devapps/imdsv2 -mode pop -trace
 ```
 
+Trace mode passes a client implementing `managedidentity.MtlsHTTPClientFactory` to
+`managedidentity.WithHTTPClient`. Its fresh `ClientConfigurer` keeps the tracing middleware around
+the private client MSAL augments with the IMDS-issued certificate, demonstrating the same extension
+point applications use for proxy, retry, logging, or policy pipelines.
+
 `-mode pop` needs a Windows Azure VM with Credential Guard enabled — in practice a Trusted Launch
 or confidential VM — whose IMDS offers the credential endpoint, and a managed identity assigned to
 it. `-mode plain` works anywhere ordinary managed identity works.

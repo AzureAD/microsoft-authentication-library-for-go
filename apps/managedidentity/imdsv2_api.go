@@ -11,39 +11,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 	"runtime"
 	"strings"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
 )
-
-// WithMtlsHTTPClient overrides how the mutual-TLS client is built for the
-// IMDSv2 token leg.
-//
-// The default client presents the binding certificate over TLS 1.2 or later,
-// which is what almost every application wants. Supply a factory only when the
-// TLS handshake has to be owned by the caller, for example to add a proxy or a
-// custom root store. The factory receives the binding certificate and must
-// return a client that presents it, otherwise the token request is rejected.
-//
-// This does not affect the two plain-HTTP calls to the metadata service, which
-// use the client given to [WithHTTPClient].
-//
-// Redirects: the returned client is copied before use, and if it states no
-// CheckRedirect this library installs one that refuses to follow, because a 307
-// or 308 on this leg replays the client credential at the redirect target and
-// offers the binding certificate on the cloned handshake. A factory that returns
-// a client with its own non-nil CheckRedirect keeps it untouched - the copy is
-// never mutated either way - which means that caller has taken on
-// redirect-replay safety for this leg.
-func WithMtlsHTTPClient(factory func(cert tls.Certificate) *http.Client) ClientOption {
-	return func(c *Client) {
-		c.mtlsClientFactory = factory
-	}
-}
 
 // WithMtlsProofOfPossession requests a certificate-bound access token
 // (token_type=mtls_pop) instead of a bearer token.
@@ -243,22 +218,23 @@ func (c Client) acquireTokenForIMDSv2(
 	// variable rather than capturing the first value.
 	defer func() { _ = binding.Close() }()
 
-	// A caller factory runs outside the process-wide gate. Once the gate is
+	// An application factory runs outside the process-wide gate. Once the gate is
 	// reacquired, another waiter may already have filled this request's cache,
 	// so read it again before sending a duplicate token request. Claims, force
 	// refresh and proactive refresh deliberately keep recheckCache false.
-	clientForBinding := func() (*http.Client, AuthResult, bool, error) {
+	_, hasMtlsFactory := c.httpClient.(MtlsHTTPClientFactory)
+	clientForBinding := func() (ops.HTTPClient, AuthResult, bool, error) {
 		for {
 			client, err := c.mtlsClientForAcquisition(ctx, binding, gate)
 			if err != nil {
 				return nil, AuthResult{}, false, err
 			}
-			if recheckCache && c.mtlsClientFactory != nil {
+			if recheckCache && hasMtlsFactory {
 				if ar, _, hit, cacheErr := c.cachedAuthResult(ctx, o); cacheErr == nil && hit {
 					return client, ar, true, nil
 				}
 			}
-			if c.mtlsClientFactory == nil || certCache.isCurrent(key, binding) {
+			if !hasMtlsFactory || certCache.isCurrent(key, binding) {
 				return client, AuthResult{}, false, nil
 			}
 
@@ -488,94 +464,6 @@ func newRetainedSigner(signer crypto.Signer, release func() error) *retainedSign
 	held := &retainedSigner{Signer: signer, release: release}
 	runtime.SetFinalizer(held, func(h *retainedSigner) { _ = h.release() })
 	return held
-}
-
-// ErrMtlsClientFactoryReturnedNil is returned when a factory supplied to
-// [WithMtlsHTTPClient] returns a nil client. There is nothing to send the token
-// request on, so the request fails here rather than panicking inside net/http.
-//
-// Match it with errors.Is.
-var ErrMtlsClientFactoryReturnedNil = errors.New(
-	"managedidentity: the WithMtlsHTTPClient factory returned a nil *http.Client")
-
-// mtlsClient builds the client used for the IMDSv2 token leg, honouring
-// [WithMtlsHTTPClient] when the caller supplied a factory.
-//
-// A caller-supplied client is copied before it is used, and a redirect refusal
-// is installed on the copy when the caller stated no policy of their own. A nil
-// CheckRedirect is not "no policy": it is Go's default, which follows up to ten
-// redirects. This leg posts a form and presents the binding certificate, so a
-// 307 or 308 would replay the client credential at whatever host the Location
-// header names and offer the certificate on the cloned handshake, and the
-// https-only check tokenEndpoint performs cannot see where a redirect leads. The
-// copy is what keeps this from mutating a client the caller may share with
-// unrelated code; a caller who did set CheckRedirect has stated a policy and is
-// left alone, exactly as imdsRedirectGuarded treats the plain-HTTP legs.
-//
-// The certificate handed to a factory is a deep copy, for the same reason the
-// one handed to the caller in [AuthResult] is. A tls.Certificate passed by value
-// still shares its DER slices and its *x509.Certificate leaf with the cached
-// original, so a factory that rewrote cert.Certificate[0] or annotated
-// cert.Leaf would be mutating process-wide cached state that every other
-// acquisition reads, without any lock and while other goroutines are using it.
-// Copying first makes the factory's certificate its own. The copy also carries a
-// retained signer, so a factory that keeps its client - the usual case, since
-// building one per request is expensive - still has a live key after this
-// acquisition has released its own reference.
-//
-// The default client is built from the cached certificate directly. It is this
-// package's own code and only reads the value; its cached transport retains the
-// signer for connection reuse and is keyed so a remint cannot select a client
-// built for the previous key.
-func (c Client) mtlsClient(binding *bindingCertificate) (*http.Client, error) {
-	return c.mtlsClientWithFactoryInvoker(binding, func(invoke func() error) error {
-		return invoke()
-	})
-}
-
-// mtlsClientForAcquisition invokes caller code outside the process-wide token
-// gate. The gate is reacquired before this returns so the token request remains
-// serialized with every other managed identity acquisition.
-func (c Client) mtlsClientForAcquisition(
-	ctx context.Context,
-	binding *bindingCertificate,
-	gate *miTokenGateLease,
-) (*http.Client, error) {
-	return c.mtlsClientWithFactoryInvoker(binding, func(invoke func() error) error {
-		return gate.runOutside(ctx, invoke)
-	})
-}
-
-func (c Client) mtlsClientWithFactoryInvoker(
-	binding *bindingCertificate,
-	invoke func(func() error) error,
-) (*http.Client, error) {
-	if c.mtlsClientFactory == nil {
-		return mtlsHTTPClient(binding.TLS), nil
-	}
-	isolated, err := copyBindingCertificate(binding)
-	if err != nil {
-		return nil, err
-	}
-
-	var guarded *http.Client
-	err = invoke(func() error {
-		client := c.mtlsClientFactory(*isolated)
-		if client == nil {
-			return ErrMtlsClientFactoryReturnedNil
-		}
-		copied := *client
-		if copied.CheckRedirect == nil {
-			copied.CheckRedirect = refuseIMDSv2Redirect
-		}
-		guarded = &copied
-		return nil
-	})
-	runtime.KeepAlive(isolated)
-	if err != nil {
-		return nil, err
-	}
-	return guarded, nil
 }
 
 // imdsV2BaseEndpoint returns the metadata service root.

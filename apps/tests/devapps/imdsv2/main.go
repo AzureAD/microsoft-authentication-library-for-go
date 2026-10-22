@@ -148,10 +148,11 @@ func run(cfg config) error {
 		clientOpts = append(clientOpts, managedidentity.WithClientCapabilities(caps))
 	}
 	if cfg.trace {
-		// WithMtlsHTTPClient overrides how the mutual-TLS client is built for the Entra leg. It is
-		// the escape hatch for a caller who must own that handshake; here it is used only to
-		// observe the request. The transport it builds mirrors MSAL's own.
-		clientOpts = append(clientOpts, managedidentity.WithMtlsHTTPClient(tracingMtlsClient))
+		// The client passed to WithHTTPClient advertises a certificate-scoped factory so its
+		// tracing middleware remains around the MSAL-augmented mTLS client.
+		clientOpts = append(clientOpts, managedidentity.WithHTTPClient(&tracingFactoryClient{
+			client: &http.Client{},
+		}))
 	}
 
 	client, err := managedidentity.New(id, clientOpts...)
@@ -514,33 +515,61 @@ func explain(err error) {
 	}
 }
 
-// tracingMtlsClient builds the mutual-TLS client used for the Entra token request and wraps its
-// transport so the request can be described on screen. The transport mirrors what MSAL builds by
-// default; only the tracing wrapper is added.
-func tracingMtlsClient(cert tls.Certificate) *http.Client {
-	base := &http.Transport{
-		TLSClientConfig: &tls.Config{
-			Certificates: []tls.Certificate{cert},
-			MinVersion:   tls.VersionTLS12,
-		},
+// tracingFactoryClient handles the metadata legs normally and creates a fresh
+// tracing adapter when MSAL needs a certificate-scoped mTLS client.
+type tracingFactoryClient struct {
+	client *http.Client
+}
+
+var _ managedidentity.MtlsHTTPClientFactory = (*tracingFactoryClient)(nil)
+
+func (c *tracingFactoryClient) Do(req *http.Request) (*http.Response, error) {
+	// The request URL is constructed and validated by MSAL; this adapter only preserves tracing.
+	//nolint:gosec
+	return c.client.Do(req)
+}
+
+func (c *tracingFactoryClient) CloseIdleConnections() {
+	c.client.CloseIdleConnections()
+}
+
+func (*tracingFactoryClient) NewMtlsClient() (managedidentity.ClientConfigurer, error) {
+	return &tracingClient{base: &http.Client{}}, nil
+}
+
+type tracingClient struct {
+	base   *http.Client
+	client *http.Client
+}
+
+var _ managedidentity.ClientConfigurer = (*tracingClient)(nil)
+
+func (c *tracingClient) ConfigureClient(
+	augment func(*http.Client) (*http.Client, error),
+) error {
+	client, err := augment(c.base)
+	if err != nil {
+		return err
 	}
-	return &http.Client{Transport: traceTransport{base: base}}
+	c.client = client
+	return nil
 }
 
-// traceTransport prints what the mutual-TLS token request looks like on the wire, so the
-// non-obvious claim about this flow can be observed rather than taken on faith: the token endpoint
-// host is mtlsauth.*, not login.*, and the IMDS-issued certificate is what authenticates it.
-type traceTransport struct {
-	base http.RoundTripper
-}
-
-func (t traceTransport) RoundTrip(req *http.Request) (*http.Response, error) {
+func (c *tracingClient) Do(req *http.Request) (*http.Response, error) {
 	section("token request (mutual-TLS leg to Entra)")
 	kv("method", req.Method)
 	kv("endpoint host", req.URL.Host)
 	fmt.Println("  The IMDS-issued client certificate is presented on this handshake. That is what")
 	fmt.Println("  authenticates the identity and binds the token, so no client secret is involved.")
-	return t.base.RoundTrip(req)
+	// The request URL is the HTTPS token endpoint MSAL validated from IMDS metadata.
+	//nolint:gosec
+	return c.client.Do(req)
+}
+
+func (c *tracingClient) CloseIdleConnections() {
+	if c.client != nil {
+		c.client.CloseIdleConnections()
+	}
 }
 
 // identity turns the -id-type and -id flags into a managed identity ID.

@@ -12,7 +12,6 @@ package managedidentity
 import (
 	"bytes"
 	"context"
-	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -188,7 +187,9 @@ type Client struct {
 	authParams         authority.AuthParams
 	retryPolicyEnabled bool
 	canRefresh         *atomic.Value
-	mtlsClientFactory  func(cert tls.Certificate) *http.Client
+	// mtlsClients owns the configured IMDSv2 token clients for this Client. It is
+	// a pointer so value copies share the same per-certificate clients and pools.
+	mtlsClients *imdsV2MtlsClientCache
 	// capabilities are the client capabilities set by WithClientCapabilities.
 	// They are held here rather than on authParams because options run before
 	// New builds authParams.
@@ -324,13 +325,17 @@ func WithForceRefresh() AcquireTokenOption {
 	}
 }
 
-// WithHTTPClient allows for a custom HTTP client to be set. Flows that must configure the
-// transport underlying the client (for example, Service Fabric certificate pinning) require a
-// [ClientConfigurer], because a plain ops.HTTPClient exposes no way to apply those requirements;
-// pass a [ClientConfigurer] here and MSAL will invoke it to install the configuration it needs.
+// WithHTTPClient allows for a custom HTTP client to be set. Service Fabric certificate pinning
+// requires a [ClientConfigurer]. IMDSv2 mutual-TLS requests either derive a certificate-scoped
+// client from a supplied *http.Client or use the [MtlsHTTPClientFactory] capability implemented by
+// this value.
 //
-// Only the Service Fabric source currently consumes a [ClientConfigurer]; every other managed
-// identity source treats the value as a plain ops.HTTPClient and never calls ConfigureClient.
+// On an IMDSv2 certificate cache miss, MSAL asks an MtlsHTTPClientFactory for a fresh
+// ClientConfigurer and configures it outside the process-wide managed identity token gate. The
+// configured adapter is then cached for that certificate and private-key identity. A wrapper or
+// middleware client that cannot expose an *http.Transport must implement MtlsHTTPClientFactory so
+// MSAL can preserve the wrapper around a cloned, certificate-bearing base client instead of
+// bypassing it.
 //
 // Redirects on the plain-HTTP metadata legs are the caller's to own here. This
 // library refuses to follow one by default, because a 307 or 308 replays the
@@ -347,12 +352,9 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 }
 
 // ClientConfigurer is an [ops.HTTPClient] that lets MSAL install the transport and client
-// configuration a flow requires, such as Service Fabric certificate pinning. Pass one to
-// [WithHTTPClient] and MSAL will call ConfigureClient during [New].
-//
-// Only the Service Fabric managed identity source consumes a ClientConfigurer. For every other
-// source MSAL uses the value directly as an ops.HTTPClient and does not call ConfigureClient, so
-// implementations should not rely on ConfigureClient being invoked outside Service Fabric.
+// configuration a flow requires. Service Fabric consumes a ClientConfigurer passed directly to
+// [WithHTTPClient]. IMDSv2 consumes fresh ClientConfigurer instances returned by
+// [MtlsHTTPClientFactory.NewMtlsClient].
 //
 // Implementations of ConfigureClient must:
 //   - call augment exactly once, synchronously, before ConfigureClient returns, passing the
@@ -362,17 +364,35 @@ func WithHTTPClient(httpClient ops.HTTPClient) ClientOption {
 //   - forward CloseIdleConnections to that same client;
 //   - return any error augment reports and complete all configuration before returning.
 //
-// MSAL fails closed: if augment reports an error, [New] returns it even when ConfigureClient
-// discards the error and returns nil, so a misconfigured client is never returned.
+// MSAL fails closed: if augment reports an error, the operation returns it even when
+// ConfigureClient discards the error and returns nil, so a misconfigured client is never used.
 //
-// MSAL calls ConfigureClient once, during [New]; a ClientConfigurer need not be safe for
-// concurrent configuration. An implementation may wrap additional middleware around the client
-// augment returns so long as requests still traverse the augmented transport and redirect policy.
+// MSAL calls ConfigureClient once on each ClientConfigurer. An implementation may wrap additional
+// middleware around the client augment returns so long as requests still traverse the augmented
+// transport and redirect policy.
 type ClientConfigurer interface {
 	ops.HTTPClient
 	// ConfigureClient receives augment, which derives the client MSAL requires from the supplied
 	// base client. See [ClientConfigurer] for the contract implementations must satisfy.
 	ConfigureClient(augment func(*http.Client) (*http.Client, error)) error
+}
+
+// MtlsHTTPClientFactory is an [ops.HTTPClient] that creates fresh [ClientConfigurer] instances for
+// IMDSv2 mutual-TLS token requests. MSAL detects this capability on the value passed to
+// [WithHTTPClient] and calls NewMtlsClient when a binding certificate misses this Client's cache.
+//
+// NewMtlsClient must return a new, independently configurable adapter. MSAL calls its
+// ConfigureClient method with an augmenter closed over an immutable snapshot of the binding
+// certificate. ConfigureClient must call the augmenter exactly once, synchronously, with a non-nil
+// base *http.Client, then route Do and CloseIdleConnections through the returned specialized client
+// while preserving the adapter's middleware or pipeline. MSAL never calls ConfigureClient on the
+// factory object passed to WithHTTPClient and never mutates or closes that shared object.
+//
+// NewMtlsClient must be concurrency safe. Concurrent cache misses can invoke it more than once for
+// the same certificate. MSAL publishes one configured adapter and closes publication losers.
+type MtlsHTTPClientFactory interface {
+	ops.HTTPClient
+	NewMtlsClient() (ClientConfigurer, error)
 }
 
 // WithClientCapabilities allows configuring one or more client capabilities
@@ -462,6 +482,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		retryPolicyEnabled: true,
 		source:             source,
 		canRefresh:         &zero,
+		mtlsClients:        newIMDSv2MtlsClientCache(),
 		// Each client discovers host capabilities for itself. Allocating here,
 		// before the options run, means every client New returns has one and
 		// every copy of that client shares it.
@@ -567,11 +588,12 @@ var now = time.Now
 // identity endpoint must be throttled; otherwise, the endpoint will throw a HTTP
 // 429.").
 //
-// A custom mTLS client factory is caller code rather than endpoint work, so its
-// invocation temporarily releases the gate and reacquires it before a request
-// resumes. It is a buffered channel rather than a mutex so both the ordinary
-// wait and that reacquisition can be abandoned when the caller's context is
-// cancelled. Ordering among waiters is not guaranteed and does not need to be.
+// Custom mTLS factory and configurer callbacks are caller code rather than
+// endpoint work, so their invocation temporarily releases the gate and
+// reacquires it before a request resumes. It is a buffered channel rather than
+// a mutex so both the ordinary wait and that reacquisition can be abandoned
+// when the caller's context is cancelled. Ordering among waiters is not
+// guaranteed and does not need to be.
 var (
 	miTokenGate = make(chan struct{}, 1)
 	// miTokenGateGeneration advances whenever ownership changes. A
@@ -615,11 +637,11 @@ func tryAcquireMITokenGate() (func(), bool) {
 // miTokenGateLease owns one acquisition of miTokenGate and can temporarily
 // release it around caller code.
 //
-// A custom mTLS client factory has no context parameter and can call back into
-// managed identity. Holding the gate while invoking it would let that nested
-// acquisition wait on the outer one forever. The lease makes the release
-// explicit and idempotent, so a panic in caller code also cannot strand the
-// process-wide gate.
+// Custom mTLS factory and configurer callbacks have no context parameter and
+// can call back into managed identity. Holding the gate while invoking them
+// would let that nested acquisition wait on the outer one forever. The lease
+// makes the release explicit and idempotent, so a panic in caller code also
+// cannot strand the process-wide gate.
 type miTokenGateLease struct {
 	release      func()
 	tryReacquire bool
@@ -669,7 +691,7 @@ func (l *miTokenGateLease) runOutside(ctx context.Context, f func() error) error
 	}
 	release, err := acquireMITokenGate(ctx)
 	if err != nil {
-		return fmt.Errorf("managedidentity: reacquiring the token gate after the custom mTLS client factory: %w", err)
+		return fmt.Errorf("managedidentity: reacquiring the token gate after custom mTLS client configuration: %w", err)
 	}
 	l.release = release
 	l.generation = atomic.LoadUint64(&miTokenGateGeneration)
@@ -684,8 +706,8 @@ func (l *miTokenGateLease) runOutside(ctx context.Context, f func() error) error
 // blocks every other identity and every other source too. That is safe only
 // while the holder is guaranteed to finish. It is not guaranteed by the caller:
 // a context without a deadline is ordinary, and the HTTP client is replaceable
-// through [WithHTTPClient] and [WithMtlsHTTPClient] with an implementation this
-// package cannot inspect and whose Timeout it therefore cannot see or set. A
+// through [WithHTTPClient] with an implementation this package cannot inspect
+// and whose Timeout it therefore cannot see or set. A
 // single connection to a wedged endpoint that never answers and never resets
 // would otherwise hold the gate for the life of the process, and every later
 // acquisition would block until its own context expired.

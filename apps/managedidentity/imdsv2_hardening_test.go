@@ -613,10 +613,19 @@ func TestIMDSv2ReportsUnreachableMetadataService(t *testing.T) {
 // standard library's environment proxy policy. A nil Proxy function forces
 // direct routing and breaks hosts whose only path to Entra is HTTPS_PROXY.
 func TestDefaultIMDSv2MtlsClientUsesEnvironmentProxy(t *testing.T) {
-	client := newMtlsHTTPClient(tls.Certificate{})
-	transport, ok := client.Transport.(*http.Transport)
+	binding := testBindingFromTLSCertificate(t, selfSignedTLSCertificate(t))
+	c := Client{httpClient: &http.Client{}, mtlsClients: newIMDSv2MtlsClientCache()}
+	client, err := c.mtlsClient(binding)
+	if err != nil {
+		t.Fatalf("mtlsClient: %v", err)
+	}
+	httpClient, ok := client.(*http.Client)
 	if !ok {
-		t.Fatalf("Transport = %T, want *http.Transport", client.Transport)
+		t.Fatalf("client = %T, want *http.Client", client)
+	}
+	transport, ok := httpClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("Transport = %T, want *http.Transport", httpClient.Transport)
 	}
 	if transport.Proxy == nil {
 		t.Fatal("the default mTLS transport bypasses environment proxy settings")
@@ -624,16 +633,26 @@ func TestDefaultIMDSv2MtlsClientUsesEnvironmentProxy(t *testing.T) {
 }
 
 func TestIMDSv2ReusesOneHTTPClientPerCertificate(t *testing.T) {
-	cert := selfSignedTLSCertificate(t)
-	first := mtlsHTTPClient(cert)
-	again := mtlsHTTPClient(cert)
+	c := Client{httpClient: &http.Client{}, mtlsClients: newIMDSv2MtlsClientCache()}
+	binding := testBindingFromTLSCertificate(t, selfSignedTLSCertificate(t))
+	first, err := c.mtlsClient(binding)
+	if err != nil {
+		t.Fatalf("first mtlsClient: %v", err)
+	}
+	again, err := c.mtlsClient(binding)
+	if err != nil {
+		t.Fatalf("second mtlsClient: %v", err)
+	}
 	// A fresh client per acquisition strands an idle TLS connection for the
 	// transport's idle timeout on every token request.
 	if first != again {
 		t.Fatal("the same certificate produced two clients")
 	}
 
-	third := mtlsHTTPClient(selfSignedTLSCertificate(t))
+	third, err := c.mtlsClient(testBindingFromTLSCertificate(t, selfSignedTLSCertificate(t)))
+	if err != nil {
+		t.Fatalf("third mtlsClient: %v", err)
+	}
 	if third == first {
 		t.Fatal("a different certificate reused the previous client, so a pooled connection could carry the wrong certificate")
 	}
@@ -679,37 +698,42 @@ func TestIMDSv2BindingCertificateSurvivesCallerValueCopy(t *testing.T) {
 }
 
 func TestIMDSv2AlternatingCertificatesKeepTheirClients(t *testing.T) {
-	// The cache is process-wide and bounded, so a test that inherits entries
-	// from another test can see its own two clients evicted for reasons that
-	// have nothing to do with what it is asserting.
-	withCleanCaches(t)
-	first := selfSignedTLSCertificate(t)
-	second := selfSignedTLSCertificate(t)
+	c := Client{httpClient: &http.Client{}, mtlsClients: newIMDSv2MtlsClientCache()}
+	first := testBindingFromTLSCertificate(t, selfSignedTLSCertificate(t))
+	second := testBindingFromTLSCertificate(t, selfSignedTLSCertificate(t))
 
-	firstClient := mtlsHTTPClient(first)
-	secondClient := mtlsHTTPClient(second)
+	firstClient, err := c.mtlsClient(first)
+	if err != nil {
+		t.Fatalf("first mtlsClient: %v", err)
+	}
+	secondClient, err := c.mtlsClient(second)
+	if err != nil {
+		t.Fatalf("second mtlsClient: %v", err)
+	}
 	if firstClient == secondClient {
 		t.Fatal("two certificates shared a client")
 	}
 	// Two identities in one process alternate. Dropping the previous client
 	// every time the certificate changes would rebuild a transport on every
 	// acquisition, which is the churn the cache exists to remove.
-	if mtlsHTTPClient(first) != firstClient {
+	if got, err := c.mtlsClient(first); err != nil || got != firstClient {
 		t.Fatal("alternating certificates evicted each other's client")
 	}
-	if mtlsHTTPClient(second) != secondClient {
+	if got, err := c.mtlsClient(second); err != nil || got != secondClient {
 		t.Fatal("alternating certificates evicted each other's client")
 	}
 }
 
 func TestIMDSv2MtlsClientCacheIsBounded(t *testing.T) {
-	withCleanCaches(t)
+	c := Client{httpClient: &http.Client{}, mtlsClients: newIMDSv2MtlsClientCache()}
 	for i := 0; i < mtlsClientCacheLimit*3; i++ {
-		mtlsHTTPClient(selfSignedTLSCertificate(t))
+		if _, err := c.mtlsClient(testBindingFromTLSCertificate(t, selfSignedTLSCertificate(t))); err != nil {
+			t.Fatalf("mtlsClient %d: %v", i, err)
+		}
 	}
-	mtlsClientCache.mu.Lock()
-	size := len(mtlsClientCache.clients)
-	mtlsClientCache.mu.Unlock()
+	c.mtlsClients.mu.Lock()
+	size := len(c.mtlsClients.clients)
+	c.mtlsClients.mu.Unlock()
 	if size > mtlsClientCacheLimit {
 		t.Fatalf("cached clients = %d, want at most %d", size, mtlsClientCacheLimit)
 	}
@@ -733,6 +757,21 @@ func selfSignedTLSCertificate(t *testing.T) tls.Certificate {
 	}
 	cert := tls.Certificate{Certificate: [][]byte{der}, PrivateKey: key}
 	return cert
+}
+
+func testBindingFromTLSCertificate(t *testing.T, cert tls.Certificate) *bindingCertificate {
+	t.Helper()
+	leaf, err := x509.ParseCertificate(cert.Certificate[0])
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert.Leaf = leaf
+	return &bindingCertificate{
+		TLS:   cert,
+		Leaf:  leaf,
+		refs:  1,
+		close: func() error { return nil },
+	}
 }
 
 // A metadata document with no attestationEndpoint is refused even when this

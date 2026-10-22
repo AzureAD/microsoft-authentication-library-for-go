@@ -7,7 +7,6 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/rsa"
-	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"errors"
@@ -850,20 +849,18 @@ func TestRemintTriggersAreCertificateSpecific(t *testing.T) {
 // Custom mTLS clients.
 // ---------------------------------------------------------------------------
 
-// A factory that returns nothing leaves no client to send the request on.
-// Returning a named error is what turns that into something a caller can read
-// rather than a panic inside net/http.
+// A factory that returns nothing leaves no client to send the request on and
+// must fail before the token request reaches net/http.
 func TestNilMtlsClientFactoryIsAnError(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
-	// Set after newTestClient, which installs its own factory to trust the
-	// fake's self-signed certificate and would otherwise overwrite the option.
-	client.mtlsClientFactory = func(tls.Certificate) *http.Client { return nil }
+	factory := client.httpClient.(*testMtlsFactoryClient)
+	factory.newClient = func() (ClientConfigurer, error) { return nil, nil }
 
 	_, err := client.AcquireToken(context.Background(), "https://vault.azure.net", WithMtlsProofOfPossession())
-	if !errors.Is(err, ErrMtlsClientFactoryReturnedNil) {
-		t.Fatalf("AcquireToken = %v, want ErrMtlsClientFactoryReturnedNil", err)
+	if err == nil || !strings.Contains(err.Error(), "returned a nil ClientConfigurer") {
+		t.Fatalf("AcquireToken = %v, want a nil ClientConfigurer error", err)
 	}
 }
 
@@ -875,40 +872,62 @@ func TestCustomMtlsClientGetsARedirectRefusalWithoutBeingMutated(t *testing.T) {
 	binding := testBindingCertificate(t, newFakeKeyProvider(), bindingKeyName, now().Add(30*24*time.Hour))
 	t.Cleanup(func() { _ = binding.Close() })
 	caller := &http.Client{}
-	c := Client{mtlsClientFactory: func(tls.Certificate) *http.Client { return caller }}
+	adapter := &testClientConfigurer{base: caller}
+	c := Client{
+		httpClient: &testMtlsFactoryClient{
+			client:    &http.Client{},
+			newClient: func() (ClientConfigurer, error) { return adapter, nil },
+		},
+		mtlsClients: newIMDSv2MtlsClientCache(),
+	}
 
 	got, err := c.mtlsClient(binding)
 	if err != nil {
 		t.Fatalf("mtlsClient: %v", err)
 	}
-	if got == caller {
+	if got != adapter {
+		t.Fatalf("mtlsClient returned %T, want the configured adapter", got)
+	}
+	configured := adapter.configuredClient()
+	if configured == caller {
 		t.Fatal("the caller's client was used directly, so installing a policy would have mutated it")
 	}
-	if got.CheckRedirect == nil {
+	if configured.CheckRedirect == nil {
 		t.Fatal("no redirect policy was installed on a client that stated none")
 	}
 	if caller.CheckRedirect != nil {
 		t.Fatal("the caller's own client was mutated")
 	}
-	if err := got.CheckRedirect(mustRequest(t, "https://elsewhere.example/"), nil); err == nil {
+	if err := configured.CheckRedirect(mustRequest(t, "https://elsewhere.example/"), nil); err == nil {
 		t.Fatal("the installed policy followed a redirect")
 	}
 
 	// A caller who stated a policy has said what they want, and MSAL does not
 	// override explicit configuration.
 	stated := &http.Client{CheckRedirect: func(*http.Request, []*http.Request) error { return nil }}
-	c = Client{mtlsClientFactory: func(tls.Certificate) *http.Client { return stated }}
+	adapter = &testClientConfigurer{base: stated}
+	c = Client{
+		httpClient: &testMtlsFactoryClient{
+			client:    &http.Client{},
+			newClient: func() (ClientConfigurer, error) { return adapter, nil },
+		},
+		mtlsClients: newIMDSv2MtlsClientCache(),
+	}
 	got, err = c.mtlsClient(binding)
 	if err != nil {
 		t.Fatalf("mtlsClient: %v", err)
 	}
-	if got == stated {
+	if got != adapter {
+		t.Fatalf("mtlsClient returned %T, want the configured adapter", got)
+	}
+	configured = adapter.configuredClient()
+	if configured == stated {
 		t.Fatal("the caller's client was used directly instead of being copied")
 	}
-	if err := got.CheckRedirect(mustRequest(t, "https://elsewhere.example/"), nil); err != nil {
+	if err := configured.CheckRedirect(mustRequest(t, "https://elsewhere.example/"), nil); err != nil {
 		t.Fatalf("the caller's explicit redirect policy was replaced: %v", err)
 	}
-	got.Timeout = time.Minute
+	configured.Timeout = time.Minute
 	if stated.Timeout != 0 {
 		t.Fatal("mutating the copy changed the caller's client")
 	}

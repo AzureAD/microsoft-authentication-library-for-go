@@ -50,8 +50,8 @@ type bindingCertCache struct {
 	// MtlsCertificateCache.
 	//
 	// The process-wide miTokenGate normally serializes minting, but it is
-	// deliberately released while a caller's custom mTLS factory runs. Another
-	// identity may mint in that interval, and direct cache users are not
+	// deliberately released while caller-provided mTLS factory/configurer code
+	// runs. Another identity may mint in that interval, and direct cache users are not
 	// required to hold the process-wide gate at all. Keying this gate therefore
 	// keeps same-identity issuance single-flight without making unrelated
 	// identities wait on each other's cache state.

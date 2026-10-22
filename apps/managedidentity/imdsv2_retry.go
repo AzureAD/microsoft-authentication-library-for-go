@@ -242,7 +242,7 @@ func hasRetryAfter(resp *http.Response) bool {
 // reacts to a rejected certificate rather than to a failing service; the two do
 // not overlap, because a server error is not a reason to mint a new
 // certificate.
-func sendSTSRequest(ctx context.Context, client *http.Client, req *http.Request, retryEnabled bool) (*http.Response, error) {
+func sendSTSRequest(ctx context.Context, client ops.HTTPClient, req *http.Request, retryEnabled bool) (*http.Response, error) {
 	if !retryEnabled {
 		return doBoundedAttempt(client, req)
 	}

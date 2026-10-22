@@ -697,8 +697,17 @@ Notes:
   gate, and a caller waiting on either stays cancellable through its context. A caller holding a
   usable token that is due a proactive refresh never waits: if the gate is busy it is handed the
   cached token immediately and the refresh is left to a later call.
-- **Custom transport.** `WithMtlsHTTPClient` supplies a factory that builds the `*http.Client` used
-  for the certificate-authenticated leg, for callers who must own the TLS handshake themselves.
+- **Custom transport.** The value passed to `managedidentity.WithHTTPClient` is also the extension
+  point for the certificate-authenticated leg. A plain `*http.Client` is cloned so its proxy,
+  dialer, roots, timeouts, pool policy, and explicit redirect policy survive while MSAL installs
+  the binding certificate, TLS minimum, and isolated TLS session state on the clone. A middleware
+  or pipeline client implements `managedidentity.MtlsHTTPClientFactory`; each certificate cache miss
+  returns a fresh `managedidentity.ClientConfigurer`, which MSAL augments and then caches per
+  certificate and private-key identity. Concurrent same-certificate misses may create duplicates,
+  and MSAL closes the publication losers. The original client, adapter, and transport are never
+  mutated or closed.
+  Opaque transports that cannot safely carry the certificate fail closed instead of silently
+  bypassing application routing.
 - **All managed identity kinds** are supported: `SystemAssigned()`, and user-assigned by client ID,
   object ID, or resource ID.
 

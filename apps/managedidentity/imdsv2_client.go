@@ -6,7 +6,6 @@ package managedidentity
 import (
 	"context"
 	"crypto"
-	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"encoding/base64"
@@ -18,7 +17,6 @@ import (
 	"net/url"
 	"strings"
 	"sync"
-	"time"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
@@ -503,74 +501,6 @@ func (b *bindingCertificate) tokenEndpoint() (string, error) {
 	return fmt.Sprintf("https://%s/%s%s", u.Host, strings.Trim(b.TenantID, "/"), imdsV2OAuthPath), nil
 }
 
-// mtlsClientCache holds one client per binding certificate. A client is reused
-// across acquisitions so connections are actually pooled, which is what the rest
-// of MSAL does (see ops.SetMtlsClientFactory, which caches per thumbprint).
-// Building one per acquisition instead would strand an idle TLS connection for
-// the transport's idle timeout on every token request.
-var mtlsClientCache = struct {
-	mu      sync.Mutex
-	clients map[string]*http.Client
-}{clients: map[string]*http.Client{}}
-
-// mtlsClientCacheLimit bounds the cache. A process needs one client per live
-// identity and attestation mode, so the working set is small; the limit only
-// stops a long-running process from accumulating a transport per re-mint.
-const mtlsClientCacheLimit = 8
-
-// mtlsHTTPClient returns a client that presents the binding certificate. The
-// client is keyed by the certificate itself so that replacing the certificate
-// cannot reuse a pooled connection authenticated with the previous one.
-func mtlsHTTPClient(cert tls.Certificate) *http.Client {
-	if len(cert.Certificate) == 0 {
-		return newMtlsHTTPClient(cert)
-	}
-	sum := sha256.Sum256(cert.Certificate[0])
-	// The key covers the signer, not just the certificate. The same DER can be
-	// paired with a new CNG handle after the previous one is closed: restore
-	// re-reads the stored certificate and provisions a fresh handle for it, and
-	// getBindingCertificate hands back a certificate that needs refreshing
-	// without adopting it, so the caller's Close frees that handle. Keying on
-	// the DER alone would return a cached client whose transport still holds the
-	// closed signer, and because the resulting transport error is not one
-	// shouldRemintCertificate matches, every later acquisition for that identity
-	// would fail the same way with nothing to repair it.
-	key := fmt.Sprintf("%x|%p", sum, cert.PrivateKey)
-
-	mtlsClientCache.mu.Lock()
-	defer mtlsClientCache.mu.Unlock()
-	if client, ok := mtlsClientCache.clients[key]; ok {
-		return client
-	}
-	// Evicting only over the limit, rather than every time the certificate
-	// changes, is what lets two identities alternate without rebuilding a
-	// transport on every acquisition.
-	for old, client := range mtlsClientCache.clients {
-		if len(mtlsClientCache.clients) < mtlsClientCacheLimit {
-			break
-		}
-		client.CloseIdleConnections()
-		delete(mtlsClientCache.clients, old)
-	}
-	client := newMtlsHTTPClient(cert)
-	mtlsClientCache.clients[key] = client
-	return client
-}
-
-// clearMtlsClientCache drops every cached client, closing idle connections so
-// the transports do not outlive whatever they were talking to. Tests use it to
-// isolate themselves from each other: the cache is process-wide and retains up
-// to mtlsClientCacheLimit entries, so without this a client built against one
-// test's server survives into the next.
-func clearMtlsClientCache() {
-	mtlsClientCache.mu.Lock()
-	defer mtlsClientCache.mu.Unlock()
-	for key, client := range mtlsClientCache.clients {
-		client.CloseIdleConnections()
-		delete(mtlsClientCache.clients, key)
-	}
-}
-
 // refuseIMDSv2Redirect refuses to follow a redirect on any IMDSv2 leg.
 //
 // A nil CheckRedirect is not "no policy": it is Go's default, which follows up
@@ -682,48 +612,11 @@ func (v imdsV2) getComputeMetadata(ctx context.Context, correlationID string) (c
 	return m, nil
 }
 
-// mtlsClientTimeout bounds one attempt against the token endpoint. MSAL .NET
-// sets no timeout on the client it builds for this leg
-// (PlatformsCommon/Shared/SimpleHttpClientFactory.CreateMtlsHttpClient), so it
-// inherits HttpClient's own default of 100 seconds; matching that number keeps
-// a slow-but-answering regional endpoint from failing here while succeeding
-// there. The retry loop applies it per attempt, as .NET's does.
-const mtlsClientTimeout = 100 * time.Second
-
-func newMtlsHTTPClient(cert tls.Certificate) *http.Client {
-	return &http.Client{
-		Timeout:       mtlsClientTimeout,
-		CheckRedirect: refuseIMDSv2Redirect,
-		Transport: &http.Transport{
-			Proxy: http.ProxyFromEnvironment,
-			TLSClientConfig: &tls.Config{
-				// GetClientCertificate rather than Certificates: Go filters
-				// Certificates against the certificate authorities the server
-				// advertises and silently sends nothing when none match. A
-				// binding certificate is issued by an internal CA the token
-				// endpoint has no reason to name, so the filter can drop it and
-				// the handshake then fails as an authentication error that does
-				// not name the real cause. This is the same reasoning the
-				// package documents for the caller-facing binding certificate
-				// in base.AuthResult.
-				GetClientCertificate: func(*tls.CertificateRequestInfo) (*tls.Certificate, error) {
-					return &cert, nil
-				},
-				MinVersion: tls.VersionTLS12,
-			},
-			ForceAttemptHTTP2:   true,
-			MaxIdleConns:        10,
-			IdleConnTimeout:     90 * time.Second,
-			TLSHandshakeTimeout: 10 * time.Second,
-		},
-	}
-}
-
 // requestEntraToken performs the third leg: a client credentials request over a
 // connection authenticated by the binding certificate. When popRequested is
 // true the request asks for a certificate-bound token, otherwise it asks for an
 // ordinary bearer token that merely travelled over mTLS.
-func requestEntraToken(ctx context.Context, client *http.Client, binding *bindingCertificate, resource, claims string, popRequested, retryEnabled bool) (accesstokens.TokenResponse, error) {
+func requestEntraToken(ctx context.Context, client ops.HTTPClient, binding *bindingCertificate, resource, claims string, popRequested, retryEnabled bool) (accesstokens.TokenResponse, error) {
 	target, err := binding.tokenEndpoint()
 	if err != nil {
 		return accesstokens.TokenResponse{}, err

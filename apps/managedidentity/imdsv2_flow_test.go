@@ -630,6 +630,7 @@ func (f *imdsFake) newTestClient(t *testing.T, id ID, provider keyProvider, opts
 	metadataClient := f.metadataServer.Client()
 	metadataTransport := metadataClient.Transport
 	routedClient := *metadataClient
+	routedClient.CheckRedirect = refuseIMDSv2Redirect
 	routedClient.Transport = roundTripperFunc(func(req *http.Request) (*http.Response, error) {
 		if req.URL.Scheme == fixedIMDS.Scheme && req.URL.Host == fixedIMDS.Host {
 			clone := req.Clone(req.Context())
@@ -642,26 +643,25 @@ func (f *imdsFake) newTestClient(t *testing.T, id ID, provider keyProvider, opts
 		return metadataTransport.RoundTrip(req)
 	})
 
-	client, err := New(id, append([]ClientOption{WithHTTPClient(&routedClient)}, opts...)...)
+	factoryClient := &testMtlsFactoryClient{
+		client: &routedClient,
+		newClient: func() (ClientConfigurer, error) {
+			pool := x509.NewCertPool()
+			pool.AddCert(f.tokenServer.Certificate())
+			return &testClientConfigurer{
+				base: &http.Client{
+					Transport: &http.Transport{
+						TLSClientConfig: &tls.Config{RootCAs: pool},
+					},
+				},
+			}, nil
+		},
+	}
+	client, err := New(id, append([]ClientOption{WithHTTPClient(factoryClient)}, opts...)...)
 	if err != nil {
 		t.Fatalf("New: %v", err)
 	}
 	client.keyProvider = provider
-	// The fake's TLS certificate is self-signed, so the token leg needs a
-	// transport that trusts it. Everything else about the client is unchanged.
-	client.mtlsClientFactory = func(cert tls.Certificate) *http.Client {
-		pool := x509.NewCertPool()
-		pool.AddCert(f.tokenServer.Certificate())
-		return &http.Client{
-			Transport: &http.Transport{
-				TLSClientConfig: &tls.Config{
-					Certificates: []tls.Certificate{cert},
-					RootCAs:      pool,
-					MinVersion:   tls.VersionTLS12,
-				},
-			},
-		}
-	}
 	return client
 }
 
@@ -676,7 +676,6 @@ func withCleanCaches(t *testing.T) *fakePersistentCertCache {
 	t.Helper()
 	certCache.clear()
 	clearAttestationCache()
-	clearMtlsClientCache()
 	cacheManager = storage.New(nil)
 	platformSupportsMtlsPoP = func() bool { return true }
 	// The real persistent cache is the user's own certificate store. A test
@@ -692,7 +691,6 @@ func withCleanCaches(t *testing.T) *fakePersistentCertCache {
 	t.Cleanup(func() {
 		certCache.clear()
 		clearAttestationCache()
-		clearMtlsClientCache()
 		cacheManager = storage.New(nil)
 		platformSupportsMtlsPoP = func() bool { return runtime.GOOS == "windows" }
 		retryWait = realWait

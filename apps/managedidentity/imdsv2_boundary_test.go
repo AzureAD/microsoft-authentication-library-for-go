@@ -213,16 +213,15 @@ func TestAShorterCallerDeadlineBeatsTheAttemptBound(t *testing.T) {
 	}
 }
 
-// A factory is caller code and can legitimately acquire a token for some other
-// managed identity before it builds the mTLS client. It must therefore run
-// outside the process-wide gate. Otherwise the nested acquisition waits for
-// the outer one while the outer one waits for the factory, and both stop every
-// managed identity acquisition in the process.
-func TestCustomMtlsFactoryCanAcquireAnotherManagedIdentityToken(t *testing.T) {
+// Factory and configurer callbacks are caller code and can legitimately acquire
+// a token for another managed identity. Both must run outside the process-wide
+// gate or the nested acquisition deadlocks behind the outer one.
+func TestCustomMtlsFactoryAndConfigurerCanAcquireAnotherManagedIdentityToken(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	outer := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
-	buildOuterClient := outer.mtlsClientFactory
+	factory := outer.httpClient.(*testMtlsFactoryClient)
+	buildOuterClient := factory.newClient
 
 	t.Setenv(identityEndpointEnvVar, "http://appservice.example/token")
 	t.Setenv(identityHeaderEnvVar, "secret")
@@ -244,13 +243,32 @@ func TestCustomMtlsFactoryCanAcquireAnotherManagedIdentityToken(t *testing.T) {
 		t.Fatalf("New inner client: %v", err)
 	}
 
-	var nestedErr error
-	outer.mtlsClientFactory = func(cert tls.Certificate) *http.Client {
+	var nestedErrors []error
+	runNested := func() {
 		nestedCtx, cancel := context.WithTimeout(context.Background(), time.Second)
 		defer cancel()
-		_, nestedErr = inner.AcquireToken(
+		_, err := inner.AcquireToken(
 			nestedCtx, "https://management.azure.com", WithForceRefresh())
-		return buildOuterClient(cert)
+		nestedErrors = append(nestedErrors, err)
+	}
+	factory.newClient = func() (ClientConfigurer, error) {
+		runNested()
+		configurer, err := buildOuterClient()
+		if err != nil {
+			return nil, err
+		}
+		adapter := configurer.(*testClientConfigurer)
+		adapter.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+			runNested()
+			configured, err := augment(adapter.base)
+			if err == nil {
+				adapter.mu.Lock()
+				adapter.client = configured
+				adapter.mu.Unlock()
+			}
+			return err
+		}
+		return adapter, nil
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
@@ -258,11 +276,13 @@ func TestCustomMtlsFactoryCanAcquireAnotherManagedIdentityToken(t *testing.T) {
 	if _, err := outer.AcquireToken(ctx, "https://vault.azure.net", WithMtlsProofOfPossession()); err != nil {
 		t.Fatalf("outer AcquireToken: %v", err)
 	}
-	if nestedErr != nil {
-		t.Fatalf("nested AcquireToken: %v; the outer acquisition held the process-wide gate across the factory", nestedErr)
+	for i, nestedErr := range nestedErrors {
+		if nestedErr != nil {
+			t.Fatalf("nested AcquireToken %d: %v; the outer acquisition held the process-wide gate across factory/configurer code", i, nestedErr)
+		}
 	}
-	if innerCalls != 1 {
-		t.Fatalf("nested HTTP calls = %d, want 1", innerCalls)
+	if innerCalls != 2 {
+		t.Fatalf("nested HTTP calls = %d, want 2 (factory and ConfigureClient)", innerCalls)
 	}
 }
 
@@ -274,14 +294,20 @@ func TestCustomMtlsFactoriesOutsideTheGateStillCoalesceTokenRequests(t *testing.
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
-	buildClient := client.mtlsClientFactory
+	factory := client.httpClient.(*testMtlsFactoryClient)
+	buildClient := factory.newClient
 
 	factoryStarted := make(chan struct{}, 2)
 	releaseFactories := make(chan struct{})
-	client.mtlsClientFactory = func(cert tls.Certificate) *http.Client {
+	builtAdapters := make(chan *testClientConfigurer, 2)
+	factory.newClient = func() (ClientConfigurer, error) {
 		factoryStarted <- struct{}{}
 		<-releaseFactories
-		return buildClient(cert)
+		configurer, err := buildClient()
+		if adapter, ok := configurer.(*testClientConfigurer); ok {
+			builtAdapters <- adapter
+		}
+		return configurer, err
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
@@ -311,6 +337,13 @@ func TestCustomMtlsFactoriesOutsideTheGateStillCoalesceTokenRequests(t *testing.
 	if calls := fake.countOf("token"); calls != 1 {
 		t.Fatalf("token requests = %d, want one cold request followed by a cache hit", calls)
 	}
+	closed := int32(0)
+	for i := 0; i < 2; i++ {
+		closed += (<-builtAdapters).closeIdleCalls.Load()
+	}
+	if closed != 1 {
+		t.Fatalf("publication-loser close calls = %d, want 1", closed)
+	}
 }
 
 // A proactive refresh runs for a caller that already has a usable token. It
@@ -322,14 +355,15 @@ func TestProactiveRefreshDoesNotWaitToReacquireAfterACustomFactory(t *testing.T)
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
-	buildClient := client.mtlsClientFactory
+	factory := client.httpClient.(*testMtlsFactoryClient)
+	buildClient := factory.newClient
 
 	factoryStarted := make(chan struct{})
 	releaseFactory := make(chan struct{})
-	client.mtlsClientFactory = func(cert tls.Certificate) *http.Client {
+	factory.newClient = func() (ClientConfigurer, error) {
 		close(factoryStarted)
 		<-releaseFactory
-		return buildClient(cert)
+		return buildClient()
 	}
 
 	refreshed := make(chan bool, 1)
@@ -377,14 +411,15 @@ func TestProactiveRefreshStopsAfterGateTurnoverDuringACustomFactory(t *testing.T
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
-	buildClient := client.mtlsClientFactory
+	factory := client.httpClient.(*testMtlsFactoryClient)
+	buildClient := factory.newClient
 
 	factoryStarted := make(chan struct{})
 	releaseFactory := make(chan struct{})
-	client.mtlsClientFactory = func(cert tls.Certificate) *http.Client {
+	factory.newClient = func() (ClientConfigurer, error) {
 		close(factoryStarted)
 		<-releaseFactory
-		return buildClient(cert)
+		return buildClient()
 	}
 
 	refreshed := make(chan bool, 1)
@@ -403,7 +438,10 @@ func TestProactiveRefreshStopsAfterGateTurnoverDuringACustomFactory(t *testing.T
 	}
 
 	competitor := client
-	competitor.mtlsClientFactory = buildClient
+	competitor.httpClient = &testMtlsFactoryClient{
+		client:    factory.client,
+		newClient: buildClient,
+	}
 	if _, err := competitor.AcquireToken(
 		context.Background(),
 		"https://vault.azure.net",
@@ -447,14 +485,15 @@ func TestFactoryWaiterDoesNotEvictAConcurrentCertificateReplacement(t *testing.T
 	_ = rejected.Close()
 	fake.resetCalls()
 
-	buildClient := client.mtlsClientFactory
+	factory := client.httpClient.(*testMtlsFactoryClient)
+	buildClient := factory.newClient
 	firstFactoryStarted := make(chan struct{})
 	releaseFirstFactory := make(chan struct{})
 	replacementFactoryStarted := make(chan struct{})
 	releaseReplacementFactory := make(chan struct{})
 	factoryCalls := 0
 	var factoryMu sync.Mutex
-	client.mtlsClientFactory = func(cert tls.Certificate) *http.Client {
+	factory.newClient = func() (ClientConfigurer, error) {
 		factoryMu.Lock()
 		factoryCalls++
 		call := factoryCalls
@@ -467,7 +506,7 @@ func TestFactoryWaiterDoesNotEvictAConcurrentCertificateReplacement(t *testing.T
 			close(replacementFactoryStarted)
 			<-releaseReplacementFactory
 		}
-		return buildClient(cert)
+		return buildClient()
 	}
 
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
@@ -697,14 +736,13 @@ func TestRetainedSignerSurvivesPublic(t *testing.T) {
 }
 
 // ---------------------------------------------------------------------------
-// A custom mTLS factory cannot reach the cached certificate.
+// A custom mTLS adapter cannot reach the cached certificate.
 // ---------------------------------------------------------------------------
 
-// A tls.Certificate passed by value still shares its DER slices and its leaf
-// pointer with the cached original, so a factory that writes through either one
-// would be mutating state every other acquisition in the process reads. The
-// factory gets a copy of its own.
-func TestACustomMtlsFactoryCannotMutateTheCachedCertificate(t *testing.T) {
+// The augmenter installs a private certificate snapshot. Even middleware that
+// can inspect and mutate its configured transport cannot reach the certificate
+// cached by the managed identity flow.
+func TestACustomMtlsAdapterCannotMutateTheCachedCertificate(t *testing.T) {
 	provider := newFakeKeyProvider()
 	binding := testBindingCertificate(t, provider, bindingKeyName, now().Add(30*24*time.Hour))
 	t.Cleanup(func() { _ = binding.Close() })
@@ -714,36 +752,57 @@ func TestACustomMtlsFactoryCannotMutateTheCachedCertificate(t *testing.T) {
 	cachedLeaf := binding.Leaf
 
 	var handed tls.Certificate
-	c := Client{mtlsClientFactory: func(cert tls.Certificate) *http.Client {
-		handed = cert
-		// A factory is free to do this to a value it was given.
-		cert.Certificate[0][0] ^= 0xff
-		cert.Leaf.Subject.CommonName = "rewritten-by-the-factory"
-		return &http.Client{}
-	}}
+	adapter := &testClientConfigurer{base: &http.Client{}}
+	adapter.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+		configured, err := augment(adapter.base)
+		if err != nil {
+			return err
+		}
+		transport := configured.Transport.(*http.Transport)
+		cert, err := transport.TLSClientConfig.GetClientCertificate(nil)
+		if err != nil {
+			return err
+		}
+		handed = *cert
+		handed.Certificate[0][0] ^= 0xff
+		handed.Leaf.Subject.CommonName = "rewritten-by-the-adapter"
+		adapter.mu.Lock()
+		adapter.client = configured
+		adapter.mu.Unlock()
+		return nil
+	}
+	c := Client{
+		httpClient: &testMtlsFactoryClient{
+			client: &http.Client{},
+			newClient: func() (ClientConfigurer, error) {
+				return adapter, nil
+			},
+		},
+		mtlsClients: newIMDSv2MtlsClientCache(),
+	}
 	if _, err := c.mtlsClient(binding); err != nil {
 		t.Fatalf("mtlsClient: %v", err)
 	}
 
 	if !bytes.Equal(binding.TLS.Certificate[0], original) {
-		t.Fatal("the factory's write reached the cached DER")
+		t.Fatal("the adapter's write reached the cached DER")
 	}
 	if binding.Leaf != cachedLeaf {
 		t.Fatal("the cached leaf pointer was replaced")
 	}
-	if binding.Leaf.Subject.CommonName == "rewritten-by-the-factory" {
-		t.Fatal("the factory's write reached the cached leaf")
+	if binding.Leaf.Subject.CommonName == "rewritten-by-the-adapter" {
+		t.Fatal("the adapter's write reached the cached leaf")
 	}
 	if handed.Leaf == cachedLeaf {
-		t.Fatal("the factory was handed the cached leaf pointer")
+		t.Fatal("the adapter was handed the cached leaf pointer")
 	}
 	if len(handed.Certificate) == 0 || &handed.Certificate[0][0] == &binding.TLS.Certificate[0][0] {
-		t.Fatal("the factory was handed the cached DER backing array")
+		t.Fatal("the adapter was handed the cached DER backing array")
 	}
-	// The factory may keep its client, so the key behind the certificate it was
-	// given has to outlive this acquisition.
+	// The configured adapter is cached, so the key behind its certificate has
+	// to outlive this acquisition.
 	if _, ok := handed.PrivateKey.(*retainedSigner); !ok {
-		t.Fatalf("the factory was handed a %T, want a signer that holds the key alive", handed.PrivateKey)
+		t.Fatalf("the adapter was handed a %T, want a signer that holds the key alive", handed.PrivateKey)
 	}
 }
 
@@ -777,24 +836,34 @@ func TestCopyingACertificateThatCannotBeReparsedFailsInsteadOfSharing(t *testing
 	}
 }
 
-// The same failure has to surface from the factory path rather than being
+// The same failure has to surface from the configurer path rather than being
 // papered over with the cached certificate.
 func TestMtlsClientSurfacesACopyFailure(t *testing.T) {
+	key, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		t.Fatal(err)
+	}
 	binding := &bindingCertificate{
-		TLS:   tls.Certificate{Certificate: [][]byte{[]byte("not DER")}},
+		TLS:   tls.Certificate{Certificate: [][]byte{[]byte("not DER")}, PrivateKey: key},
 		Leaf:  &x509.Certificate{},
 		refs:  1,
 		close: func() error { return nil },
 	}
 	called := false
-	c := Client{mtlsClientFactory: func(tls.Certificate) *http.Client {
-		called = true
-		return &http.Client{}
-	}}
+	c := Client{
+		httpClient: &testMtlsFactoryClient{
+			client: &http.Client{},
+			newClient: func() (ClientConfigurer, error) {
+				called = true
+				return &testClientConfigurer{base: &http.Client{}}, nil
+			},
+		},
+		mtlsClients: newIMDSv2MtlsClientCache(),
+	}
 	if _, err := c.mtlsClient(binding); err == nil {
 		t.Fatal("mtlsClient succeeded with a certificate it could not isolate")
 	}
-	if called {
-		t.Fatal("the factory was invoked with a certificate that could not be isolated")
+	if !called {
+		t.Fatal("the factory was not invoked before its augmenter rejected the certificate")
 	}
 }
