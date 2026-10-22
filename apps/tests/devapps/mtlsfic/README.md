@@ -1,17 +1,24 @@
-# Two-leg FIC over mTLS proof-of-possession — demo
+# Two-leg certificate-bound FIC over mTLS — demo
 
 A standalone, runnable demo of the feature this PR adds: `confidential.NewCredFromSignedAssertionCallback`,
 the credential for the second leg of a developer-orchestrated two-leg federated identity credential
-(FIC) flow over mTLS proof-of-possession.
+(FIC) flow. The demo selects a final mTLS proof-of-possession token; the same bound assertion can
+instead produce a final Bearer token.
 
 ## What it demonstrates
 
-The application orchestrates two mTLS PoP calls and carries the result of the first into the second:
+The application carries a certificate-bound assertion from the first call into the second:
 
 | | Call | Result |
 |---|---|---|
 | **Leg 1** | An ordinary `WithMtlsProofOfPossession()` acquisition (the mTLS PoP capability this branch builds on) for scope `api://AzureADTokenExchange/.default` | A certificate-bound **federated assertion**, plus the `*tls.Certificate` it is bound to. `AccessToken` here is an assertion for leg 2, **not** a usable resource token. |
-| **Leg 2** | `NewCredFromSignedAssertionCallback`, whose callback *runs leg 1* and returns one `SignedAssertion{Assertion, BindingCertificate}` | The final `mtls_pop` resource token, bound to leg 1's certificate. |
+| **Leg 2** | `NewCredFromSignedAssertionCallback`, whose callback *runs leg 1* and returns one `SignedAssertion{Assertion, BindingCertificate}`. Certificate presence keeps the assertion `jwt-pop` and sends it over mTLS; this demo also uses `WithMtlsProofOfPossession()`. | The final `mtls_pop` resource token, bound to leg 1's certificate. |
+
+The binding certificate controls leg 2's assertion type and transport independently of the final
+token type. If leg 2 omits `WithMtlsProofOfPossession()`, it still presents the certificate and sends
+`jwt-pop` over mTLS, but requires a normal Bearer response, uses the Bearer cache partition, and
+returns no `BindingCertificate`. This demo selects the final-`mtls_pop` variant so it can also call
+the certificate-bound Graph resource over mTLS.
 
 The points the demo exists to make, each verifiable in this branch's source:
 
@@ -23,13 +30,13 @@ The points the demo exists to make, each verifiable in this branch's source:
 - **`BindingCertificate` is required for an mTLS PoP request.** A callback that returns none fails
   the acquisition with an error naming the callback. It is not optional: a signed-assertion
   credential carries no certificate of its own to fall back to.
-- **Leg 1 belongs *inside* the callback, not captured before it.** Under mTLS PoP the binding
-  certificate partitions the token cache and selects the TLS connection, so MSAL resolves the
-  callback *before* consulting the cache — meaning it is re-invoked on later acquisitions. A callback
-  that closed over one pre-computed leg-1 result would keep replaying an assertion that eventually
-  expires, bound to a certificate that may since have rotated. That bug is invisible in a one-shot
-  demo and bites a long-running service, so this demo calls leg 1 inside the callback and reports
-  whether the repeat call was absorbed by `leg1App`'s cache.
+- **Leg 1 belongs *inside* the callback, not captured before it.** MSAL resolves one immutable
+  assertion/certificate snapshot per acquisition, including cache hits, because the certificate
+  selects the TLS connection and assertion type before cache lookup. A callback that closed over one
+  pre-computed leg-1 result would keep replaying an assertion that eventually expires, bound to a
+  certificate that may since have rotated. That bug is invisible in a one-shot demo and bites a
+  long-running service, so this demo calls leg 1 inside the callback and reports whether the repeat
+  call was absorbed by `leg1App`'s cache.
 - **Leg 2's wire format:** `client_assertion` *returns*, carried with
   `client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-pop`
   (`grant.ClientAssertionPoP` in `apps/internal/oauth/ops/internal/grant/grant.go`).
@@ -96,7 +103,7 @@ permissions instead. Block order does not matter; the leaf is found by matching 
 
 ## Expected output
 
-Without a certificate it prints the `Two-leg FIC over mTLS proof-of-possession` section explaining
+Without a certificate it prints the `Two-leg certificate-bound FIC over mTLS` section explaining
 the flow, then `live run skipped`.
 
 With a certificate it additionally prints `live run`, `leg 1`, `leg 2` and `result` sections. The

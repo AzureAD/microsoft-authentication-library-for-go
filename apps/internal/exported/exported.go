@@ -13,10 +13,13 @@ type SignedAssertion struct {
 	// Assertion is the client assertion, the same value a plain assertion callback returns.
 	Assertion string
 
-	// BindingCertificate is the certificate the assertion is bound to. It is presented as the client
-	// certificate for both mTLS proof-of-possession and WithSendCertificateOverMtls requests. It is
-	// required on those requests and unused otherwise. Its PrivateKey may be any crypto.Signer,
-	// including a non-exportable platform key.
+	// BindingCertificate is the certificate the assertion is bound to. When non-nil, MSAL presents it
+	// as the TLS client certificate and sends Assertion with the jwt-pop assertion type. The final
+	// access token is still Bearer unless the acquisition requests mTLS proof-of-possession; Bearer
+	// results don't expose this certificate as a token-binding capability. A nil certificate keeps
+	// jwt-bearer and the regular token endpoint, except that explicit mTLS options fail closed when
+	// the callback omits it. PrivateKey may be any crypto.Signer, including a non-exportable platform
+	// key.
 	BindingCertificate *tls.Certificate
 }
 
@@ -25,7 +28,10 @@ type AssertionRequestOptions struct {
 	// ClientID identifies the application for which an assertion is requested. Used as the assertion's "iss" and "sub" claims.
 	ClientID string
 
-	// TokenEndpoint is the intended token endpoint. Used as the assertion's "aud" claim.
+	// TokenEndpoint is the resolved endpoint known when the callback runs. Explicit mTLS requests
+	// receive the mtlsauth endpoint. For implicit mTLS, certificate presence is learned from the
+	// callback itself, so this is the regular resolved endpoint and MSAL selects the corresponding
+	// mtlsauth wire endpoint after the callback returns.
 	TokenEndpoint string
 
 	// TenantID is the tenant selected for this request, including a per-request tenant override.

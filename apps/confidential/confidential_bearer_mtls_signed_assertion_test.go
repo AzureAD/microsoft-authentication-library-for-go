@@ -549,24 +549,37 @@ func TestSendCertificateOverMtls_SignedAssertion_RealHandshake(t *testing.T) {
 	}
 }
 
-// TestSendCertificateOverMtls_SignedAssertion_NotPulledForwardWithoutTheOption pins that the
-// callback stays lazy when the application did not ask for mutual TLS.
-//
-// This is the cost MSAL .NET pays and Go does not: .NET's implicit case resolves the delegate on
-// every request, cache hits included, because returning a certificate is itself the opt-in there.
-// Go gates on WithSendCertificateOverMtls, so a plain client keeps the ordinary lazy behavior and
-// this assertion is what stops that from being quietly lost.
-func TestSendCertificateOverMtls_SignedAssertion_NotPulledForwardWithoutTheOption(t *testing.T) {
+// TestSendCertificateOverMtls_SignedAssertion_PulledForwardWithoutTheOption pins MSAL.NET parity:
+// returning a binding certificate is itself the mTLS transport signal, even when the application
+// didn't configure WithSendCertificateOverMtls.
+func TestSendCertificateOverMtls_SignedAssertion_PulledForwardWithoutTheOption(t *testing.T) {
 	cred, calls := bearerMtlsCallbackCred(t, true)
-	client, err := New(bearerMtlsControlAuthority, fakeClientID, cred,
-		WithHTTPClient(&countingClient{}))
+	u, err := url.Parse(bearerMtlsControlAuthority)
 	if err != nil {
 		t.Fatal(err)
 	}
-	// The request itself fails: countingClient refuses every request. What matters is only whether
-	// the callback ran before the network was reached.
-	_, _ = client.AcquireTokenByCredential(context.Background(), tokenScope)
-	if n := atomic.LoadInt32(calls); n != 0 {
-		t.Errorf("the signed-assertion callback ran %d times before the network was touched, want 0; without WithSendCertificateOverMtls nothing needs a certificate ahead of the request body", n)
+	router := &bearerMtlsRouter{host: u.Host, tenant: strings.Trim(u.Path, "/")}
+	client, err := New(bearerMtlsControlAuthority, fakeClientID, cred,
+		WithHTTPClient(router),
+		WithMtlsHTTPClient(routerMtlsFactory(router)),
+	)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := client.AcquireTokenByCredential(context.Background(), tokenScope); err != nil {
+		t.Fatal(err)
+	}
+	if n := atomic.LoadInt32(calls); n != 1 {
+		t.Errorf("the signed-assertion callback ran %d times, want exactly 1", n)
+	}
+	request := router.tokenRequest()
+	if request == nil {
+		t.Fatal("no token request was recorded")
+	}
+	if !strings.HasPrefix(request.Host, "mtlsauth.") {
+		t.Errorf("token request host = %q, want mtlsauth.*", request.Host)
+	}
+	if got := router.tokenRequestBody().Get("client_assertion_type"); !strings.HasSuffix(got, "jwt-pop") {
+		t.Errorf("client_assertion_type = %q, want jwt-pop", got)
 	}
 }

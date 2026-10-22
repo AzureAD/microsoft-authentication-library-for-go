@@ -164,10 +164,10 @@ func ExampleNewCredFromTLSCertificate() {
 	fmt.Println(result.BindingCertificateThumbprint())
 }
 
-// This example demonstrates the developer-orchestrated two-leg federated identity credential (FIC)
-// flow where both legs are mTLS proof-of-possession. Leg 1 uses the SN/I certificate as the TLS
-// client certificate to obtain a certificate-bound federated assertion; leg 2 presents that
-// assertion together with the same binding certificate to obtain the final mtls_pop token.
+// This example demonstrates the final-mtls_pop variant of a developer-orchestrated two-leg
+// federated identity credential (FIC) flow. Leg 1 uses the SN/I certificate as the TLS client
+// certificate to obtain a certificate-bound federated assertion; leg 2 presents that assertion
+// together with the same binding certificate to obtain the final mtls_pop token.
 func ExampleClient_AcquireTokenByCredential_ficMtlsProofOfPossession() {
 	b, err := os.ReadFile("cert.pem")
 	if err != nil {
@@ -192,11 +192,11 @@ func ExampleClient_AcquireTokenByCredential_ficMtlsProofOfPossession() {
 	// Leg 2: federated assertion (jwt-pop) + binding cert -> final mtls_pop token. One callback
 	// returns both, so the assertion and the certificate it is bound to can never drift apart.
 	//
-	// Leg 1 runs inside the callback rather than once outside it. MSAL resolves this callback on
-	// every token request, so a refreshed assertion or a rotated certificate is picked up
-	// automatically, and leg1App's own cache keeps the repeat call cheap. Closing over a single
-	// pre-computed result would instead pin an assertion that eventually expires, alongside a
-	// certificate that may since have rotated -- a bug a one-shot program never exposes but a
+	// Leg 1 runs inside the callback rather than once outside it. MSAL resolves this callback once
+	// per acquisition, including cache hits, so a refreshed assertion or a rotated certificate is
+	// picked up automatically, and leg1App's own cache keeps the repeat call cheap. Closing over a
+	// single pre-computed result would instead pin an assertion that eventually expires, alongside
+	// a certificate that may since have rotated -- a bug a one-shot program never exposes but a
 	// long-running service does.
 	assertionCred := confidential.NewCredFromSignedAssertionCallback(
 		func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
@@ -217,6 +217,8 @@ func ExampleClient_AcquireTokenByCredential_ficMtlsProofOfPossession() {
 	if err != nil {
 		// TODO: handle error
 	}
+	// Omitting WithMtlsProofOfPossession below would still send the bound assertion as jwt-pop over
+	// mTLS, but would require a normal Bearer response and return no BindingCertificate.
 	final, err := leg2App.AcquireTokenByCredential(context.TODO(), []string{"https://vault.azure.net/.default"},
 		confidential.WithMtlsProofOfPossession())
 	if err != nil {

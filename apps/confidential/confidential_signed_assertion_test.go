@@ -481,6 +481,9 @@ func TestSignedAssertionCallbackHandshake(t *testing.T) {
 	if got := body.Get("token_type"); got != "mtls_pop" {
 		t.Errorf("token_type = %q, want mtls_pop", got)
 	}
+	if _, ok := body["req_cnf"]; ok {
+		t.Error("mTLS binds through the handshake and must not send req_cnf")
+	}
 	if res.Metadata.TokenType != "mtls_pop" {
 		t.Errorf("Metadata.TokenType = %q, want mtls_pop", res.Metadata.TokenType)
 	}
@@ -515,33 +518,27 @@ func TestSignedAssertionCallbackInvokedExactlyOnce(t *testing.T) {
 	}
 }
 
-// TestSignedAssertionCallbackNotInvokedOnCacheHit pins the other half of the invocation contract: a
-// token served from the cache must not pay for leg 1 again.
-//
-// The demonstration is a bearer request, because that is the only request that doesn't need the
-// certificate: there the callback stays lazy exactly as NewCredFromAssertionCallback's does, so the
-// cached second acquisition never reaches it. An mTLS proof-of-possession request cannot show this —
-// the binding certificate partitions the cache, so it must be resolved, and the callback invoked,
-// before the cache can be read (see TestSignedAssertionCallbackCertificateKeysTheCache). There is no
-// way to supply the certificate separately to skip that: the callback is its only source.
-func TestSignedAssertionCallbackNotInvokedOnCacheHit(t *testing.T) {
+// TestSignedAssertionCallbackInvokedOncePerBearerAcquisition pins the snapshot contract on a cache
+// hit. The callback must run once for each acquisition so MSAL can determine whether that snapshot
+// carries a binding certificate, but the cached Bearer token still prevents a second token request.
+func TestSignedAssertionCallbackInvokedOncePerBearerAcquisition(t *testing.T) {
 	leaf, key := newSelfSignedCert(t, "cached-binding-cert")
 	var calls int32
 
 	tenant := "tenant"
 	lmo := "login.microsoftonline.com"
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	router := &bearerMtlsRouter{host: lmo, tenant: tenant}
 	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
 		atomic.AddInt32(&calls, 1)
 		return SignedAssertion{Assertion: "assertion", BindingCertificate: tlsCertFor(leaf, key)}, nil
 	})
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+		WithHTTPClient(router),
+		WithMtlsHTTPClient(routerMtlsFactory(router)),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("cached-token", "", "", "", 3600, 0)))
 	ctx := context.Background()
 
 	first, err := client.AcquireTokenByCredential(ctx, tokenScope)
@@ -555,8 +552,6 @@ func TestSignedAssertionCallbackNotInvokedOnCacheHit(t *testing.T) {
 		t.Fatalf("callback invoked %d times for the first acquisition, want 1", got)
 	}
 
-	// The mock has no responses queued, so a second token request would fail: the hit below is a
-	// real cache hit rather than a silently repeated network call.
 	cached, err := client.AcquireTokenByCredential(ctx, tokenScope)
 	if err != nil {
 		t.Fatal(err)
@@ -564,11 +559,14 @@ func TestSignedAssertionCallbackNotInvokedOnCacheHit(t *testing.T) {
 	if cached.Metadata.TokenSource != TokenSourceCache {
 		t.Fatalf("second call TokenSource = %d, want cache", cached.Metadata.TokenSource)
 	}
-	if got := atomic.LoadInt32(&calls); got != 1 {
-		t.Errorf("callback invoked %d times across two acquisitions, want 1: a cache hit must not re-run leg 1", got)
+	if got := atomic.LoadInt32(&calls); got != 2 {
+		t.Errorf("callback invoked %d times across two acquisitions, want one immutable snapshot per acquisition", got)
 	}
 	if cached.AccessToken != first.AccessToken {
 		t.Error("the cached token is not the one the first acquisition returned")
+	}
+	if got := len(router.tokenRequestHeaders()); got != 1 {
+		t.Errorf("token endpoint called %d times, want 1: the second acquisition must use the Bearer cache", got)
 	}
 }
 
@@ -672,11 +670,8 @@ func TestPlainAssertionCredentialRejectedForMtlsPoP(t *testing.T) {
 // callback misbehaved. MSAL .NET validates the same credential result locally and returns
 // InvalidClientAssertion.
 //
-// This check lives in prepareMtlsPoP, so it is reached only on an mTLS proof-of-possession request.
-// TestSignedAssertionEmptyAssertionForwardedWithoutMtls pins the other half — without
-// WithMtlsProofOfPossession the assertion is forwarded unvalidated — which is what makes the
-// "on an mTLS proof-of-possession request" qualifier in the NewCredFromSignedAssertionCallback doc
-// comment verifiable rather than decorative.
+// Snapshot validation runs for both final Bearer and final mtls_pop acquisitions; the sibling test
+// below covers the Bearer case.
 func TestSignedAssertionEmptyAssertionRejected(t *testing.T) {
 	leaf, key := newSelfSignedCert(t, "empty-assertion-binding-cert")
 	for _, test := range []struct {
@@ -706,23 +701,11 @@ func TestSignedAssertionEmptyAssertionRejected(t *testing.T) {
 	}
 }
 
-// TestSignedAssertionEmptyAssertionForwardedWithoutMtls is the counterpart to
-// TestSignedAssertionEmptyAssertionRejected and the reason the doc comment on
-// NewCredFromSignedAssertionCallback scopes the empty-assertion promise to the mTLS
-// proof-of-possession path.
-//
-// The check that rejects an empty assertion lives in prepareMtlsPoP, which runs only under
-// WithMtlsProofOfPossession. Without that option a signed-assertion credential takes the lazy path
-// in Credential.toInternal, which wraps the callback in a plain AssertionCallback and forwards
-// whatever it yields with no validation at all — exactly like NewCredFromAssertionCallback. So an
-// empty assertion must reach the token endpoint here, not be rejected locally.
-//
-// This is a behavioral contract, not an aspiration: adding validation to the non-PoP path would
-// diverge from NewCredFromAssertionCallback, which forwards an empty assertion too. If that
-// divergence is ever wanted it must be a deliberate change to both credentials, and this test
-// failing is the signal that it happened by accident.
-func TestSignedAssertionEmptyAssertionForwardedWithoutMtls(t *testing.T) {
-	leaf, key := newSelfSignedCert(t, "ignored-binding-cert")
+// TestSignedAssertionEmptyAssertionRejectedWithoutPoP verifies snapshot validation is independent
+// of the final token type. A bound assertion still selects mTLS when the final token is Bearer, so
+// an empty assertion must fail locally before the token request.
+func TestSignedAssertionEmptyAssertionRejectedWithoutPoP(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "binding-cert")
 	for _, test := range []struct {
 		name, assertion string
 	}{
@@ -732,84 +715,91 @@ func TestSignedAssertionEmptyAssertionForwardedWithoutMtls(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			tenant := "tenant"
 			lmo := "login.microsoftonline.com"
-			mockClient := mock.NewClient()
-			mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+			router := &bearerMtlsRouter{host: lmo, tenant: tenant}
 			var calls int32
 			cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
 				atomic.AddInt32(&calls, 1)
 				return SignedAssertion{Assertion: test.assertion, BindingCertificate: tlsCertFor(leaf, key)}, nil
 			})
-			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
+			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+				WithHTTPClient(router),
+				WithMtlsHTTPClient(routerMtlsFactory(router)),
+			)
 			if err != nil {
 				t.Fatal(err)
 			}
 
-			var body url.Values
-			var requests int32
-			mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-			mockClient.AppendResponse(
-				mock.WithBody(mock.GetAccessTokenBody("bearer-token", "", "", "", 3600, 0)),
-				mock.WithCallback(func(r *http.Request) {
-					atomic.AddInt32(&requests, 1)
-					raw, _ := io.ReadAll(r.Body)
-					body, _ = url.ParseQuery(string(raw))
-				}),
-			)
-
-			res, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
-			if err != nil {
-				t.Fatalf("AcquireTokenByCredential = %v, want the empty assertion to be forwarded rather than rejected locally", err)
+			_, err = client.AcquireTokenByCredential(context.Background(), tokenScope)
+			if err == nil {
+				t.Fatal("AcquireTokenByCredential returned nil error for an empty assertion")
 			}
-			if res.AccessToken != "bearer-token" {
-				t.Errorf("AccessToken = %q, want bearer-token", res.AccessToken)
+			if !strings.Contains(err.Error(), "empty client assertion") {
+				t.Errorf("error %q does not identify the empty assertion", err)
 			}
 			if got := atomic.LoadInt32(&calls); got != 1 {
 				t.Errorf("callback invoked %d times, want exactly 1", got)
 			}
-			// The request reaching the token endpoint at all is the point: a local rejection would
-			// have failed above, but asserting the request happened keeps the test honest if the
-			// error path ever changes to something that doesn't surface as an error here.
-			if got := atomic.LoadInt32(&requests); got != 1 {
-				t.Fatalf("token endpoint called %d times, want 1: the assertion must be forwarded, not rejected locally", got)
-			}
-			if _, ok := body["client_assertion"]; !ok {
-				t.Fatal("the request carried no client_assertion parameter")
-			}
-			if got := body.Get("client_assertion"); got != test.assertion {
-				t.Errorf("client_assertion = %q, want the callback's value %q forwarded verbatim", got, test.assertion)
+			if got := router.tokenRequest(); got != nil {
+				t.Errorf("token request reached %s; the empty assertion must be rejected locally", got)
 			}
 		})
 	}
 }
 
-// TestSignedAssertionNilBindingCertificateIgnoredWithoutMtls is the same scoping argument for the
-// binding certificate: it is required only for an mTLS proof-of-possession request. Without
-// WithMtlsProofOfPossession the certificate is never consulted, so a callback that returns none
-// must still produce a bearer token.
-func TestSignedAssertionNilBindingCertificateIgnoredWithoutMtls(t *testing.T) {
+// TestSignedAssertionNilBindingCertificateStaysJwtBearer covers an unbound signed assertion. A nil
+// certificate must preserve the regular endpoint and jwt-bearer assertion type; MSAL must not infer
+// a certificate from unrelated application state.
+func TestSignedAssertionNilBindingCertificateStaysJwtBearer(t *testing.T) {
 	tenant := "tenant"
 	lmo := "login.microsoftonline.com"
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
+	router := &bearerMtlsRouter{host: lmo, tenant: tenant}
+	var mtlsFactories int32
 	cred := NewCredFromSignedAssertionCallback(func(context.Context, AssertionRequestOptions) (SignedAssertion, error) {
 		return SignedAssertion{Assertion: "bearer-assertion"}, nil
 	})
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
+	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
+		WithHTTPClient(router),
+		WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
+			atomic.AddInt32(&mtlsFactories, 1)
+			return routerMtlsFactory(router)(cert)
+		}),
+	)
 	if err != nil {
 		t.Fatal(err)
 	}
-	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("bearer-token", "", "", "", 3600, 0)))
 
 	res, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
 	if err != nil {
-		t.Fatalf("AcquireTokenByCredential = %v, want a nil binding certificate to be irrelevant off the mTLS PoP path", err)
+		t.Fatal(err)
 	}
-	if res.AccessToken != "bearer-token" {
-		t.Errorf("AccessToken = %q, want bearer-token", res.AccessToken)
+	if res.AccessToken != "bearer-over-mtls-token" {
+		t.Errorf("AccessToken = %q, want bearer-over-mtls-token", res.AccessToken)
 	}
 	if res.BindingCertificate != nil {
 		t.Error("a bearer token must not report a binding certificate")
+	}
+	if got := atomic.LoadInt32(&mtlsFactories); got != 0 {
+		t.Errorf("mTLS client factory invoked %d times, want 0 for an unbound assertion", got)
+	}
+	request := router.tokenRequest()
+	if request == nil {
+		t.Fatal("no token request was recorded")
+	}
+	if request.Host != lmo {
+		t.Errorf("token request host = %q, want regular endpoint %q", request.Host, lmo)
+	}
+	body := router.tokenRequestBody()
+	if got := body.Get("client_assertion"); got != "bearer-assertion" {
+		t.Errorf("client_assertion = %q, want bearer-assertion", got)
+	}
+	if got := body.Get("client_assertion_type"); got != "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
+		t.Errorf("client_assertion_type = %q, want jwt-bearer", got)
+	}
+	if _, ok := body["token_type"]; ok {
+		t.Error("an unbound final Bearer request must not send token_type")
+	}
+	if _, ok := body["req_cnf"]; ok {
+		t.Error("an unbound request must not send req_cnf")
 	}
 }
 
@@ -883,45 +873,23 @@ func TestSignedAssertionOpaqueSignerHandshake(t *testing.T) {
 	}
 }
 
-// TestSignedAssertionCredentialWithoutMtls pins the compatibility requirement: used without mTLS
-// proof-of-possession, a signed-assertion credential behaves exactly like one from
-// NewCredFromAssertionCallback — a bearer client_assertion, the callback invoked lazily and only
-// once, its certificate ignored, and the same AssertionRequestOptions delivered.
-//
-// The certificate is ignored here because this client asked for no mutual TLS at all: neither
-// WithMtlsProofOfPossession nor WithSendCertificateOverMtls. That is the whole point of the case —
-// returning a certificate must not, by itself, change where the request goes or what it presents.
-// When either option is set the certificate is used; see
-// TestSendCertificateOverMtls_SignedAssertion_RealHandshake for the Bearer-over-mTLS side.
-func TestSignedAssertionCredentialWithoutMtls(t *testing.T) {
-	leaf, key := newSelfSignedCert(t, "ignored-binding-cert")
+// TestSignedAssertionCredentialWithoutPoPUsesMtls pins the FIC parity requirement: a binding
+// certificate makes the assertion jwt-pop and selects mTLS even when the caller wants a final
+// Bearer token rather than an mtls_pop token.
+func TestSignedAssertionCredentialWithoutPoPUsesMtls(t *testing.T) {
+	leaf, key := newSelfSignedCert(t, "binding-cert")
 	var calls int32
 	var gotOpts AssertionRequestOptions
 
-	tenant := "tenant"
 	lmo := "login.microsoftonline.com"
-	mockClient := mock.NewClient()
-	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 	cred := NewCredFromSignedAssertionCallback(func(_ context.Context, opts AssertionRequestOptions) (SignedAssertion, error) {
 		atomic.AddInt32(&calls, 1)
 		gotOpts = opts
 		return SignedAssertion{Assertion: "bearer-assertion", BindingCertificate: tlsCertFor(leaf, key)}, nil
 	})
-	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred, WithHTTPClient(mockClient))
-	if err != nil {
-		t.Fatal(err)
-	}
+	srv := newMtlsHandshakeServer(t, mock.GetAccessTokenBody("bearer-token", "", "", "", 3600, 0))
+	client := handshakeTestClient(t, cred, srv)
 	ctx := context.Background()
-
-	var body url.Values
-	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(lmo, tenant)))
-	mockClient.AppendResponse(
-		mock.WithBody(mock.GetAccessTokenBody("bearer-token", "", "", "", 3600, 0)),
-		mock.WithCallback(func(r *http.Request) {
-			raw, _ := io.ReadAll(r.Body)
-			body, _ = url.ParseQuery(string(raw))
-		}),
-	)
 
 	res, err := client.AcquireTokenByCredential(ctx, tokenScope, WithFMIPath("fmi/path"))
 	if err != nil {
@@ -933,14 +901,30 @@ func TestSignedAssertionCredentialWithoutMtls(t *testing.T) {
 	if got := atomic.LoadInt32(&calls); got != 1 {
 		t.Errorf("callback invoked %d times, want exactly 1", got)
 	}
+	if got := srv.presented(t); !got.Equal(leaf) {
+		t.Error("the TLS handshake did not present the callback's binding certificate")
+	}
+	if got := srv.host(t); !strings.HasPrefix(got, "mtlsauth.") {
+		t.Errorf("token request host = %q, want mtlsauth.*", got)
+	}
+	body := srv.form(t)
 	if got := body.Get("client_assertion"); got != "bearer-assertion" {
 		t.Errorf("client_assertion = %q, want bearer-assertion", got)
 	}
-	if got := body.Get("client_assertion_type"); got != "urn:ietf:params:oauth:client-assertion-type:jwt-bearer" {
-		t.Errorf("client_assertion_type = %q, want the jwt-bearer value: a non-mTLS request must not be marked certificate-bound", got)
+	if got := body.Get("client_assertion_type"); got != "urn:ietf:params:oauth:client-assertion-type:jwt-pop" {
+		t.Errorf("client_assertion_type = %q, want jwt-pop", got)
+	}
+	if _, ok := body["token_type"]; ok {
+		t.Error("a final Bearer request must not send token_type")
+	}
+	if _, ok := body["req_cnf"]; ok {
+		t.Error("mTLS binds through the handshake and must not send req_cnf")
 	}
 	if res.BindingCertificate != nil {
 		t.Error("a bearer token must not report a binding certificate")
+	}
+	if res.Metadata.TokenType != "Bearer" {
+		t.Errorf("Metadata.TokenType = %q, want Bearer", res.Metadata.TokenType)
 	}
 	if gotOpts.ClientID != fakeClientID {
 		t.Errorf("callback ClientID = %q, want %q", gotOpts.ClientID, fakeClientID)
