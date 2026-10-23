@@ -181,8 +181,11 @@ Notes:
 - **Callback/two-leg authentication sends an assertion**: a
   `NewCredFromSignedAssertionCallback` credential sends its certificate-bound assertion with
   `client_assertion_type=jwt-pop` while presenting `SignedAssertion.BindingCertificate` on the same
-  token-endpoint handshake.
-- **Using the token**: present it to the resource with the `mtls_pop` authorization scheme (not
+  token-endpoint handshake. The certificate controls the assertion type and mTLS transport
+  independently of the final token type: omitting `WithMtlsProofOfPossession()` still sends
+  `jwt-pop` over mTLS but requires a normal `Bearer` response and returns
+  `BindingCertificate == nil`.
+- **Using an `mtls_pop` token**: present it to the resource with the `mtls_pop` authorization scheme (not
   `Bearer`) and `result.BindingCertificate` as the client certificate on the TLS handshake, so the
   connection matches the token binding. `BindingCertificate` is a `*tls.Certificate` that carries both
   the parsed leaf (`.Leaf`) and the private key MSAL used, so it goes straight into
@@ -320,12 +323,12 @@ Notes:
   (VBS-isolated) key, along with the steps to provision one.
 - `NewCredFromCert` also accepts a `crypto.Signer` whose public key is an `*rsa.PublicKey`.
 
-### Two-leg federated identity credential (FIC) over mTLS PoP
+### Two-leg certificate-bound federated identity credential (FIC) over mTLS
 
-For service-to-service FIC, the application orchestrates two calls, each opting into mTLS PoP. Leg 1
-uses the SN/I certificate to obtain a certificate-bound federated assertion; leg 2 presents that
-assertion (as a jwt-pop client assertion) together with the binding certificate to obtain the final
-`mtls_pop` token:
+For service-to-service FIC, leg 1 opts into mTLS PoP to obtain a certificate-bound federated
+assertion. Leg 2 presents that assertion as `jwt-pop` together with the binding certificate over
+mTLS. The following variant also opts into a final `mtls_pop` token; omitting that per-request option
+keeps the same assertion and transport but returns a normal Bearer token instead:
 
 ```go
 // Leg 1: SN/I cert -> cert-bound federated assertion (itself mTLS PoP).
@@ -368,12 +371,24 @@ cred := confidential.NewCredFromSignedAssertionCallback(
         }, nil
     })
 ficApp, _ := confidential.New(authority, ficClientID, cred)
-final, _ := ficApp.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+
+// The bound assertion remains jwt-pop and travels over mTLS. Without the per-request option,
+// ESTS returns a normal Bearer token and the result doesn't expose a binding certificate.
+bearer, _ := ficApp.AcquireTokenByCredential(ctx, scopes)
+_ = bearer.Metadata.TokenType       // "Bearer"
+_ = bearer.BindingCertificate       // nil
+
+// The option changes only the final token type and cache partition.
+pop, _ := ficApp.AcquireTokenByCredential(ctx, scopes, confidential.WithMtlsProofOfPossession())
+_ = pop.Metadata.TokenType          // "mtls_pop"
+_ = pop.BindingCertificate          // leg 1's certificate
 ```
 
-MSAL invokes the callback at most once per token request. The binding certificate's private key may
-be non-exportable (Windows KeyGuard, CNG, an HSM); MSAL only requires that it implement
-`crypto.Signer`.
+MSAL invokes the callback exactly once per supported confidential-client acquisition, including
+cache hits, to create one immutable assertion/certificate snapshot. Bearer and `mtls_pop` results
+occupy separate cache entries, and `mtls_pop` entries are additionally partitioned by certificate.
+The binding certificate's private key may be non-exportable (Windows KeyGuard, CNG, an HSM); MSAL
+only requires that it implement `crypto.Signer`.
 
 See [docs/federated_managed_identity.md](docs/federated_managed_identity.md) for the full FIC/FMI
 walkthrough.
@@ -421,6 +436,11 @@ Notes:
   as is `NewCredFromSignedAssertionCallback`. In the callback form the returned assertion is sent as
   `jwt-pop` and `SignedAssertion.BindingCertificate` is presented on the handshake. The request fails
   closed if the callback omits the certificate.
+- **A signed assertion can select this transport implicitly.** When
+  `NewCredFromSignedAssertionCallback` returns a non-nil `BindingCertificate`, the assertion remains
+  `jwt-pop` and travels over mTLS even without `WithSendCertificateOverMtls`. A nil certificate keeps
+  `jwt-bearer` on the regular endpoint. The explicit option remains useful for certificate
+  credentials and remains fail-closed for signed assertions that omit the certificate.
 - The **authority requirements and transport rules** above apply here too, because the request still
   goes to `mtlsauth.*`: it needs a tenanted AAD authority on a known `login.*` host, and a
   `WithHTTPClient` value that is not an `*http.Client` still requires `WithMtlsHTTPClient`.

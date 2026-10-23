@@ -154,10 +154,13 @@ type AssertionRequestOptions = exported.AssertionRequestOptions
 // It is returned by the callback given to [NewCredFromSignedAssertionCallback], which keeps the two
 // paired: nothing can mismatch an assertion with a certificate it isn't bound to.
 //
-// BindingCertificate is required for both an mTLS proof-of-possession request and
-// [WithSendCertificateOverMtls]: it is the certificate presented on the handshake, and a callback
-// that returns none fails either request. This callback is the only way to supply a binding
-// certificate for an assertion credential:
+// When BindingCertificate is present, MSAL presents it on the mutual-TLS handshake and sends the
+// assertion as jwt-pop. [WithMtlsProofOfPossession] additionally requests a final mtls_pop token;
+// without that option the final token remains Bearer and doesn't expose the certificate as a
+// token-binding capability. BindingCertificate is required when either
+// [WithMtlsProofOfPossession] or [WithSendCertificateOverMtls] is requested, and a callback that
+// returns none fails either request. This callback is the only way to supply a binding certificate
+// for an assertion credential:
 // MSAL deliberately offers no call-site option for it, so an assertion and the certificate it is
 // bound to can never be sourced separately and left free to disagree. MSAL .NET is the same — the
 // certificate comes solely from ClientSignedAssertion.TokenBindingCertificate.
@@ -206,11 +209,10 @@ func (c Credential) toInternal() (*accesstokens.Credential, error) {
 	}
 	if c.signedAssertionCallback != nil {
 		callback := c.signedAssertionCallback
-		// AssertionCallback is populated as well so every path that only needs an assertion (bearer
-		// client credentials, on-behalf-of, user_fic, refresh) behaves exactly like a credential
-		// from NewCredFromAssertionCallback. Only one of the two is ever invoked for a given token
-		// request: the mTLS proof-of-possession path resolves the signed assertion up front and
-		// replaces AssertionCallback with one that replays it.
+		// AssertionCallback is populated as well for paths that don't run confidential-client
+		// credential preparation (user_fic, for example). Supported confidential grants resolve
+		// SignedAssertionCallback once per acquisition and replace AssertionCallback with one that
+		// replays that immutable assertion/certificate snapshot.
 		return &accesstokens.Credential{
 			AssertionCallback: func(ctx context.Context, opts AssertionRequestOptions) (string, error) {
 				sa, err := callback(ctx, opts)
@@ -291,19 +293,22 @@ func isNilPointer(v any) bool {
 //	        }, nil
 //	    })
 //
-// MSAL invokes the callback at most once per token request, and never when the request is served
-// from the cache without it. Because the binding certificate partitions the token cache and selects
-// the mutual-TLS connection, an mTLS proof-of-possession request resolves the callback before the
-// cache is consulted; requests that don't need the certificate (bearer client credentials or
-// on-behalf-of) invoke it only when a token request is actually sent, exactly like
-// [NewCredFromAssertionCallback].
+// MSAL invokes the callback exactly once per supported confidential-client acquisition, including
+// cache hits, so it can determine whether that acquisition's immutable snapshot is certificate
+// bound. A non-empty BindingCertificate automatically selects the mutual-TLS token endpoint and
+// jwt-pop assertion type. [WithMtlsProofOfPossession] additionally requests and requires a final
+// mtls_pop token; without that option MSAL requires a normal Bearer response and doesn't expose the
+// certificate on AuthResult. A nil BindingCertificate keeps the regular token endpoint and
+// jwt-bearer assertion type.
 //
-// On [WithMtlsProofOfPossession] and [WithSendCertificateOverMtls] requests the callback must return
-// a non-empty assertion and a binding certificate; an empty or whitespace-only assertion, or a nil
-// certificate, is rejected locally rather than sent or silently downgraded. Both send the assertion
-// with the jwt-pop assertion type and present the certificate on the token endpoint handshake. On
-// every other request the assertion is forwarded like [NewCredFromAssertionCallback], and the
-// binding certificate is unused.
+// This ordering validates the current credential snapshot even when a Bearer cache entry doesn't
+// depend on the certificate. Callback errors or an unusable binding certificate fail the acquisition
+// rather than falling back to an otherwise valid cached token. Keep the callback efficient and
+// reliable, typically by using the first leg's own token cache.
+//
+// The callback must always return a non-empty assertion. [WithMtlsProofOfPossession] and
+// [WithSendCertificateOverMtls] also require a binding certificate and fail locally when it is
+// absent, rather than silently downgrading the requested transport or token type.
 //
 // This is the only way to supply a binding certificate for an assertion credential. MSAL offers no
 // call-site option that would let the assertion and the certificate be sourced separately, because
@@ -636,12 +641,13 @@ func WithX5C() Option {
 // any other credential kind, and a callback that returns no certificate fails the request rather
 // than silently downgrading it to the plain token endpoint.
 //
-// With a signed-assertion callback the callback is invoked once per request before the cache is
+// With a signed-assertion callback the callback is invoked once per acquisition before the cache is
 // read, because the certificate selects the mutual-TLS connection and so must be known before the
-// request is built. That is earlier than a plain assertion callback runs, so the callback should be
-// cheap — return a pre-generated or cached assertion. MSAL .NET does the same thing in
-// MtlsPopParametersInitializer.TryInitImplicitBearerOverMtlsAsync, where it resolves the certificate
-// even on cache hits; unlike Go it then invokes the delegate a second time to build the request body.
+// request is built. That is earlier than a plain assertion callback runs, so the callback should
+// obtain its assertion efficiently, typically through the first leg's own cache. MSAL .NET does the
+// same thing in MtlsPopParametersInitializer.TryInitImplicitBearerOverMtlsAsync, where it resolves
+// the certificate even on cache hits; unlike Go it then invokes the delegate a second time to build
+// the request body.
 func WithSendCertificateOverMtls() Option {
 	return func(o *clientOptions) {
 		o.sendCertOverMtls = true
@@ -1082,30 +1088,26 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		return AuthResult{}, errors.New("WithSilentAccount option is required")
 	}
 
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	var resolvedEndpoints authority.Endpoints
 	var tokenEndpoint string
 	var correlationID string
-	if cca.sendCertOverMtls {
-		// Bearer-over-mTLS: derive the binding certificate for the mutual-TLS handshake but keep the
-		// default (Bearer) scheme. A refresh triggered from this silent call routes over mtlsauth.*.
-		authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		authParams.Scopes = scopes
-		authParams.Claims = o.claims
-		authParams.ClientClaims = o.clientClaims
-		cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareBearerOverMtls(ctx, &authParams)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		resolvedEndpoints = authParams.Endpoints
-		tokenEndpoint = authParams.TokenEndpoint
-		correlationID = authParams.CorrelationID
+	authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return AuthResult{}, err
 	}
+	authParams.Scopes = scopes
+	authParams.Claims = o.claims
+	authParams.ClientClaims = o.clientClaims
+	cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareCredential(ctx, &authParams, false)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	resolvedEndpoints = authParams.Endpoints
+	tokenEndpoint = authParams.TokenEndpoint
+	correlationID = authParams.CorrelationID
 
 	silentParameters := base.AcquireTokenSilentParameters{
 		Scopes:                       scopes,
@@ -1119,7 +1121,7 @@ func (cca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 		ClientClaims:                 o.clientClaims,
 		CacheKeyComponents:           o.cacheKeyComponents,
 		MtlsBindingCert:              mtlsBindingCert,
-		MtlsTransport:                cca.sendCertOverMtls,
+		MtlsTransport:                authParams.MtlsTransport,
 		AssertionBoundToCallbackCert: assertionBoundToCallbackCert,
 		Endpoints:                    resolvedEndpoints,
 		TokenEndpoint:                tokenEndpoint,
@@ -1226,28 +1228,26 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 		return AuthResult{}, err
 	}
 
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	var resolvedEndpoints authority.Endpoints
 	var tokenEndpoint string
 	var correlationID string
-	if cca.sendCertOverMtls {
-		authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		authParams.Scopes = scopes
-		authParams.Claims = o.claims
-		authParams.ClientClaims = o.clientClaims
-		cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareBearerOverMtls(ctx, &authParams)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		resolvedEndpoints = authParams.Endpoints
-		tokenEndpoint = authParams.TokenEndpoint
-		correlationID = authParams.CorrelationID
+	authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return AuthResult{}, err
 	}
+	authParams.Scopes = scopes
+	authParams.Claims = o.claims
+	authParams.ClientClaims = o.clientClaims
+	cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareCredential(ctx, &authParams, false)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	resolvedEndpoints = authParams.Endpoints
+	tokenEndpoint = authParams.TokenEndpoint
+	correlationID = authParams.CorrelationID
 
 	params := base.AcquireTokenAuthCodeParameters{
 		Scopes:                       scopes,
@@ -1261,7 +1261,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 		TenantID:                     o.tenantID,
 		CacheKeyComponents:           o.cacheKeyComponents,
 		MtlsBindingCert:              mtlsBindingCert,
-		MtlsTransport:                cca.sendCertOverMtls,
+		MtlsTransport:                authParams.MtlsTransport,
 		AssertionBoundToCallbackCert: assertionBoundToCallbackCert,
 		Endpoints:                    resolvedEndpoints,
 		TokenEndpoint:                tokenEndpoint,
@@ -1304,12 +1304,11 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	authParams.Claims = o.claims
 	authParams.ClientClaims = o.clientClaims
 	authnScheme := o.authnScheme
-	// Assign the body/cache parameters before resolving mTLS PoP: prepareMtlsPoP may invoke a
-	// signed-assertion callback, and that callback must see the fully populated request (notably
-	// FMIPath, which is derived from ExtraBodyParameters).
+	// Assign body/cache parameters before credential preparation because a signed-assertion callback
+	// must see the fully populated request (notably FMIPath, derived from ExtraBodyParameters).
 	authParams.ExtraBodyParameters = o.extraBodyParameters
 	authParams.CacheKeyComponents = o.cacheKeyComponents
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	if o.isMtlsPoP {
@@ -1350,7 +1349,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		if err := authParams.AuthorityInfo.ValidateMtlsPoP(); err != nil {
 			return AuthResult{}, err
 		}
-		cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareMtlsPoP(ctx, &authParams)
+		cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareCredential(ctx, &authParams, true)
 		if err != nil {
 			return AuthResult{}, err
 		}
@@ -1358,24 +1357,19 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 		authParams.IsMtlsPoP = true
 		authParams.MtlsBindingCert = mtlsBindingCert
 		authParams.AssertionBoundToCallbackCert = assertionBoundToCallbackCert
-	} else if cca.sendCertOverMtls {
-		// Bearer-over-mTLS: present the certificate on the TLS handshake and route to the mtlsauth
-		// endpoint, but keep the default (Bearer) scheme so the result is a plain, unbound Bearer token
-		// cached under the normal Bearer key. x5c is forced on the private_key_jwt client assertion. A
-		// per-request WithMtlsProofOfPossession (handled above) takes precedence over the app-level flag.
-		cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareBearerOverMtls(ctx, &authParams)
+	} else {
+		// A signed-assertion snapshot can select mTLS transport implicitly while keeping the final
+		// token Bearer. The explicit app-level option follows the same path and additionally forces
+		// x5c on certificate-credential assertions.
+		cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareCredential(ctx, &authParams, false)
 		if err != nil {
 			return AuthResult{}, err
 		}
-		// Validate the authority here for the same reason the PoP branch above does: this path also
-		// derives the mtlsauth endpoint and presents the binding certificate, so an unsupported
-		// authority must not survive the silent cache lookup and endpoint discovery before being
-		// rejected. Ordered after credential resolution to match the PoP branch, so a credential
-		// that cannot present a client certificate still reports that rather than an authority
-		// error. The check still runs while deriving the endpoint, so it can't be bypassed.
 		authParams.MtlsBindingCert = mtlsBindingCert
 		authParams.AssertionBoundToCallbackCert = assertionBoundToCallbackCert
-		authParams.SendX5C = true
+		if cca.sendCertOverMtls {
+			authParams.SendX5C = true
+		}
 	}
 	if authnScheme != nil {
 		authParams.AuthnScheme = authnScheme
@@ -1437,29 +1431,27 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 	if err := options.ApplyOptions(&o, opts); err != nil {
 		return AuthResult{}, err
 	}
-	cred := cca.cred
+	var cred *accesstokens.Credential
 	var mtlsBindingCert *tls.Certificate
 	var assertionBoundToCallbackCert bool
 	var resolvedEndpoints authority.Endpoints
 	var tokenEndpoint string
 	var correlationID string
-	if cca.sendCertOverMtls {
-		authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		authParams.Scopes = scopes
-		authParams.Claims = o.claims
-		authParams.ClientClaims = o.clientClaims
-		authParams.UserAssertion = userAssertion
-		cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareBearerOverMtls(ctx, &authParams)
-		if err != nil {
-			return AuthResult{}, err
-		}
-		resolvedEndpoints = authParams.Endpoints
-		tokenEndpoint = authParams.TokenEndpoint
-		correlationID = authParams.CorrelationID
+	authParams, err := cca.base.AuthParams.WithTenant(o.tenantID)
+	if err != nil {
+		return AuthResult{}, err
 	}
+	authParams.Scopes = scopes
+	authParams.Claims = o.claims
+	authParams.ClientClaims = o.clientClaims
+	authParams.UserAssertion = userAssertion
+	cred, mtlsBindingCert, assertionBoundToCallbackCert, err = cca.prepareCredential(ctx, &authParams, false)
+	if err != nil {
+		return AuthResult{}, err
+	}
+	resolvedEndpoints = authParams.Endpoints
+	tokenEndpoint = authParams.TokenEndpoint
+	correlationID = authParams.CorrelationID
 	params := base.AcquireTokenOnBehalfOfParameters{
 		Scopes:                       scopes,
 		UserAssertion:                userAssertion,
@@ -1469,7 +1461,7 @@ func (cca Client) AcquireTokenOnBehalfOf(ctx context.Context, userAssertion stri
 		TenantID:                     o.tenantID,
 		CacheKeyComponents:           o.cacheKeyComponents,
 		MtlsBindingCert:              mtlsBindingCert,
-		MtlsTransport:                cca.sendCertOverMtls,
+		MtlsTransport:                authParams.MtlsTransport,
 		AssertionBoundToCallbackCert: assertionBoundToCallbackCert,
 		Endpoints:                    resolvedEndpoints,
 		TokenEndpoint:                tokenEndpoint,
@@ -1759,11 +1751,13 @@ func (cca Client) resolveMtlsBindingCert(callbackCert *tls.Certificate) (*tls.Ce
 // reason, though it does call the delegate a second time on network requests.
 //
 // cca.cred is never mutated, so concurrent acquisitions on the same Client are unaffected. The
-// caller resolves the final wire endpoint first so the callback receives the same endpoint used by
-// the HTTP POST.
+// caller resolves the endpoint known before callback evaluation. For explicit mTLS requests that is
+// the final mtlsauth endpoint. For implicit mTLS, certificate presence selects that transport, so
+// the callback sees the regular resolved endpoint and the wire endpoint is rewritten after this
+// single invocation.
 func (cca Client) resolveSignedAssertion(ctx context.Context, authParams authority.AuthParams, cred *accesstokens.Credential) (*accesstokens.Credential, *tls.Certificate, error) {
 	if authParams.TokenEndpoint == "" {
-		return nil, nil, errors.New("signed-assertion callback invoked before the final token endpoint was resolved")
+		return nil, nil, errors.New("signed-assertion callback invoked before a token endpoint was resolved")
 	}
 	signed, err := cred.SignedAssertion(ctx, authParams)
 	if err != nil {
@@ -1785,6 +1779,53 @@ func (cca Client) resolveSignedAssertion(ctx context.Context, authParams authori
 	return &perRequest, signed.BindingCertificate, nil
 }
 
+// prepareCredential resolves one immutable credential snapshot for the supported confidential
+// grants. Explicit mTLS PoP and Bearer-over-mTLS keep their existing fail-closed behavior. Without
+// either option, a signed assertion carrying a binding certificate implicitly selects the mTLS
+// transport and jwt-pop assertion type while the final token remains Bearer.
+func (cca Client) prepareCredential(ctx context.Context, authParams *authority.AuthParams, mtlsPoP bool) (*accesstokens.Credential, *tls.Certificate, bool, error) {
+	if mtlsPoP {
+		return cca.prepareMtlsPoP(ctx, authParams)
+	}
+	if cca.sendCertOverMtls {
+		return cca.prepareBearerOverMtls(ctx, authParams)
+	}
+	return cca.prepareImplicitSignedAssertionMtls(ctx, authParams)
+}
+
+// prepareImplicitSignedAssertionMtls snapshots a signed assertion once per acquisition. A binding
+// certificate in that snapshot is an assertion-level transport signal: present it over mTLS and
+// mark the assertion jwt-pop, but don't request a certificate-bound access token.
+func (cca Client) prepareImplicitSignedAssertionMtls(ctx context.Context, authParams *authority.AuthParams) (*accesstokens.Credential, *tls.Certificate, bool, error) {
+	cred := cca.cred
+	if cred == nil || cred.SignedAssertionCallback == nil {
+		return cred, nil, false, nil
+	}
+	if err := cca.base.Token.ResolveTokenEndpoint(ctx, authParams); err != nil {
+		return nil, nil, false, err
+	}
+	perRequest, callbackCert, err := cca.resolveSignedAssertion(ctx, *authParams, cred)
+	if err != nil {
+		return nil, nil, false, err
+	}
+	if callbackCert == nil {
+		return perRequest, nil, false, nil
+	}
+	cert, err := validBindingCertificate(callbackCert)
+	if err != nil {
+		return nil, nil, false, fmt.Errorf("signed-assertion callback returned an unusable binding certificate: %w", err)
+	}
+	authParams.MtlsTransport = true
+	authParams.MtlsBindingCert = cert
+	authParams.AssertionBoundToCallbackCert = true
+	endpoint, err := authParams.MtlsTokenEndpoint()
+	if err != nil {
+		return nil, nil, false, err
+	}
+	authParams.TokenEndpoint = endpoint
+	return perRequest, cert, true, nil
+}
+
 // prepareBearerOverMtls resolves what a bearer-over-mTLS request (WithSendCertificateOverMtls) needs:
 // the credential it authenticates with and the certificate presented on the mutual-TLS handshake.
 // The returned token stays a plain bearer token; only the transport and the endpoint change.
@@ -1796,12 +1837,8 @@ func (cca Client) resolveSignedAssertion(ctx context.Context, authParams authori
 // where a signed-assertion provider returning a ClientSignedAssertion.TokenBindingCertificate also
 // enables mTLS transport for a request whose token remains Bearer.
 //
-// Go gates this on WithSendCertificateOverMtls where MSAL .NET cannot: .NET validates at construction
-// time that SendCertificateOverMtls is paired only with a certificate-based credential, so its
-// assertion case has to be an implicit, ungated opt-in signalled by returning a non-null certificate.
-// Requiring the option instead keeps the transport switch explicit — routing a client credential to a
-// different host is not something an application should get without asking — and makes a callback that
-// returns no certificate an error rather than a silent downgrade to the plain endpoint.
+// The explicit option remains fail-closed: unlike the implicit signed-assertion path, a callback
+// returning no certificate is an error because the application explicitly required mTLS transport.
 func (cca Client) prepareBearerOverMtls(ctx context.Context, authParams *authority.AuthParams) (*accesstokens.Credential, *tls.Certificate, bool, error) {
 	authParams.MtlsTransport = true
 	if err := authParams.AuthorityInfo.ValidateMtlsPoP(); err != nil {
@@ -1839,9 +1876,8 @@ func (cca Client) prepareBearerOverMtls(ctx context.Context, authParams *authori
 // produces the assertion, which the rest of MSAL invokes only when it assembles the request body.
 // resolveSignedAssertion resolves that ordering by pulling the callback forward.
 //
-// The callback is not pulled forward on a request that needs no certificate: nothing there needs one
-// ahead of the request body, so the callback stays lazy and runs only if a token request is actually
-// sent (never on a cache hit), exactly as a plain assertion callback does.
+// Signed assertions are also resolved by prepareImplicitSignedAssertionMtls when PoP isn't requested,
+// because only the callback result can say whether that acquisition needs mTLS transport.
 func (cca Client) prepareMtlsPoP(ctx context.Context, authParams *authority.AuthParams) (*accesstokens.Credential, *tls.Certificate, bool, error) {
 	cred := cca.cred
 	if err := validateMtlsCredential(cred); err != nil {

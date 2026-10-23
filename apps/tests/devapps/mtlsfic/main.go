@@ -1,23 +1,26 @@
 // Copyright (c) Microsoft Corporation.
 // Licensed under the MIT license.
 
-// Command mtlsfic is a runnable demo of the developer-orchestrated two-leg federated identity
-// credential (FIC) flow over mTLS proof-of-possession, the capability added by
+// Command mtlsfic is a runnable demo of the final-mtls_pop variant of the developer-orchestrated
+// two-leg federated identity credential (FIC) flow enabled by
 // confidential.NewCredFromSignedAssertionCallback.
 //
-// The application makes two mTLS PoP calls and carries the result of the first into the second:
+// The application carries a certificate-bound assertion from the first call into the second:
 //
 //	Leg 1  SN/I certificate  ->  a certificate-bound FEDERATED ASSERTION
 //	       An ordinary mTLS PoP acquisition (WithMtlsProofOfPossession) against the token-exchange
 //	       audience api://AzureADTokenExchange/.default. What comes back in AccessToken is an
 //	       assertion for the next leg, NOT a usable resource token.
 //
-//	Leg 2  that assertion + the SAME binding certificate  ->  the final mtls_pop resource token
+//	Leg 2  that assertion + the SAME binding certificate  ->  the final resource token
 //	       NewCredFromSignedAssertionCallback's callback returns one
 //	       confidential.SignedAssertion{Assertion, BindingCertificate}. On the wire the assertion is
 //	       marked certificate-bound with
 //	       client_assertion_type=urn:ietf:params:oauth:client-assertion-type:jwt-pop
 //	       (grant.ClientAssertionPoP in apps/internal/oauth/ops/internal/grant/grant.go).
+//	       This demo also passes WithMtlsProofOfPossession to request final mtls_pop. Omitting that
+//	       option keeps jwt-pop over mTLS but requires a normal Bearer token and returns no binding
+//	       certificate on AuthResult.
 //
 // Why one callback returns both values: an assertion and the certificate it is bound to must never
 // be sourced separately, or a certificate rotation between the legs could pair one leg's assertion
@@ -108,17 +111,20 @@ func main() {
 // explain prints the flow. It runs whether or not a certificate is available, because the shape of
 // the API is the point of this demo.
 func explain(exchangeScope string) {
-	section("Two-leg FIC over mTLS proof-of-possession")
-	fmt.Println("  The application orchestrates two mTLS proof-of-possession calls:")
+	section("Two-leg certificate-bound FIC over mTLS")
+	fmt.Println("  The application orchestrates a certificate-bound assertion flow:")
 	fmt.Println()
 	fmt.Println("    Leg 1  SN/I certificate  ->  a certificate-bound FEDERATED ASSERTION")
 	fmt.Println("           An ordinary WithMtlsProofOfPossession acquisition against the")
 	fmt.Printf("           token-exchange audience (%s).\n", exchangeScope)
 	fmt.Println("           What comes back is an assertion for leg 2, NOT a usable resource token.")
 	fmt.Println()
-	fmt.Println("    Leg 2  that assertion + the SAME binding certificate  ->  final mtls_pop token")
+	fmt.Println("    Leg 2  that assertion + the SAME binding certificate  ->  final token")
 	fmt.Println("           NewCredFromSignedAssertionCallback's callback returns ONE")
 	fmt.Println("           confidential.SignedAssertion{Assertion, BindingCertificate}.")
+	fmt.Println("           The certificate always keeps the assertion jwt-pop and sends it over mTLS.")
+	fmt.Println("           This demo requests final mtls_pop; omitting WithMtlsProofOfPossession")
+	fmt.Println("           instead requires a normal Bearer token and exposes no binding certificate.")
 	fmt.Println()
 	fmt.Println("  Returning both from a single callback keeps them paired: a certificate rotation")
 	fmt.Println("  between the legs can never pair one leg's assertion with another leg's")
@@ -208,8 +214,8 @@ func run(certPath, clientID, authority, ficClientID, ficAuthority, exchangeScope
 	kv("leg 1 binding cert x5t#S256", leg1.BindingCertificateThumbprint())
 	fmt.Println("  leg 1's AccessToken is the FEDERATED ASSERTION for leg 2, not a resource token.")
 
-	// Leg 2: the assertion and the certificate it is bound to, handed over together. This callback
-	// is the only route by which a binding certificate reaches an assertion credential.
+	// Leg 2: the assertion and the certificate it is bound to, handed over together. Certificate
+	// presence selects jwt-pop and mTLS transport; this demo separately requests final-token PoP.
 	section("leg 2: assertion (jwt-pop) + same certificate -> resource token")
 
 	// These two observe what happens inside the callback so the result section can report it rather

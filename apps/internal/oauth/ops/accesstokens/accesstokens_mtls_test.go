@@ -184,10 +184,9 @@ func TestFromAssertionBearerUnchanged(t *testing.T) {
 // could not be exchanged for a plain access token. The trigger is AssertionBoundToCallbackCert (the
 // callback-supplied binding cert), deliberately narrower than "a binding certificate is present".
 //
-// Transport routing is deliberately excluded: the endpoint stays the ordinary token endpoint and no
-// certificate is presented, because which transport to use is modelled separately from the
-// client-authentication mode. Deciding both here would create two competing mechanisms for one
-// decision.
+// This low-level test deliberately leaves transport routing disabled to prove assertion-type
+// selection is independent. The confidential-client preparation path sets MtlsTransport and the
+// callback certificate together before it reaches FromAssertion.
 func TestFromAssertionBindingCertSelectsJwtPoP(t *testing.T) {
 	cert := selfSignedTLSCert(t)
 	authParams := authority.AuthParams{
@@ -226,6 +225,6 @@ func TestFromAssertionBindingCertSelectsJwtPoP(t *testing.T) {
 		t.Error("this request did not ask for a certificate-bound token, so it must not send token_type")
 	}
 	if fake.gotCert != nil {
-		t.Error("the assertion type must not drag transport routing with it; that is modelled separately")
+		t.Error("this low-level test didn't enable mTLS transport, so it must not present a certificate")
 	}
 }

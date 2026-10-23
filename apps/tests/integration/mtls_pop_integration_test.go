@@ -85,6 +85,9 @@ const (
 // federated assertion rather than a resource token. Mirrors MSAL .NET's TokenExchangeUrl.
 const tokenExchangeScope = "api://AzureADTokenExchange/.default"
 
+// ficBearerResourceScope is the final audience in MSAL .NET's two-leg FIC Bearer scenario.
+const ficBearerResourceScope = "https://storage.azure.com/.default"
+
 // checkTokenBoundToCertificate verifies that an mtls_pop access token actually names cert as its
 // binding certificate, via the cnf (confirmation) claim's x5t#S256 thumbprint. A successful call to a
 // resource proves the TLS handshake worked, but a lenient resource could still accept a token bound
@@ -554,6 +557,83 @@ func TestTwoLegFICMtlsPoP_SNI(t *testing.T) {
 
 	// The final token must be accepted by a real resource over mTLS.
 	requireTokenAcceptedByResource(t, final.AccessToken, final.BindingCertificate)
+}
+
+// TestTwoLegFICMtlsBearer_SNI mirrors MSAL .NET's Credential_Fic_Output_Bearer_TestAsync.
+// Leg 1 obtains a certificate-bound federated assertion. Leg 2 must keep that assertion jwt-pop
+// and present the same certificate over mTLS without requesting a final proof-of-possession token;
+// ESTS therefore returns a normal Bearer token. There is intentionally no resource-over-mTLS call
+// because the final token isn't certificate-bound.
+func TestTwoLegFICMtlsBearer_SNI(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test")
+	}
+
+	cert, privateKey, err := getCertDataFromFile(pemFile)
+	if err != nil {
+		t.Fatalf("getCertDataFromFile() failed: %s", errors.Verbose(err))
+	}
+	ctx := context.Background()
+
+	leg1Cred, err := confidential.NewCredFromCert(cert, privateKey)
+	if err != nil {
+		t.Fatalf("leg 1 NewCredFromCert() failed: %s", errors.Verbose(err))
+	}
+	leg1App, err := confidential.New(
+		sniAllowlistedAuthority,
+		sniAllowlistedAppID,
+		leg1Cred,
+		confidential.WithAzureRegion(sniAllowlistedRegion),
+	)
+	if err != nil {
+		t.Fatalf("leg 1 confidential.New() failed: %s", errors.Verbose(err))
+	}
+	leg1, err := leg1App.AcquireTokenByCredential(ctx, []string{tokenExchangeScope},
+		confidential.WithMtlsProofOfPossession(),
+	)
+	if err != nil {
+		t.Fatalf("leg 1 AcquireTokenByCredential() with mTLS PoP failed: %s", errors.Verbose(err))
+	}
+	if leg1.Metadata.TokenType != "mtls_pop" {
+		t.Fatalf("leg 1 token_type = %q, want mtls_pop", leg1.Metadata.TokenType)
+	}
+	if leg1.AccessToken == "" {
+		t.Fatal("leg 1 did not return a federated assertion")
+	}
+	if leg1.BindingCertificate == nil {
+		t.Fatal("leg 1 result missing binding certificate")
+	}
+
+	leg2Cred := confidential.NewCredFromSignedAssertionCallback(
+		func(context.Context, confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+			return confidential.SignedAssertion{
+				Assertion:          leg1.AccessToken,
+				BindingCertificate: leg1.BindingCertificate,
+			}, nil
+		},
+	)
+	leg2App, err := confidential.New(
+		sniAllowlistedAuthority,
+		sniAllowlistedAppID,
+		leg2Cred,
+		confidential.WithAzureRegion(sniAllowlistedRegion),
+	)
+	if err != nil {
+		t.Fatalf("leg 2 confidential.New() failed: %s", errors.Verbose(err))
+	}
+	final, err := leg2App.AcquireTokenByCredential(ctx, []string{ficBearerResourceScope})
+	if err != nil {
+		t.Fatalf("leg 2 AcquireTokenByCredential() for final Bearer token failed: %s", errors.Verbose(err))
+	}
+	if final.AccessToken == "" {
+		t.Fatal("leg 2 returned empty AccessToken")
+	}
+	if final.Metadata.TokenType != "Bearer" {
+		t.Fatalf("final token_type = %q, want Bearer", final.Metadata.TokenType)
+	}
+	if final.BindingCertificate != nil {
+		t.Fatal("final Bearer result must not expose the assertion's binding certificate")
+	}
 }
 
 // TestConfidentialClientSNIBearerAndMtlsPoPCacheIsolated mirrors MSAL Java's
