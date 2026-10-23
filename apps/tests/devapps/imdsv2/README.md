@@ -77,6 +77,18 @@ demo shows the working transport rather than describing it:
 
 ## Running it
 
+### Attestation prerequisites
+
+Only callers that opt in with `WithAttestationSupport()`—the demo's `-attest` flag—need the **x64
+Microsoft Visual C++ 2015–2022 Redistributable** ([latest supported downloads](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)).
+Developers deploy `AttestationClientLib.dll` beside the host executable or in `System32` and install
+the runtime it depends on, including `MSVCP140.dll` and `VCRUNTIME140.dll`. If the DLL is present but
+those dependencies are absent, MSAL reports a native-library load error. Ordinary IMDSv2 mTLS
+without attestation does not require this prerequisite.
+
+MSAL obtains and sends the attestation statement; the developer does not provide an attestation
+token manually.
+
 ```sh
 # What can this host do? No token is acquired.
 go run ./apps/tests/devapps/imdsv2 -capabilities-only

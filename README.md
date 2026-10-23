@@ -592,6 +592,13 @@ part of this module — deploy it next to the host executable or install it into
 the only two locations searched. MSAL .NET has the same deployment requirement; it just gets the
 file automatically through NuGet's native-asset convention, which Go has no equivalent for.
 
+Only callers that opt in with `WithAttestationSupport()` need the **x64 Microsoft Visual C++
+2015–2022 Redistributable** ([latest supported downloads](https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170)).
+`AttestationClientLib.dll` depends on runtime libraries including `MSVCP140.dll` and
+`VCRUNTIME140.dll`; if the DLL is present but those dependencies are absent, MSAL reports a
+native-library load error. Ordinary IMDSv2 mTLS without attestation does not require this
+prerequisite.
+
 Without the option nothing is attested and the credential request goes out non-attested, matching
 MSAL .NET when its optional `Microsoft.Identity.Client.KeyAttestation` package is not referenced.
 With it, a failure to attest is an **error, not a downgrade** — a caller that asked for attestation

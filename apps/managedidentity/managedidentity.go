@@ -252,6 +252,14 @@ func WithClaims(claims string) AcquireTokenOption {
 // Microsoft.Azure.Security.KeyGuardAttestation package, under
 // runtimes/win-x64/native.
 //
+// Only callers that opt in with this option need the x64 Microsoft Visual C++
+// 2015–2022 Redistributable. AttestationClientLib.dll depends on runtime
+// libraries including MSVCP140.dll and VCRUNTIME140.dll; if the DLL is present
+// but those dependencies are absent, MSAL reports a native-library load error.
+// Ordinary IMDSv2 mTLS without attestation does not require this prerequisite.
+// For downloads, see
+// https://learn.microsoft.com/en-us/cpp/windows/latest-supported-vc-redist?view=msvc-170.
+//
 // Without this option no attestation is attempted and the credential request goes
 // out non-attested, which mirrors MSAL .NET when its optional
 // Microsoft.Identity.Client.KeyAttestation package is not referenced. With it, a
