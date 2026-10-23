@@ -5,6 +5,8 @@ package confidential_test
 
 import (
 	"context"
+	"crypto"
+	"crypto/tls"
 	"fmt"
 	"log"
 	"os"
@@ -83,4 +85,143 @@ func ExampleClient_AcquireTokenByCredential_withFMIPath() {
 
 	// TODO: use access token
 	_ = result.AccessToken
+}
+
+// This example demonstrates requesting an mTLS-bound proof-of-possession token (token_type=mtls_pop)
+// using a Subject Name + Issuer (SN/I) certificate as the client TLS certificate. The same
+// certificate loaded for the credential is presented on the mutual-TLS handshake to the token
+// endpoint, and the returned token is bound to it. The authority must be tenanted.
+func ExampleClient_AcquireTokenByCredential_withMtlsProofOfPossession() {
+	b, err := os.ReadFile("cert.pem")
+	if err != nil {
+		log.Fatal(err)
+	}
+	certs, priv, err := confidential.CertFromPEM(b, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	cred, err := confidential.NewCredFromCert(certs, priv)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	client, err := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// The binding certificate is inferred from the credential created by NewCredFromCert.
+	result, err := client.AcquireTokenByCredential(context.TODO(), []string{"https://vault.azure.net/.default"},
+		confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// result.Metadata.TokenType == "mtls_pop"; result.BindingCertificate is the *tls.Certificate the
+	// token is bound to (leaf plus private key), ready to present to the resource on the TLS handshake.
+	_ = result.AccessToken
+	_ = result.BindingCertificate
+	fmt.Println(result.BindingCertificateThumbprint())
+}
+
+// This example demonstrates using a non-exportable key -- such as a Windows KeyGuard (VBS-isolated)
+// key, a CNG key handle, or an HSM-backed key -- to authenticate a confidential client. Such a key
+// can never be retrieved as an *rsa.PrivateKey; it can only be surfaced as a crypto.Signer, which the
+// caller implements over its key provider (MSAL adds no platform-specific dependencies).
+//
+// The credential works in every flow: MSAL signs the client assertion through the signer. This
+// example additionally requests an mTLS-bound proof-of-possession token, the one flow that sends no
+// client assertion at all because the certificate presented on the mutual-TLS handshake both
+// authenticates the client and binds the token.
+func ExampleNewCredFromTLSCertificate() {
+	// signer is the application's crypto.Signer over the non-exportable key, and chain holds the
+	// DER-encoded certificate chain, leaf first.
+	var signer crypto.Signer
+	var chain [][]byte
+
+	cred, err := confidential.NewCredFromTLSCertificate(tls.Certificate{
+		Certificate: chain,
+		PrivateKey:  signer,
+	})
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	client, err := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// MSAL passes the signer to the mTLS transport, which signs the TLS handshake with it. Without
+	// WithMtlsProofOfPossession the same signer signs the private_key_jwt client assertion instead.
+	result, err := client.AcquireTokenByCredential(context.TODO(), []string{"https://vault.azure.net/.default"},
+		confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		// TODO: handle error
+	}
+
+	_ = result.AccessToken
+	fmt.Println(result.BindingCertificateThumbprint())
+}
+
+// This example demonstrates the developer-orchestrated two-leg federated identity credential (FIC)
+// flow where both legs are mTLS proof-of-possession. Leg 1 uses the SN/I certificate as the TLS
+// client certificate to obtain a certificate-bound federated assertion; leg 2 presents that
+// assertion together with the same binding certificate to obtain the final mtls_pop token.
+func ExampleClient_AcquireTokenByCredential_ficMtlsProofOfPossession() {
+	b, err := os.ReadFile("cert.pem")
+	if err != nil {
+		log.Fatal(err)
+	}
+	certs, priv, err := confidential.CertFromPEM(b, "")
+	if err != nil {
+		log.Fatal(err)
+	}
+	sni, err := confidential.NewCredFromCert(certs, priv)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Leg 1: SN/I cert -> cert-bound federated assertion, itself an mTLS PoP request.
+	// The exchange audience is caller-supplied (generic S2S FIC uses api://AzureADTokenExchange).
+	leg1App, err := confidential.New("https://login.microsoftonline.com/your_tenant", "leg1_client_id", sni)
+	if err != nil {
+		// TODO: handle error
+	}
+
+	// Leg 2: federated assertion (jwt-pop) + binding cert -> final mtls_pop token. One callback
+	// returns both, so the assertion and the certificate it is bound to can never drift apart.
+	//
+	// Leg 1 runs inside the callback rather than once outside it. MSAL resolves this callback on
+	// every token request, so a refreshed assertion or a rotated certificate is picked up
+	// automatically, and leg1App's own cache keeps the repeat call cheap. Closing over a single
+	// pre-computed result would instead pin an assertion that eventually expires, alongside a
+	// certificate that may since have rotated -- a bug a one-shot program never exposes but a
+	// long-running service does.
+	assertionCred := confidential.NewCredFromSignedAssertionCallback(
+		func(ctx context.Context, _ confidential.AssertionRequestOptions) (confidential.SignedAssertion, error) {
+			// Use the callback's ctx, not the enclosing one, so cancellation and deadlines from the
+			// leg-2 acquisition propagate into leg 1.
+			leg1, err := leg1App.AcquireTokenByCredential(ctx,
+				[]string{"api://AzureADTokenExchange/.default"},
+				confidential.WithMtlsProofOfPossession())
+			if err != nil {
+				return confidential.SignedAssertion{}, err
+			}
+			return confidential.SignedAssertion{
+				Assertion:          leg1.AccessToken,
+				BindingCertificate: leg1.BindingCertificate,
+			}, nil
+		})
+	leg2App, err := confidential.New("https://login.microsoftonline.com/your_tenant", "final_client_id", assertionCred)
+	if err != nil {
+		// TODO: handle error
+	}
+	final, err := leg2App.AcquireTokenByCredential(context.TODO(), []string{"https://vault.azure.net/.default"},
+		confidential.WithMtlsProofOfPossession())
+	if err != nil {
+		// TODO: handle error
+	}
+
+	_ = final.AccessToken
 }
