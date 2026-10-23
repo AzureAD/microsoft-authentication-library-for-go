@@ -561,7 +561,7 @@ func TestSendCertificateOverMtls_SignedAssertion_PulledForwardWithoutTheOption(t
 	router := &bearerMtlsRouter{host: u.Host, tenant: strings.Trim(u.Path, "/")}
 	client, err := New(bearerMtlsControlAuthority, fakeClientID, cred,
 		WithHTTPClient(router),
-		WithMtlsHTTPClient(routerMtlsFactory(router)),
+		withTestMtlsClient(routerMtlsFactory(router)),
 	)
 	if err != nil {
 		t.Fatal(err)

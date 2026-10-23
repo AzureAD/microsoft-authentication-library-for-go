@@ -63,7 +63,7 @@ func TestSignedAssertionImplicitMtlsAcrossSupportedGrants(t *testing.T) {
 			var factoryCert tls.Certificate
 			client, err := New(bearerMtlsControlAuthority, fakeClientID, cred,
 				WithHTTPClient(router),
-				WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
+				withTestMtlsClient(func(cert tls.Certificate) *http.Client {
 					factoryCert = cert
 					return &http.Client{Transport: bearerMtlsRoundTripper{router: router}}
 				}),
@@ -150,7 +150,7 @@ func TestSignedAssertionImplicitMtlsSilentRefresh(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithInstanceDiscovery(false),
 	)
 	if err != nil {
@@ -226,7 +226,7 @@ func TestSignedAssertionBearerAndMtlsPoPCacheIsolation(t *testing.T) {
 	)
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithInstanceDiscovery(false),
 	)
 	if err != nil {
@@ -343,7 +343,7 @@ func TestSignedAssertionImplicitBearerRotationKeepsSnapshotPaired(t *testing.T) 
 	)
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(discoveryClient{host: lmo, tenant: tenant}),
-		WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
+		withTestMtlsClient(func(cert tls.Certificate) *http.Client {
 			if cert.Leaf != nil && cert.Leaf.Equal(second) {
 				return factoryB(cert)
 			}

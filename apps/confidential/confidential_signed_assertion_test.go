@@ -534,7 +534,7 @@ func TestSignedAssertionCallbackInvokedOncePerBearerAcquisition(t *testing.T) {
 	})
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(router),
-		WithMtlsHTTPClient(routerMtlsFactory(router)),
+		withTestMtlsClient(routerMtlsFactory(router)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -723,7 +723,7 @@ func TestSignedAssertionEmptyAssertionRejectedWithoutPoP(t *testing.T) {
 			})
 			client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 				WithHTTPClient(router),
-				WithMtlsHTTPClient(routerMtlsFactory(router)),
+				withTestMtlsClient(routerMtlsFactory(router)),
 			)
 			if err != nil {
 				t.Fatal(err)
@@ -759,7 +759,7 @@ func TestSignedAssertionNilBindingCertificateStaysJwtBearer(t *testing.T) {
 	})
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(router),
-		WithMtlsHTTPClient(func(cert tls.Certificate) *http.Client {
+		withTestMtlsClient(func(cert tls.Certificate) *http.Client {
 			atomic.AddInt32(&mtlsFactories, 1)
 			return routerMtlsFactory(router)(cert)
 		}),
