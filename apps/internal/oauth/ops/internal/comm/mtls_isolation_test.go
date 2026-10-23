@@ -83,7 +83,7 @@ func TestCloneBaseTransportFailsClosedOnReplacedDefaultTransport(t *testing.T) {
 	if err == nil {
 		t.Fatal("cloneBaseTransport silently substituted a bare transport for a replaced http.DefaultTransport")
 	}
-	for _, want := range []string{"http.DefaultTransport", "NO_PROXY", "WithMtlsHTTPClient"} {
+	for _, want := range []string{"http.DefaultTransport", "NO_PROXY", "MtlsHTTPClientFactory"} {
 		if !strings.Contains(err.Error(), want) {
 			t.Errorf("error should mention %q so the caller can act on it, got: %v", want, err)
 		}
@@ -128,7 +128,7 @@ func TestMtlsClientPinsCertificateDER(t *testing.T) {
 
 	var seen []byte
 	c := &Client{}
-	c.SetMtlsClientFactory(func(got tls.Certificate) HTTPClient {
+	c.setTestMtlsClientFactory(func(got tls.Certificate) HTTPClient {
 		// Retain what the factory was handed, exactly as a factory building a long-lived client would.
 		seen = got.Certificate[0]
 		return &http.Client{}

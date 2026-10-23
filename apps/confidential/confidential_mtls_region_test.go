@@ -39,7 +39,7 @@ func TestAcquireTokenByCredentialMtlsPoPAutoDetectedRegion(t *testing.T) {
 	mockClient := mock.NewClient()
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithAzureRegion(AutoDetectRegion()),
 	)
 	if err != nil {
@@ -90,7 +90,7 @@ func TestAcquireTokenByCredentialMtlsPoPUndetectedRegion(t *testing.T) {
 	mockClient.AppendResponse(mock.WithBody(mock.GetInstanceDiscoveryBody(lmo, tenant)))
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -133,7 +133,7 @@ func TestAcquireTokenByCredentialMtlsPoPExplicitRegion(t *testing.T) {
 	mockClient := mock.NewClient()
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithAzureRegion(region),
 	)
 	if err != nil {

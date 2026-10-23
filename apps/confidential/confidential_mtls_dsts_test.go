@@ -50,7 +50,7 @@ func TestBearerOverMtlsSignedCallbackKeepsDSTSEndpoint(t *testing.T) {
 	)
 	client, err := New(authorityURI, fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithInstanceDiscovery(false),
 		WithSendCertificateOverMtls(),
 	)
@@ -103,7 +103,7 @@ func TestMtlsPoPDSTSKeepsItsEndpointAndCaches(t *testing.T) {
 	client, err := New(authorityURI, fakeClientID, cred,
 		WithCache(&cache),
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithInstanceDiscovery(false),
 	)
 	if err != nil {
@@ -170,7 +170,7 @@ func TestMtlsPoPDSTSRegionDoesNotRegionalizeTheEndpoint(t *testing.T) {
 
 	client, err := New(authorityURI, fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithInstanceDiscovery(false),
 		WithAzureRegion("westus"),
 	)

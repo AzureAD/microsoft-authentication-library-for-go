@@ -84,7 +84,7 @@ func TestMtlsPoPTwoCertificatesShareACacheWithoutConfusion(t *testing.T) {
 		client, err := New(authority, fakeClientID, cred,
 			WithCache(&sharedCache),
 			WithHTTPClient(mockClient),
-			WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+			withTestMtlsClient(mockMtlsFactory(mockClient)),
 			WithInstanceDiscovery(false),
 		)
 		if err != nil {
@@ -259,7 +259,7 @@ func TestMtlsPoPSameKeyCertificateRenewalMissesTheCache(t *testing.T) {
 		client, err := New(authority, fakeClientID, cred,
 			WithCache(&sharedCache),
 			WithHTTPClient(mockClient),
-			WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+			withTestMtlsClient(mockMtlsFactory(mockClient)),
 			WithInstanceDiscovery(false),
 		)
 		if err != nil {
@@ -368,7 +368,7 @@ func TestMtlsPoPDowngradedTokenIsNotCached(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(tls.Certificate) *http.Client {
+		withTestMtlsClient(func(tls.Certificate) *http.Client {
 			return &http.Client{Transport: downgraded}
 		}),
 		WithInstanceDiscovery(false),
@@ -436,7 +436,7 @@ func TestBearerAndMtlsPoPTokensDoNotCrossServeFromCache(t *testing.T) {
 
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(mockMtlsFactory(mockClient)),
+		withTestMtlsClient(mockMtlsFactory(mockClient)),
 		WithSendCertificateOverMtls(),
 		WithInstanceDiscovery(false),
 	)

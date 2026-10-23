@@ -27,10 +27,10 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/mock"
 )
 
-// The tests in this file deliberately do NOT use WithMtlsHTTPClient. Substituting the mTLS client is
-// the documented escape hatch, and a test that uses it never exercises the transport a real caller
-// gets. Everything here runs on MSAL's built-in mTLS transport (comm.BuildMtlsClient) across a real
-// TLS 1.2+ handshake against a local server, so a regression in certificate injection or in the
+// The tests in this file deliberately do NOT use the test factory capability. Substituting the mTLS
+// client would no longer exercise the direct transport a real *http.Client caller gets. Everything
+// here runs on MSAL's built-in mTLS transport (comm.BuildMtlsClient) across a real TLS 1.2+ handshake
+// against a local server, so a regression in certificate injection or in the
 // cloning of the application's own transport fails the build instead of only failing in production.
 
 // mtlsTestPKI is a throwaway certificate authority plus a server certificate valid for the AAD hosts

@@ -54,7 +54,7 @@ type Client struct {
 	// mtlsMu guards the lazily-built per-certificate mTLS client cache.
 	mtlsMu      sync.Mutex
 	mtlsClients map[string]mtlsCacheEntry
-	// mtlsFactory optionally overrides how mTLS clients are built (WithMtlsHTTPClient).
+	// mtlsFactory optionally creates a fresh adapter MSAL configures for each mTLS certificate.
 	mtlsFactory MtlsClientFactory
 	// mtlsGeneration counts installations of mtlsFactory. mtlsClient builds outside mtlsMu, so it
 	// captures this value before building and re-checks it before publishing; see mtlsClient.

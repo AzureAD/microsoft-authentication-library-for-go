@@ -451,7 +451,7 @@ func TestSignerCredentialMtlsPoP(t *testing.T) {
 	var gotCert tls.Certificate
 	client, err := New(fmt.Sprintf(authorityFmt, lmo, tenant), fakeClientID, cred,
 		WithHTTPClient(mockClient),
-		WithMtlsHTTPClient(func(c tls.Certificate) *http.Client {
+		withTestMtlsClient(func(c tls.Certificate) *http.Client {
 			gotCert = c
 			return &http.Client{Transport: mockRoundTripper{client: mockClient}}
 		}),

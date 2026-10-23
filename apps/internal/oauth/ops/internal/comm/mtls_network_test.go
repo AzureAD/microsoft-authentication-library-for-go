@@ -17,6 +17,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"sync"
 	"testing"
@@ -53,10 +54,11 @@ func newBindingCert(t *testing.T, cn string) tls.Certificate {
 // tlsHit is what a TLS server observed about one request: the body it was handed, the client
 // certificate presented during the handshake, and whether the TLS session was resumed.
 type tlsHit struct {
-	body     string
-	clientCN string
-	numCerts int
-	resumed  bool
+	body       string
+	clientCN   string
+	middleware string
+	numCerts   int
+	resumed    bool
 }
 
 type tlsRecorder struct {
@@ -78,6 +80,7 @@ func (r *tlsRecorder) handler(status int, location string) http.HandlerFunc {
 				hit.clientCN = req.TLS.PeerCertificates[0].Subject.CommonName
 			}
 		}
+		hit.middleware = req.Header.Get("X-MTLS-Middleware")
 		r.mu.Lock()
 		r.hits = append(r.hits, hit)
 		r.mu.Unlock()
@@ -130,6 +133,160 @@ func postAssertion(t *testing.T, client *http.Client, url string) (*http.Respons
 	return client.Do(req)
 }
 
+type middlewareMtlsClient struct {
+	mu     sync.Mutex
+	client *http.Client
+	calls  int
+	closed int
+}
+
+func (c *middlewareMtlsClient) Do(req *http.Request) (*http.Response, error) {
+	c.mu.Lock()
+	c.calls++
+	c.mu.Unlock()
+	req.Header.Set("X-MTLS-Middleware", "active")
+	return c.client.Do(req)
+}
+
+func (c *middlewareMtlsClient) CloseIdleConnections() {
+	c.mu.Lock()
+	c.closed++
+	c.mu.Unlock()
+	c.client.CloseIdleConnections()
+}
+
+func (c *middlewareMtlsClient) ConfigureClient(augment func(*http.Client) (*http.Client, error)) error {
+	configured, err := augment(c.client)
+	if err != nil {
+		return err
+	}
+	c.client = configured
+	return nil
+}
+
+func (c *middlewareMtlsClient) snapshot() (calls, closed int) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.calls, c.closed
+}
+
+// TestMtlsClientFactoryPreservesMiddlewareAndAugmentedTransport proves the specialized client can
+// retain middleware while its terminal HTTP client is the exact client MSAL augmented. The real TLS
+// handshake fails if the wrapper bypasses that client because the unaugmented base has no certificate.
+func TestMtlsClientFactoryPreservesMiddlewareAndAugmentedTransport(t *testing.T) {
+	recorder := &tlsRecorder{}
+	server := startTLSServer(t, recorder.handler(http.StatusOK, ""), 0)
+	cert := newBindingCert(t, "factory-selected-cert")
+	proxyURL := &url.URL{Scheme: "http", Host: "proxy.example:8080"}
+	baseTransport := &http.Transport{
+		Proxy: func(req *http.Request) (*url.URL, error) {
+			if req.URL.Host == "proxy-check.example" {
+				return proxyURL, nil
+			}
+			return nil, nil
+		},
+		MaxIdleConns:    7,
+		TLSClientConfig: &tls.Config{RootCAs: rootsFor(server)},
+	}
+	base := &http.Client{Transport: baseTransport}
+	original := &middlewareMtlsClient{client: base}
+
+	var (
+		factoryCalls int
+		specialized  *middlewareMtlsClient
+	)
+	c := &Client{}
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+		factoryCalls++
+		specialized = &middlewareMtlsClient{client: original.client}
+		return specialized, nil
+	})
+
+	client, err := c.mtlsClient(&cert)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if client != specialized {
+		t.Fatal("mtlsClient did not preserve the factory's middleware wrapper")
+	}
+	if specialized == original {
+		t.Fatal("factory returned its shared adapter instead of a fresh certificate-scoped adapter")
+	}
+	if specialized.client == base {
+		t.Fatal("ConfigureClient left the fresh adapter on the application's original client")
+	}
+	if original.client != base || base.Transport != baseTransport {
+		t.Fatal("ConfigureClient mutated the application's original adapter or client")
+	}
+	if len(baseTransport.TLSClientConfig.Certificates) != 0 {
+		t.Fatal("ConfigureClient installed the binding certificate on the application's original transport")
+	}
+	configuredTransport, ok := specialized.client.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("configured transport = %T, want *http.Transport", specialized.client.Transport)
+	}
+	proxy, err := configuredTransport.Proxy(mustRequest(t, "https://proxy-check.example"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if proxy != proxyURL || configuredTransport.MaxIdleConns != baseTransport.MaxIdleConns {
+		t.Fatal("ConfigureClient did not preserve the application's proxy or connection-pool policy")
+	}
+	response, err := client.Do(mustRequest(t, server.URL))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := response.Body.Close(); err != nil {
+		t.Fatalf("closing response body: %v", err)
+	}
+
+	if factoryCalls != 1 {
+		t.Fatalf("factory calls = %d, want 1", factoryCalls)
+	}
+	calls, closed := specialized.snapshot()
+	if calls != 1 || closed != 0 {
+		t.Fatalf("specialized client calls/closed = %d/%d, want 1/0", calls, closed)
+	}
+	if calls, closed := original.snapshot(); calls != 0 || closed != 0 {
+		t.Fatalf("original adapter calls/closed = %d/%d, want 0/0", calls, closed)
+	}
+	hits := recorder.snapshot()
+	if len(hits) != 1 {
+		t.Fatalf("server requests = %d, want 1", len(hits))
+	}
+	if hits[0].middleware != "active" {
+		t.Errorf("middleware header = %q, want active", hits[0].middleware)
+	}
+	if hits[0].clientCN != "factory-selected-cert" {
+		t.Errorf("presented certificate = %q, want factory-selected-cert", hits[0].clientCN)
+	}
+
+	// Replacing the construction-time factory is the deterministic cache-cleanup hook used by these
+	// internal tests. It must reach the specialized wrapper and therefore its augmented transport.
+	c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+		configurer := &testClientConfigurer{}
+		configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+			var err error
+			configurer.HTTPClient, err = augment(&http.Client{})
+			return err
+		}
+		return configurer, nil
+	})
+	_, closed = specialized.snapshot()
+	if closed != 1 {
+		t.Errorf("specialized client CloseIdleConnections calls = %d, want 1", closed)
+	}
+}
+
+func mustRequest(t *testing.T, endpoint string) *http.Request {
+	t.Helper()
+	req, err := http.NewRequest(http.MethodGet, endpoint, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return req
+}
+
 // TestBuildMtlsClientRefusesRedirectsByDefault is the 307/308 regression test. Preserving the
 // caller's CheckRedirect is not enough on its own: almost nobody sets it, and copying nil across
 // leaves Go's default, which follows up to ten redirects and - because the request carries a GetBody
@@ -161,18 +318,23 @@ func TestBuildMtlsClientRefusesRedirectsByDefault(t *testing.T) {
 				cert := newBindingCert(t, "factory-binding-cert")
 
 				c := &Client{}
-				c.SetMtlsClientFactory(func(cert tls.Certificate) HTTPClient {
-					return &http.Client{Transport: &http.Transport{TLSClientConfig: &tls.Config{
-						RootCAs:      roots,
-						Certificates: []tls.Certificate{cert},
-						MinVersion:   tls.VersionTLS12,
-					}}}
+				c.SetMtlsClientFactory(func() (MtlsClientConfigurer, error) {
+					configurer := &testClientConfigurer{}
+					configurer.configure = func(augment func(*http.Client) (*http.Client, error)) error {
+						var err error
+						configurer.HTTPClient, err = augment(&http.Client{Transport: &http.Transport{
+							TLSClientConfig: &tls.Config{RootCAs: roots},
+						}})
+						return err
+					}
+					return configurer, nil
 				})
 				client, err := c.mtlsClient(&cert)
 				if err != nil {
 					t.Fatal(err)
 				}
-				resp, err := postAssertion(t, client.(*http.Client), originSrv.URL)
+				configured := client.(*testClientConfigurer).HTTPClient.(*http.Client)
+				resp, err := postAssertion(t, configured, originSrv.URL)
 				if resp != nil {
 					if err := resp.Body.Close(); err != nil {
 						t.Errorf("closing redirect response body: %v", err)
@@ -195,8 +357,8 @@ func TestBuildMtlsClientRefusesRedirectsByDefault(t *testing.T) {
 			if err == nil {
 				t.Fatalf("the client followed the %d redirect instead of refusing it", status)
 			}
-			if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
-				t.Errorf("the refusal does not name WithMtlsHTTPClient: %v", err)
+			if !strings.Contains(err.Error(), "MtlsHTTPClientFactory") {
+				t.Errorf("the refusal does not name MtlsHTTPClientFactory: %v", err)
 			}
 			if n := len(origin.snapshot()); n != 1 {
 				t.Fatalf("the redirecting endpoint was reached %d time(s), want 1", n)
@@ -315,8 +477,8 @@ func TestBuildMtlsClientRejectsTLSDialHooks(t *testing.T) {
 			if !strings.Contains(err.Error(), test.field) {
 				t.Errorf("the error does not name %s: %v", test.field, err)
 			}
-			if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
-				t.Errorf("the error does not name WithMtlsHTTPClient: %v", err)
+			if !strings.Contains(err.Error(), "MtlsHTTPClientFactory") {
+				t.Errorf("the error does not name MtlsHTTPClientFactory: %v", err)
 			}
 		})
 	}
@@ -387,8 +549,8 @@ func TestBuildMtlsClientRejectsTLSDialHooksOnDefaultTransport(t *testing.T) {
 					if !strings.Contains(err.Error(), hook.field) {
 						t.Errorf("the error does not name %s: %v", hook.field, err)
 					}
-					if !strings.Contains(err.Error(), "WithMtlsHTTPClient") {
-						t.Errorf("the error does not name WithMtlsHTTPClient: %v", err)
+					if !strings.Contains(err.Error(), "MtlsHTTPClientFactory") {
+						t.Errorf("the error does not name MtlsHTTPClientFactory: %v", err)
 					}
 					// The caller did not configure this transport, so the message must identify the
 					// shared default as the source and must not read as if they had set the hook.

@@ -77,8 +77,7 @@ func New(httpClient ops.HTTPClient) *Client {
 	}
 }
 
-// SetMtlsClientFactory installs a custom factory used to build the mutual-TLS client for mTLS
-// proof-of-possession token requests (the confidential.WithMtlsHTTPClient hook).
+// SetMtlsClientFactory installs the configured client's mutual-TLS factory capability.
 func (t *Client) SetMtlsClientFactory(factory ops.MtlsClientFactory) {
 	t.rest.SetMtlsClientFactory(factory)
 }

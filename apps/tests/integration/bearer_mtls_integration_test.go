@@ -22,10 +22,10 @@ import (
 // below; the live cells are opt-in for when the apps are eventually enabled.
 const bomUserFlowE2EEnv = "MSAL_RUN_BOM_USERFLOW_E2E"
 
-// None of the cells in this file install a transport of their own. WithMtlsHTTPClient is the
-// documented escape hatch, and an application that uses it is no longer on the path MSAL ships, so a
-// live test that substitutes a client proves nothing about the transport real callers get. Everything
-// here runs on MSAL's built-in mTLS transport.
+// None of the cells in this file install a transport of their own. A custom
+// confidential.MtlsHTTPClientFactory would add another wrapper to the path, so a live test that
+// substitutes one proves nothing about the direct transport real callers get. Everything here runs
+// on MSAL's built-in mTLS transport.
 //
 // The request-capture cells still need to see the outgoing request, because the apps they run against
 // are not mTLS-enabled and the acquisition always ends in an AADSTS rejection with no result to assert
@@ -114,8 +114,8 @@ func TestSendCertificateOverMtls_ClientCredential_Live(t *testing.T) {
 	// No transport of any kind is configured here: the cell runs on MSAL's built-in mTLS client, so a
 	// successful acquisition is itself the proof that the built-in transport presented the certificate
 	// on the handshake - the mtlsauth endpoint does not issue a token to a handshake that carried none.
-	// Substituting a recording client via WithMtlsHTTPClient, the documented escape hatch, would take
-	// this cell off the path real callers use. The endpoint and request body are asserted
+	// Substituting a recording MtlsHTTPClientFactory would take this cell off the direct path real
+	// callers use. The endpoint and request body are asserted
 	// deterministically by the mocked cells in apps/confidential/confidential_bearer_mtls_test.go, and
 	// the built-in transport's certificate injection by
 	// TestSendCertificateOverMtls_DefaultTransportPresentsCertificate. Matches MSAL .NET's
