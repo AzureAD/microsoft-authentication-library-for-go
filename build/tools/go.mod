@@ -1,6 +1,6 @@
 module github.com/AzureAD/microsoft-authentication-library-for-go/build/tools
 
-go 1.22
+go 1.25.0
 
 require gotest.tools/gotestsum v1.12.2
 
