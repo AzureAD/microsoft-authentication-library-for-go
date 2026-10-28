@@ -16,7 +16,7 @@ jobs:
 
     strategy:
       matrix:
-        go: ["1.21", "1.22"]
+        go: ["1.25.x", "stable"]
 
     steps:
       - name: Set up Go 1.x
@@ -32,7 +32,7 @@ jobs:
         run: go get -v -t -d ./...
 
       - name: Check formatting
-        if: matrix.go == '1.22'
+        if: matrix.go == '1.25.x'
         shell: bash
         run: |
           unformatted="$(gofmt -l -s .)"
