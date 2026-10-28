@@ -8,7 +8,8 @@ pr:
       - main
 
 variables:
-  goVersion: "1.25.x"
+  # GoTool@0 resolves major.minor to the latest patch; wildcard syntax is invalid.
+  goVersion: "1.25"
 
 stages:
   # ──────────────────────────────────────────────
