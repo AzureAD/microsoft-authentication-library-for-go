@@ -6,9 +6,12 @@ package oauth
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -491,5 +494,207 @@ func TestAliasesFromMetadataScopesToAuthority(t *testing.T) {
 	}
 	if aliases["unrelated.example.com"] {
 		t.Fatal("unexpected alias from an unrelated metadata entry")
+	}
+}
+
+func TestResolveEndpoints_IssuerPolicyRejectionRecovery(t *testing.T) {
+	for _, test := range []struct {
+		name, host, issuer string
+	}{
+		{"custom regional issuer", "custom.example.com", "eastus.login.microsoftonline.com"},
+		{"Microsoft CIAM issuer", "login.microsoftonline.com", "attacker.onmicrosoft.com.ciamlogin.com"},
+		{"multiple regional labels", "login.microsoftonline.com", "evil.eastus.login.microsoftonline.com"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			discoveryCalls := 0
+			tenantCalls := 0
+			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				var body string
+				switch {
+				case r.URL.Path == "/common/discovery/instance":
+					discoveryCalls++
+					body = fmt.Sprintf(`{
+							"tenant_discovery_endpoint": "https://%s/tenant/v2.0/.well-known/openid-configuration",
+							"metadata": [{"aliases": [%q, %q]}]
+						}`, test.host, test.host, test.issuer)
+				case r.Method == http.MethodGet && r.URL.Host == test.host && r.URL.Path == "/tenant/v2.0/.well-known/openid-configuration":
+					tenantCalls++
+					host := test.issuer
+					if tenantCalls > 2 {
+						host = test.host
+					}
+					body = tenantDiscoveryJSON(host)
+				default:
+					t.Fatalf("unexpected downstream request: %s %s", r.Method, r.URL)
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})}
+			resolver := newAuthorityEndpoint(ops.New(client))
+			info := newTestAuthorityInfo(test.host, "https://"+test.host+"/tenant/", "tenant")
+			info.ValidateAuthority = true
+			info.InstanceDiscoveryMetadata = []authority.InstanceDiscoveryMetadata{
+				{Aliases: []string{test.host, test.issuer}},
+			}
+			for i := 1; i <= 2; i++ {
+				endpoints, err := resolver.ResolveEndpoints(context.Background(), info, "")
+				want := fmt.Sprintf("ResolveEndpoints(): TenantDiscoveryResponse: issuer 'https://%s/common/v2.0' does not match authority '%s' or any trusted/alias rule", test.issuer, info.CanonicalAuthorityURI)
+				if err == nil || err.Error() != want {
+					t.Fatalf("call %d: error = %v, want %q", i, err, want)
+				}
+				if endpoints != (authority.Endpoints{}) || len(resolver.cache) != 0 {
+					t.Fatalf("call %d: rejected endpoints returned or cached: %+v, %+v", i, endpoints, resolver.cache)
+				}
+				if tenantCalls != i {
+					t.Fatalf("call %d: tenant discovery calls = %d", i, tenantCalls)
+				}
+			}
+			for i := 0; i < 2; i++ {
+				endpoints, err := resolver.ResolveEndpoints(context.Background(), info, "")
+				if err != nil || endpoints.TokenEndpoint != "https://"+test.host+"/common/oauth2/v2.0/token" {
+					t.Fatalf("valid recovery: endpoints = %+v, error = %v", endpoints, err)
+				}
+			}
+			wantDiscoveryCalls := 0
+			if !authority.TrustedHost(test.host) {
+				wantDiscoveryCalls = 3
+			}
+			if tenantCalls != 3 || discoveryCalls != wantDiscoveryCalls || len(resolver.cache) != 1 {
+				t.Fatalf("calls: tenant = %d, instance = %d; cache entries = %d", tenantCalls, discoveryCalls, len(resolver.cache))
+			}
+		})
+	}
+}
+
+func TestResolveEndpoints_CancellationAndTransportFailureRecovery(t *testing.T) {
+	transportError := errors.New("test discovery transport failure")
+	for _, test := range []struct {
+		name string
+		err  error
+	}{
+		{"canceled context", context.Canceled},
+		{"transport failure", transportError},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			failTransport := true
+			validCalls := 0
+			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.URL.Host != "login.microsoftonline.com" || r.URL.Path != "/tenant/v2.0/.well-known/openid-configuration" {
+					t.Fatalf("unexpected downstream request: %s %s", r.Method, r.URL)
+				}
+				if err := r.Context().Err(); err != nil {
+					return nil, err
+				}
+				if failTransport {
+					return nil, transportError
+				}
+				validCalls++
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{},
+					Body:       io.NopCloser(strings.NewReader(tenantDiscoveryJSON("login.microsoftonline.com"))),
+				}, nil
+			})}
+			resolver := newAuthorityEndpoint(ops.New(client))
+			info := newTestAuthorityInfo("login.microsoftonline.com", "https://login.microsoftonline.com/tenant/", "tenant")
+			ctx := context.Background()
+			if test.err == context.Canceled {
+				canceled, cancel := context.WithCancel(ctx)
+				cancel()
+				ctx = canceled
+			}
+			endpoints, err := resolver.ResolveEndpoints(ctx, info, "")
+			if !errors.Is(err, test.err) {
+				t.Fatalf("error = %v, want wrapped %v", err, test.err)
+			}
+			if endpoints != (authority.Endpoints{}) || len(resolver.cache) != 0 {
+				t.Fatalf("failed discovery returned or cached endpoints: %+v, %+v", endpoints, resolver.cache)
+			}
+			failTransport = false
+			for i := 0; i < 2; i++ {
+				endpoints, err = resolver.ResolveEndpoints(context.Background(), info, "")
+				if err != nil || endpoints.TokenEndpoint != "https://login.microsoftonline.com/common/oauth2/v2.0/token" {
+					t.Fatalf("recovery: endpoints = %+v, error = %v", endpoints, err)
+				}
+			}
+			if validCalls != 1 || len(resolver.cache) != 1 {
+				t.Fatalf("valid discovery calls = %d, cache entries = %d", validCalls, len(resolver.cache))
+			}
+		})
+	}
+}
+
+func TestResolveEndpoints_HTTPRedirectAndCaching(t *testing.T) {
+	var httpsCalls, redirectCalls int32
+	tlsServer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&httpsCalls, 1)
+		if r.Method != http.MethodGet || r.URL.Path != "/tenant/v2.0/.well-known/openid-configuration" {
+			t.Errorf("unexpected HTTPS request: %s %s", r.Method, r.URL)
+		}
+		writeTestResponse(t, w, tenantDiscoveryJSON("login.microsoftonline.com"))
+	}))
+	defer tlsServer.Close()
+	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&redirectCalls, 1)
+		http.Redirect(w, r, tlsServer.URL+r.URL.RequestURI(), http.StatusMovedPermanently)
+	}))
+	defer httpServer.Close()
+
+	// Exercise the resolver's native HTTP seam, not public authority validation.
+	resolver := newAuthorityEndpoint(ops.New(tlsServer.Client()))
+	info := newTestAuthorityInfo("custom.example.com", httpServer.URL+"/tenant/", "tenant")
+	for i := 0; i < 2; i++ {
+		endpoints, err := resolver.ResolveEndpoints(context.Background(), info, "")
+		if err != nil || endpoints.TokenEndpoint != "https://login.microsoftonline.com/common/oauth2/v2.0/token" {
+			t.Fatalf("endpoints = %+v, error = %v", endpoints, err)
+		}
+	}
+	if atomic.LoadInt32(&httpsCalls) != 1 || atomic.LoadInt32(&redirectCalls) != 1 || len(resolver.cache) != 1 {
+		t.Fatalf("HTTPS calls = %d, redirects = %d, cache entries = %d", httpsCalls, redirectCalls, len(resolver.cache))
+	}
+}
+
+func TestResolveEndpoints_InvalidMetadataRecovery(t *testing.T) {
+	for _, test := range []struct {
+		name, body, errorText string
+	}{
+		{"missing issuer", `{"authorization_endpoint":"https://example.com/authorize","token_endpoint":"https://example.com/token"}`, "ResolveEndpoints(): TenantDiscoveryResponse: issuer was not found in the openid configuration"},
+		{"missing token endpoint", `{"authorization_endpoint":"https://example.com/authorize","issuer":"https://login.microsoftonline.com/tenant"}`, "ResolveEndpoints(): TenantDiscoveryResponse: token endpoint was not found in the openid configuration"},
+		{"missing authorization endpoint", `{"token_endpoint":"https://example.com/token","issuer":"https://login.microsoftonline.com/tenant"}`, "ResolveEndpoints(): TenantDiscoveryResponse: authorize endpoint was not found in the openid configuration"},
+		{"malformed JSON", `{`, "json decode error:"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			calls := 0
+			client := &http.Client{Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				if r.Method != http.MethodGet || r.URL.Host != "login.microsoftonline.com" || r.URL.Path != "/tenant/v2.0/.well-known/openid-configuration" {
+					t.Fatalf("unexpected downstream request: %s %s", r.Method, r.URL)
+				}
+				calls++
+				body := test.body
+				if calls > 2 {
+					body = tenantDiscoveryJSON("login.microsoftonline.com")
+				}
+				return &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(body))}, nil
+			})}
+			resolver := newAuthorityEndpoint(ops.New(client))
+			info := newTestAuthorityInfo("login.microsoftonline.com", "https://login.microsoftonline.com/tenant/", "tenant")
+			for i := 1; i <= 2; i++ {
+				endpoints, err := resolver.ResolveEndpoints(context.Background(), info, "")
+				if err == nil || !strings.Contains(err.Error(), test.errorText) {
+					t.Fatalf("call %d: error = %v, want %q", i, err, test.errorText)
+				}
+				if calls != i || endpoints != (authority.Endpoints{}) || len(resolver.cache) != 0 {
+					t.Fatalf("call %d: requests = %d, endpoints = %+v, cache = %+v", i, calls, endpoints, resolver.cache)
+				}
+			}
+			for i := 0; i < 2; i++ {
+				endpoints, err := resolver.ResolveEndpoints(context.Background(), info, "")
+				if err != nil || endpoints.TokenEndpoint != "https://login.microsoftonline.com/common/oauth2/v2.0/token" {
+					t.Fatalf("recovery: endpoints = %+v, error = %v", endpoints, err)
+				}
+			}
+			if calls != 3 || len(resolver.cache) != 1 {
+				t.Fatalf("requests = %d, cache entries = %d", calls, len(resolver.cache))
+			}
+		})
 	}
 }

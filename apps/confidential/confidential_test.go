@@ -171,6 +171,158 @@ func TestAcquireTokenByCredential(t *testing.T) {
 	}
 }
 
+func TestIssuerPolicyRejectionRecovery(t *testing.T) {
+	const tenant = "11111111-2222-3333-4444-555555555555"
+	for _, test := range []struct {
+		name, host, issuer string
+	}{
+		{"custom regional issuer", "custom.example.com", "eastus.login.microsoftonline.com"},
+		{"Microsoft CIAM issuer", "login.microsoftonline.com", "attacker.onmicrosoft.com.ciamlogin.com"},
+		{"multiple regional labels", "login.microsoftonline.com", "evil.eastus.login.microsoftonline.com"},
+	} {
+		for _, flow := range []string{"token", "authorization URL"} {
+			t.Run(test.name+"/"+flow, func(t *testing.T) {
+				mockClient := mock.NewClient()
+				metadataCalls, tokenCalls := 0, 0
+				authorityURI := fmt.Sprintf(authorityFmt, test.host, tenant)
+				discoveryURL := authorityURI + "/v2.0/.well-known/openid-configuration"
+				checkDiscovery := func(r *http.Request) {
+					if r.Method != http.MethodGet || strings.TrimSuffix(r.URL.String(), "?") != discoveryURL {
+						t.Fatalf("unexpected downstream request: %s %s", r.Method, r.URL)
+					}
+					metadataCalls++
+				}
+				invalid := []byte(fmt.Sprintf(`{
+					"issuer": "https://%s/%s/v2.0",
+					"authorization_endpoint": "https://rejected.example.com/authorize",
+					"token_endpoint": "https://rejected.example.com/token"
+				}`, test.issuer, tenant))
+				for i := 0; i < 2; i++ {
+					mockClient.AppendResponse(mock.WithBody(invalid), mock.WithCallback(checkDiscovery))
+				}
+				mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(test.host, tenant)), mock.WithCallback(checkDiscovery))
+				if flow == "token" {
+					mockClient.AppendResponse(
+						mock.WithBody(mock.GetAccessTokenBody(token, "", "", "", 3600, 0)),
+						mock.WithCallback(func(r *http.Request) {
+							if r.Method != http.MethodPost || r.URL.String() != authorityURI+"/oauth2/v2.0/token" {
+								t.Fatalf("unexpected token request: %s %s", r.Method, r.URL)
+							}
+							tokenCalls++
+						}),
+					)
+				}
+				cred, err := NewCredFromSecret(fakeSecret)
+				if err != nil {
+					t.Fatal(err)
+				}
+				client, err := New(authorityURI, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+				if err != nil {
+					t.Fatal(err)
+				}
+				acquire := func() (string, error) {
+					if flow == "authorization URL" {
+						return client.AuthCodeURL(context.Background(), fakeClientID, localhost, tokenScope)
+					}
+					result, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+					return result.AccessToken, err
+				}
+				for i := 1; i <= 2; i++ {
+					result, err := acquire()
+					want := fmt.Sprintf("ResolveEndpoints(): TenantDiscoveryResponse: issuer 'https://%s/%s/v2.0' does not match authority '%s/' or any trusted/alias rule", test.issuer, tenant, authorityURI)
+					if flow == "token" {
+						want = "unable to resolve an endpoint: " + want
+					}
+					if err == nil || err.Error() != want || result != "" {
+						t.Fatalf("call %d: result = %q, error = %v, want %q", i, result, err, want)
+					}
+					if metadataCalls != i || tokenCalls != 0 {
+						t.Fatalf("call %d: metadata calls = %d, token calls = %d", i, metadataCalls, tokenCalls)
+					}
+				}
+				for i := 0; i < 2; i++ {
+					result, err := acquire()
+					if err != nil {
+						t.Fatalf("valid recovery: %v", err)
+					}
+					if flow == "token" && result != token {
+						t.Fatalf("unexpected token %q", result)
+					}
+					if flow == "authorization URL" && !strings.HasPrefix(result, authorityURI+"/oauth2/v2.0/authorize?") {
+						t.Fatalf("unexpected authorization URL %q", result)
+					}
+				}
+				wantTokenCalls := 0
+				if flow == "token" {
+					wantTokenCalls = 1
+				}
+				if metadataCalls != 3 || tokenCalls != wantTokenCalls {
+					t.Fatalf("metadata calls = %d, token calls = %d; expected valid response caching", metadataCalls, tokenCalls)
+				}
+			})
+		}
+	}
+}
+
+func TestIssuerPolicyRegionalAcceptance(t *testing.T) {
+	const tenant = "11111111-2222-3333-4444-555555555555"
+	const host = "login.microsoftonline.com"
+	const authorityURI = "https://" + host + "/" + tenant
+	for _, flow := range []string{"token", "authorization URL"} {
+		t.Run(flow, func(t *testing.T) {
+			metadataCalls, tokenCalls := 0, 0
+			mockClient := mock.NewClient()
+			body := fmt.Sprintf(`{
+				"issuer": "https://evil.%s/%s/v2.0",
+				"authorization_endpoint": "%s/oauth2/v2.0/authorize",
+				"token_endpoint": "%s/oauth2/v2.0/token"
+			}`, host, tenant, authorityURI, authorityURI)
+			mockClient.AppendResponse(mock.WithBody([]byte(body)), mock.WithCallback(func(r *http.Request) {
+				if r.Method != http.MethodGet || strings.TrimSuffix(r.URL.String(), "?") != authorityURI+"/v2.0/.well-known/openid-configuration" {
+					t.Fatalf("unexpected discovery request: %s %s", r.Method, r.URL)
+				}
+				metadataCalls++
+			}))
+			if flow == "token" {
+				mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody(token, "", "", "", 3600, 0)), mock.WithCallback(func(r *http.Request) {
+					if r.Method != http.MethodPost || r.URL.String() != authorityURI+"/oauth2/v2.0/token" {
+						t.Fatalf("unexpected token request: %s %s", r.Method, r.URL)
+					}
+					tokenCalls++
+				}))
+			}
+			cred, err := NewCredFromSecret(fakeSecret)
+			if err != nil {
+				t.Fatal(err)
+			}
+			client, err := New(authorityURI, fakeClientID, cred, WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+			if err != nil {
+				t.Fatal(err)
+			}
+			for i := 0; i < 2; i++ {
+				if flow == "token" {
+					result, err := client.AcquireTokenByCredential(context.Background(), tokenScope)
+					if err != nil || result.AccessToken != token {
+						t.Fatalf("regional issuer: token = %q, error = %v", result.AccessToken, err)
+					}
+				} else {
+					result, err := client.AuthCodeURL(context.Background(), fakeClientID, localhost, tokenScope)
+					if err != nil || !strings.HasPrefix(result, authorityURI+"/oauth2/v2.0/authorize?") {
+						t.Fatalf("regional issuer: authorization URL = %q, error = %v", result, err)
+					}
+				}
+			}
+			wantTokenCalls := 0
+			if flow == "token" {
+				wantTokenCalls = 1
+			}
+			if metadataCalls != 1 || tokenCalls != wantTokenCalls {
+				t.Fatalf("metadata calls = %d, token calls = %d; expected caching", metadataCalls, tokenCalls)
+			}
+		})
+	}
+}
+
 func TestAcquireTokenByCredentialWithCache(t *testing.T) {
 	cred, err := NewCredFromSecret(fakeSecret)
 	if err != nil {
