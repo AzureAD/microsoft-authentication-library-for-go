@@ -1135,6 +1135,47 @@ func TestAzureArcUserAssignedNotFoundSurfacesServiceError(t *testing.T) {
 	}
 }
 
+func TestAzureArcFirstRequestErrorKeepsResponse(t *testing.T) {
+	// When the identity isn't attached to the machine, the agent answers the first request with
+	// 404 and identity_not_found instead of the 401 challenge. The error must keep the status
+	// and the agent's message.
+	setupArcSecretPath(t)
+	before := cacheManager
+	defer func() { cacheManager = before }()
+	cacheManager = storage.New(nil)
+
+	errBody, err := makeResponseWithErrorData("identity_not_found", "the requested identity has not been assigned to this resource")
+	if err != nil {
+		t.Fatalf(errorFormingJsonResponse, err.Error())
+	}
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusNotFound), mock.WithBody(errBody))
+
+	client, err := New(UserAssignedClientID("11111111-1111-1111-1111-111111111111"), WithHTTPClient(mockClient))
+	if err != nil {
+		t.Fatal(err)
+	}
+	result, err := client.AcquireToken(context.Background(), resource)
+	if err == nil {
+		t.Fatal("expected an error, got nil")
+	}
+	var callErr errors.CallErr
+	if !errors.As(err, &callErr) {
+		t.Fatalf("expected %T, got %T: %v", callErr, err, err)
+	}
+	if callErr.Resp == nil || callErr.Resp.StatusCode != http.StatusNotFound {
+		t.Fatalf("expected the 404 response in the error, got %+v", callErr.Resp)
+	}
+	for _, want := range []string{"expected a 401 response, received 404", "identity_not_found"} {
+		if !strings.Contains(err.Error(), want) {
+			t.Fatalf("expected %q in the error, got: %v", want, err)
+		}
+	}
+	if result.AccessToken != "" {
+		t.Fatalf("no token should be returned, got %q", result.AccessToken)
+	}
+}
+
 // TestAzureArcUserAssignedCacheIsPartitionedByIdentity verifies the token cache is partitioned by
 // the requested identity: the system-assigned identity and each user-assigned selector get their
 // own cache entry, so a cache lookup can never return a token for a different identity than the one
