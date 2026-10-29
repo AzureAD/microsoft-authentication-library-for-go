@@ -506,12 +506,19 @@ func (c Client) acquireTokenForAzureArc(ctx context.Context, resource string) (A
 	if err != nil {
 		return AuthResult{}, err
 	}
+	if response.StatusCode != http.StatusUnauthorized {
+		// Keep the agent's error, for example identity_not_found when a user-assigned
+		// identity isn't attached to the machine.
+		body, readErr := io.ReadAll(response.Body)
+		_ = response.Body.Close()
+		err := fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
+		if detail := strings.TrimSpace(string(body)); readErr == nil && detail != "" {
+			err = fmt.Errorf("expected a 401 response, received %d:\n%s", response.StatusCode, detail)
+		}
+		return AuthResult{}, errors.CallErr{Req: req, Resp: response, Err: err}
+	}
 	// The response body is unused; a close error can't change its status or headers.
 	_ = response.Body.Close()
-
-	if response.StatusCode != http.StatusUnauthorized {
-		return AuthResult{}, fmt.Errorf("expected a 401 response, received %d", response.StatusCode)
-	}
 
 	secret, err := c.getAzureArcSecretKey(response, runtime.GOOS)
 	if err != nil {
