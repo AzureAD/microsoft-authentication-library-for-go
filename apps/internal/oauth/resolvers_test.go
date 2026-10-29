@@ -635,7 +635,7 @@ func TestResolveEndpoints_HTTPRedirectAndCaching(t *testing.T) {
 	defer tlsServer.Close()
 	httpServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&redirectCalls, 1)
-		http.Redirect(w, r, tlsServer.URL+r.URL.RequestURI(), http.StatusMovedPermanently)
+		http.Redirect(w, r, tlsServer.URL+"/tenant/v2.0/.well-known/openid-configuration", http.StatusMovedPermanently)
 	}))
 	defer httpServer.Close()
 
