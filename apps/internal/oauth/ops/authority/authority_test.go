@@ -743,13 +743,77 @@ func Test_mergeClaims(t *testing.T) {
 }
 
 func TestTenantDiscoveryValidateIssuer(t *testing.T) {
-	tests := []struct {
+	const tenant = "11111111-2222-3333-4444-555555555555"
+	type issuerTest struct {
 		desc        string
 		issuer      string
 		authority   string
 		aliases     map[string]bool
 		expectError bool
-	}{
+	}
+	tests := []issuerTest{
+		{desc: "S01 custom authority trusted issuer", authority: "https://custom.example.com/" + tenant + "/v2.0", issuer: "https://login.microsoftonline.com/" + tenant + "/v2.0"},
+		{desc: "S02 CIAM authority trusted issuer", authority: "https://contoso.ciamlogin.com/" + tenant + "/v2.0", issuer: "https://login.microsoftonline.com/" + tenant + "/v2.0"},
+		{desc: "S03 same CIAM host", authority: "https://contoso.ciamlogin.com/" + tenant + "/v2.0", issuer: "https://contoso.ciamlogin.com/" + tenant + "/v2.0"},
+		{desc: "S04 custom authority regional issuer", authority: "https://custom.example.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "S05 custom authority arbitrary region", authority: "https://custom.example.com/" + tenant, issuer: "https://evil.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "S06 Microsoft authority arbitrary region", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://evil.login.microsoftonline.com/" + tenant},
+		{desc: "S07 Microsoft authority CIAM issuer", authority: "https://login.microsoftonline.com/attacker.onmicrosoft.com", issuer: "https://attacker.onmicrosoft.com.ciamlogin.com/attacker.onmicrosoft.com/v2.0", expectError: true},
+		{desc: "S08 attacker suffix", authority: "https://custom.example.com/" + tenant, issuer: "https://login.microsoftonline.evil.com/" + tenant, expectError: true},
+		{desc: "custom regional issuer cannot use aliases", authority: "https://custom.example.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, aliases: map[string]bool{"eastus.login.microsoftonline.com": true}, expectError: true},
+		{desc: "CIAM issuer cannot use Microsoft aliases", authority: "https://login.microsoftonline.com/attacker.onmicrosoft.com", issuer: "https://attacker.onmicrosoft.com.ciamlogin.com/attacker.onmicrosoft.com/v2.0", aliases: map[string]bool{"attacker.onmicrosoft.com.ciamlogin.com": true}, expectError: true},
+		{desc: "custom CIAM alias preserved", authority: "https://custom.example.com/" + tenant, issuer: "https://contoso.ciamlogin.com/" + tenant, aliases: map[string]bool{"contoso.ciamlogin.com": true}},
+		{desc: "Microsoft unrelated alias preserved", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://alias.example.com/" + tenant, aliases: map[string]bool{"alias.example.com": true}},
+		{desc: "runtime alias does not make authority Microsoft", authority: "https://custom.example.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, aliases: map[string]bool{"login.microsoftonline.com": true, "eastus.login.microsoftonline.com": true}, expectError: true},
+		{desc: "regional authority not eligible for regional issuer", authority: "https://westus.login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, aliases: map[string]bool{"eastus.login.microsoftonline.com": true}, expectError: true},
+		{desc: "multiple region labels", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://evil.eastus.login.microsoftonline.com/" + tenant, aliases: map[string]bool{"evil.eastus.login.microsoftonline.com": true}, expectError: true},
+		{desc: "empty region label", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "empty nested region label", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://eastus..login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "regional attacker suffix", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com.evil.com/" + tenant, expectError: true},
+		{desc: "non HTTPS regional issuer", authority: "https://login.microsoftonline.com/" + tenant, issuer: "http://eastus.login.microsoftonline.com/" + tenant, aliases: map[string]bool{"eastus.login.microsoftonline.com": true}, expectError: true},
+		{desc: "non HTTPS regional authority", authority: "http://login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "regional issuer userinfo", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://user@eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "regional authority userinfo", authority: "https://user@login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "regional issuer with port not newly accepted", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com:443/" + tenant, expectError: true},
+		{desc: "Microsoft authority with port not newly eligible", authority: "https://login.microsoftonline.com:443/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "same regional host preserved", authority: "https://eastus.login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant},
+		{desc: "CIAM authority regional issuer rejected", authority: "https://contoso.ciamlogin.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "custom reverse regional rule preserved", authority: "https://region.custom.example.com/" + tenant, issuer: "https://custom.example.com/" + tenant},
+		{desc: "malformed issuer", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://%zz.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "missing issuer scheme", authority: "https://login.microsoftonline.com/" + tenant, issuer: "//eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "custom regional issuer with port cannot use alias", authority: "https://custom.example.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com:443/" + tenant, aliases: map[string]bool{"eastus.login.microsoftonline.com:443": true}, expectError: true},
+		{desc: "CIAM issuer with port cannot use Microsoft alias", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://contoso.ciamlogin.com:443/" + tenant, aliases: map[string]bool{"contoso.ciamlogin.com:443": true}, expectError: true},
+		{desc: "regional issuer empty port", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com:/" + tenant, expectError: true},
+		{desc: "regional issuer with different Microsoft base", authority: "https://login.windows.net/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant},
+		{desc: "untrusted alias remains untrusted", authority: "https://custom.example.com/" + tenant, issuer: "https://alias.example.com/" + tenant, aliases: map[string]bool{"alias.example.com": false}, expectError: true},
+		{desc: "custom authority CIAM reverse rule preserved", authority: "https://region.contoso.ciamlogin.com/" + tenant, issuer: "https://contoso.ciamlogin.com/" + tenant},
+		{desc: "Microsoft host with attacker suffix not eligible", authority: "https://login.microsoftonline.com.evil.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "Microsoft CIAM root issuer alias rejected", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://ciamlogin.com/" + tenant, aliases: map[string]bool{"ciamlogin.com": true}, expectError: true},
+		{desc: "TM04 Microsoft authority eastus issuer", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant},
+		{desc: "TM06 stripped onmicrosoft CIAM issuer", authority: "https://login.microsoftonline.com/attacker.onmicrosoft.com", issuer: "https://attacker.ciamlogin.com/attacker.onmicrosoft.com/v2.0", expectError: true},
+		{desc: "TM06 stripped onmicrosoft CIAM host and path", authority: "https://login.microsoftonline.com/attacker.onmicrosoft.com", issuer: "https://attacker.ciamlogin.com/attacker/v2.0", expectError: true},
+		{desc: "TM06 stripped onmicrosoft CIAM alias rejected", authority: "https://LOGIN.WINDOWS.NET/attacker.onmicrosoft.com", issuer: "https://ATTACKER.CIAMLOGIN.COM/attacker.onmicrosoft.com/v2.0", aliases: map[string]bool{"attacker.ciamlogin.com": true}, expectError: true},
+		{desc: "TM08 same B2C authority", authority: "https://contoso.b2clogin.com/" + tenant, issuer: "https://contoso.b2clogin.com/" + tenant},
+		{desc: "TM08 other CIAM authority requires native alias", authority: "https://custom.example.com/" + tenant, issuer: "https://contoso.ciamlogin.com/" + tenant, expectError: true},
+		{desc: "TM08 B2C issuer native alias preserved", authority: "https://custom.example.com/" + tenant, issuer: "https://contoso.b2clogin.com/" + tenant, aliases: map[string]bool{"contoso.b2clogin.com": true}},
+		{desc: "TM08 B2C issuer without alias rejected", authority: "https://custom.example.com/" + tenant, issuer: "https://contoso.b2clogin.com/" + tenant, expectError: true},
+		{desc: "TM08 B2C authority regional Microsoft issuer rejected", authority: "https://contoso.b2clogin.com/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, aliases: map[string]bool{"eastus.login.microsoftonline.com": true}, expectError: true},
+		{desc: "TM08 custom own-host regional issuer without alias rejected", authority: "https://custom.example.com/" + tenant, issuer: "https://eastus.custom.example.com/" + tenant, expectError: true},
+		{desc: "TM08 custom own-host regional issuer native alias preserved", authority: "https://custom.example.com/" + tenant, issuer: "https://eastus.custom.example.com/" + tenant, aliases: map[string]bool{"eastus.custom.example.com": true}},
+		{desc: "TM08 CIAM own-host regional issuer native alias preserved", authority: "https://contoso.ciamlogin.com/" + tenant, issuer: "https://eastus.contoso.ciamlogin.com/" + tenant, aliases: map[string]bool{"eastus.contoso.ciamlogin.com": true}},
+		{desc: "TM08 B2C own-host regional issuer native alias preserved", authority: "https://contoso.b2clogin.com/" + tenant, issuer: "https://eastus.contoso.b2clogin.com/" + tenant, aliases: map[string]bool{"eastus.contoso.b2clogin.com": true}},
+		{desc: "TM08 same PPE authority", authority: "https://login.windows-ppe.net/" + tenant, issuer: "https://login.windows-ppe.net/" + tenant},
+		{desc: "TM08 PPE not newly eligible for Microsoft regional issuer", authority: "https://login.windows-ppe.net/" + tenant, issuer: "https://eastus.login.microsoftonline.com/" + tenant, aliases: map[string]bool{"eastus.login.microsoftonline.com": true}, expectError: true},
+		{desc: "TM08 PPE own regional issuer native alias preserved", authority: "https://login.windows-ppe.net/" + tenant, issuer: "https://eastus.login.windows-ppe.net/" + tenant, aliases: map[string]bool{"eastus.login.windows-ppe.net": true}},
+		{desc: "TM08 PPE reverse regional authority preserved", authority: "https://eastus.login.windows-ppe.net/" + tenant, issuer: "https://login.windows-ppe.net/" + tenant},
+		{desc: "TM12 malformed authority", authority: "https://%zz.example.com/" + tenant, issuer: "https://login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "TM12 empty authority with nonempty issuer", authority: "", issuer: "https://login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "TM12 missing issuer host", authority: "https://login.microsoftonline.com/" + tenant, issuer: "https:/eastus.login.microsoftonline.com/" + tenant, expectError: true},
+		{desc: "TM12 native HTTP same-host behavior preserved", authority: "http://custom.example.com/" + tenant, issuer: "http://custom.example.com/" + tenant},
+		{desc: "TM12 native HTTP trusted issuer behavior preserved", authority: "https://custom.example.com/" + tenant, issuer: "http://login.microsoftonline.com/" + tenant},
+		{desc: "TM12 native same-host port preserved", authority: "https://custom.example.com:8443/" + tenant, issuer: "https://CUSTOM.EXAMPLE.COM:8443/" + tenant + "/v2.0"},
+		{desc: "TM12 native different-port mismatch", authority: "https://custom.example.com:8443/" + tenant, issuer: "https://custom.example.com:9443/" + tenant, expectError: true},
+		{desc: "TM12 native port alias preserved", authority: "https://custom.example.com:8443/" + tenant, issuer: "https://custom.example.com:9443/" + tenant, aliases: map[string]bool{"custom.example.com:9443": true}},
 		{
 			desc:        "issuer exactly matches authority",
 			issuer:      "https://login.microsoftonline.com/tenant-id",
@@ -897,6 +961,26 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 		},
 	}
 
+	for host := range aadTrustedHostList {
+		tests = append(tests, issuerTest{
+			desc:      "regional issuer with built-in authority " + host,
+			authority: "https://" + strings.ToUpper(host) + "/" + tenant,
+			issuer:    "https://ARBITRARY." + strings.ToUpper(host) + "/" + tenant,
+		}, issuerTest{
+			desc:        "custom authority cannot alias regional issuer " + host,
+			authority:   "https://custom.example.com/" + tenant,
+			issuer:      "https://arbitrary." + host + "/" + tenant,
+			aliases:     map[string]bool{"arbitrary." + host: true},
+			expectError: true,
+		}, issuerTest{
+			desc:        "built-in authority cannot alias CIAM issuer " + host,
+			authority:   "https://" + strings.ToUpper(host) + "/" + tenant,
+			issuer:      "https://CONTOSO.CIAMLOGIN.COM/" + tenant,
+			aliases:     map[string]bool{"contoso.ciamlogin.com": true},
+			expectError: true,
+		})
+	}
+
 	for _, test := range tests {
 		t.Run(test.desc, func(t *testing.T) {
 			response := &TenantDiscoveryResponse{
@@ -942,6 +1026,7 @@ func TestTrustedHost(t *testing.T) {
 		{"malicious.example.com", false},
 		{"fake-login.microsoftonline.com", false},
 		{"login.example.com", false},
+		{"login.windows-ppe.net", false},
 		{"", false},
 	}
 
