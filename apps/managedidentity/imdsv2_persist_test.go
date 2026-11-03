@@ -19,11 +19,13 @@ import (
 // and a test that wrote to it would leave certificates behind on the developer's
 // machine and read certificates a previous run had left there.
 type fakePersistentCertCache struct {
-	mu      sync.Mutex
-	entries map[string][]persistedCertificate
-	reads   int
-	writes  int
-	deletes int
+	mu                  sync.Mutex
+	entries             map[string][]persistedCertificate
+	reads               int
+	writes              int
+	deletes             int
+	deleteAlls          int
+	onDeleteCertificate func()
 	// failWrite makes the store refuse to record anything, which is what a
 	// machine with persistence unavailable looks like.
 	failWrite bool
@@ -78,10 +80,16 @@ func (f *fakePersistentCertCache) deleteAll(alias string) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deletes++
+	f.deleteAlls++
 	delete(f.entries, alias)
 }
 
 func (f *fakePersistentCertCache) deleteCertificate(alias string, der []byte) {
+	if f.onDeleteCertificate != nil {
+		hook := f.onDeleteCertificate
+		f.onDeleteCertificate = nil
+		hook()
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.deletes++

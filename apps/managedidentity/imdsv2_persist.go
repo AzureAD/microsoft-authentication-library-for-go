@@ -44,7 +44,7 @@ type persistentCertCache interface {
 	// the binding key lives in. Naming the container is all a store can check
 	// cheaply; whether the key is still there, and so whether the entry is
 	// orphaned, is settled by bindingCertCache.restore, which opens the key and
-	// calls deleteAll when it has gone.
+	// removes only the rejected candidate when it has gone.
 	read(alias string) (*persistedCertificate, bool)
 	// write stores cert for alias and prunes expired entries.
 	write(alias string, cert *bindingCertificate)

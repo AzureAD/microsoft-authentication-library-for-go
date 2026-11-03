@@ -324,9 +324,9 @@ func WithMtlsPoPMinStrength(strength MtlsBindingStrength) AcquireTokenOption {
 // what a token should contain, for example after a role assignment, where a
 // cached token is still valid but no longer carries the right authorization.
 //
-// It does not discard the binding certificate: the certificate identifies the
-// machine and is unaffected by the token becoming stale, and re-minting one per
-// call would be throttled by the metadata service.
+// For IMDSv2 mTLS acquisitions it also reissues the binding certificate while
+// retaining the underlying KeyGuard key and any still-valid cached attestation
+// statement. Other managed identity flows only refresh the token.
 func WithForceRefresh() AcquireTokenOption {
 	return func(o *AcquireTokenOptions) {
 		o.forceRefresh = true
@@ -787,6 +787,9 @@ func (c Client) AcquireToken(ctx context.Context, resource string, options ...Ac
 	}
 	if err := o.validate(c.source); err != nil {
 		return AuthResult{}, err
+	}
+	if o.usesIMDSv2() && imdsV2Disabled() {
+		return AuthResult{}, fmt.Errorf("%w: %s is set", ErrMtlsPoPNotSupportedInIMDSv1, disableIMDSv2EnvVar)
 	}
 	c.authParams.Scopes = []string{resource}
 	o.stampCacheComponents(&c.authParams)

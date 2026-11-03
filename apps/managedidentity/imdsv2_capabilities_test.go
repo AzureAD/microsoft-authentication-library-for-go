@@ -411,26 +411,40 @@ func TestForceRefreshBypassesTokenCache(t *testing.T) {
 	}
 }
 
-// The certificate identifies the machine and is unaffected by a token going
-// stale. Re-minting one per forced call would be throttled by IMDS.
-func TestForceRefreshKeepsBindingCertificate(t *testing.T) {
+// A forced IMDSv2 refresh reissues the certificate while retaining the
+// underlying KeyGuard key and a still-valid attestation statement.
+func TestForceRefreshReissuesCertificateAndReusesKeyAndAttestation(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	provider := newFakeKeyProvider()
+	token := stubAttestationJWT(t, time.Now().Add(time.Hour))
+	attestations := withCountedAttestation(t, func() string { return token })
 
 	client := fake.newTestClient(t, SystemAssigned(), provider)
-	if _, err := client.AcquireToken(context.Background(), "https://vault.azure.net", WithMtlsProofOfPossession()); err != nil {
+	first, err := client.AcquireToken(context.Background(), "https://vault.azure.net",
+		WithMtlsProofOfPossession(), WithAttestationSupport())
+	if err != nil {
 		t.Fatalf("first AcquireToken: %v", err)
 	}
 	issued := fake.countOf("issue")
 
-	if _, err := client.AcquireToken(context.Background(), "https://vault.azure.net",
-		WithMtlsProofOfPossession(), WithForceRefresh()); err != nil {
+	second, err := client.AcquireToken(context.Background(), "https://vault.azure.net",
+		WithMtlsProofOfPossession(), WithAttestationSupport(), WithForceRefresh())
+	if err != nil {
 		t.Fatalf("forced AcquireToken: %v", err)
 	}
-	if fake.countOf("issue") != issued {
-		t.Fatalf("credential requests = %d, want %d: a forced token refresh must not re-mint the certificate",
-			fake.countOf("issue"), issued)
+	if fake.countOf("issue") != issued+1 {
+		t.Fatalf("credential requests = %d, want %d: force refresh must reissue the certificate",
+			fake.countOf("issue"), issued+1)
+	}
+	if first.BindingCertificateThumbprint() == second.BindingCertificateThumbprint() {
+		t.Fatal("force refresh returned the same binding certificate")
+	}
+	if provider.creates != 1 {
+		t.Fatalf("binding keys created = %d, want 1", provider.creates)
+	}
+	if *attestations != 1 {
+		t.Fatalf("attestations = %d, want 1: the cached statement should be reused", *attestations)
 	}
 }
 

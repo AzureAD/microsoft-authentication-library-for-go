@@ -197,6 +197,31 @@ func (c *bindingCertCache) evictIfCurrent(key string, cert *bindingCertificate) 
 	return true
 }
 
+// forceReissue removes only the currently cached certificate and marks the
+// alias so a force refresh mints a replacement instead of restoring another
+// persisted candidate. The binding key is intentionally left in place.
+func (c *bindingCertCache) forceReissue(key string) {
+	c.mu.Lock()
+	c.forceMint[key] = struct{}{}
+	var der []byte
+	if entry, ok := c.entries[key]; ok {
+		if len(entry.cert.TLS.Certificate) > 0 {
+			der = append([]byte(nil), entry.cert.TLS.Certificate[0]...)
+		}
+		_ = entry.cert.Close()
+		delete(c.entries, key)
+	}
+	persisted := c.persisted
+	c.mu.Unlock()
+	if len(der) > 0 {
+		persisted.deleteCertificate(key, der)
+		return
+	}
+	if stored, ok := persisted.read(key); ok {
+		persisted.deleteCertificate(key, stored.DER)
+	}
+}
+
 // dropEntry removes cert from the cache, but only if it is still the entry
 // stored under key. A concurrent mint may already have replaced it, and
 // dropping the replacement would throw away a certificate that is fine.
@@ -305,8 +330,9 @@ func identityMatches(cachedClientID, cachedTenantID, clientID, tenantID string) 
 // container under a fixed name, so it is reopened here and paired with the
 // certificate through the same public key comparison a freshly issued
 // certificate goes through. A certificate that fails that comparison outlived
-// the key it was issued for, which is what a reboot does to a per-boot VBS key,
-// so the whole alias is cleared rather than left to fail again next time.
+// the key it was issued for, which is what a reboot does to a per-boot VBS key.
+// Only that exact candidate is removed, then the shared alias is rescanned in
+// case another process wrote a valid replacement concurrently.
 //
 // The key is opened, never created. This is a cache read: a host with no key has
 // nothing that could match the stored certificate, so creating one would change
@@ -340,76 +366,88 @@ func (c *bindingCertCache) restoreCandidate(
 		return nil, false
 	}
 
-	stored, ok := persisted.read(key)
-	if !ok {
-		return nil, false
-	}
-	if allowForceMint && (len(rejectedDER) == 0 || bytes.Equal(stored.DER, rejectedDER)) {
-		return nil, false
-	}
-	// A certificate issued to a different identity than the one IMDS now
-	// reports is not this machine's credential any more. Both identifiers are
-	// compared: a tenant move leaves the client ID unchanged while making the
-	// stored certificate useless, so checking only the client ID would keep
-	// restoring it from the store on every cold start.
-	if !identityMatches(stored.ClientID, stored.TenantID, clientID, tenantID) {
-		persisted.deleteAll(key)
-		return nil, false
-	}
+	rejectedCandidates := map[string]struct{}{}
+	for {
+		stored, ok := persisted.read(key)
+		if !ok {
+			return nil, false
+		}
+		candidate := string(stored.DER)
+		if _, seen := rejectedCandidates[candidate]; seen {
+			// Persistence is best effort and deletion reports no error. If the
+			// store could not remove this exact candidate, stop instead of
+			// spinning forever reading it again.
+			return nil, false
+		}
+		rejectedCandidates[candidate] = struct{}{}
+		if allowForceMint && (len(rejectedDER) == 0 || bytes.Equal(stored.DER, rejectedDER)) {
+			persisted.deleteCertificate(key, stored.DER)
+			continue
+		}
+		// A certificate issued to a different identity than the one IMDS now
+		// reports is not this machine's credential any more. Both identifiers are
+		// compared: a tenant move leaves the client ID unchanged while making the
+		// stored certificate useless, so checking only the client ID would keep
+		// restoring it from the store on every cold start.
+		if !identityMatches(stored.ClientID, stored.TenantID, clientID, tenantID) {
+			persisted.deleteCertificate(key, stored.DER)
+			continue
+		}
 
-	bound, err := provider.openKey(bindingKeyName)
-	if err != nil {
-		return nil, false
-	}
-	if err := requireKeyGuard(bound); err != nil {
-		_ = bound.Close()
-		return nil, false
-	}
-	if err := certificateMatchesKey(stored.Leaf, bound); err != nil {
-		_ = bound.Close()
-		persisted.deleteAll(key)
-		return nil, false
-	}
-	// A stored certificate has been outside this process's control since it was
-	// written, so it goes through the same checks a freshly issued one does
-	// before it is trusted to carry a token.
-	if err := certificateNamesIdentity(stored.Leaf, stored.ClientID); err != nil {
-		_ = bound.Close()
-		persisted.deleteAll(key)
-		return nil, false
-	}
-	if err := certificateUsableForClientMtls(stored.Leaf); err != nil {
-		_ = bound.Close()
-		persisted.deleteAll(key)
-		return nil, false
-	}
-	if needsRefresh(stored.Leaf) {
-		_ = bound.Close()
-		persisted.deleteAll(key)
-		return nil, false
-	}
+		bound, err := provider.openKey(bindingKeyName)
+		if err != nil {
+			return nil, false
+		}
+		if err := requireKeyGuard(bound); err != nil {
+			_ = bound.Close()
+			return nil, false
+		}
+		if err := certificateMatchesKey(stored.Leaf, bound); err != nil {
+			_ = bound.Close()
+			persisted.deleteCertificate(key, stored.DER)
+			continue
+		}
+		// A stored certificate has been outside this process's control since it was
+		// written, so it goes through the same checks a freshly issued one does
+		// before it is trusted to carry a token.
+		if err := certificateNamesIdentity(stored.Leaf, stored.ClientID); err != nil {
+			_ = bound.Close()
+			persisted.deleteCertificate(key, stored.DER)
+			continue
+		}
+		if err := certificateUsableForClientMtls(stored.Leaf); err != nil {
+			_ = bound.Close()
+			persisted.deleteCertificate(key, stored.DER)
+			continue
+		}
+		if needsRefresh(stored.Leaf) {
+			_ = bound.Close()
+			persisted.deleteCertificate(key, stored.DER)
+			continue
+		}
 
-	cert := newBindingCertificate(stored.DER, stored.Leaf, bound, certificateRequestResponse{
-		ClientID:                   stored.ClientID,
-		TenantID:                   stored.TenantID,
-		MtlsAuthenticationEndpoint: stored.Endpoint,
-	})
-	// The endpoint travelled through the certificate store's friendly name, so
-	// it is the one field here that another writer could have rewritten into
-	// something this process would later dial. Parsing it now, rather than at
-	// the token leg, keeps a malformed or downgraded authority out of the
-	// in-memory cache entirely: reaching the token leg with one would fail the
-	// acquisition after the certificate had already been adopted, and every
-	// later caller would restore the same unusable entry from the store and
-	// fail the same way. Clearing the alias instead makes the next acquisition
-	// mint a certificate whose endpoint came straight from IMDS.
-	if _, err := cert.tokenEndpoint(); err != nil {
-		_ = cert.Close()
-		persisted.deleteAll(key)
-		return nil, false
+		cert := newBindingCertificate(stored.DER, stored.Leaf, bound, certificateRequestResponse{
+			ClientID:                   stored.ClientID,
+			TenantID:                   stored.TenantID,
+			MtlsAuthenticationEndpoint: stored.Endpoint,
+		})
+		// The endpoint travelled through the certificate store's friendly name, so
+		// it is the one field here that another writer could have rewritten into
+		// something this process would later dial. Parsing it now, rather than at
+		// the token leg, keeps a malformed or downgraded authority out of the
+		// in-memory cache entirely: reaching the token leg with one would fail the
+		// acquisition after the certificate had already been adopted, and every
+		// later caller would restore the same unusable entry from the store and
+		// fail the same way. Clearing the alias instead makes the next acquisition
+		// mint a certificate whose endpoint came straight from IMDS.
+		if _, err := cert.tokenEndpoint(); err != nil {
+			_ = cert.Close()
+			persisted.deleteCertificate(key, stored.DER)
+			continue
+		}
+		c.adopt(key, cert)
+		return cert, true
 	}
-	c.adopt(key, cert)
-	return cert, true
 }
 
 // adopt stores cert under key and returns with the caller still holding a
@@ -745,7 +783,20 @@ func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID strin
 			_ = key.Close()
 			return nil, err
 		}
-		attestationToken, err = attestKeyGuardCached(ctx, endpoint, metadata.ClientID, key, holder)
+		if compute, computeErr := v.getComputeMetadata(ctx, correlationID); computeErr == nil {
+			resolvedEndpoint := regionalAttestationEndpoint(compute.AzEnvironment, compute.Location, endpoint)
+			if resolvedEndpoint != endpoint {
+				endpoint, err = (csrMetadata{AttestationEndpoint: resolvedEndpoint}).attestationURL()
+				if err != nil {
+					_ = key.Close()
+					return nil, err
+				}
+			}
+		} else if ctx.Err() != nil {
+			_ = key.Close()
+			return nil, ctx.Err()
+		}
+		attestationToken, err = attestKeyGuardCached(ctx, endpoint, metadata.TenantID, key, holder)
 		if err != nil {
 			_ = key.Close()
 			return nil, err

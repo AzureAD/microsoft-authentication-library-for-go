@@ -186,6 +186,9 @@ func (c Client) acquireTokenForIMDSv2(
 	gate *miTokenGateLease,
 	recheckCache bool,
 ) (AuthResult, error) {
+	if imdsV2Disabled() {
+		return AuthResult{}, fmt.Errorf("%w: %s is set", ErrMtlsPoPNotSupportedInIMDSv1, disableIMDSv2EnvVar)
+	}
 	// The floor is checked before anything is minted. Discovering afterwards
 	// that the host cannot meet it would mean IMDS had already issued a
 	// credential the caller was always going to refuse.
@@ -198,6 +201,9 @@ func (c Client) acquireTokenForIMDSv2(
 		miType:       c.miType,
 		retryEnabled: c.retryPolicyEnabled,
 		baseEndpoint: imdsV2BaseEndpoint(),
+	}
+	if o.forceRefresh {
+		certCache.forceReissue(cacheKey(c.miType, o.attestation))
 	}
 
 	// Client capabilities travel in the same "claims" parameter as a

@@ -51,9 +51,11 @@ func WithCorrelationID(ctx context.Context, correlationID string) context.Contex
 type Client struct {
 	client HTTPClient
 
-	// mtlsMu guards the lazily-built per-certificate mTLS client cache.
-	mtlsMu      sync.Mutex
-	mtlsClients map[string]mtlsCacheEntry
+	// mtlsMu guards the lazily-built per-certificate-and-signer mTLS client cache.
+	mtlsMu           sync.Mutex
+	mtlsClients      map[string]mtlsCacheEntry
+	mtlsSignerIDs    map[interface{}]uint64
+	mtlsNextSignerID uint64
 	// mtlsFactory optionally creates a fresh adapter MSAL configures for each mTLS certificate.
 	mtlsFactory MtlsClientFactory
 	// mtlsGeneration counts installations of mtlsFactory. mtlsClient builds outside mtlsMu, so it
@@ -201,7 +203,7 @@ func (c *Client) URLFormCall(ctx context.Context, endpoint string, qv url.Values
 
 // URLFormCallWithCertificate behaves like URLFormCall but performs the request over a mutual-TLS
 // connection that presents cert as the client certificate. Used for mTLS proof-of-possession token
-// requests. The mTLS client is built and cached per certificate thumbprint.
+// requests. The mTLS client is built and cached per certificate and signer identity.
 func (c *Client) URLFormCallWithCertificate(ctx context.Context, endpoint string, qv url.Values, resp interface{}, cert *tls.Certificate) error {
 	client, err := c.mtlsClient(cert)
 	if err != nil {

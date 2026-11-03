@@ -167,6 +167,7 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 			if err != nil {
 				t.Fatalf("BuildMtlsClient error: %v", err)
 			}
+
 			transport, ok := client.Transport.(*http.Transport)
 			if !ok {
 				t.Fatalf("client.Transport = %T, want *http.Transport", client.Transport)
@@ -204,6 +205,57 @@ func TestBuildMtlsClientSignerHandshake(t *testing.T) {
 				t.Errorf("server saw client certificate %q, want %q", hits[0].clientCN, signerTestCertCN)
 			}
 		})
+	}
+}
+
+func TestBuildMtlsClientPKCS1CompatibilityCapsTLS12(t *testing.T) {
+	cert := signerOnlyTestCert(t)
+	cert.SupportedSignatureAlgorithms = []tls.SignatureScheme{tls.PKCS1WithSHA256}
+
+	server := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+	}))
+	server.TLS = &tls.Config{ClientAuth: tls.RequireAnyClientCert, MinVersion: tls.VersionTLS12}
+	server.StartTLS()
+	defer server.Close()
+
+	roots := x509.NewCertPool()
+	roots.AddCert(server.Certificate())
+	baseConfig := &tls.Config{RootCAs: roots}
+	base := &http.Client{Transport: &http.Transport{TLSClientConfig: baseConfig}}
+	client, err := BuildMtlsClient(cert, base)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := client.Transport.(*http.Transport)
+	if transport.TLSClientConfig.MaxVersion != tls.VersionTLS12 {
+		t.Fatalf("MaxVersion = %d, want TLS 1.2", transport.TLSClientConfig.MaxVersion)
+	}
+	if baseConfig.MaxVersion != 0 {
+		t.Fatal("BuildMtlsClient mutated the caller-owned TLS configuration")
+	}
+	resp, err := client.Get(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	if resp.TLS == nil || resp.TLS.Version != tls.VersionTLS12 {
+		t.Fatalf("negotiated TLS version = %#v, want TLS 1.2", resp.TLS)
+	}
+}
+
+func TestBuildMtlsClientPKCS1CompatibilityRejectsTLS13Minimum(t *testing.T) {
+	cert := signerOnlyTestCert(t)
+	cert.SupportedSignatureAlgorithms = []tls.SignatureScheme{tls.PKCS1WithSHA256}
+	baseConfig := &tls.Config{MinVersion: tls.VersionTLS13}
+	base := &http.Client{Transport: &http.Transport{TLSClientConfig: baseConfig}}
+
+	_, err := BuildMtlsClient(cert, base)
+	if err == nil || !strings.Contains(err.Error(), "PKCS #1 compatibility requires TLS 1.2") {
+		t.Fatalf("BuildMtlsClient error = %v, want a TLS version conflict", err)
+	}
+	if baseConfig.MaxVersion != 0 {
+		t.Fatal("BuildMtlsClient mutated the caller-owned TLS configuration")
 	}
 }
 
@@ -273,7 +325,7 @@ func TestMtlsClientCachePerThumbprint(t *testing.T) {
 		t.Fatalf("mtlsClient(certA) second call error: %v", err)
 	}
 	if first != second {
-		t.Error("expected the same cached client for the same certificate thumbprint")
+		t.Error("expected the same cached client for the same certificate and signer")
 	}
 	if built != 1 {
 		t.Errorf("factory called %d times for the same cert, want 1", built)

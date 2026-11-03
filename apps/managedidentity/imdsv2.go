@@ -38,7 +38,17 @@ const (
 	imdsV2ClientRequestIDHeader  = "x-ms-client-request-id"
 	imdsV2ServerHeader           = "Server"
 	imdsV2ServerHeaderIdentifier = "IMDS"
+	disableIMDSv2EnvVar          = "MSAL_MI_DISABLE_IMDS_V2"
 )
+
+func imdsV2Disabled() bool {
+	switch strings.ToLower(strings.TrimSpace(os.Getenv(disableIMDSv2EnvVar))) {
+	case "1", "true":
+		return true
+	default:
+		return false
+	}
+}
 
 // cuidInfo is the compute unique identifier IMDS reports for this host. Exactly
 // one of the two fields is populated: VMID for a standalone VM and VMSSID for a
@@ -69,6 +79,38 @@ type csrMetadata struct {
 	ClientID            string   `json:"clientId"`
 	TenantID            string   `json:"tenantId"`
 	AttestationEndpoint string   `json:"attestationEndpoint"`
+}
+
+const (
+	azurePublicCloud       = "AzurePublicCloud"
+	azureUSGovernmentCloud = "AzureUSGovernmentCloud"
+	azureChinaCloud        = "AzureChinaCloud"
+	azureBleuCloud         = "AzureBleuCloud"
+)
+
+// regionalAttestationEndpoint selects the MAA endpoint for clouds whose
+// regional hostname pattern is defined by the platform. Unknown or incomplete
+// compute metadata deliberately falls back to the endpoint supplied by the
+// credential metadata response.
+func regionalAttestationEndpoint(environment, location, fallback string) string {
+	location = strings.TrimSpace(location)
+	if location == "" {
+		return fallback
+	}
+	var suffix string
+	switch {
+	case strings.EqualFold(environment, azurePublicCloud):
+		suffix = "attestation.microsoft.com"
+	case strings.EqualFold(environment, azureUSGovernmentCloud):
+		suffix = "attestation.microsoftonline.us"
+	case strings.EqualFold(environment, azureChinaCloud):
+		suffix = "attestation.partner.microsoftonline.cn"
+	case strings.EqualFold(environment, azureBleuCloud):
+		suffix = "attestation.sovcloud-identity.fr"
+	default:
+		return fallback
+	}
+	return "https://" + strings.ToLower(location) + "." + suffix
 }
 
 func (m csrMetadata) validate() error {

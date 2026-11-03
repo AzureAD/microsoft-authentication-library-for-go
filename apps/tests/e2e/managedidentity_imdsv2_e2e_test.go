@@ -226,6 +226,9 @@ func TestIMDSv2TokenIsServedFromCache(t *testing.T) {
 	if first.AccessToken != second.AccessToken {
 		t.Fatal("the second acquisition did not come from the cache")
 	}
+	if second.Metadata.TokenSource != mi.TokenSourceCache {
+		t.Fatalf("second token source = %v, want managedidentity.TokenSourceCache", second.Metadata.TokenSource)
+	}
 	// Comparing the two thumbprints alone would also be satisfied by both being empty, which is
 	// exactly what a cached bound token served without its certificate looks like. Requiring a
 	// usable certificate first is what makes the comparison mean anything.
@@ -341,6 +344,37 @@ func TestIMDSv2BoundTokenIsRejectedWithoutCertificate(t *testing.T) {
 	// The vault names the reason, so require that reason specifically.
 	if !strings.Contains(body, "MissingClientCertificate") {
 		t.Fatalf("the vault rejected the request for some reason other than the missing binding certificate: %d: %s", status, body)
+	}
+
+	replacement, err := client.AcquireToken(ctx, imdsV2VaultResource,
+		mi.WithMtlsProofOfPossession(), mi.WithAttestationSupport(), mi.WithForceRefresh())
+	if err != nil {
+		t.Fatalf("AcquireToken for replacement binding certificate: %v", err)
+	}
+	if replacement.BindingCertificate == nil {
+		t.Fatal("force refresh returned no replacement binding certificate")
+	}
+	if replacement.BindingCertificateThumbprint() == res.BindingCertificateThumbprint() {
+		t.Fatal("force refresh returned the original binding certificate")
+	}
+	body, status, err = getBoundSecret(ctx, fmt.Sprintf("https://%s/secrets/%s?api-version=7.4", vault, secret),
+		res.AccessToken, *replacement.BindingCertificate)
+	if err != nil {
+		// A TLS alert during certificate renegotiation is a valid rejection:
+		// the resource saw the supplied certificate and refused it before an
+		// HTTP response existed.
+		if !strings.Contains(err.Error(), "the resource asked for a client certificate: true") ||
+			!strings.Contains(err.Error(), "a certificate was supplied to send: true") {
+			t.Fatalf("calling the vault with a wrong certificate failed before exact binding was exercised: %v", err)
+		}
+		t.Logf("the vault rejected the wrong client certificate during TLS: %v", err)
+	} else {
+		if status == http.StatusOK {
+			t.Fatal("the vault accepted a bound token presented with a different valid client certificate")
+		}
+		if strings.Contains(body, "MissingClientCertificate") {
+			t.Fatalf("the wrong-certificate case was treated as though no certificate was presented: %d: %s", status, body)
+		}
 	}
 }
 

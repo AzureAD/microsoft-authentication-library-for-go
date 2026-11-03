@@ -226,8 +226,8 @@ Notes:
 - **Region is optional**: the global `mtlsauth.microsoft.com` endpoint is used when no region is
   configured; a configured region produces `{region}.mtlsauth.microsoft.com`.
 - **Transport**: MSAL owns the mTLS transport (it auto-builds and caches an mTLS client per
-  certificate thumbprint). A `WithHTTPClient` client's settings reach the mTLS leg only when its
-  `Transport` is an `*http.Transport` — that is where proxy, dialer and root CAs live. A custom
+  certificate and signer identity). A `WithHTTPClient` client's settings reach the mTLS leg only
+  when its `Transport` is an `*http.Transport` — that is where proxy, dialer and root CAs live. A custom
   `http.RoundTripper` (a tracing, retry, pinning or request-signing wrapper), or an `*http.Transport`
   that sets `DialTLS`/`DialTLSContext`, cannot carry the binding certificate into the handshake;
   rather than silently rerouting a credential-bearing request onto `http.DefaultTransport`, mTLS
@@ -282,9 +282,11 @@ Notes:
   nil-base callback invocation; and factory, configurer, and augmenter errors. It trusts the
   configurer to route `Do` through the augmented client and forward `CloseIdleConnections` to its
   pool because arbitrary middleware cannot be inspected.
-- **Factory results are cached by MSAL per certificate thumbprint.** Repeated use of one certificate
-  reuses one specialized client and connection pool; different certificates receive independent
-  adapters, transports, connection pools, and TLS session caches and can be used concurrently.
+- **Factory results are cached by MSAL per certificate and signer identity.** Repeated use of one
+  certificate with the same signer reuses one specialized client and connection pool; a different
+  signer handle does not reuse that transport even when the certificate DER is identical.
+  Different certificates receive independent adapters, transports, connection pools, and TLS
+  session caches and can be used concurrently.
   Concurrent initial misses for the same certificate may create more than one adapter; MSAL
   publishes one and closes the losers. `NewMtlsClient` must therefore be concurrency safe, return a
   fresh independently configurable adapter, and not add another certificate cache. MSAL augments
@@ -356,8 +358,11 @@ Notes:
   them apart; a failure RS256 can't fix still fails. An exportable `*rsa.PrivateKey` never falls back.
   MSAL has no logging hook, so a retry that succeeds is otherwise silent — the only signal is the `alg`
   on the wire.
-- **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer on both
-  TLS 1.2 (PKCS#1 v1.5) and TLS 1.3 (RSA-PSS), so the built-in mTLS transport handles these keys.
+- **No extra transport work is needed**: `crypto/tls` signs the handshake through the signer. When
+  `SupportedSignatureAlgorithms` advertises only PKCS#1 v1.5, the built-in mTLS transport caps its
+  cloned configuration at TLS 1.2; signers that support RSA-PSS can negotiate TLS 1.3. The caller's
+  original transport and TLS configuration are never mutated. A caller that combines PKCS#1-only
+  compatibility with a TLS 1.3 minimum receives a configuration error.
   A custom `MtlsHTTPClientFactory` is needed only when preserving an HTTP wrapper or middleware
   pipeline around that built-in certificate configuration.
 - **The signer lives in your code**: MSAL adds no platform-specific dependencies and ships no signer
@@ -608,6 +613,12 @@ is never silently given a credential that lacks it. MSAL .NET does the same, rai
 Attested and non-attested certificates are cached separately, so opting in never reuses a
 certificate that was issued without attestation.
 
+When minting an attested certificate, MSAL reads the compute metadata `azEnvironment` and
+`location` and selects the regional MAA endpoint for Azure public, US Government, China, and Bleu
+clouds. If compute metadata is unavailable, incomplete, or names an unknown cloud, MSAL preserves
+the attestation endpoint supplied by the IMDS platform metadata response. The MAA `client_id` is the
+tenant ID; cached statements remain partitioned only by MAA endpoint and binding-key fingerprint.
+
 ### Binding strength and host capabilities
 
 `Client.Capabilities` reports what the host's IMDS can do, without requesting a certificate or a
@@ -687,9 +698,12 @@ result, err := client.AcquireToken(ctx, scope,
 )
 ```
 
-It deliberately does **not** re-mint the binding certificate. The certificate identifies the machine
-and is unaffected by a token going stale, and re-minting on every forced call would be throttled by
-IMDS.
+For IMDSv2 mTLS acquisitions it also reissues the binding certificate. The underlying KeyGuard key
+is retained, and a still-valid attestation statement for that key and MAA endpoint is reused.
+
+Set `MSAL_MI_DISABLE_IMDS_V2=1` (or `true`) to disable IMDSv2 capability discovery and acquisition.
+Ordinary IMDSv1 bearer acquisition remains available. A request that explicitly opts into mTLS PoP
+or bearer-over-mTLS fails instead of silently downgrading to IMDSv1.
 
 ### Client capabilities
 

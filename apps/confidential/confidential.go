@@ -419,9 +419,11 @@ func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credenti
 // SupportedSignatureAlgorithms, OCSPStaple and SignedCertificateTimestamps are preserved and set on
 // the certificate MSAL presents for an mTLS proof-of-possession handshake. Set
 // SupportedSignatureAlgorithms when the signer cannot produce every scheme the certificate allows: a
-// key that has no RSA-PSS support should advertise only the PKCS #1 v1.5 schemes, which keeps the
-// connection on TLS 1.2, because TLS 1.3 mandates RSA-PSS. Leaving it unset lets crypto/tls assume
-// the key can do everything, and the handshake then fails when the signer refuses PSS.
+// key that has no RSA-PSS support should advertise only the PKCS #1 v1.5 schemes. MSAL's built-in
+// transport recognizes that compatibility mode and caps its cloned TLS configuration at TLS 1.2,
+// because TLS 1.3 mandates RSA-PSS. Leaving the field unset lets crypto/tls assume the key can do
+// everything, and the handshake then fails when the signer refuses PSS. Caller-owned transports are
+// never mutated.
 //
 // Unlike [NewCredFromCert], which requires an RSA key, this constructor accepts a signer of any key
 // type the leaf certificate carries and the TLS handshake can use, because a signer-only credential
@@ -465,7 +467,7 @@ func NewCredFromTLSCertificate(cert tls.Certificate) (Credential, error) {
 	cred := Credential{cert: leaf, key: isolated.PrivateKey}
 	// Preserve the fields that only matter on the handshake. MSAL rebuilds a *tls.Certificate from
 	// this credential for an mTLS PoP request, and SupportedSignatureAlgorithms in particular is how
-	// a signer that cannot do RSA-PSS keeps the connection on TLS 1.2 and PKCS #1 v1.5. They are
+	// a signer that cannot do RSA-PSS lets the built-in transport select TLS 1.2 and PKCS #1 v1.5. They are
 	// copied for the same reason the DER above is: the credential must not alias memory the caller
 	// can still write to. Copying a nil slice yields nil, so an unset field stays unset.
 	cred.tlsFields = accesstokens.TLSCertFields{

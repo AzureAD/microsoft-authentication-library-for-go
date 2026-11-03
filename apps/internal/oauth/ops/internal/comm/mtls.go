@@ -4,6 +4,7 @@
 package comm
 
 import (
+	"crypto"
 	"crypto/sha256"
 	"crypto/tls"
 	"encoding/base64"
@@ -34,7 +35,7 @@ type MtlsClientConfigurer interface {
 }
 
 // MtlsClientFactory creates a fresh, independently configurable HTTP adapter for one binding
-// certificate. The configured client is cached per certificate thumbprint and may preserve
+// certificate. The configured client is cached per certificate and signer identity and may preserve
 // middleware around the augmented transport.
 type MtlsClientFactory func() (MtlsClientConfigurer, error)
 
@@ -108,6 +109,16 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error
 		// Only ever raise the floor: a caller who pinned TLS 1.3 keeps it.
 		transport.TLSClientConfig.MinVersion = tls.VersionTLS12
 	}
+	if pkcs1Only(isolated.SupportedSignatureAlgorithms) {
+		// TLS 1.3 requires RSA-PSS for RSA client authentication. A signer that
+		// advertises only PKCS #1 v1.5 is explicitly requesting compatibility
+		// mode, so cap the cloned transport deterministically at TLS 1.2.
+		if transport.TLSClientConfig.MinVersion > tls.VersionTLS12 {
+			return nil, fmt.Errorf("mTLS PKCS #1 compatibility requires TLS 1.2, but the configured minimum is version %#04x",
+				transport.TLSClientConfig.MinVersion)
+		}
+		transport.TLSClientConfig.MaxVersion = tls.VersionTLS12
+	}
 	transport.TLSClientConfig.Certificates = []tls.Certificate{*isolated}
 	// A caller-supplied GetClientCertificate takes precedence over Certificates during the
 	// handshake, so it would silently suppress the binding certificate. Clear it on our copy.
@@ -118,9 +129,9 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error
 	// session the server authenticated under certificate A. The TLS peer identity would silently
 	// disagree with the certificate this client is bound to, with the assertion that certificate
 	// signed, and with the KeyID the resulting token is cached under. Give every client that shares
-	// a cache a private one instead. mtlsClient keeps one client per certificate thumbprint, so the
-	// cache stays scoped to a single identity while resumption still works for repeated calls on
-	// that identity. A capacity of 0 selects Go's default.
+	// a cache a private one instead. mtlsClient keeps one client per certificate and signer identity,
+	// so the cache stays scoped to a single identity while resumption still works for repeated calls
+	// on that identity. A capacity of 0 selects Go's default.
 	//
 	// A nil cache is left alone. There is no cache object to share, so nothing can leak between
 	// identities, and crypto/tls treats nil as "no session resumption": installing one here would
@@ -137,6 +148,54 @@ func BuildMtlsClient(cert tls.Certificate, base HTTPClient) (*http.Client, error
 		CheckRedirect: mtlsCheckRedirect(base),
 		Timeout:       timeout,
 	}, nil
+}
+
+func pkcs1Only(schemes []tls.SignatureScheme) bool {
+	if len(schemes) == 0 {
+		return false
+	}
+	for _, scheme := range schemes {
+		switch scheme {
+		case tls.PKCS1WithSHA256, tls.PKCS1WithSHA384, tls.PKCS1WithSHA512:
+		default:
+			return false
+		}
+	}
+	return true
+}
+
+// privateKeyCacheIdentity distinguishes live signer handles even when they
+// present the same certificate and public key. Pointer-backed signers use their
+// stable Go identity. Comparable value signers receive a stable ID scoped to
+// this client. An unusual non-comparable value signer is conservatively never
+// reused.
+func (c *Client) privateKeyCacheIdentity(key crypto.PrivateKey) string {
+	v := reflect.ValueOf(key)
+	if !v.IsValid() {
+		return "nil"
+	}
+	switch v.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Func, reflect.Chan, reflect.UnsafePointer:
+		if v.IsNil() {
+			return fmt.Sprintf("%T:nil", key)
+		}
+		return fmt.Sprintf("%T:%x", key, v.Pointer())
+	}
+
+	c.mtlsMu.Lock()
+	defer c.mtlsMu.Unlock()
+	c.mtlsNextSignerID++
+	if !v.Type().Comparable() {
+		return fmt.Sprintf("%T:uncacheable:%d", key, c.mtlsNextSignerID)
+	}
+	if c.mtlsSignerIDs == nil {
+		c.mtlsSignerIDs = map[interface{}]uint64{}
+	}
+	if id := c.mtlsSignerIDs[key]; id != 0 {
+		return fmt.Sprintf("%T:value:%d", key, id)
+	}
+	c.mtlsSignerIDs[key] = c.mtlsNextSignerID
+	return fmt.Sprintf("%T:value:%d", key, c.mtlsNextSignerID)
 }
 
 // mtlsCheckRedirect picks the redirect policy for the mutual-TLS leg: the caller's when they set
@@ -419,8 +478,9 @@ func combineMtlsErrors(errs ...error) error {
 	}
 }
 
-// mtlsClient returns an HTTPClient bound to cert, building and caching one per certificate thumbprint
-// so repeated mTLS PoP calls reuse the same connection pool.
+// mtlsClient returns an HTTPClient bound to cert, building and caching one per certificate and
+// signer identity so repeated mTLS PoP calls reuse the same connection pool without crossing key
+// handles.
 func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 	if cert == nil || len(cert.Certificate) == 0 || len(cert.Certificate[0]) == 0 {
 		return nil, fmt.Errorf("mTLS proof-of-possession requires a binding certificate")
@@ -443,7 +503,7 @@ func (c *Client) mtlsClient(cert *tls.Certificate) (HTTPClient, error) {
 		return nil, fmt.Errorf("invalid mTLS binding certificate: %w", err)
 	}
 	sum := sha256.Sum256(pinned.Certificate[0])
-	key := base64.RawURLEncoding.EncodeToString(sum[:])
+	key := base64.RawURLEncoding.EncodeToString(sum[:]) + "|" + c.privateKeyCacheIdentity(pinned.PrivateKey)
 
 	// The loop exists for the SetMtlsClientFactory race below, which discards what it built and
 	// starts over with the factory that is actually installed. SetMtlsClientFactory is documented

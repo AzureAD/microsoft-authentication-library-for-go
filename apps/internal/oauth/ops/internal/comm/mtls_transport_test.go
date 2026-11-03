@@ -664,17 +664,18 @@ func TestMtlsClientCacheCapClosesBuiltAndSpecializedClients(t *testing.T) {
 func TestMtlsClientRaceLoserClosesSpecializedClient(t *testing.T) {
 	certValue := parseableTestCert(t, 20)
 	cert := &certValue
+	c := &Client{}
 	sum := sha256.Sum256(cert.Certificate[0])
-	key := base64.RawURLEncoding.EncodeToString(sum[:])
+	key := base64.RawURLEncoding.EncodeToString(sum[:]) + "|" + c.privateKeyCacheIdentity(cert.PrivateKey)
 
 	winner := &recordingClient{}
 	loser := &recordingClient{}
-	c := &Client{}
 	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
 		c.mtlsMu.Lock()
 		if c.mtlsClients == nil {
 			c.mtlsClients = map[string]mtlsCacheEntry{}
 		}
+
 		if _, ok := c.mtlsClients[key]; !ok {
 			c.mtlsClients[key] = mtlsCacheEntry{client: winner, owned: true}
 		}
@@ -694,6 +695,47 @@ func TestMtlsClientRaceLoserClosesSpecializedClient(t *testing.T) {
 	}
 	if n := loser.closeCount(); n != 1 {
 		t.Errorf("race loser had CloseIdleConnections called %d times, want 1", n)
+	}
+}
+
+func TestMtlsClientCacheIncludesSignerIdentity(t *testing.T) {
+	base := signerOnlyTestCert(t)
+	signer := base.PrivateKey.(signerKey)
+	firstHandle := &signerKey{key: signer.key}
+	secondHandle := &signerKey{key: signer.key}
+
+	var builds int
+	c := &Client{}
+	c.setTestMtlsClientFactory(func(tls.Certificate) HTTPClient {
+		builds++
+		return &recordingClient{}
+	})
+
+	certA := base
+	certA.PrivateKey = firstHandle
+	first, err := c.mtlsClient(&certA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	again, err := c.mtlsClient(&certA)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if first != again || builds != 1 {
+		t.Fatalf("same certificate and signer built %d clients", builds)
+	}
+
+	certB := base
+	certB.PrivateKey = secondHandle
+	different, err := c.mtlsClient(&certB)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if different == first {
+		t.Fatal("same certificate with a different signer handle reused the cached transport")
+	}
+	if builds != 2 {
+		t.Fatalf("different signer handle built %d clients, want 2 total", builds)
 	}
 }
 

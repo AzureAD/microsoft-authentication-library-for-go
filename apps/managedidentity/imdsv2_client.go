@@ -4,6 +4,7 @@
 package managedidentity
 
 import (
+	"bytes"
 	"context"
 	"crypto"
 	"crypto/tls"
@@ -18,6 +19,7 @@ import (
 	"strings"
 	"sync"
 
+	msalerrors "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/accesstokens"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/internal/oauth/ops/authority"
@@ -555,6 +557,8 @@ const (
 // computeMetadata is the part of the instance compute document that says
 // whether the host could bind a token to a key.
 type computeMetadata struct {
+	AzEnvironment   string `json:"azEnvironment"`
+	Location        string `json:"location"`
 	OsType          string `json:"osType"`
 	SecurityProfile struct {
 		SecurityType string `json:"securityType"`
@@ -666,7 +670,14 @@ func requestEntraToken(ctx context.Context, client ops.HTTPClient, binding *bind
 		return accesstokens.TokenResponse{}, err
 	}
 	if resp.StatusCode != http.StatusOK {
-		return accesstokens.TokenResponse{}, newEntraTokenError(resp.StatusCode, body)
+		callResp := new(http.Response)
+		*callResp = *resp
+		callResp.Body = io.NopCloser(bytes.NewReader(body))
+		return accesstokens.TokenResponse{}, msalerrors.CallErr{
+			Req:  req,
+			Resp: callResp,
+			Err:  newEntraTokenError(resp.StatusCode, body),
+		}
 	}
 
 	var tr accesstokens.TokenResponse

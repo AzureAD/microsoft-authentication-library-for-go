@@ -70,6 +70,12 @@ func (e CallErr) Error() string {
 	return e.Err.Error()
 }
 
+// Unwrap exposes the underlying call failure to errors.Is and errors.As while
+// retaining the request and response on CallErr for inspection.
+func (e CallErr) Unwrap() error {
+	return e.Err
+}
+
 // Errors implements error.Error().
 func (e InvalidJsonErr) Error() string {
 	return e.Err.Error()

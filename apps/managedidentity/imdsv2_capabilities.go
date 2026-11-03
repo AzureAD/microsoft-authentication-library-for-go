@@ -383,6 +383,22 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 		retryEnabled: c.retryPolicyEnabled,
 		baseEndpoint: imdsV2BaseEndpoint(),
 	}
+	if imdsV2Disabled() {
+		if err := v.probeV1Endpoint(ctx, newCorrelationID()); err != nil {
+			if ctx.Err() != nil {
+				return Capabilities{}, false
+			}
+			return Capabilities{
+				MaxSupportedBindingStrength: MtlsBindingStrengthNone,
+				ErrorReason:                 fmt.Sprintf("%s is set; %s", disableIMDSv2EnvVar, err),
+			}, false
+		}
+		return Capabilities{
+			Source:                      DefaultToIMDS,
+			MaxSupportedBindingStrength: MtlsBindingStrengthNone,
+			ErrorReason:                 disableIMDSv2EnvVar + " disables IMDSv2 mTLS support",
+		}, true
+	}
 
 	v2Err := v.probeEndpoint(ctx, newCorrelationID())
 	if v2Err == nil {

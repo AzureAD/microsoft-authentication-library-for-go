@@ -45,7 +45,7 @@ func New(httpClient HTTPClient) *REST {
 }
 
 // SetMtlsClientFactory installs the configured client's mutual-TLS factory capability. When unset,
-// MSAL auto-builds and caches a client per certificate thumbprint.
+// MSAL auto-builds and caches a client per certificate and signer identity.
 func (r *REST) SetMtlsClientFactory(factory MtlsClientFactory) {
 	r.client.SetMtlsClientFactory(factory)
 }

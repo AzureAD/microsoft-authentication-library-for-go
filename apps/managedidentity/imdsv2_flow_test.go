@@ -199,6 +199,8 @@ type imdsFake struct {
 	// the contract for "this host serves IMDSv1"; a test sets 404 to model a
 	// host with no managed identity endpoint at all.
 	v1ProbeStatus int
+	// v1TokenBody, when set, makes the ordinary IMDSv1 token route succeed.
+	v1TokenBody string
 }
 
 func newIMDSFake(t *testing.T) *imdsFake {
@@ -335,6 +337,11 @@ func (f *imdsFake) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	if r.URL.Query().Get("cred-api-version") == "" && r.URL.Query().Get("resource") != "" {
 		f.record("v1token")
 		f.writeServerHeader(w)
+		if f.v1TokenBody != "" {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(f.v1TokenBody))
+			return
+		}
 		w.WriteHeader(http.StatusBadRequest)
 		return
 	}

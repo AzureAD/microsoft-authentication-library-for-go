@@ -49,7 +49,7 @@ func (s *nilReceiverSigner) Sign(r io.Reader, digest []byte, opts crypto.SignerO
 //
 // SupportedSignatureAlgorithms is the one that matters. crypto/tls uses it to decide which signature
 // schemes the key can produce; a signer with no RSA-PSS support advertises only the PKCS #1 v1.5
-// schemes, which is what keeps the connection on TLS 1.2. Dropping it lets the handshake select PSS
+// schemes, which lets the built-in transport cap the connection at TLS 1.2. Dropping it lets the handshake select PSS
 // and the signer then fails, which is exactly the non-exportable-key case this constructor exists to
 // serve. Before this was fixed, resolveMtlsBindingCert rebuilt a bare tls.Certificate from Cert, Key
 // and X5c, so all three fields were silently lost.
