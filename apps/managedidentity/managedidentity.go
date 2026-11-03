@@ -1270,6 +1270,7 @@ func (c Client) getTokenForRequest(req *http.Request, resource string) (accessto
 	switch resp.StatusCode {
 	case http.StatusOK, http.StatusAccepted:
 	default:
+		resp.Body = io.NopCloser(bytes.NewReader(responseBytes))
 		sd := strings.TrimSpace(string(responseBytes))
 		if sd != "" {
 			return r, errors.CallErr{
