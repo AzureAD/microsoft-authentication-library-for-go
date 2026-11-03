@@ -366,12 +366,11 @@ stages:
                 go install gotest.tools/gotestsum
                 Pop-Location
                 $env:PATH = "$env:PATH;$(go env GOPATH)\bin"
-                # The MISEManagedIdentity pool is the same pool MSAL .NET runs its IMDSv2 E2E stage
-                # on, so the identity and the token-binding vault below are already provisioned on
-                # this agent and are the same ones .NET asserts against. Keeping both libraries on
-                # one environment is what makes a cross-language parity claim meaningful.
+                # The MISEManagedIdentity pool and tokenbinding vault are the same environment
+                # MSAL .NET uses for its IMDSv2 E2E stage. Keeping both libraries on the same
+                # provisioned identity, vault, and secret makes the parity assertion meaningful.
                 $env:IMDSV2_E2E_USER_ASSIGNED_CLIENT_ID = "6325cd32-9911-41f3-819c-416cdf9104e7"
-                $env:IMDSV2_E2E_VAULT = "tokenbindingdemo.vault.azure.net"
+                $env:IMDSV2_E2E_VAULT = "tokenbinding.vault.azure.net"
                 $env:IMDSV2_E2E_SECRET = "boundsecret"
                 # `go test` runs the test binary out of a temporary build directory
                 # whose name is not predictable, so the attestation library cannot

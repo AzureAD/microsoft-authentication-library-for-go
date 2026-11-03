@@ -32,6 +32,7 @@ package e2e
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -280,25 +281,17 @@ func TestIMDSv2CallsBoundResource(t *testing.T) {
 	if err != nil {
 		t.Fatalf("calling the vault: %v", err)
 	}
-	switch {
-	case status == http.StatusOK:
-		if !strings.Contains(body, `"value"`) {
-			t.Fatalf("the vault response does not look like a secret: %s", body)
-		}
-	case status == http.StatusForbidden && strings.Contains(body, "AccessDenied"):
-		// A vault reaches its access check only after it has authenticated the caller, and this
-		// vault requires a bound token to get that far. The two ways to fail binding both stop
-		// earlier and are both a 401: presenting no client certificate is rejected as
-		// MissingClientCertificate, which the negative test below asserts, and presenting no
-		// acceptable token is rejected as AKV10000. Only a token whose binding the vault validated
-		// reaches an authorization decision at all, and the decision names the managed identity the
-		// vault resolved from the token. So this status still proves what this test exists to
-		// prove; what it leaves unproven is only the data-plane read, which is a grant on the lab
-		// vault rather than anything the library controls.
-		t.Logf("the vault authenticated the bound token but the identity has no secrets/get grant, "+
-			"so the binding is proven and the secret read is not: %s", body)
-	default:
+	if status != http.StatusOK {
 		t.Fatalf("vault returned %d: %s", status, body)
+	}
+	var response struct {
+		Value string `json:"value"`
+	}
+	if err := json.Unmarshal([]byte(body), &response); err != nil {
+		t.Fatalf("parsing the vault secret response: %v: %s", err, body)
+	}
+	if strings.TrimSpace(response.Value) == "" {
+		t.Fatalf("the vault returned an empty secret value: %s", body)
 	}
 }
 
