@@ -238,7 +238,7 @@ func TestBuildMtlsClientPKCS1CompatibilityCapsTLS12(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	if resp.TLS == nil || resp.TLS.Version != tls.VersionTLS12 {
 		t.Fatalf("negotiated TLS version = %#v, want TLS 1.2", resp.TLS)
 	}
