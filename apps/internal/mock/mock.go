@@ -81,7 +81,10 @@ func (c *Client) AppendResponse(opts ...responseOption) {
 	c.resp = append(c.resp, r)
 }
 
-func (c *Client) Do(req *http.Request) (*http.Response, error) {
+// nextResponse removes and returns the next queued response. It holds c.mu only
+// for the duration of that removal so that callers can run the response's
+// callback without the lock held.
+func (c *Client) nextResponse(req *http.Request) response {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if len(c.resp) == 0 {
@@ -89,6 +92,15 @@ func (c *Client) Do(req *http.Request) (*http.Response, error) {
 	}
 	resp := c.resp[0]
 	c.resp = c.resp[1:]
+	return resp
+}
+
+func (c *Client) Do(req *http.Request) (*http.Response, error) {
+	resp := c.nextResponse(req)
+	// Invoke the callback without holding c.mu. A callback is arbitrary test code
+	// that may block on another goroutine, including one that calls AppendResponse,
+	// so holding the lock across it can deadlock the mock. Callbacks may therefore
+	// run concurrently and must synchronize any state they share.
 	if resp.callback != nil {
 		resp.callback(req)
 	}

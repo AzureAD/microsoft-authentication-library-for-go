@@ -1414,6 +1414,13 @@ func TestSystemAssignedReturnsAcquireTokenFailure(t *testing.T) {
 				if callErr.Resp.StatusCode != testCase.code {
 					t.Fatalf("expected status code %d, got %d", testCase.code, callErr.Resp.StatusCode)
 				}
+				body, readErr := io.ReadAll(callErr.Resp.Body)
+				if readErr != nil {
+					t.Fatal(readErr)
+				}
+				if !bytes.Equal(body, responseBody) {
+					t.Fatalf("expected response body %q, got %q", responseBody, body)
+				}
 			} else {
 				t.Fatalf("expected error of type %T, got %T", callErr, err)
 			}

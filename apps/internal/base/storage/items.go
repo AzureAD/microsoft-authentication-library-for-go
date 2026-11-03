@@ -105,12 +105,36 @@ func NewAccessToken(homeID, env, realm, clientID string, cachedAt, refreshOn, ex
 
 // Key outputs the key that can be used to uniquely look up this entry in a map.
 func (a AccessToken) Key() string {
+	return a.key(true)
+}
+
+// keyWithoutAuthnSchemeKeyID returns the key this entry had before the authentication scheme's key
+// ID became part of Key(). It is only meaningful for a non-bearer token that carries a key ID, and
+// exists so writeAccessToken can evict the duplicate an upgrade would otherwise strand; see
+// Manager.writeAccessToken.
+func (a AccessToken) keyWithoutAuthnSchemeKeyID() string {
+	return a.key(false)
+}
+
+func (a AccessToken) key(includeAuthnSchemeKeyID bool) string {
 	ks := []string{a.HomeAccountID, a.Environment, a.CredentialType, a.ClientID, a.Realm, a.Scopes}
 
 	// add token type to key for new access tokens types. skip for bearer token type to
 	// preserve fwd and back compat between a common cache and msal clients
 	if !strings.EqualFold(a.TokenType, authority.AccessTokenTypeBearer) {
 		ks = append(ks, a.TokenType)
+		// The authentication scheme's key ID partitions entries by the credential the token is bound
+		// to; for mtls_pop that is the binding certificate's x5t#S256 thumbprint. Without it, two
+		// certificates sharing a home account, environment, client, realm, scopes and token type
+		// collide on one key and each write overwrites the other, so alternating certificates cost an
+		// identity-provider round trip every time and an external cache can hold only one of them.
+		// readAccessToken already compares this value, so including it here makes the write key as
+		// specific as the read filter and lets the two entries coexist.
+		//
+		// The guard above excludes bearer entries, so keys written by existing clients are unchanged.
+		if includeAuthnSchemeKeyID && a.AuthnSchemeKeyID != "" {
+			ks = append(ks, a.AuthnSchemeKeyID)
+		}
 	}
 	// add extra body param hash to key if present
 	if a.ExtCacheKey != "" {
