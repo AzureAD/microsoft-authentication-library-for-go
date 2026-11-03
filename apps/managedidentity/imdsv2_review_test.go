@@ -294,11 +294,13 @@ func TestCancelledAttestationReleasesTheProcessWideTokenGate(t *testing.T) {
 	fake := newIMDSFake(t)
 
 	stuck := make(chan struct{})
+	started := make(chan struct{})
 	var running sync.WaitGroup
 	running.Add(1)
 	original := attestKeyGuardFn
 	attestKeyGuardFn = func(string, string, bindingKey) (string, error) {
 		defer running.Done()
+		close(started)
 		<-stuck
 		return "", errors.New("released")
 	}
@@ -309,7 +311,7 @@ func TestCancelledAttestationReleasesTheProcessWideTokenGate(t *testing.T) {
 	})
 
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
-	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
+	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 
 	done := make(chan error, 1)
@@ -318,6 +320,13 @@ func TestCancelledAttestationReleasesTheProcessWideTokenGate(t *testing.T) {
 			WithMtlsProofOfPossession(), WithAttestationSupport())
 		done <- err
 	}()
+
+	select {
+	case <-started:
+	case <-time.After(5 * time.Second):
+		t.Fatal("acquisition did not reach attestation")
+	}
+	cancel()
 
 	select {
 	case err := <-done:
