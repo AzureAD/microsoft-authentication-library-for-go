@@ -216,6 +216,163 @@ func TestAcquireTokenByCredentialWithCache(t *testing.T) {
 
 }
 
+func TestAcquireTokenByCredentialForceRefresh(t *testing.T) {
+	secret, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pem, err := os.ReadFile(filepath.Join("..", "testdata", "test-cert.pem"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, key, err := CertFromPEM(pem, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certificate, err := NewCredFromCert(certs, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for name, cred := range map[string]Credential{"secret": secret, "certificate": certificate} {
+		t.Run(name, func(t *testing.T) {
+			for _, tt := range []struct {
+				name         string
+				forceRefresh bool
+				claims       string
+			}{
+				{name: "false uses cache"},
+				{name: "true bypasses cache", forceRefresh: true},
+				{name: "true preserves claims", forceRefresh: true, claims: `{"access_token":{"auth_time":{"essential":true}}}`},
+				{name: "false preserves claims bypass", claims: `{"access_token":{"auth_time":{"essential":true}}}`},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					const host, tenant = "login.microsoftonline.com", "other-tenant"
+					mockClient := mock.NewClient()
+					mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
+					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("cached", "", "", "", 3600, 0)))
+					client, err := New(fmt.Sprintf(authorityFmt, host, "home-tenant"), fakeClientID, cred,
+						WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+					if err != nil {
+						t.Fatal(err)
+					}
+					ctx := context.Background()
+					if _, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant)); err != nil {
+						t.Fatal(err)
+					}
+					cached, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if cached.AccessToken != "cached" || cached.Metadata.TokenSource != TokenSourceCache {
+						t.Fatalf("expected cached token, got %+v", cached)
+					}
+
+					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("fresh", "", "", "", 3600, 0)),
+						mock.WithCallback(func(req *http.Request) {
+							if err := req.ParseForm(); err != nil {
+								t.Fatal(err)
+							}
+							if got := req.PostForm.Get("claims"); got != tt.claims {
+								t.Fatalf("claims = %q, want %q", got, tt.claims)
+							}
+							if _, ok := req.PostForm["force_refresh"]; ok {
+								t.Fatal("force_refresh must not be sent to the authority")
+							}
+							if got := req.PostForm.Get("grant_type"); got != "client_credentials" {
+								t.Fatalf("grant_type = %q, want client_credentials", got)
+							}
+							if req.URL.Path != "/"+tenant+"/oauth2/v2.0/token" {
+								t.Fatalf("unexpected token endpoint %s", req.URL)
+							}
+						}))
+					result, err := client.AcquireTokenByCredential(ctx, tokenScope,
+						WithTenantID(tenant), WithForceRefresh(tt.forceRefresh), WithClaims(tt.claims))
+					if err != nil {
+						t.Fatal(err)
+					}
+					wantToken, wantSource := "cached", TokenSourceCache
+					if tt.forceRefresh || tt.claims != "" {
+						wantToken, wantSource = "fresh", TokenSourceIdentityProvider
+					}
+					if result.AccessToken != wantToken || result.Metadata.TokenSource != wantSource {
+						t.Fatalf("got token %q source %v, want %q source %v",
+							result.AccessToken, result.Metadata.TokenSource, wantToken, wantSource)
+					}
+					result, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
+					if err != nil {
+						t.Fatal(err)
+					}
+					if result.AccessToken != wantToken || result.Metadata.TokenSource != TokenSourceCache {
+						t.Fatalf("expected %q from cache after acquisition, got %+v", wantToken, result)
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestAcquireTokenByCredentialForceRefreshFailure(t *testing.T) {
+	cred, err := NewCredFromSecret(fakeSecret)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const host, tenant = "login.microsoftonline.com", "tenant"
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("cached", "", "", "", 3600, 0)))
+	client, err := New(fmt.Sprintf(authorityFmt, host, tenant), fakeClientID, cred,
+		WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.AcquireTokenByCredential(ctx, tokenScope); err != nil {
+		t.Fatal(err)
+	}
+	mockClient.AppendResponse(mock.WithHTTPStatusCode(http.StatusBadRequest),
+		mock.WithBody([]byte(`{"error":"invalid_client","error_description":"refresh failed"}`)))
+	result, err := client.AcquireTokenByCredential(ctx, tokenScope, WithForceRefresh(true))
+	if err == nil || result.AccessToken != "" {
+		t.Fatalf("expected refresh error without cached fallback, got token %q, error %v", result.AccessToken, err)
+	}
+	result, err = client.AcquireTokenByCredential(ctx, tokenScope)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccessToken != "cached" || result.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("failed refresh must leave the existing cache entry intact, got %+v", result)
+	}
+}
+
+func TestAcquireTokenByCredentialForceRefreshTokenProvider(t *testing.T) {
+	calls := 0
+	cred := NewCredFromTokenProvider(func(ctx context.Context, params TokenProviderParameters) (TokenProviderResult, error) {
+		if params.Claims != "" {
+			t.Fatalf("unexpected claims %q", params.Claims)
+		}
+		calls++
+		return TokenProviderResult{AccessToken: fmt.Sprintf("token-%d", calls), ExpiresInSeconds: 3600}, nil
+	})
+	client, err := New("https://login.microsoftonline.com/tenant", fakeClientID, cred, WithHTTPClient(&errorClient{}))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for i, force := range []bool{false, false, true, false} {
+		result, err := client.AcquireTokenByCredential(context.Background(), tokenScope, WithForceRefresh(force))
+		if err != nil {
+			t.Fatal(err)
+		}
+		wantCalls := 1
+		if i >= 2 {
+			wantCalls = 2
+		}
+		if calls != wantCalls || result.AccessToken != fmt.Sprintf("token-%d", wantCalls) {
+			t.Fatalf("step %d: provider calls = %d, token = %q", i, calls, result.AccessToken)
+		}
+	}
+}
+
 func TestInvalidMSALForceRegionIsRejectedBeforeHTTP(t *testing.T) {
 	t.Setenv("MSAL_FORCE_REGION", "hostile.example/x")
 
