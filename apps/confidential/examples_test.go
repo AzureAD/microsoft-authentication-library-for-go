@@ -40,6 +40,25 @@ func Example() {
 	_ = result.AccessToken
 }
 
+func ExampleClient_AcquireTokenByCredential_forceRefresh() {
+	cred, err := confidential.NewCredFromSecret("client_secret")
+	if err != nil {
+		log.Fatal(err)
+	}
+	client, err := confidential.New("https://login.microsoftonline.com/your_tenant", "client_id", cred)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Bypass MSAL's access token lookup for this call, without manufacturing a claims challenge.
+	// Later calls without this option can reuse the newly acquired token.
+	result, err := client.AcquireTokenByCredential(context.TODO(), []string{"scope"}, confidential.WithForceRefresh(true))
+	if err != nil {
+		log.Fatal(err)
+	}
+	_ = result.AccessToken
+}
+
 func ExampleNewCredFromCert_pem() {
 	b, err := os.ReadFile("key.pem")
 	if err != nil {
