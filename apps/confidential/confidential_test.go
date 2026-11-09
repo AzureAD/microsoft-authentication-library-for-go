@@ -247,68 +247,78 @@ func TestAcquireTokenByCredentialForceRefresh(t *testing.T) {
 				{name: "false preserves claims bypass", claims: `{"access_token":{"auth_time":{"essential":true}}}`},
 			} {
 				t.Run(tt.name, func(t *testing.T) {
-					const host, tenant = "login.microsoftonline.com", "other-tenant"
-					mockClient := mock.NewClient()
-					mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
-					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("cached", "", "", "", 3600, 0)))
-					client, err := New(fmt.Sprintf(authorityFmt, host, "home-tenant"), fakeClientID, cred,
-						WithHTTPClient(mockClient), WithInstanceDiscovery(false))
-					if err != nil {
-						t.Fatal(err)
-					}
-					ctx := context.Background()
-					if _, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant)); err != nil {
-						t.Fatal(err)
-					}
-					cached, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if cached.AccessToken != "cached" || cached.Metadata.TokenSource != TokenSourceCache {
-						t.Fatalf("expected cached token, got %+v", cached)
-					}
-
-					mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("fresh", "", "", "", 3600, 0)),
-						mock.WithCallback(func(req *http.Request) {
-							if err := req.ParseForm(); err != nil {
-								t.Fatal(err)
-							}
-							if got := req.PostForm.Get("claims"); got != tt.claims {
-								t.Fatalf("claims = %q, want %q", got, tt.claims)
-							}
-							if _, ok := req.PostForm["force_refresh"]; ok {
-								t.Fatal("force_refresh must not be sent to the authority")
-							}
-							if got := req.PostForm.Get("grant_type"); got != "client_credentials" {
-								t.Fatalf("grant_type = %q, want client_credentials", got)
-							}
-							if req.URL.Path != "/"+tenant+"/oauth2/v2.0/token" {
-								t.Fatalf("unexpected token endpoint %s", req.URL)
-							}
-						}))
-					result, err := client.AcquireTokenByCredential(ctx, tokenScope,
-						WithTenantID(tenant), WithForceRefresh(tt.forceRefresh), WithClaims(tt.claims))
-					if err != nil {
-						t.Fatal(err)
-					}
-					wantToken, wantSource := "cached", TokenSourceCache
-					if tt.forceRefresh || tt.claims != "" {
-						wantToken, wantSource = "fresh", TokenSourceIdentityProvider
-					}
-					if result.AccessToken != wantToken || result.Metadata.TokenSource != wantSource {
-						t.Fatalf("got token %q source %v, want %q source %v",
-							result.AccessToken, result.Metadata.TokenSource, wantToken, wantSource)
-					}
-					result, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
-					if err != nil {
-						t.Fatal(err)
-					}
-					if result.AccessToken != wantToken || result.Metadata.TokenSource != TokenSourceCache {
-						t.Fatalf("expected %q from cache after acquisition, got %+v", wantToken, result)
-					}
+					testAcquireTokenByCredentialForceRefresh(t, cred, tt.forceRefresh, tt.claims)
 				})
 			}
 		})
+	}
+}
+
+func testAcquireTokenByCredentialForceRefresh(t *testing.T, cred Credential, forceRefresh bool, claims string) {
+	t.Helper()
+	const host, tenant = "login.microsoftonline.com", "other-tenant"
+	mockClient := mock.NewClient()
+	mockClient.AppendResponse(mock.WithBody(mock.GetTenantDiscoveryBody(host, tenant)))
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("cached", "", "", "", 3600, 0)))
+	client, err := New(fmt.Sprintf(authorityFmt, host, "home-tenant"), fakeClientID, cred,
+		WithHTTPClient(mockClient), WithInstanceDiscovery(false))
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := context.Background()
+	if _, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant)); err != nil {
+		t.Fatal(err)
+	}
+	cached, err := client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if cached.AccessToken != "cached" || cached.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("expected cached token, got %+v", cached)
+	}
+
+	mockClient.AppendResponse(mock.WithBody(mock.GetAccessTokenBody("fresh", "", "", "", 3600, 0)),
+		mock.WithCallback(func(req *http.Request) {
+			verifyCredentialRefreshRequest(t, req, tenant, claims)
+		}))
+	result, err := client.AcquireTokenByCredential(ctx, tokenScope,
+		WithTenantID(tenant), WithForceRefresh(forceRefresh), WithClaims(claims))
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantToken, wantSource := "cached", TokenSourceCache
+	if forceRefresh || claims != "" {
+		wantToken, wantSource = "fresh", TokenSourceIdentityProvider
+	}
+	if result.AccessToken != wantToken || result.Metadata.TokenSource != wantSource {
+		t.Fatalf("got token %q source %v, want %q source %v",
+			result.AccessToken, result.Metadata.TokenSource, wantToken, wantSource)
+	}
+	result, err = client.AcquireTokenByCredential(ctx, tokenScope, WithTenantID(tenant))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.AccessToken != wantToken || result.Metadata.TokenSource != TokenSourceCache {
+		t.Fatalf("expected %q from cache after acquisition, got %+v", wantToken, result)
+	}
+}
+
+func verifyCredentialRefreshRequest(t *testing.T, req *http.Request, tenant, claims string) {
+	t.Helper()
+	if err := req.ParseForm(); err != nil {
+		t.Fatal(err)
+	}
+	if got := req.PostForm.Get("claims"); got != claims {
+		t.Fatalf("claims = %q, want %q", got, claims)
+	}
+	if _, ok := req.PostForm["force_refresh"]; ok {
+		t.Fatal("force_refresh must not be sent to the authority")
+	}
+	if got := req.PostForm.Get("grant_type"); got != "client_credentials" {
+		t.Fatalf("grant_type = %q, want client_credentials", got)
+	}
+	if req.URL.Path != "/"+tenant+"/oauth2/v2.0/token" {
+		t.Fatalf("unexpected token endpoint %s", req.URL)
 	}
 }
 
