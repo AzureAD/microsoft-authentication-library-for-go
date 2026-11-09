@@ -302,11 +302,40 @@ type acquireTokenSilentOptions struct {
 	account          Account
 	claims, tenantID string
 	authnScheme      AuthenticationScheme
+	forceRefresh     bool
 }
 
 // AcquireSilentOption is implemented by options for AcquireTokenSilent
 type AcquireSilentOption interface {
 	acquireSilentOption()
+}
+
+// WithForceRefresh skips the access token cache lookup for an [Client.AcquireTokenSilent] call
+// when forceRefresh is true, and attempts to redeem the cached refresh token. A successful
+// acquisition is cached normally. An acquisition error is returned rather than a cached token.
+// False preserves the default cache behavior, including the cache bypass caused by [WithClaims].
+//
+// This option does not change claims or send a force_refresh parameter to the authority.
+func WithForceRefresh(forceRefresh bool) interface {
+	AcquireSilentOption
+	options.CallOption
+} {
+	return struct {
+		AcquireSilentOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenSilentOptions:
+					t.forceRefresh = forceRefresh
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
 }
 
 // WithSilentAccount uses the passed account during an AcquireTokenSilent() call.
@@ -334,7 +363,7 @@ func WithSilentAccount(account Account) interface {
 
 // AcquireTokenSilent acquires a token from either the cache or using a refresh token.
 //
-// Options: [WithClaims], [WithSilentAccount], [WithTenantID]
+// Options: [WithClaims], [WithForceRefresh], [WithSilentAccount], [WithTenantID]
 func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts ...AcquireSilentOption) (AuthResult, error) {
 	o := acquireTokenSilentOptions{}
 	if err := options.ApplyOptions(&o, opts); err != nil {
@@ -346,13 +375,14 @@ func (pca Client) AcquireTokenSilent(ctx context.Context, scopes []string, opts 
 	}
 
 	silentParameters := base.AcquireTokenSilentParameters{
-		Scopes:      scopes,
-		Account:     o.account,
-		Claims:      o.claims,
-		RequestType: accesstokens.ATPublic,
-		IsAppCache:  false,
-		TenantID:    o.tenantID,
-		AuthnScheme: o.authnScheme,
+		Scopes:       scopes,
+		Account:      o.account,
+		Claims:       o.claims,
+		RequestType:  accesstokens.ATPublic,
+		IsAppCache:   false,
+		TenantID:     o.tenantID,
+		AuthnScheme:  o.authnScheme,
+		ForceRefresh: o.forceRefresh,
 	}
 
 	return pca.base.AcquireTokenSilent(ctx, silentParameters)
