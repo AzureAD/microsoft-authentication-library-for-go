@@ -105,6 +105,9 @@ const (
 	// nteNotSupported is NTE_NOT_SUPPORTED, returned by NCryptGetProperty for a
 	// property the provider does not implement.
 	nteNotSupported = 0x80090029
+	// nteVbsCannotDecryptKey is NTE_VBS_CANNOT_DECRYPT_KEY. A persisted
+	// per-boot key can return this from NCryptOpenKey after a reboot.
+	nteVbsCannotDecryptKey = 0x8009003A
 
 	// rsaPublicBlob is BCRYPT_RSAPUBLIC_BLOB, the only blob type a VBS-isolated
 	// key exports. CNG refuses every blob that would carry private material.
@@ -631,9 +634,9 @@ type bindingKeyContainer interface {
 // # Recovering a stale key
 //
 // A per-boot KeyGuard key leaves its metadata on disk when the machine reboots.
-// The name still opens and still reports Virtual Iso, but the isolated material
-// is gone, so the handle cannot sign. That handle must be released and the key
-// recreated - and it must NOT be deleted through.
+// The name may still open and report Virtual Iso while the handle cannot sign,
+// or NCryptOpenKey may fail with NTE_VBS_CANNOT_DECRYPT_KEY. Either way the key
+// must be recreated. Any opened handle must be released, NOT deleted through.
 //
 // Deleting through it is the trap. NCryptDeleteKey resolves the *name*, not the
 // object the stale handle was opened from, so if another process has already
@@ -682,24 +685,28 @@ func resolveBindingKey(c bindingKeyContainer, name string) (bindingKey, error) {
 	for attempt := 0; attempt < bindingKeyCreateAttempts; attempt++ {
 		overwrite := false
 		key, existed, err := c.open()
-		if err != nil {
+		if err != nil && !errors.Is(err, windows.Errno(nteVbsCannotDecryptKey)) {
 			return bindingKey{}, err
 		}
-		if existed {
-			if c.usable(key) {
-				return c.adopt(key)
+		if existed || err != nil {
+			if existed {
+				if c.usable(key) {
+					return c.adopt(key)
+				}
+				// Stale: release the handle, never delete through it.
+				c.discard(key)
 			}
-			// Stale: release the handle, never delete through it.
-			c.discard(key)
 
 			// Somebody may have replaced it while this caller was probing.
 			// Reopening once turns "overwrite a dead key" into "adopt a live
 			// one" whenever the replacement has already landed.
 			replacement, stillThere, err := c.open()
 			if err != nil {
-				return bindingKey{}, err
-			}
-			if stillThere {
+				if !errors.Is(err, windows.Errno(nteVbsCannotDecryptKey)) {
+					return bindingKey{}, err
+				}
+				overwrite = true
+			} else if stillThere {
 				if c.usable(replacement) {
 					return c.adopt(replacement)
 				}
