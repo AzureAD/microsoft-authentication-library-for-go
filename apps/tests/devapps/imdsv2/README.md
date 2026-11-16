@@ -89,6 +89,11 @@ without attestation does not require this prerequisite.
 MSAL obtains and sends the attestation statement; the developer does not provide an attestation
 token manually.
 
+The binding key is per-boot. After Windows restarts, MSAL replaces an unusable persisted key,
+including one that fails to open with `NTE_VBS_CANNOT_DECRYPT_KEY` (`0x8009003A`), then obtains
+a certificate for the replacement. Other key-open errors, such as access denied, still fail
+acquisition. Do not delete the shared key container or clear the certificate store to recover.
+
 ```sh
 # What can this host do? No token is acquired.
 go run ./apps/tests/devapps/imdsv2 -capabilities-only

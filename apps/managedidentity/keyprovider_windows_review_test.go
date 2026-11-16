@@ -212,6 +212,118 @@ func TestResolveBindingKeyRecoversAStaleKeyWithoutDeletingIt(t *testing.T) {
 	}
 }
 
+func TestResolveBindingKeyRecoversAnUndecryptablePerBootKey(t *testing.T) {
+	const stale windows.Handle = 9
+	const fresh windows.Handle = 10
+	const rival windows.Handle = 11
+	cannotDecrypt := ncryptStatusError("NCryptOpenKey", 0x8009003A)
+	for _, tc := range []struct {
+		name        string
+		initial     windows.Handle
+		initialErr  error
+		reopened    windows.Handle
+		reopenErr   error
+		wantAdopted windows.Handle
+		wantDiscard []windows.Handle
+		wantCreate  bool
+		overwrite   bool
+	}{
+		{
+			name: "unreadable after reboot", initialErr: cannotDecrypt, reopenErr: cannotDecrypt,
+			wantAdopted: fresh, wantCreate: true, overwrite: true,
+		},
+		{
+			name: "another process replaced it", initialErr: cannotDecrypt, reopened: rival,
+			wantAdopted: rival,
+		},
+		{
+			name: "another process removed it", initialErr: cannotDecrypt,
+			wantAdopted: fresh, wantCreate: true,
+		},
+		{
+			name: "reopen cannot decrypt", initial: stale, reopenErr: cannotDecrypt,
+			wantAdopted: fresh, wantDiscard: []windows.Handle{stale}, wantCreate: true, overwrite: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c := &scriptedContainer{
+				exists: func(opens int) (windows.Handle, bool, error) {
+					if opens == 0 {
+						return tc.initial, tc.initial != 0, tc.initialErr
+					}
+					return tc.reopened, tc.reopened != 0, tc.reopenErr
+				},
+				canSign:  func(h windows.Handle) bool { return h != stale },
+				createFn: func(int, bool) (windows.Handle, error) { return fresh, nil },
+			}
+			_, err := resolveBindingKey(c, bindingKeyName)
+			if err != nil {
+				t.Fatalf("resolveBindingKey: %v", err)
+			}
+			if c.opens != 2 {
+				t.Errorf("opened %d times, want a reopen before replacement", c.opens)
+			}
+			wantCreates := 0
+			if tc.wantCreate {
+				wantCreates = 1
+			}
+			if c.creates != wantCreates {
+				t.Fatalf("created %d times, want %d", c.creates, wantCreates)
+			}
+			if tc.wantCreate && c.overwrites[0] != tc.overwrite {
+				t.Errorf("overwrite = %v, want %v", c.overwrites[0], tc.overwrite)
+			}
+			if len(c.discarded) != len(tc.wantDiscard) {
+				t.Fatalf("discarded %v, want %v; no invalid handle should be released", c.discarded, tc.wantDiscard)
+			}
+			for i, h := range c.discarded {
+				if h != tc.wantDiscard[i] {
+					t.Errorf("discarded %v, want %v", c.discarded, tc.wantDiscard)
+				}
+			}
+			if len(c.adopted) != 1 || c.adopted[0] != tc.wantAdopted {
+				t.Errorf("adopted %v, want only %v", c.adopted, tc.wantAdopted)
+			}
+			if tc.wantCreate && (len(c.verified) != 1 || c.verified[0] != fresh) {
+				t.Errorf("verified %v, want the replacement checked before adoption", c.verified)
+			}
+		})
+	}
+}
+
+func TestResolveBindingKeyDoesNotOverwriteOnOtherOpenErrors(t *testing.T) {
+	for _, openErr := range []error{
+		windows.ERROR_ACCESS_DENIED,
+		ncryptStatusError("NCryptOpenKey", 0x80090010), // NTE_PERM
+		errors.New("Cannot decrypt a VBS-isolated key. (0x8009003A)"),
+	} {
+		for _, failOnReopen := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%v/reopen=%v", openErr, failOnReopen), func(t *testing.T) {
+				c := &scriptedContainer{
+					exists: func(opens int) (windows.Handle, bool, error) {
+						if failOnReopen && opens == 0 {
+							return 9, true, nil
+						}
+						return 0, false, openErr
+					},
+					canSign: func(windows.Handle) bool { return false },
+					createFn: func(int, bool) (windows.Handle, error) {
+						t.Fatal("must not overwrite a key on an unrelated open failure")
+						return 0, nil
+					},
+				}
+				_, err := resolveBindingKey(c, bindingKeyName)
+				if !errors.Is(err, openErr) {
+					t.Errorf("error = %v, want the original open error %v", err, openErr)
+				}
+				if c.creates != 0 || len(c.adopted) != 0 {
+					t.Errorf("created %d and adopted %v after an open failure", c.creates, c.adopted)
+				}
+			})
+		}
+	}
+}
+
 // The window between deciding a key is unusable and replacing it is a race, and
 // the good outcome is to adopt somebody else's replacement rather than overwrite
 // it. This scripts exactly that: the first open reports the dead key, and by the
