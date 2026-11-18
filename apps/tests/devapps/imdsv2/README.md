@@ -77,6 +77,11 @@ demo shows the working transport rather than describing it:
 
 ## Running it
 
+For PR validation, Azure Pipelines reports **MI E2E – IMDSv2** separately from
+the legacy IMDS check. The IMDSv2 check runs the tagged `TestIMDSv2*` suite in
+the same Windows lab used by MSAL .NET and fails if a required test is skipped
+or missing. The commands below are for manual smoke testing, not the CI suite.
+
 ### Attestation prerequisites
 
 Only callers that opt in with `WithAttestationSupport()`—the demo's `-attest` flag—need the **x64
