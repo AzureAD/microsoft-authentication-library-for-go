@@ -92,7 +92,9 @@ func TestAddExtraBodyParameters(t *testing.T) {
 			ap := authority.AuthParams{
 				ExtraBodyParameters: tt.params,
 			}
-			addExtraBodyParameters(ctx, v, ap)
+			if err := addExtraBodyParameters(ctx, v, ap); err != nil {
+				t.Fatalf("addExtraBodyParameters() error = %v", err)
+			}
 			if tt.validate != nil {
 				tt.validate(t, v)
 			}
@@ -113,7 +115,9 @@ func TestAddExtraBodyParametersDoesNotOverwrite(t *testing.T) {
 		ExtraBodyParameters: params,
 	}
 
-	addExtraBodyParameters(context.Background(), v, ap)
+	if err := addExtraBodyParameters(context.Background(), v, ap); err != nil {
+		t.Fatalf("addExtraBodyParameters() error = %v", err)
+	}
 
 	// Check that existing parameter is still there
 	if v.Get("existing_param") != "existing_value" {

@@ -784,8 +784,8 @@ func TestServiceFabricConfigurerIgnoredForOtherSources(t *testing.T) {
 	t.Setenv(msiSecretEnvVar, "")
 	t.Setenv(imdsEndVar, "")
 
-	// A ClientConfigurer is only consulted for Service Fabric; other sources must use it as a
-	// plain ops.HTTPClient and never call ConfigureClient.
+	// A ClientConfigurer passed directly to WithHTTPClient is only consulted for Service Fabric.
+	// IMDSv2 configures fresh instances returned by MtlsHTTPClientFactory instead.
 	configurable := &serviceFabricFailingConfigurableClient{err: errors.New("ConfigureClient should not be called")}
 	client, err := New(SystemAssigned(), WithHTTPClient(configurable))
 	if err != nil {

@@ -1037,6 +1037,12 @@ func TestWithAuthenticationScheme(t *testing.T) {
 	lmo, tenant := "login.microsoftonline.com", "tenant"
 	accessToken, idToken, refreshToken := "at", mock.GetIDToken(tenant, lmo), "rt"
 	authScheme := mock.NewTestAuthnScheme()
+	schemeTokenBody := []byte(strings.Replace(
+		string(mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0)),
+		authority.AccessTokenTypeBearer,
+		authScheme.AccessTokenType(),
+		1,
+	))
 	var ar AuthResult
 	var client Client
 	var err error
@@ -1049,7 +1055,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 			name: "interactive",
 			responses: [][]byte{
 				mock.GetTenantDiscoveryBody(lmo, tenant),
-				mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0),
+				schemeTokenBody,
 			},
 		},
 		{
@@ -1057,7 +1063,7 @@ func TestWithAuthenticationScheme(t *testing.T) {
 			responses: [][]byte{
 				mock.GetTenantDiscoveryBody(lmo, tenant),
 				[]byte(`{"account_type":"Managed","cloud_audience_urn":"urn","cloud_instance_name":"...","domain_name":"..."}`),
-				mock.GetAccessTokenBody(accessToken, idToken, refreshToken, clientInfo, 3600, 0),
+				schemeTokenBody,
 			},
 		},
 	} {

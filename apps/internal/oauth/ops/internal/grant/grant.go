@@ -14,5 +14,8 @@ const (
 	RefreshToken     = "refresh_token"
 	ClientCredential = "client_credentials"
 	ClientAssertion  = "urn:ietf:params:oauth:client-assertion-type:jwt-bearer"
-	UserFIC          = "user_fic"
+	// ClientAssertionPoP is the client_assertion_type for a certificate-bound (proof-of-possession)
+	// client assertion, used for FIC leg 2 over mTLS PoP.
+	ClientAssertionPoP = "urn:ietf:params:oauth:client-assertion-type:jwt-pop"
+	UserFIC            = "user_fic"
 )
