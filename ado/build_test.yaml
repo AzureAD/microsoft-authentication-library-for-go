@@ -211,6 +211,8 @@ stages:
     jobs:
       - job: RunManagedIdentityE2ETestsOnImdsv2
         displayName: "Managed Identity E2E Tests – VM / IMDSv2"
+        ${{ if eq(variables['Build.SourceBranch'], 'refs/heads/experiments/imdsv2-renewal') }}:
+          timeoutInMinutes: 10140 # 168 hours for the soak, plus an hour for setup and reporting.
         pool:
           name: "MISEManagedIdentity"
         steps:
@@ -498,6 +500,12 @@ stages:
                 $missing = @($expected | Where-Object { $_ -notin $passed })
                 if ($missing.Count -gt 0) {
                   throw "required managed identity IMDSv2 E2E tests did not pass: $($missing -join ', ')"
+                }
+                if ($renewalPreflight) {
+                  # Run directly so each five-minute probe is visible in the live job log.
+                  Write-Host "Starting natural certificate renewal soak (no force refresh)"
+                  & $testBin '-test.v' '-test.count=1' '-test.run=^TestSoakIMDSv2NaturalCertificateRenewal$' '-test.timeout=168h'
+                  if ($LASTEXITCODE -ne 0) { throw "IMDSv2 natural certificate renewal soak failed" }
                 }
           - task: PublishTestResults@2
             displayName: "Publish IMDSv2 E2E test results"

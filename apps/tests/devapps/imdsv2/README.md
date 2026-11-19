@@ -103,9 +103,10 @@ read when the original enters its 24-hour refresh window. It logs the expected
 renewal time; increase the timeout if needed. The public-key fingerprint is
 diagnostic only: certificate renewal does not require key rotation. This test
 is excluded from PR CI by the `imdsv2soak` build tag. The experiment branch
-`experiments/imdsv2-renewal` runs only the short `TestIMDSv2RenewalPreflight`
-in addition to the regular suite. A green preflight confirms a working
-baseline and records the refresh time; it does not prove renewal.
+`experiments/imdsv2-renewal` runs the full soak on the Windows lab agent after
+the regular suite and short renewal preflight. The pipeline job log shows
+each probe and the expected renewal time. The soak keeps the agent occupied
+until renewal is observed, a probe fails, or the timeout is reached.
 
 ### Attestation prerequisites
 
