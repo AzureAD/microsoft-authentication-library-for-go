@@ -999,6 +999,57 @@ func TestTenantDiscoveryValidateIssuer(t *testing.T) {
 	}
 }
 
+func TestTenantDiscoveryRootedAuthority(t *testing.T) {
+	tests := []struct {
+		name, host, issuer string
+		alias, wantError   bool
+	}{
+		{"Microsoft regional issuer", "login.microsoftonline.com.", "eastus.login.microsoftonline.com", false, false},
+		{"Microsoft CIAM alias rejected", "LOGIN.WINDOWS.NET.", "contoso.ciamlogin.com", true, true},
+		{"custom regional issuer rejected", "custom.example.com.", "eastus.login.microsoftonline.com", true, true},
+		{"custom CIAM alias preserved", "custom.example.com.", "contoso.ciamlogin.com", true, false},
+		{"Microsoft unrelated alias preserved", "login.microsoftonline.com.", "alias.example.com", true, false},
+		{"attacker suffix not eligible", "login.microsoftonline.com.evil.com.", "eastus.login.microsoftonline.com", true, true},
+		{"two final dots not eligible", "login.microsoftonline.com..", "eastus.login.microsoftonline.com", false, true},
+		{"rooted authority port not newly eligible", "login.microsoftonline.com.:443", "eastus.login.microsoftonline.com", false, true},
+		{"rooted issuer not normalized", "login.microsoftonline.com.", "eastus.login.microsoftonline.com.", false, true},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			uri := "https://" + test.host + "/tenant/"
+			parsed, err := url.Parse(uri)
+			if err != nil {
+				t.Fatal(err)
+			}
+			info, err := NewInfoFromAuthorityURI(uri, true, false)
+			if err != nil {
+				t.Fatal(err)
+			}
+			t.Logf("url.Parse Host=%q Hostname=%q; authority Info.Host=%q CanonicalAuthorityURI=%q", parsed.Host, parsed.Hostname(), info.Host, info.CanonicalAuthorityURI)
+			aliases := map[string]bool{}
+			if test.alias {
+				aliases[test.issuer] = true
+			}
+			resp := TenantDiscoveryResponse{Issuer: "https://" + test.issuer + "/tenant/v2.0"}
+			err = resp.ValidateIssuerMatchesAuthority(info.CanonicalAuthorityURI, aliases)
+			if (err != nil) != test.wantError {
+				t.Fatalf("issuer validation error = %v, wantError = %v", err, test.wantError)
+			}
+			if info.CanonicalAuthorityURI != uri || info.Host != strings.ToLower(test.host) {
+				t.Fatalf("authority origin changed: %+v", info)
+			}
+		})
+	}
+	for host := range aadTrustedHostList {
+		t.Run("catalog/"+host, func(t *testing.T) {
+			resp := TenantDiscoveryResponse{Issuer: "https://eastus." + host + "/tenant"}
+			if err := resp.ValidateIssuerMatchesAuthority("https://"+strings.ToUpper(host)+"./tenant", nil); err != nil {
+				t.Fatal(err)
+			}
+		})
+	}
+}
+
 func TestTrustedHost(t *testing.T) {
 	tests := []struct {
 		host          string

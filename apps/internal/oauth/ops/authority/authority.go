@@ -141,7 +141,8 @@ func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI st
 	issuerHost := strings.ToLower(issuerURL.Host)
 	issuerHostname := strings.ToLower(issuerURL.Hostname())
 	authorityHost := strings.ToLower(authorityURL.Host)
-	microsoftAuthority := TrustedHost(authorityHost)
+	// Ignore one optional DNS root dot only when classifying the authority.
+	microsoftAuthority := TrustedHost(strings.TrimSuffix(authorityHost, "."))
 	mismatch := fmt.Errorf("TenantDiscoveryResponse: issuer '%s' does not match authority '%s' or any trusted/alias rule", r.Issuer, authorityURI)
 
 	// Cross-host CIAM and regional issuer restrictions must precede runtime aliases.

@@ -4,7 +4,8 @@ This library uses GitHub releases to document the changelog. See https://github.
 
 OIDC discovery issuer validation now accepts a cross-host regional Microsoft issuer
 only when the authority host exactly matches a built-in trusted Microsoft host
-(case-insensitively). This expands acceptance for those authorities to HTTPS issuers
+(case-insensitively, ignoring one optional final DNS root dot on the authority
+for this classification only). This expands acceptance for those authorities to HTTPS issuers
 with exactly one nonempty label before a built-in trusted host, including arbitrary
 region names; no region catalog is consulted. Both URLs must use HTTPS for this
 new acceptance rule.
