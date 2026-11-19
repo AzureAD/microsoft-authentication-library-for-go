@@ -138,15 +138,35 @@ func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI st
 		return nil
 	}
 
+	issuerHost := strings.ToLower(issuerURL.Host)
+	issuerHostname := strings.ToLower(issuerURL.Hostname())
+	authorityHost := strings.ToLower(authorityURL.Host)
+	// Ignore one optional DNS root dot only when classifying the authority.
+	microsoftAuthority := TrustedHost(strings.TrimSuffix(authorityHost, "."))
+	mismatch := fmt.Errorf("TenantDiscoveryResponse: issuer '%s' does not match authority '%s' or any trusted/alias rule", r.Issuer, authorityURI)
+
+	// Cross-host CIAM and regional issuer restrictions must precede runtime aliases.
+	if microsoftAuthority && (issuerHostname == "ciamlogin.com" || strings.HasSuffix(issuerHostname, ".ciamlogin.com")) {
+		return mismatch
+	}
+	for host := range aadTrustedHostList {
+		if strings.HasSuffix(issuerHostname, "."+host) {
+			region := strings.TrimSuffix(issuerHostname, "."+host)
+			if microsoftAuthority && region != "" && !strings.Contains(region, ".") &&
+				issuerURL.Scheme == "https" && authorityURL.Scheme == "https" &&
+				issuerURL.User == nil && authorityURL.User == nil && issuerHost == issuerHostname {
+				return nil
+			}
+			return mismatch
+		}
+	}
+
 	// Alias-based acceptance
 	for alias, trusted := range aliases {
 		if trusted && strings.EqualFold(alias, issuerURL.Host) {
 			return nil
 		}
 	}
-
-	issuerHost := strings.ToLower(issuerURL.Host)
-	authorityHost := strings.ToLower(authorityURL.Host)
 
 	// Accept if issuer host is trusted
 	if TrustedHost(issuerHost) {
@@ -158,7 +178,7 @@ func (r *TenantDiscoveryResponse) ValidateIssuerMatchesAuthority(authorityURI st
 		return nil
 	}
 
-	return fmt.Errorf("TenantDiscoveryResponse: issuer '%s' does not match authority '%s' or any trusted/alias rule", r.Issuer, authorityURI)
+	return mismatch
 }
 
 type InstanceDiscoveryMetadata struct {
