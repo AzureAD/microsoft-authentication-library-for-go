@@ -1,5 +1,6 @@
 trigger:
   - main
+  - experiments/imdsv2-renewal
 
 pr:
   autoCancel: false
@@ -438,7 +439,9 @@ stages:
                 if (Test-Path $binDir) { Remove-Item -Recurse -Force $binDir }
                 New-Item -ItemType Directory -Force -Path $binDir | Out-Null
                 $testBin = "$binDir\e2e.test.exe"
-                go test -c -tags e2e -o $testBin ./apps/tests/e2e
+                $renewalPreflight = $env:BUILD_SOURCEBRANCH -eq 'refs/heads/experiments/imdsv2-renewal'
+                $tags = if ($renewalPreflight) { 'e2e,imdsv2soak' } else { 'e2e' }
+                go test -c -tags $tags -o $testBin ./apps/tests/e2e
                 if ($LASTEXITCODE -ne 0) { throw "failed to build the e2e test binary" }
                 Copy-Item "$native\*" $binDir -Force
                 # Presence on PATH was what the previous revision checked, and a
@@ -459,6 +462,7 @@ stages:
                   "-test.v=test2json",
                   "-test.count=1",
                   '-test.run=^TestIMDSv2'
+                  '-test.timeout=15m'
                 )
                 # Run from the package directory so relative paths resolve the way
                 # they do under `go test`.
@@ -482,6 +486,12 @@ stages:
                   "TestIMDSv2CallsBoundResource",
                   "TestIMDSv2BoundTokenIsRejectedWithoutCertificate"
                 )
+                if ($renewalPreflight) {
+                  $expected += "TestIMDSv2RenewalPreflight"
+                  # gotestsum hides output from passing tests; surface the baseline in the job log.
+                  $events | Where-Object { $_.Action -eq "output" -and $_.Test -ceq "TestIMDSv2RenewalPreflight" } |
+                    ForEach-Object { Write-Host $_.Output.TrimEnd() }
+                }
                 $passed = @($events |
                   Where-Object { $_.Action -eq "pass" -and $_.Test } |
                   ForEach-Object { $_.Test })

@@ -411,6 +411,7 @@ func getBoundSecret(ctx context.Context, url, token string, cert tls.Certificate
 		Timeout:   30 * time.Second,
 		Transport: &http.Transport{TLSClientConfig: tlsConfig},
 	}
+	defer client.CloseIdleConnections()
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {

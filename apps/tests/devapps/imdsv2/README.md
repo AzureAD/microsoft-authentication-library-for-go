@@ -82,6 +82,31 @@ the legacy IMDS check. The IMDSv2 check runs the tagged `TestIMDSv2*` suite in
 the same Windows lab used by MSAL .NET and fails if a required test is skipped
 or missing. The commands below are for manual smoke testing, not the CI suite.
 
+### Natural certificate renewal (manual E2E)
+
+On the Windows lab VM, use a system-assigned identity with secret-read access
+to the token-binding vault. Set `IMDSV2_E2E_VAULT` to its hostname and
+`IMDSV2_E2E_SECRET` to the test secret name. Build from the repository root and
+stage the x64 attestation DLL beside the test executable:
+
+```powershell
+go test -c -tags 'e2e,imdsv2soak' -o .\imdsv2-soak.test.exe .\apps\tests\e2e
+Copy-Item 'C:\path\to\AttestationClientLib.dll' .\
+.\imdsv2-soak.test.exe -test.v -test.count=1 -test.run '^TestSoakIMDSv2NaturalCertificateRenewal$' -test.timeout=168h
+```
+
+Keep the process and VM running. Use an isolated fixture and don't force-refresh,
+reboot, clear the key or certificate store, or run other clients that can change
+the binding state. The test reuses one MSAL client, reads the secret every five
+minutes, and requires a different, longer-lived certificate and a successful
+read when the original enters its 24-hour refresh window. It logs the expected
+renewal time; increase the timeout if needed. The public-key fingerprint is
+diagnostic only: certificate renewal does not require key rotation. This test
+is excluded from PR CI by the `imdsv2soak` build tag. The experiment branch
+`experiments/imdsv2-renewal` runs only the short `TestIMDSv2RenewalPreflight`
+in addition to the regular suite. A green preflight confirms a working
+baseline and records the refresh time; it does not prove renewal.
+
 ### Attestation prerequisites
 
 Only callers that opt in with `WithAttestationSupport()`—the demo's `-attest` flag—need the **x64
