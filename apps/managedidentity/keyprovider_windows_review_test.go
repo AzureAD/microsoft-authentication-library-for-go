@@ -702,11 +702,13 @@ func TestBindingKeyLockExcludesAndReleases(t *testing.T) {
 	ran := 0
 	go func() {
 		defer close(done)
-		withBindingKeyLock(context.Background(), container, func() {
+		if err := withBindingKeyLock(context.Background(), container, func() {
 			ran++
 			close(held)
 			<-releaseIt
-		})
+		}); err != nil {
+			t.Errorf("holding binding key lock: %v", err)
+		}
 	}()
 	<-held
 
@@ -716,7 +718,9 @@ func TestBindingKeyLockExcludesAndReleases(t *testing.T) {
 	// the lock did not exclude.
 	entered := make(chan struct{})
 	go func() {
-		withBindingKeyLock(context.Background(), container, func() { close(entered) })
+		if err := withBindingKeyLock(context.Background(), container, func() { close(entered) }); err != nil {
+			t.Errorf("waiting for binding key lock: %v", err)
+		}
 	}()
 	select {
 	case <-entered:
@@ -737,7 +741,11 @@ func TestBindingKeyLockExcludesAndReleases(t *testing.T) {
 		t.Fatal("the lock was never released")
 	}
 	third := make(chan struct{})
-	go func() { withBindingKeyLock(context.Background(), container, func() { close(third) }) }()
+	go func() {
+		if err := withBindingKeyLock(context.Background(), container, func() { close(third) }); err != nil {
+			t.Errorf("reusing binding key lock: %v", err)
+		}
+	}()
 	select {
 	case <-third:
 	case <-time.After(10 * time.Second):
@@ -858,7 +866,9 @@ func TestBindingKeyLockFailsOpen(t *testing.T) {
 	}
 
 	ran := 0
-	withBindingKeyLock(context.Background(), "some-container", func() { ran++ })
+	if err := withBindingKeyLock(context.Background(), "some-container", func() { ran++ }); err != nil {
+		t.Fatal(err)
+	}
 	if ran != 1 {
 		t.Fatalf("the guarded work ran %d times, want 1: provisioning was skipped because no lock could be taken", ran)
 	}
@@ -880,16 +890,20 @@ func TestBindingKeyLockFailsOpenWhenBusyWithoutRunningTwice(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		withBindingKeyLock(context.Background(), container, func() {
+		if err := withBindingKeyLock(context.Background(), container, func() {
 			close(held)
 			<-release
-		})
+		}); err != nil {
+			t.Errorf("holding binding key lock: %v", err)
+		}
 	}()
 	<-held
 
 	// The lock is held, so this caller times out and provisions unlocked.
 	ran := 0
-	withBindingKeyLock(context.Background(), container, func() { ran++ })
+	if err := withBindingKeyLock(context.Background(), container, func() { ran++ }); err != nil {
+		t.Fatal(err)
+	}
 	if ran != 1 {
 		t.Fatalf("the guarded work ran %d times while the lock was busy, want exactly 1", ran)
 	}
