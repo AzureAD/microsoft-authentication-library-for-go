@@ -386,8 +386,9 @@ func createPersistedKey(provider windows.Handle, name *uint16, overwrite bool) (
 // bounded, because a caller must not be held indefinitely behind a process that
 // is wedged or a mutex some other principal is squatting on.
 //
-// It is a variable so a test can shorten it and observe the fail-open path
-// without waiting out the real timeout.
+// It also bounds the in-process gate wait, where expiry returns an error rather
+// than starting another native operation alongside one that may be stuck.
+// It is a variable so tests can shorten either wait.
 var bindingKeyLockTimeout = 10 * time.Second
 
 // bindingKeyLockSuffix derives a mutex name from the key container name.
@@ -576,8 +577,8 @@ func keyCanSign(key windows.Handle) bool {
 // persisted-winner check in resolveBindingKey. Nothing here relies on holding
 // the mutex to stay correct.
 //
-// The channel lets queued callers cancel even while another caller is inside
-// an uninterruptible CNG operation.
+// The channel lets queued callers cancel or time out even while another caller
+// is inside an uninterruptible CNG operation.
 var bindingKeyGates = struct {
 	mu    sync.Mutex
 	gates map[string]chan struct{}
@@ -838,11 +839,18 @@ func (keyGuardProvider) getOrCreateKey(ctx context.Context, name string) (bindin
 		return bindingKey{}, err
 	}
 	gate := bindingKeyGate(name)
+	timer := time.NewTimer(bindingKeyLockTimeout)
+	defer timer.Stop()
 	select {
 	case gate <- struct{}{}:
 		defer func() { <-gate }()
 	case <-ctx.Done():
 		return bindingKey{}, ctx.Err()
+	case <-timer.C:
+		if err := ctx.Err(); err != nil {
+			return bindingKey{}, err
+		}
+		return bindingKey{}, fmt.Errorf("managedidentity: waiting for binding key process gate: %w", windows.ERROR_TIMEOUT)
 	}
 
 	var key bindingKey

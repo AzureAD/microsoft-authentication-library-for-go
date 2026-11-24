@@ -181,8 +181,11 @@ them as permission to downgrade to bearer.
 
 Key provisioning in both `Capabilities` and PoP acquisition honors context
 cancellation while waiting for the in-process gate or cross-process key lock.
-The cross-process wait is also bounded by its 10-second lock timeout; cancellation
-returns the context error rather than proceeding with unlocked provisioning.
+Each wait is also bounded by its 10-second lock timeout. An in-process gate
+timeout returns an error wrapping Windows `ERROR_TIMEOUT`, without starting
+provisioning or releasing the current holder's gate. The cross-process lock
+retains its fail-open behavior on timeout. Cancellation returns the context
+error rather than proceeding with unlocked provisioning.
 Already-running native Windows key operations cannot be interrupted and may still
 persist a key. Cancellation is checked again after they return and any returned
 key handle is closed before reporting the context error.

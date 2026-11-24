@@ -774,6 +774,63 @@ func TestKeyProvisioningCancelsWhileWaitingForProcessGate(t *testing.T) {
 	}
 }
 
+func TestKeyProvisioningProcessGateTimeout(t *testing.T) {
+	original := bindingKeyLockTimeout
+	bindingKeyLockTimeout = 30 * time.Millisecond
+	t.Cleanup(func() { bindingKeyLockTimeout = original })
+
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deadline=%v", deadline), func(t *testing.T) {
+			// Invalid CNG names keep a regression from provisioning a real key.
+			name := fmt.Sprintf("msalgo-timeout-gate-%d\x00", time.Now().UnixNano())
+			gate := bindingKeyGate(name)
+			gate <- struct{}{}
+			ctx := context.Background()
+			if deadline {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+			}
+			done := make(chan struct{})
+			var key bindingKey
+			var err error
+			start := time.Now()
+			go func() {
+				defer close(done)
+				key, err = (keyGuardProvider{}).getOrCreateKey(ctx, name)
+			}()
+			defer func() {
+				<-gate
+				<-done
+				if key.Close != nil {
+					_ = key.Close()
+				}
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("process gate wait exceeded the lock timeout")
+			}
+			if !errors.Is(err, windows.ERROR_TIMEOUT) {
+				t.Fatalf("getOrCreateKey = %v, want windows.ERROR_TIMEOUT", err)
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("lock timeout ended caller context: %v", ctx.Err())
+			}
+			if key.Signer != nil || key.Close != nil {
+				t.Fatal("timed-out gate wait returned a key")
+			}
+			if elapsed := time.Since(start); elapsed < bindingKeyLockTimeout {
+				t.Fatalf("gate wait ended early after %v", elapsed)
+			}
+			if len(gate) != 1 {
+				t.Fatal("timed-out caller released another caller's gate")
+			}
+		})
+	}
+}
+
 func TestBindingKeyLockCancellationDoesNotProvisionUnlocked(t *testing.T) {
 	for _, deadline := range []bool{false, true} {
 		t.Run(fmt.Sprintf("deadline=%v", deadline), func(t *testing.T) {
