@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -705,56 +704,95 @@ func TestCapabilitiesRetriesATransientProbeFailure(t *testing.T) {
 // something other than IMDSv2 answered and is not success.
 func TestProbeOmitsMetadataHeaderAndAcceptsOnly400(t *testing.T) {
 	for name, tc := range map[string]struct {
-		status    int
-		wantProbe bool
+		status       int
+		v1Status     int
+		wantSource   Source
+		wantStrength MtlsBindingStrength
+		wantErr      bool
+		wantPaths    []string
 	}{
-		"400 is the answer": {status: http.StatusBadRequest, wantProbe: true},
-		"200 is not":        {status: http.StatusOK, wantProbe: false},
+		"400 is the answer": {
+			status:       http.StatusBadRequest,
+			wantSource:   DefaultToIMDS,
+			wantStrength: MtlsBindingStrengthKeyGuard,
+			wantPaths:    []string{imdsV2CsrMetadataPath},
+		},
+		"200 with no v1 source": {
+			status:       http.StatusOK,
+			v1Status:     http.StatusNotFound,
+			wantStrength: MtlsBindingStrengthNone,
+			wantPaths:    []string{imdsV2CsrMetadataPath, "/metadata/identity/oauth2/token"},
+		},
+		"200 with a working v1 source": {
+			status:       http.StatusOK,
+			v1Status:     http.StatusBadRequest,
+			wantSource:   DefaultToIMDS,
+			wantStrength: MtlsBindingStrengthSoftware,
+			wantErr:      true,
+			wantPaths:    []string{imdsV2CsrMetadataPath, "/metadata/identity/oauth2/token", imdsComputePath},
+		},
 	} {
 		t.Run(name, func(t *testing.T) {
 			withCleanCaches(t)
 			var sawMetadataHeader bool
-			var probed bool
-			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				if strings.Contains(r.URL.Path, "getplatformmetadata") {
-					probed = true
-					if r.Header.Get("Metadata") != "" {
-						sawMetadataHeader = true
-					}
-					w.WriteHeader(tc.status)
-					return
+			var paths []string
+			// Intercept every request, including the fixed IMDSv1 endpoint, so
+			// the result cannot depend on the machine's real metadata service.
+			httpClient := &http.Client{Transport: roundTripperFunc(func(r *http.Request) (*http.Response, error) {
+				paths = append(paths, r.URL.Path)
+				if r.URL.Path != imdsComputePath && r.Header.Get("Metadata") != "" {
+					sawMetadataHeader = true
 				}
-				w.WriteHeader(http.StatusNotFound)
-			}))
-			t.Cleanup(srv.Close)
+				var status int
+				var body string
+				switch r.URL.Path {
+				case imdsV2CsrMetadataPath:
+					status = tc.status
+				case "/metadata/identity/oauth2/token":
+					status = tc.v1Status
+				case imdsComputePath:
+					status = http.StatusOK
+					body = `{"osType":"Windows","securityProfile":{"securityType":"TrustedLaunch"}}`
+				default:
+					return nil, fmt.Errorf("unexpected discovery request: %s", r.URL)
+				}
+				return &http.Response{
+					StatusCode: status,
+					Header:     make(http.Header),
+					Body:       io.NopCloser(strings.NewReader(body)),
+					Request:    r,
+				}, nil
+			})}
 			t.Setenv(identityEndpointEnvVar, "")
 			t.Setenv(msiEndpointEnvVar, "")
 			t.Setenv(identityHeaderEnvVar, "")
 			t.Setenv(imdsEndVar, "")
 			t.Setenv(msiSecretEnvVar, "")
 			t.Setenv(identityServerThumbprintEnvVar, "")
-			t.Setenv(azurePodIdentityAuthorityHostEnvVar, srv.URL)
+			t.Setenv(azurePodIdentityAuthorityHostEnvVar, "http://imds.test")
 
-			client, err := New(SystemAssigned(), WithHTTPClient(srv.Client()), WithRetryPolicyDisabled())
+			client, err := New(SystemAssigned(), WithHTTPClient(httpClient), WithRetryPolicyDisabled())
 			if err != nil {
 				t.Fatal(err)
 			}
 			client.keyProvider = newFakeKeyProvider()
 
 			capabilities, err := client.Capabilities(context.Background())
-			if err != nil {
-				t.Fatalf("Capabilities: %v", err)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("Capabilities error = %v, want error=%t", err, tc.wantErr)
 			}
-			if !probed {
-				t.Fatal("the probe never reached the metadata endpoint")
+			if tc.wantErr && !strings.Contains(err.Error(), "the IMDSv2 probe returned 200") {
+				t.Fatalf("Capabilities lost the failed IMDSv2 probe: %v", err)
 			}
 			if sawMetadataHeader {
 				t.Fatal("the probe sent a Metadata header; .NET's omits it so the endpoint answers 400")
 			}
-			got := capabilities.MaxSupportedBindingStrength != MtlsBindingStrengthNone
-			if got != tc.wantProbe {
-				t.Fatalf("strength = %s, want a %t probe result for status %d",
-					capabilities.MaxSupportedBindingStrength, tc.wantProbe, tc.status)
+			if capabilities.Source != tc.wantSource || capabilities.MaxSupportedBindingStrength != tc.wantStrength {
+				t.Fatalf("Capabilities = %+v, want source=%q, strength=%s",
+					capabilities, tc.wantSource, tc.wantStrength)
+			}
+			if !reflect.DeepEqual(paths, tc.wantPaths) {
+				t.Fatalf("discovery requests = %v, want %v", paths, tc.wantPaths)
 			}
 		})
 	}
