@@ -743,7 +743,7 @@ func (c *bindingCertCache) persist(key string, cert *bindingCertificate) {
 // issueBindingCertificate mints a key and exchanges a CSR for a certificate.
 // The caller holds the cache lock.
 func (v imdsV2) issueBindingCertificate(ctx context.Context, correlationID string, metadata csrMetadata, attested bool) (*bindingCertificate, error) {
-	key, err := v.keyProvider.getOrCreateKey(bindingKeyName)
+	key, err := v.keyProvider.getOrCreateKey(ctx, bindingKeyName)
 	if err != nil {
 		return nil, err
 	}

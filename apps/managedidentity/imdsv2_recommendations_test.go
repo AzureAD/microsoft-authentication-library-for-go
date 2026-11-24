@@ -71,7 +71,7 @@ func TestAttestationCacheDoesNotIncludeMetadataClientID(t *testing.T) {
 	clearAttestationCache()
 	t.Cleanup(clearAttestationCache)
 	provider := newFakeKeyProvider()
-	key, err := provider.getOrCreateKey(bindingKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatal(err)
 	}

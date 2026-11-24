@@ -6,6 +6,7 @@
 package managedidentity
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -30,7 +31,7 @@ func newTestKey(t *testing.T) bindingKey {
 			t.Logf("cleaning up the test key: %v", err)
 		}
 	})
-	key, err := provider.getOrCreateKey(testKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), testKeyName)
 	if err != nil {
 		if errors.Is(err, ErrCredentialGuardNotAvailable) {
 			t.Skipf("this host cannot create a KeyGuard key: %v", err)
@@ -121,7 +122,7 @@ func TestKeyGuardKeyIsStable(t *testing.T) {
 	first := newTestKey(t)
 	firstPub := first.Signer.Public().(*rsa.PublicKey)
 
-	second, err := newKeyProvider().getOrCreateKey(testKeyName)
+	second, err := newKeyProvider().getOrCreateKey(context.Background(), testKeyName)
 	if err != nil {
 		t.Fatalf("reopening the key: %v", err)
 	}
@@ -143,7 +144,7 @@ func TestKeyGuardKeyIsStable(t *testing.T) {
 // library recovers from a key Entra will no longer accept.
 func TestKeyGuardDeleteKey(t *testing.T) {
 	provider := newKeyProvider()
-	key, err := provider.getOrCreateKey(testKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), testKeyName)
 	if err != nil {
 		if errors.Is(err, ErrCredentialGuardNotAvailable) {
 			t.Skipf("this host cannot create a KeyGuard key: %v", err)
@@ -162,7 +163,7 @@ func TestKeyGuardDeleteKey(t *testing.T) {
 		t.Errorf("deleting an absent key returned %v, want nil", err)
 	}
 
-	replacement, err := provider.getOrCreateKey(testKeyName)
+	replacement, err := provider.getOrCreateKey(context.Background(), testKeyName)
 	if err != nil {
 		t.Fatalf("recreating the key: %v", err)
 	}
@@ -187,7 +188,7 @@ func TestSignerRejectsMismatchedDigest(t *testing.T) {
 // use-after-free reaches Go rather than CNG.
 func TestSignerAfterCloseFails(t *testing.T) {
 	provider := newKeyProvider()
-	key, err := provider.getOrCreateKey(testKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), testKeyName)
 	if err != nil {
 		if errors.Is(err, ErrCredentialGuardNotAvailable) {
 			t.Skipf("this host cannot create a KeyGuard key: %v", err)

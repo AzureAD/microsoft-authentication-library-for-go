@@ -6,6 +6,7 @@
 package managedidentity
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -701,11 +702,13 @@ func TestBindingKeyLockExcludesAndReleases(t *testing.T) {
 	ran := 0
 	go func() {
 		defer close(done)
-		withBindingKeyLock(container, func() {
+		if err := withBindingKeyLock(context.Background(), container, func() {
 			ran++
 			close(held)
 			<-releaseIt
-		})
+		}); err != nil {
+			t.Errorf("holding binding key lock: %v", err)
+		}
 	}()
 	<-held
 
@@ -715,7 +718,9 @@ func TestBindingKeyLockExcludesAndReleases(t *testing.T) {
 	// the lock did not exclude.
 	entered := make(chan struct{})
 	go func() {
-		withBindingKeyLock(container, func() { close(entered) })
+		if err := withBindingKeyLock(context.Background(), container, func() { close(entered) }); err != nil {
+			t.Errorf("waiting for binding key lock: %v", err)
+		}
 	}()
 	select {
 	case <-entered:
@@ -736,11 +741,160 @@ func TestBindingKeyLockExcludesAndReleases(t *testing.T) {
 		t.Fatal("the lock was never released")
 	}
 	third := make(chan struct{})
-	go func() { withBindingKeyLock(container, func() { close(third) }) }()
+	go func() {
+		if err := withBindingKeyLock(context.Background(), container, func() { close(third) }); err != nil {
+			t.Errorf("reusing binding key lock: %v", err)
+		}
+	}()
 	select {
 	case <-third:
 	case <-time.After(10 * time.Second):
 		t.Fatal("the lock was not reusable after release")
+	}
+}
+
+func TestKeyProvisioningCancelsWhileWaitingForProcessGate(t *testing.T) {
+	name := fmt.Sprintf("msalgo-cancel-gate-%d", time.Now().UnixNano())
+	gate := bindingKeyGate(name)
+	gate <- struct{}{}
+	defer func() { <-gate }()
+
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	start := time.Now()
+	key, err := (keyGuardProvider{}).getOrCreateKey(ctx, name)
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("getOrCreateKey = %v, want context.DeadlineExceeded", err)
+	}
+	if key.Signer != nil || key.Close != nil {
+		t.Fatal("cancelled gate wait returned a key")
+	}
+	if elapsed := time.Since(start); elapsed > time.Second {
+		t.Fatalf("cancelled gate wait took %v", elapsed)
+	}
+}
+
+func TestKeyProvisioningProcessGateTimeout(t *testing.T) {
+	original := bindingKeyLockTimeout
+	bindingKeyLockTimeout = 30 * time.Millisecond
+	t.Cleanup(func() { bindingKeyLockTimeout = original })
+
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deadline=%v", deadline), func(t *testing.T) {
+			// Invalid CNG names keep a regression from provisioning a real key.
+			name := fmt.Sprintf("msalgo-timeout-gate-%d\x00", time.Now().UnixNano())
+			gate := bindingKeyGate(name)
+			gate <- struct{}{}
+			ctx := context.Background()
+			if deadline {
+				var cancel context.CancelFunc
+				ctx, cancel = context.WithTimeout(ctx, 5*time.Second)
+				defer cancel()
+			}
+			done := make(chan struct{})
+			var key bindingKey
+			var err error
+			start := time.Now()
+			go func() {
+				defer close(done)
+				key, err = (keyGuardProvider{}).getOrCreateKey(ctx, name)
+			}()
+			defer func() {
+				<-gate
+				<-done
+				if key.Close != nil {
+					_ = key.Close()
+				}
+			}()
+
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("process gate wait exceeded the lock timeout")
+			}
+			if !errors.Is(err, windows.ERROR_TIMEOUT) {
+				t.Fatalf("getOrCreateKey = %v, want windows.ERROR_TIMEOUT", err)
+			}
+			if ctx.Err() != nil {
+				t.Fatalf("lock timeout ended caller context: %v", ctx.Err())
+			}
+			if key.Signer != nil || key.Close != nil {
+				t.Fatal("timed-out gate wait returned a key")
+			}
+			if elapsed := time.Since(start); elapsed < bindingKeyLockTimeout {
+				t.Fatalf("gate wait ended early after %v", elapsed)
+			}
+			if len(gate) != 1 {
+				t.Fatal("timed-out caller released another caller's gate")
+			}
+		})
+	}
+}
+
+func TestBindingKeyLockCancellationDoesNotProvisionUnlocked(t *testing.T) {
+	for _, deadline := range []bool{false, true} {
+		t.Run(fmt.Sprintf("deadline=%v", deadline), func(t *testing.T) {
+			container := fmt.Sprintf("msalgo-cancel-lock-%d", time.Now().UnixNano())
+			held := make(chan struct{})
+			release := make(chan struct{})
+			done := make(chan error, 1)
+			go func() {
+				done <- withBindingKeyLock(context.Background(), container, func() {
+					close(held)
+					<-release
+				})
+			}()
+			<-held
+			t.Cleanup(func() {
+				close(release)
+				if err := <-done; err != nil {
+					t.Errorf("holder failed: %v", err)
+				}
+			})
+
+			var ctx context.Context
+			var cancel context.CancelFunc
+			want := context.Canceled
+			if deadline {
+				ctx, cancel = context.WithTimeout(context.Background(), 50*time.Millisecond)
+				want = context.DeadlineExceeded
+			} else {
+				ctx, cancel = context.WithCancel(context.Background())
+				timer := time.AfterFunc(50*time.Millisecond, cancel)
+				defer timer.Stop()
+			}
+			defer cancel()
+			ran := 0
+			start := time.Now()
+			err := withBindingKeyLock(ctx, container, func() { ran++ })
+			if !errors.Is(err, want) || ran != 0 {
+				t.Fatalf("cancelled lock = %v; work ran %d times, want %v and no work", err, ran, want)
+			}
+			if elapsed := time.Since(start); elapsed > time.Second {
+				t.Fatalf("cancelled lock wait took %v", elapsed)
+			}
+		})
+	}
+}
+
+func TestBindingKeyLockAlreadyCancelledDoesNotProvision(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	err := withBindingKeyLock(ctx, "cancelled-before-entry", func() {
+		t.Fatal("cancelled caller started provisioning")
+	})
+	if !errors.Is(err, context.Canceled) {
+		t.Fatalf("withBindingKeyLock = %v, want context.Canceled", err)
+	}
+}
+
+func TestBindingKeyLockWaitFailureStillProvisionsOnce(t *testing.T) {
+	ran := 0
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	err := runUnderBindingKeyLock(ctx, 0, func() { ran++ })
+	if err != nil || ran != 1 {
+		t.Fatalf("failed wait = %v; work ran %d times, want nil and one invocation", err, ran)
 	}
 }
 
@@ -769,7 +923,9 @@ func TestBindingKeyLockFailsOpen(t *testing.T) {
 	}
 
 	ran := 0
-	withBindingKeyLock("some-container", func() { ran++ })
+	if err := withBindingKeyLock(context.Background(), "some-container", func() { ran++ }); err != nil {
+		t.Fatal(err)
+	}
 	if ran != 1 {
 		t.Fatalf("the guarded work ran %d times, want 1: provisioning was skipped because no lock could be taken", ran)
 	}
@@ -791,16 +947,20 @@ func TestBindingKeyLockFailsOpenWhenBusyWithoutRunningTwice(t *testing.T) {
 	done := make(chan struct{})
 	go func() {
 		defer close(done)
-		withBindingKeyLock(container, func() {
+		if err := withBindingKeyLock(context.Background(), container, func() {
 			close(held)
 			<-release
-		})
+		}); err != nil {
+			t.Errorf("holding binding key lock: %v", err)
+		}
 	}()
 	<-held
 
 	// The lock is held, so this caller times out and provisions unlocked.
 	ran := 0
-	withBindingKeyLock(container, func() { ran++ })
+	if err := withBindingKeyLock(context.Background(), container, func() { ran++ }); err != nil {
+		t.Fatal(err)
+	}
 	if ran != 1 {
 		t.Fatalf("the guarded work ran %d times while the lock was busy, want exactly 1", ran)
 	}

@@ -208,6 +208,9 @@ type Client struct {
 	// capabilitiesState for why this is held here rather than in a
 	// process-wide map.
 	hostCapabilities *capabilitiesState
+	// Source-only probes must not queue behind key provisioning or publish an
+	// unmeasured binding strength into hostCapabilities.
+	hostSource *capabilitiesState
 }
 
 type AcquireTokenOptions struct {
@@ -495,6 +498,7 @@ func New(id ID, options ...ClientOption) (Client, error) {
 		// before the options run, means every client New returns has one and
 		// every copy of that client shares it.
 		hostCapabilities: newCapabilitiesState(),
+		hostSource:       newCapabilitiesState(),
 	}
 	for _, option := range options {
 		option(&client)

@@ -6,6 +6,7 @@
 package managedidentity
 
 import (
+	"context"
 	"crypto"
 	"crypto/rsa"
 	"crypto/sha256"
@@ -385,8 +386,9 @@ func createPersistedKey(provider windows.Handle, name *uint16, overwrite bool) (
 // bounded, because a caller must not be held indefinitely behind a process that
 // is wedged or a mutex some other principal is squatting on.
 //
-// It is a variable so a test can shorten it and observe the fail-open path
-// without waiting out the real timeout.
+// It also bounds the in-process gate wait, where expiry returns an error rather
+// than starting another native operation alongside one that may be stuck.
+// It is a variable so tests can shorten either wait.
 var bindingKeyLockTimeout = 10 * time.Second
 
 // bindingKeyLockSuffix derives a mutex name from the key container name.
@@ -425,7 +427,8 @@ var bindingKeyLockNamespaces = []string{`Global\`, `Local\`}
 // because deduplicating within the session is worth more than not locking at
 // all. That is the same fallback withAliasLock makes, for the same reason.
 //
-// Unlike the store lock, a busy or unavailable lock here does not skip the work.
+// Unlike the store lock, a busy or unavailable lock here does not skip the work
+// unless the caller's context has ended.
 // Provisioning has to go ahead: refusing to mint a binding key because a mutex
 // could not be taken would turn a hardening measure into a token outage. This is
 // safe precisely because the lock is not what makes the result correct -
@@ -438,7 +441,10 @@ var bindingKeyLockNamespaces = []string{`Global\`, `Local\`}
 // create-finalize sequence at once. Closing that would require both libraries to
 // agree on a mutex name; until they do, the persisted-winner check is what keeps
 // this library correct in that case.
-func withBindingKeyLock(container string, fn func()) {
+func withBindingKeyLock(ctx context.Context, container string, fn func()) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	suffix := bindingKeyLockSuffix(container)
 	for _, namespace := range bindingKeyLockNamespaces {
 		handle, ok := openBindingKeyLock(namespace + suffix)
@@ -447,12 +453,15 @@ func withBindingKeyLock(container string, fn func()) {
 			// creating a global object was denied. Try the next one.
 			continue
 		}
-		runUnderBindingKeyLock(handle, fn)
-		return
+		return runUnderBindingKeyLock(ctx, handle, fn)
 	}
 	// No named object could be created in any namespace. Provision anyway;
 	// see above.
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	fn()
+	return nil
 }
 
 // openBindingKeyLock creates or opens the named mutex, reporting whether a
@@ -481,21 +490,29 @@ func openBindingKeyLock(name string) (windows.Handle, bool) {
 // every path.
 //
 // The wait, the work and the release run on one pinned OS thread; see
-// awaitNamedMutex, which both named-mutex callers in this package share. When
-// ownership cannot be taken, fn runs unlocked here rather than inside
-// awaitNamedMutex, so it runs exactly once either way.
-func runUnderBindingKeyLock(handle windows.Handle, fn func()) {
+// awaitNamedMutexContext. On timeout or a failed wait, fn runs unlocked here
+// rather than inside the wait helper, so it runs exactly once either way.
+// Cancellation returns without starting provisioning.
+func runUnderBindingKeyLock(ctx context.Context, handle windows.Handle, fn func()) error {
 	// Registered before the wait so it runs after the release and the unpin.
 	defer func() { _ = windows.CloseHandle(handle) }()
 
-	if awaitNamedMutex(handle, bindingKeyLockTimeout, fn) {
-		return
+	ran, err := awaitNamedMutexContext(ctx, handle, bindingKeyLockTimeout, fn)
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		return ctxErr
+	}
+	if ran {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+		return err
 	}
 	// The lock was busy or the wait failed. Provisioning still goes ahead: the
 	// persisted-winner check in resolveBindingKey is what makes the result
 	// correct, so losing the lock costs a wasted key creation rather than a
 	// wrong answer.
 	fn()
+	return nil
 }
 
 // keyCanSign reports whether an opened key can still perform a private-key
@@ -560,20 +577,19 @@ func keyCanSign(key windows.Handle) bool {
 // persisted-winner check in resolveBindingKey. Nothing here relies on holding
 // the mutex to stay correct.
 //
-// A plain mutex is right here where the attestation gate is a cancellable
-// channel: everything under this lock is a local CNG call, so the wait is
-// bounded by the trustlet rather than by a network round trip.
+// The channel lets queued callers cancel or time out even while another caller
+// is inside an uninterruptible CNG operation.
 var bindingKeyGates = struct {
 	mu    sync.Mutex
-	gates map[string]*sync.Mutex
-}{gates: map[string]*sync.Mutex{}}
+	gates map[string]chan struct{}
+}{gates: map[string]chan struct{}{}}
 
-func bindingKeyGate(name string) *sync.Mutex {
+func bindingKeyGate(name string) chan struct{} {
 	bindingKeyGates.mu.Lock()
 	defer bindingKeyGates.mu.Unlock()
 	gate, ok := bindingKeyGates.gates[name]
 	if !ok {
-		gate = &sync.Mutex{}
+		gate = make(chan struct{}, 1)
 		bindingKeyGates.gates[name] = gate
 	}
 	return gate
@@ -818,16 +834,39 @@ func (c cngBindingKeyContainer) adopt(key windows.Handle) (bindingKey, error) {
 // deliberately allowed to fail open, so the persisted-winner check inside
 // resolveBindingKey is the guarantee. See resolveBindingKey for the race the
 // check exists for.
-func (keyGuardProvider) getOrCreateKey(name string) (bindingKey, error) {
+func (keyGuardProvider) getOrCreateKey(ctx context.Context, name string) (bindingKey, error) {
+	if err := ctx.Err(); err != nil {
+		return bindingKey{}, err
+	}
 	gate := bindingKeyGate(name)
-	gate.Lock()
-	defer gate.Unlock()
+	timer := time.NewTimer(bindingKeyLockTimeout)
+	defer timer.Stop()
+	select {
+	case gate <- struct{}{}:
+		defer func() { <-gate }()
+	case <-ctx.Done():
+		return bindingKey{}, ctx.Err()
+	case <-timer.C:
+		if err := ctx.Err(); err != nil {
+			return bindingKey{}, err
+		}
+		return bindingKey{}, fmt.Errorf("managedidentity: waiting for binding key process gate: %w", windows.ERROR_TIMEOUT)
+	}
 
 	var key bindingKey
 	var err error
-	withBindingKeyLock(name, func() {
+	lockErr := withBindingKeyLock(ctx, name, func() {
 		key, err = provisionBindingKey(name)
 	})
+	if ctxErr := ctx.Err(); ctxErr != nil {
+		lockErr = ctxErr
+	}
+	if lockErr != nil {
+		if key.Close != nil {
+			_ = key.Close()
+		}
+		return bindingKey{}, lockErr
+	}
 	return key, err
 }
 

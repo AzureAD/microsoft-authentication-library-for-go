@@ -1333,7 +1333,7 @@ func mustRequest(t *testing.T, url string) *http.Request {
 // was reset: it still parses, and its key is simply not there any more.
 func testBindingCertificate(t *testing.T, provider *fakeKeyProvider, keyName string, notAfter time.Time) *bindingCertificate {
 	t.Helper()
-	key, err := provider.getOrCreateKey(keyName)
+	key, err := provider.getOrCreateKey(context.Background(), keyName)
 	if err != nil {
 		t.Fatal(err)
 	}

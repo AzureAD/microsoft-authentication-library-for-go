@@ -109,6 +109,28 @@ func WithClaims(claims string) AcquireTokenOption {
 
 ## Error Handling
 
+### Source-only discovery
+
+Use `Client.DiscoverSource(ctx)` for credential-chain availability checks and
+bearer-only applications:
+
+```go
+source, err := client.DiscoverSource(ctx)
+if err != nil {
+    return err
+}
+if source == "" {
+    return fmt.Errorf("no managed identity source detected")
+}
+```
+
+This checks configured environment sources, then probes IMDSv2 and IMDSv1 in that
+order when needed. It never provisions a binding key, reads the compute document,
+or requests a certificate or token. An undetected source is an empty result without
+an error. Source-only discovery has its own cache and gate, independent of binding
+evaluation; a subsequent `Capabilities` call still evaluates binding strength.
+Client copies share both caches, and unresolved source results retry after 30 seconds.
+
 ### Binding-strength discovery
 
 `Client.Capabilities(ctx)` returns `(Capabilities, error)`. Check the error before
@@ -156,6 +178,17 @@ shortfall, not a failed measurement.
 This changes the beta contract: `Capabilities` errors are no longer limited to
 context cancellation. Callers must handle discovery errors rather than treating
 them as permission to downgrade to bearer.
+
+Key provisioning in both `Capabilities` and PoP acquisition honors context
+cancellation while waiting for the in-process gate or cross-process key lock.
+Each wait is also bounded by its 10-second lock timeout. An in-process gate
+timeout returns an error wrapping Windows `ERROR_TIMEOUT`, without starting
+provisioning or releasing the current holder's gate. The cross-process lock
+retains its fail-open behavior on timeout. Cancellation returns the context
+error rather than proceeding with unlocked provisioning.
+Already-running native Windows key operations cannot be interrupted and may still
+persist a key. Cancellation is checked again after they return and any returned
+key handle is closed before reporting the context error.
 
 Error handling in GO is different to what we used to in languages like Java or Swift.
 There is no concept of ‘exceptions’, instead we just return errors and immediately check if an error was returned and handle it there and then.  
