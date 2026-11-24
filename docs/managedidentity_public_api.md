@@ -109,6 +109,54 @@ func WithClaims(claims string) AcquireTokenOption {
 
 ## Error Handling
 
+### Binding-strength discovery
+
+`Client.Capabilities(ctx)` returns `(Capabilities, error)`. Check the error before
+using `MaxSupportedBindingStrength` to select a token type:
+
+```go
+caps, err := client.Capabilities(ctx)
+if err != nil {
+    return err
+}
+if caps.Source == "" {
+    return fmt.Errorf("managed identity unavailable: %s", caps.ErrorReason)
+}
+switch caps.MaxSupportedBindingStrength {
+case managedidentity.MtlsBindingStrengthKeyGuard:
+    // Select PoP.
+case managedidentity.MtlsBindingStrengthSoftware, managedidentity.MtlsBindingStrengthNone:
+    // Apply the caller's bearer-fallback policy.
+}
+```
+
+When a source is detected but binding-strength discovery fails, MSAL returns a
+partial `Capabilities` result together with an error wrapping the underlying
+cause. `Source` remains valid; `MaxSupportedBindingStrength` is only a lower bound,
+not evidence that stronger binding is unavailable. Use `errors.Is` or `errors.As`
+to inspect the failure. `ErrorReason` remains human-readable diagnostic text.
+An unresolved result and its error are cached together for the existing
+30-second retry interval. Cancellation is not cached.
+
+A definitively unsupported platform or KeyGuard operation is a normal result,
+not a discovery error. On Windows, `NTE_NOT_SUPPORTED` from key creation or
+finalization maps to `ErrCredentialGuardNotAvailable`. Other native failures are
+preserved rather than all being labelled unsupported. An ambiguous VBS failure
+does not establish that VBS is permanently absent.
+
+An undetected source still returns an empty `Source` and diagnostic `ErrorReason`
+without an error; this does not establish a binding strength. Environment-based
+sources and definitively IMDSv1-only hosts with readable compute metadata retain
+their normal `None` or `Software` results.
+
+`AcquireToken` with `WithMtlsPoPMinStrength` propagates discovery failures before
+issuing a certificate or token. `ErrMinStrengthNotMet` indicates an established
+shortfall, not a failed measurement.
+
+This changes the beta contract: `Capabilities` errors are no longer limited to
+context cancellation. Callers must handle discovery errors rather than treating
+them as permission to downgrade to bearer.
+
 Error handling in GO is different to what we used to in languages like Java or Swift.
 There is no concept of ‘exceptions’, instead we just return errors and immediately check if an error was returned and handle it there and then.  
 The SDK will return client-side errors like so:

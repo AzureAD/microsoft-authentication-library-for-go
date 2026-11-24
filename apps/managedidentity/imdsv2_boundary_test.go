@@ -12,6 +12,7 @@ import (
 	"crypto/tls"
 	"crypto/x509"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -568,8 +569,8 @@ func TestAnIndeterminateKeyProviderFailureIsNotCachedForever(t *testing.T) {
 	client := fake.newTestClient(t, SystemAssigned(), provider)
 
 	got, err := client.Capabilities(context.Background())
-	if err != nil {
-		t.Fatalf("Capabilities: %v", err)
+	if !errors.Is(err, provider.err) {
+		t.Fatalf("Capabilities error = %v, want %v", err, provider.err)
 	}
 	if got.Source != DefaultToIMDS {
 		t.Fatalf("source = %q, want DefaultToIMDS: the v2 probe answered", got.Source)
@@ -583,7 +584,16 @@ func TestAnIndeterminateKeyProviderFailureIsNotCachedForever(t *testing.T) {
 
 	// The condition clears. Past the retry interval the client must ask again
 	// and be able to report the tier it could not measure before.
+	providerErr := provider.err
 	provider.err = nil
+	fake.resetCalls()
+	copyOfClient := client
+	if cached, err := copyOfClient.Capabilities(context.Background()); !errors.Is(err, providerErr) || cached != got {
+		t.Fatalf("cached partial result = %+v, %v, want %+v and %v", cached, err, got, providerErr)
+	}
+	if len(fake.calls) != 0 {
+		t.Fatalf("unresolved capabilities were not reused inside the retry interval: %v", fake.calls)
+	}
 	current = current.Add(capabilitiesRetryInterval + time.Second)
 	recovered, err := client.Capabilities(context.Background())
 	if err != nil {
@@ -631,6 +641,30 @@ func TestAnUnsupportedPlatformSettlesTheAnswer(t *testing.T) {
 	}
 	if len(fake.calls) != 0 {
 		t.Fatalf("calls = %q, want a compile-time answer settled rather than re-probed", fake.calls)
+	}
+}
+
+func TestKnownUnsupportedKeyGuardSettlesTheAnswer(t *testing.T) {
+	withCleanCaches(t)
+	realNow := now
+	current := realNow()
+	now = func() time.Time { return current }
+	t.Cleanup(func() { now = realNow })
+
+	fake := newIMDSFake(t)
+	provider := newFakeKeyProvider()
+	provider.err = fmt.Errorf("isolation unsupported: %w", ErrCredentialGuardNotAvailable)
+	client := fake.newTestClient(t, SystemAssigned(), provider)
+	caps, err := client.Capabilities(context.Background())
+	if err != nil || caps.Source != DefaultToIMDS || caps.MaxSupportedBindingStrength != MtlsBindingStrengthSoftware {
+		t.Fatalf("Capabilities = %+v, %v", caps, err)
+	}
+
+	fake.resetCalls()
+	current = current.Add(100 * capabilitiesRetryInterval)
+	cached, err := client.Capabilities(context.Background())
+	if err != nil || cached != caps || len(fake.calls) != 0 {
+		t.Fatalf("cached unsupported capabilities = %+v, %v; calls=%v", cached, err, fake.calls)
 	}
 }
 

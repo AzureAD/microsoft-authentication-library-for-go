@@ -293,8 +293,12 @@ func bindingKeyCreateError(op string, status uintptr) error {
 	if statusCode(status) == nteExists {
 		return errBindingKeyExists
 	}
-	// A host without VBS rejects the virtual isolation flag outright.
-	return fmt.Errorf("%w: %v", ErrCredentialGuardNotAvailable, ncryptStatusError(op, status))
+	err := ncryptStatusError(op, status)
+	if statusCode(status) == nteNotSupported {
+		return fmt.Errorf("%w: %v", ErrCredentialGuardNotAvailable, err)
+	}
+	// A provider failure does not establish that the host lacks KeyGuard.
+	return err
 }
 
 // createPersistedKey mints a VBS-isolated RSA key called name.

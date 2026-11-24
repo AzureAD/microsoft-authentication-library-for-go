@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -86,15 +87,141 @@ func TestCapabilitiesKeepsSoftwareFloorWhenKeyProviderFails(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	provider := newFakeKeyProvider()
-	provider.err = errors.New("no VBS on this host")
+	provider.err = errors.New("key provider temporarily unavailable")
 
 	client := fake.newTestClient(t, SystemAssigned(), provider)
 	capabilities, err := client.Capabilities(context.Background())
-	if err != nil {
-		t.Fatalf("Capabilities: %v", err)
+	if !errors.Is(err, provider.err) {
+		t.Fatalf("Capabilities error = %v, want %v", err, provider.err)
 	}
 	if capabilities.MaxSupportedBindingStrength != MtlsBindingStrengthSoftware {
 		t.Fatalf("strength = %s, want Software", capabilities.MaxSupportedBindingStrength)
+	}
+}
+
+func TestCapabilitiesBindingOutcomes(t *testing.T) {
+	providerFailure := &os.PathError{Op: "open", Path: "binding-key", Err: errors.New("provider starting")}
+	for _, tt := range []struct {
+		name        string
+		keyType     keyType
+		providerErr error
+		strength    MtlsBindingStrength
+		wantErr     bool
+	}{
+		{"KeyGuard", keyTypeKeyGuard, nil, MtlsBindingStrengthKeyGuard, false},
+		{"software", keyTypeSoftware, nil, MtlsBindingStrengthSoftware, false},
+		{"unsupported host", keyTypeUnknown, fmt.Errorf("isolation unavailable: %w", ErrCredentialGuardNotAvailable), MtlsBindingStrengthSoftware, false},
+		{"unsupported platform", keyTypeUnknown, fmt.Errorf("no provider: %w", ErrMtlsNotSupportedForPlatform), MtlsBindingStrengthSoftware, false},
+		{"provider failure", keyTypeUnknown, providerFailure, MtlsBindingStrengthSoftware, true},
+		{"unknown key type", keyTypeUnknown, nil, MtlsBindingStrengthSoftware, true},
+		{"unrecognized key type", keyType(42), nil, MtlsBindingStrengthSoftware, true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			withCleanCaches(t)
+			fake := newIMDSFake(t)
+			provider := newFakeKeyProvider()
+			provider.typ = tt.keyType
+			provider.err = tt.providerErr
+			client := fake.newTestClient(t, SystemAssigned(), provider)
+			caps, err := client.Capabilities(context.Background())
+			if (err != nil) != tt.wantErr {
+				t.Fatalf("Capabilities error = %v, want error=%v", err, tt.wantErr)
+			}
+			if caps.Source != DefaultToIMDS || caps.MaxSupportedBindingStrength != tt.strength {
+				t.Fatalf("Capabilities = %+v, want source=IMDS, strength=%s", caps, tt.strength)
+			}
+			if tt.wantErr && caps.ErrorReason == "" {
+				t.Fatal("partial capabilities lost the failure diagnostic")
+			}
+			if tt.wantErr && tt.providerErr != nil {
+				if !errors.Is(err, tt.providerErr) {
+					t.Fatalf("underlying error lost: %v", err)
+				}
+				var pathErr *os.PathError
+				if !errors.As(err, &pathErr) || pathErr != providerFailure {
+					t.Fatalf("underlying typed error lost: %v", err)
+				}
+			}
+			if fake.countOf("issue") != 0 || fake.countOf("token") != 0 {
+				t.Fatal("discovery requested a certificate or token")
+			}
+		})
+	}
+}
+
+func TestMinStrengthDistinguishesUnsupportedAndFailedKeyGuard(t *testing.T) {
+	providerFailure := errors.New("key provider temporarily unavailable")
+	for _, tt := range []struct {
+		name        string
+		providerErr error
+		wantErr     error
+	}{
+		{"unsupported", ErrCredentialGuardNotAvailable, ErrMinStrengthNotMet},
+		{"unresolved", providerFailure, providerFailure},
+	} {
+		for _, overMtls := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/overMtls=%v", tt.name, overMtls), func(t *testing.T) {
+				withCleanCaches(t)
+				fake := newIMDSFake(t)
+				provider := newFakeKeyProvider()
+				provider.err = tt.providerErr
+				client := fake.newTestClient(t, SystemAssigned(), provider)
+				flow := WithMtlsProofOfPossession()
+				if overMtls {
+					flow = WithRequestOverMtls()
+				}
+				for attempt := 0; attempt < 2; attempt++ {
+					_, err := client.AcquireToken(context.Background(), "https://vault.azure.net",
+						flow, WithAttestationSupport(), WithMtlsPoPMinStrength(MtlsBindingStrengthKeyGuard))
+					if !errors.Is(err, tt.wantErr) {
+						t.Fatalf("AcquireToken error = %v, want %v", err, tt.wantErr)
+					}
+					if tt.name == "unresolved" && errors.Is(err, ErrMinStrengthNotMet) {
+						t.Fatal("an unresolved maximum was reported as an established shortfall")
+					}
+				}
+				if fake.countOf("issue") != 0 || fake.countOf("token") != 0 || provider.creates != 0 {
+					t.Fatal("rejected acquisition created a key, certificate, or token")
+				}
+			})
+		}
+	}
+}
+
+func TestCapabilitiesConfiguredSourcesRemainNormalResults(t *testing.T) {
+	for _, source := range []Source{AzureArc, ServiceFabric, CloudShell, AzureML, AppService} {
+		t.Run(string(source), func(t *testing.T) {
+			withCleanCaches(t)
+			fake := newIMDSFake(t)
+			provider := newFakeKeyProvider()
+			provider.err = errors.New("must not access the key provider")
+			client := fake.newTestClient(t, SystemAssigned(), provider)
+			client.source = source
+			caps, err := client.Capabilities(context.Background())
+			if err != nil || caps.Source != source || caps.MaxSupportedBindingStrength != MtlsBindingStrengthNone {
+				t.Fatalf("Capabilities = %+v, %v", caps, err)
+			}
+			if len(fake.calls) != 0 {
+				t.Fatalf("environment discovery contacted IMDS: %v", fake.calls)
+			}
+		})
+	}
+}
+
+func TestMinStrengthDoesNotTreatAnUndetectedSourceAsAShortfall(t *testing.T) {
+	withCleanCaches(t)
+	fake := newIMDSFake(t)
+	fake.metadataStatus = http.StatusNotFound
+	fake.v1ProbeStatus = http.StatusNotFound
+	provider := newFakeKeyProvider()
+	client := fake.newTestClient(t, SystemAssigned(), provider)
+	_, err := client.AcquireToken(context.Background(), "https://vault.azure.net",
+		WithMtlsProofOfPossession(), WithMtlsPoPMinStrength(MtlsBindingStrengthKeyGuard))
+	if err == nil || errors.Is(err, ErrMinStrengthNotMet) {
+		t.Fatalf("AcquireToken = %v, want failed discovery rather than a settled shortfall", err)
+	}
+	if fake.countOf("issue") != 0 || fake.countOf("token") != 0 || provider.creates != 0 {
+		t.Fatal("an undetected source resulted in a key, certificate, or token")
 	}
 }
 
@@ -104,6 +231,7 @@ func TestCapabilitiesReportsNoneWhenMetadataUnavailable(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	fake.metadataStatus = 404
+	fake.computeBody = `{"osType":"Linux"}`
 	provider := newFakeKeyProvider()
 
 	client := fake.newTestClient(t, SystemAssigned(), provider)
@@ -225,7 +353,7 @@ func TestMinStrengthNoneSkipsDiscovery(t *testing.T) {
 	}
 	// Discovery result now lives on the client, so a client that never probed
 	// simply has nothing stored.
-	if _, discovered := client.hostCapabilityState().cached(); discovered {
+	if _, discovered, _ := client.hostCapabilityState().cached(); discovered {
 		t.Fatal("discovery ran for a request that imposed no floor")
 	}
 }
@@ -459,6 +587,7 @@ func TestCapabilitiesDoesNotRetryA404Probe(t *testing.T) {
 	withCleanCaches(t)
 	fake := newIMDSFake(t)
 	fake.metadataStatus = http.StatusNotFound
+	fake.computeBody = `{"osType":"Linux"}`
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 	capabilities, err := client.Capabilities(context.Background())
@@ -549,8 +678,8 @@ func TestCapabilitiesRetriesATransientProbeFailure(t *testing.T) {
 	fake.metadataStatus = http.StatusInternalServerError
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
-	if _, err := client.Capabilities(context.Background()); err != nil {
-		t.Fatalf("Capabilities: %v", err)
+	if caps, err := client.Capabilities(context.Background()); err == nil || caps.Source != DefaultToIMDS {
+		t.Fatalf("Capabilities = %+v, %v, want detected source with unresolved binding strength", caps, err)
 	}
 	probes := 0
 	for _, call := range fake.calls {
@@ -647,8 +776,8 @@ func TestCapabilitiesReprobesAfterATransientFailure(t *testing.T) {
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 	got, err := client.Capabilities(context.Background())
-	if err != nil {
-		t.Fatalf("Capabilities: %v", err)
+	if err == nil || got.Source != DefaultToIMDS {
+		t.Fatalf("Capabilities = %+v, %v, want partial capabilities with an error", got, err)
 	}
 	if got.MaxSupportedBindingStrength != MtlsBindingStrengthNone {
 		t.Fatalf("strength = %s, want None while IMDS is failing", got.MaxSupportedBindingStrength)
@@ -658,8 +787,8 @@ func TestCapabilitiesReprobesAfterATransientFailure(t *testing.T) {
 	// the host is deliberately not asked again yet.
 	fake.metadataStatus = http.StatusOK
 	fake.calls = nil
-	if _, err = client.Capabilities(context.Background()); err != nil {
-		t.Fatalf("Capabilities: %v", err)
+	if _, err = client.Capabilities(context.Background()); err == nil {
+		t.Fatal("cached unresolved capabilities lost their error")
 	}
 	if len(fake.calls) != 0 {
 		t.Fatalf("calls = %q, want the failure reused inside the retry interval", fake.calls)
@@ -697,8 +826,8 @@ func TestCapabilitiesExpiresAV1AnswerReachedAfterATransientV2Failure(t *testing.
 	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 	got, err := client.Capabilities(context.Background())
-	if err != nil {
-		t.Fatalf("Capabilities: %v", err)
+	if err == nil {
+		t.Fatal("a transient IMDSv2 failure was reported as a conclusive maximum")
 	}
 	if got.Source != DefaultToIMDS {
 		t.Fatalf("source = %q, want DefaultToIMDS: v1 answered", got.Source)
@@ -889,8 +1018,8 @@ func TestCapabilitiesTreatsAComputeFailureAsTransientWithSourceIntact(t *testing
 			client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
 
 			got, err := client.Capabilities(context.Background())
-			if err != nil {
-				t.Fatalf("Capabilities: %v", err)
+			if err == nil {
+				t.Fatal("an unreadable compute document was reported as a conclusive maximum")
 			}
 			if got.Source != DefaultToIMDS {
 				t.Fatalf("source = %q, want DefaultToIMDS: the v1 probe answered", got.Source)

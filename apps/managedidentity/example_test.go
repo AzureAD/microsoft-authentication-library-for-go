@@ -14,6 +14,28 @@ import (
 	mi "github.com/AzureAD/microsoft-authentication-library-for-go/apps/managedidentity"
 )
 
+func ExampleClient_Capabilities() {
+	client, err := mi.New(mi.SystemAssigned())
+	if err != nil {
+		log.Fatal(err)
+	}
+	caps, err := client.Capabilities(context.TODO())
+	if err != nil {
+		log.Print(err)
+		return // Failed measurement is not a reason to select a weaker token.
+	}
+	if caps.Source == "" {
+		fmt.Println("No managed identity endpoint detected")
+		return
+	}
+	switch caps.MaxSupportedBindingStrength {
+	case mi.MtlsBindingStrengthKeyGuard:
+		fmt.Println("KeyGuard binding is available")
+	case mi.MtlsBindingStrengthSoftware, mi.MtlsBindingStrengthNone:
+		fmt.Println("KeyGuard binding is unavailable")
+	}
+}
+
 // Acquire a certificate-bound (mtls_pop) token for a managed identity. The binding key is minted
 // inside Virtualization-Based Security, so its private material never enters this process.
 func ExampleWithMtlsProofOfPossession() {

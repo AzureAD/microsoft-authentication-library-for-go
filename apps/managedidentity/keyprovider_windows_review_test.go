@@ -625,8 +625,7 @@ func TestBindingKeyCreateErrorMapsNteExistsFromBothCalls(t *testing.T) {
 			t.Errorf("%s NTE_EXISTS mapped to %v, want errBindingKeyExists", op, err)
 		}
 	}
-	// Anything else still reports a host that cannot produce the key, and names
-	// the call that failed.
+	// An unsupported isolation operation is different from a provider failure.
 	for _, op := range []string{"NCryptCreatePersistedKey", "NCryptFinalizeKey"} {
 		err := bindingKeyCreateError(op, uintptr(nteNotSupported))
 		if errors.Is(err, errBindingKeyExists) {
@@ -637,6 +636,24 @@ func TestBindingKeyCreateErrorMapsNteExistsFromBothCalls(t *testing.T) {
 		}
 		if !strings.Contains(err.Error(), op) {
 			t.Errorf("error %v does not name the failing call %s", err, op)
+		}
+	}
+}
+
+func TestBindingKeyCreateErrorPreservesProviderFailures(t *testing.T) {
+	for _, op := range []string{"NCryptCreatePersistedKey", "NCryptFinalizeKey"} {
+		for _, status := range []uintptr{
+			0x80090030, // NTE_DEVICE_NOT_READY
+			0x8009000E, // NTE_NO_MEMORY
+			uintptr(windows.ERROR_ACCESS_DENIED),
+		} {
+			err := bindingKeyCreateError(op, status)
+			if errors.Is(err, ErrCredentialGuardNotAvailable) {
+				t.Fatalf("%s: provider failure misclassified as unsupported: %v", op, err)
+			}
+			if !errors.Is(err, windows.Errno(status)) {
+				t.Fatalf("%s: native status lost: %v", op, err)
+			}
 		}
 	}
 }
