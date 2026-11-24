@@ -53,7 +53,10 @@ func newFakeKeyProvider() *fakeKeyProvider {
 	return &fakeKeyProvider{keys: map[string]*rsa.PrivateKey{}, typ: keyTypeKeyGuard}
 }
 
-func (f *fakeKeyProvider) getOrCreateKey(name string) (bindingKey, error) {
+func (f *fakeKeyProvider) getOrCreateKey(ctx context.Context, name string) (bindingKey, error) {
+	if err := ctx.Err(); err != nil {
+		return bindingKey{}, err
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.err != nil {

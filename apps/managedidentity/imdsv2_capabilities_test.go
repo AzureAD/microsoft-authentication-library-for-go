@@ -28,6 +28,195 @@ func authParamsForTest() authority.AuthParams {
 	return authority.AuthParams{ClientID: "client", Scopes: []string{"https://vault.azure.net"}}
 }
 
+func TestDiscoverSourceDoesNotEvaluateBinding(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		configured Source
+		v2Status   int
+		v1Status   int
+		disabled   bool
+		want       Source
+	}{
+		{name: "IMDSv2", want: DefaultToIMDS},
+		{name: "IMDSv1", v2Status: http.StatusNotFound, want: DefaultToIMDS},
+		{name: "transient v2 failure", v2Status: http.StatusServiceUnavailable, want: DefaultToIMDS},
+		{name: "disabled v2", disabled: true, want: DefaultToIMDS},
+		{name: "unavailable", v2Status: http.StatusNotFound, v1Status: http.StatusNotFound},
+		{name: "AppService", configured: AppService, want: AppService},
+		{name: "AzureArc", configured: AzureArc, want: AzureArc},
+		{name: "ServiceFabric", configured: ServiceFabric, want: ServiceFabric},
+		{name: "CloudShell", configured: CloudShell, want: CloudShell},
+		{name: "AzureML", configured: AzureML, want: AzureML},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			withCleanCaches(t)
+			fake := newIMDSFake(t)
+			if tt.v2Status != 0 {
+				fake.metadataStatus = tt.v2Status
+			}
+			fake.v1ProbeStatus = tt.v1Status
+			provider := newFakeKeyProvider()
+			client := fake.newTestClient(t, SystemAssigned(), provider)
+			if tt.configured != "" {
+				client.source = tt.configured
+			}
+			if tt.disabled {
+				t.Setenv(disableIMDSv2EnvVar, "true")
+			}
+			ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+			defer cancel()
+			source, err := client.DiscoverSource(ctx)
+			if err != nil || source != tt.want {
+				t.Fatalf("DiscoverSource = %q, %v; want %q, nil", source, err, tt.want)
+			}
+			if provider.creates != 0 || fake.countOf("compute") != 0 ||
+				fake.countOf("issue") != 0 || fake.countOf("token") != 0 {
+				t.Fatalf("source discovery performed binding work: keys=%d, calls=%v", provider.creates, fake.calls)
+			}
+			if tt.configured != "" && len(fake.calls) != 0 {
+				t.Fatalf("configured source contacted IMDS: %v", fake.calls)
+			}
+			calls := len(fake.calls)
+			copyOfClient := client
+			if source, err := copyOfClient.DiscoverSource(ctx); err != nil || source != tt.want {
+				t.Fatalf("cached DiscoverSource = %q, %v", source, err)
+			}
+			if len(fake.calls) != calls {
+				t.Fatal("client copy did not reuse source discovery")
+			}
+		})
+	}
+}
+
+func TestDiscoverSourceDoesNotSettleBindingStrength(t *testing.T) {
+	for _, failedBinding := range []bool{false, true} {
+		t.Run(fmt.Sprintf("failedBinding=%v", failedBinding), func(t *testing.T) {
+			withCleanCaches(t)
+			fake := newIMDSFake(t)
+			provider := newFakeKeyProvider()
+			client := fake.newTestClient(t, SystemAssigned(), provider)
+			if source, err := client.DiscoverSource(context.Background()); err != nil || source != DefaultToIMDS {
+				t.Fatalf("DiscoverSource = %q, %v", source, err)
+			}
+			if provider.creates != 0 {
+				t.Fatal("source discovery created a key")
+			}
+			if failedBinding {
+				provider.err = errors.New("provider temporarily unavailable")
+				caps, err := client.Capabilities(context.Background())
+				if caps.Source != DefaultToIMDS || !errors.Is(err, provider.err) {
+					t.Fatalf("Capabilities = %+v, %v; want partial result and provider error", caps, err)
+				}
+				if source, err := client.DiscoverSource(context.Background()); err != nil || source != DefaultToIMDS {
+					t.Fatalf("binding failure poisoned source discovery: %q, %v", source, err)
+				}
+			} else {
+				_, err := client.AcquireToken(context.Background(), "https://vault.azure.net",
+					WithMtlsProofOfPossession(), WithMtlsPoPMinStrength(MtlsBindingStrengthKeyGuard))
+				if err != nil {
+					t.Fatalf("PoP after source discovery: %v", err)
+				}
+				if provider.creates != 1 || fake.countOf("issue") != 1 {
+					t.Fatal("PoP did not provision its key and certificate")
+				}
+			}
+		})
+	}
+}
+
+type waitingKeyProvider struct {
+	*fakeKeyProvider
+	started chan struct{}
+}
+
+func (p *waitingKeyProvider) getOrCreateKey(ctx context.Context, _ string) (bindingKey, error) {
+	close(p.started)
+	<-ctx.Done()
+	return bindingKey{}, ctx.Err()
+}
+
+func TestKeyProvisioningReceivesCallerContext(t *testing.T) {
+	for _, operation := range []string{"Capabilities", "PoP", "PoP minimum strength", "bearer over mTLS"} {
+		t.Run(operation, func(t *testing.T) {
+			withCleanCaches(t)
+			fake := newIMDSFake(t)
+			provider := &waitingKeyProvider{newFakeKeyProvider(), make(chan struct{})}
+			client := fake.newTestClient(t, SystemAssigned(), provider)
+			ctx, cancel := context.WithCancel(context.Background())
+			defer cancel()
+			done := make(chan error, 1)
+			go func() {
+				var err error
+				switch operation {
+				case "Capabilities":
+					_, err = client.Capabilities(ctx)
+				case "PoP":
+					_, err = client.AcquireToken(ctx, "https://vault.azure.net", WithMtlsProofOfPossession())
+				case "PoP minimum strength":
+					_, err = client.AcquireToken(ctx, "https://vault.azure.net",
+						WithMtlsProofOfPossession(), WithMtlsPoPMinStrength(MtlsBindingStrengthKeyGuard))
+				case "bearer over mTLS":
+					_, err = client.AcquireToken(ctx, "https://vault.azure.net", WithRequestOverMtls())
+				}
+				done <- err
+			}()
+			select {
+			case <-provider.started:
+			case <-time.After(5 * time.Second):
+				t.Fatal("operation did not reach key provisioning")
+			}
+			if operation == "Capabilities" {
+				probeCtx, stop := context.WithTimeout(context.Background(), time.Second)
+				source, err := client.DiscoverSource(probeCtx)
+				stop()
+				if err != nil || source != DefaultToIMDS {
+					t.Fatalf("source-only discovery waited behind key provisioning: %q, %v", source, err)
+				}
+			}
+			cancel()
+			select {
+			case err := <-done:
+				if !errors.Is(err, context.Canceled) {
+					t.Fatalf("error = %v, want context.Canceled", err)
+				}
+			case <-time.After(time.Second):
+				t.Fatal("key provisioning did not observe caller cancellation")
+			}
+			if _, cached, _ := client.hostCapabilityState().cached(); cached {
+				t.Fatal("cancelled binding discovery was cached")
+			}
+			if fake.countOf("issue") != 0 || fake.countOf("token") != 0 {
+				t.Fatal("cancelled provisioning issued a certificate or token")
+			}
+		})
+	}
+}
+
+func TestDiscoverSourceCancellationAndRetry(t *testing.T) {
+	withCleanCaches(t)
+	fake := newIMDSFake(t)
+	client := fake.newTestClient(t, SystemAssigned(), newFakeKeyProvider())
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	if _, err := client.DiscoverSource(ctx); !errors.Is(err, context.Canceled) {
+		t.Fatalf("DiscoverSource = %v, want context.Canceled", err)
+	}
+	client.hostSource.gate <- struct{}{}
+	waitCtx, stop := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer stop()
+	_, err := client.DiscoverSource(waitCtx)
+	<-client.hostSource.gate
+	if !errors.Is(err, context.DeadlineExceeded) {
+		t.Fatalf("queued DiscoverSource = %v, want context.DeadlineExceeded", err)
+	}
+	if _, cached, _ := client.hostSource.cached(); cached {
+		t.Fatal("cancelled source discovery was cached")
+	}
+	if source, err := client.DiscoverSource(context.Background()); err != nil || source != DefaultToIMDS {
+		t.Fatalf("DiscoverSource after cancellation = %q, %v", source, err)
+	}
+}
+
 // The numbering is a contract with MSAL .NET, not an implementation detail: the
 // two libraries describe the same host to the same callers, and the gap at 2 is
 // reserved for a tier neither of them defines yet.

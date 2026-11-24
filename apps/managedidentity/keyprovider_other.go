@@ -5,6 +5,8 @@
 
 package managedidentity
 
+import "context"
+
 // IMDSv2 binds a token to a key the host is able to isolate. Only Windows
 // exposes such a key, through CNG's virtual isolation flag, so this build has
 // no way to satisfy the requirement. Rather than fall back to a software key,
@@ -14,7 +16,10 @@ package managedidentity
 // This mirrors MSAL .NET, which throws on any non-Windows platform.
 type unsupportedKeyProvider struct{}
 
-func (unsupportedKeyProvider) getOrCreateKey(string) (bindingKey, error) {
+func (unsupportedKeyProvider) getOrCreateKey(ctx context.Context, _ string) (bindingKey, error) {
+	if err := ctx.Err(); err != nil {
+		return bindingKey{}, err
+	}
 	return bindingKey{}, ErrMtlsNotSupportedForPlatform
 }
 

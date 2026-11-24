@@ -6,6 +6,8 @@
 package managedidentity
 
 import (
+	"context"
+	"fmt"
 	"runtime"
 	"time"
 
@@ -40,16 +42,56 @@ import (
 // The handle is not closed here; it belongs to the caller, whose own deferred
 // close runs after the release and the unpin.
 func awaitNamedMutex(handle windows.Handle, timeout time.Duration, fn func()) bool {
+	ran, _ := awaitNamedMutexContext(context.Background(), handle, timeout, fn)
+	return ran
+}
+
+// awaitNamedMutexContext also waits on a cancellation event, without leaving a
+// goroutine blocked on the mutex after the caller has returned.
+func awaitNamedMutexContext(ctx context.Context, handle windows.Handle, timeout time.Duration, fn func()) (bool, error) {
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	var cancelled windows.Handle
+	if ctx.Done() != nil {
+		var err error
+		cancelled, err = windows.CreateEvent(nil, 1, 0, nil)
+		if err != nil {
+			return false, fmt.Errorf("managedidentity: creating lock cancellation event: %w", err)
+		}
+		done := make(chan struct{})
+		stop := make(chan struct{})
+		go func() {
+			defer close(done)
+			select {
+			case <-ctx.Done():
+				_ = windows.SetEvent(cancelled)
+			case <-stop:
+			}
+		}()
+		defer func() {
+			close(stop)
+			<-done
+			_ = windows.CloseHandle(cancelled)
+		}()
+	}
+
 	runtime.LockOSThread()
 	defer runtime.UnlockOSThread()
 
-	event, err := windows.WaitForSingleObject(handle, waitMilliseconds(timeout))
+	var event uint32
+	var err error
+	if cancelled == 0 {
+		event, err = windows.WaitForSingleObject(handle, waitMilliseconds(timeout))
+	} else {
+		event, err = windows.WaitForMultipleObjects([]windows.Handle{handle, cancelled}, false, waitMilliseconds(timeout))
+	}
 	switch {
 	case err != nil:
 		// WAIT_FAILED. The wait itself did not work, so no ownership was taken
 		// and nothing may be released. x/sys sets err only for this case, so a
 		// timeout does not reach here.
-		return false
+		return false, err
 	case event == windows.WAIT_OBJECT_0 || event == uint32(windows.WAIT_ABANDONED):
 		// WAIT_ABANDONED means the previous owner died without releasing. The
 		// mutex is ours either way, and it still has to be released or the next
@@ -57,11 +99,14 @@ func awaitNamedMutex(handle windows.Handle, timeout time.Duration, fn func()) bo
 		// roll back: the certificate store is self-describing, and the key
 		// provider re-reads the persisted key before trusting it.
 		defer func() { _ = windows.ReleaseMutex(handle) }()
+		if err := ctx.Err(); err != nil {
+			return false, err
+		}
 		fn()
-		return true
+		return true, nil
 	default:
-		// WAIT_TIMEOUT. Somebody else holds it.
-		return false
+		// WAIT_TIMEOUT, or the cancellation event was signalled.
+		return false, ctx.Err()
 	}
 }
 
