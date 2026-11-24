@@ -8,7 +8,8 @@ pr:
       - main
 
 variables:
-  goVersion: "1.22.3"
+  # GoTool@0 resolves major.minor to the latest patch; wildcard syntax is invalid.
+  goVersion: "1.25"
 
 stages:
   # ──────────────────────────────────────────────
@@ -142,8 +143,8 @@ stages:
   # assigned to it and IMDS reachable. These are the SAME identities used by the
   # MSAL .NET IMDS E2E tests, so both SDKs exercise the same lab configuration.
   #
-  # Runs on every PR. Go is installed only when the VM does not already have it
-  # (checked below) so we don't re-install Go on every run.
+  # Runs on every PR. Go is installed only when the VM does not already have
+  # Go 1.25 or newer (checked below).
   # ──────────────────────────────────────────────
   - stage: MIE2EIMDS
     displayName: "MI E2E – IMDS"
@@ -159,16 +160,26 @@ stages:
             inputs:
               targetType: "inline"
               script: |
+                $ErrorActionPreference = "Stop"
                 $go = Get-Command go -ErrorAction SilentlyContinue
+                $goSupported = $false
                 if ($go) {
-                  Write-Host "Go already installed: $(go version)"
+                  $env:GOTOOLCHAIN = "local"
+                  $goVersion = go env GOVERSION
+                  if ($LASTEXITCODE -ne 0) { throw "Failed to determine the installed Go version." }
+                  Write-Host "Installed Go: $goVersion"
+                  if ($goVersion -match '^go(\d+)\.(\d+)(?:\.\d+)?$') {
+                    $goSupported = [version]"$($Matches[1]).$($Matches[2])" -ge [version]"1.25"
+                  }
+                }
+                if ($goSupported) {
                   Write-Host "##vso[task.setvariable variable=goInstalled]true"
                 } else {
-                  Write-Host "Go not found on agent; it will be installed."
+                  Write-Host "Go 1.25 or newer not found on agent; it will be installed."
                   Write-Host "##vso[task.setvariable variable=goInstalled]false"
                 }
           - task: GoTool@0
-            displayName: "Install Go (only if missing)"
+            displayName: "Install Go (if missing or unsupported)"
             condition: eq(variables['goInstalled'], 'false')
             inputs:
               version: $(goVersion)
@@ -200,8 +211,8 @@ stages:
   # Azure Arc supports the system-assigned identity only. Mirrors the MSAL .NET
   # Azure Arc E2E test.
   #
-  # Runs on every PR. Go is installed only when the machine does not already have
-  # it (checked below) so we don't re-install Go on every run.
+  # Runs on every PR. Go 1.25 or newer must be preinstalled at C:\Go because
+  # this agent cannot download toolchains.
   # ──────────────────────────────────────────────
   - stage: MIE2EAzureArc
     displayName: "MI E2E – Azure Arc"
@@ -225,7 +236,15 @@ stages:
                 $ErrorActionPreference = "Stop"
                 $env:PATH = "C:\Go\bin;$env:PATH"
                 $env:GOTOOLCHAIN = "local"
-                go version
+                $goVersion = go env GOVERSION
+                if ($LASTEXITCODE -ne 0) { throw "Failed to determine the installed Go version." }
+                Write-Host "Installed Go: $goVersion"
+                if ($goVersion -notmatch '^go(\d+)\.(\d+)(?:\.\d+)?$') {
+                  throw "Cannot verify Go version '$goVersion'. Install Go 1.25 or newer at C:\Go."
+                }
+                if ([version]"$($Matches[1]).$($Matches[2])" -lt [version]"1.25") {
+                  throw "Go $goVersion is unsupported. Install Go 1.25 or newer at C:\Go."
+                }
 
                 # Prefer a pre-baked module cache at C:\gomodcache (copied onto
                 # the agent out-of-band). If it's absent, fall back to warming a

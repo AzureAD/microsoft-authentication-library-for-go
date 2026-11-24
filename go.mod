@@ -1,6 +1,6 @@
 module github.com/AzureAD/microsoft-authentication-library-for-go
 
-go 1.18
+go 1.25.0
 
 // v1.10.0 was re-tagged after publication; use v1.10.1.
 retract v1.10.0

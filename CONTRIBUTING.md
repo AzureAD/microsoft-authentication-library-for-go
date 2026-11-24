@@ -22,6 +22,8 @@ $ git remote add upstream git@github.com:AzureAD/microsoft-authentication-librar
 
 ## Setup, Building and Testing
 
+Install Go 1.25 or newer to build and test this repository, including its build tools.
+
 Please see the [Build & Run](https://github.com/AzureAD/microsoft-authentication-library-for-go/wiki/build-and-test) wiki page.
 
 ## Decide on which branch to create

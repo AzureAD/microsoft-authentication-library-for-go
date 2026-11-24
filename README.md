@@ -16,6 +16,8 @@ Quick links:
 ## Installation
 
 ### Setting up Go
+MSAL Go requires Go 1.25 or newer.
+
 To install Go, visit [this link](https://golang.org/dl/).
 
 ### Installing MSAL Go
