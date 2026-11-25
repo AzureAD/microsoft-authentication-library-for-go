@@ -4,6 +4,7 @@
 package managedidentity
 
 import (
+	"context"
 	"crypto"
 	"errors"
 	"fmt"
@@ -128,7 +129,9 @@ type keyProvider interface {
 	// Only a caller that is about to mint a credential, or that is deliberately
 	// probing what this host can provision, may use it. Everything that merely
 	// reads existing state uses openKey.
-	getOrCreateKey(name string) (bindingKey, error)
+	// Context cancellation stops lock waits. An in-flight native key operation
+	// cannot be interrupted and may still persist a key.
+	getOrCreateKey(ctx context.Context, name string) (bindingKey, error)
 	// openKey returns the binding key for name without creating one, reporting
 	// errBindingKeyNotFound when there is no usable key. Callers must call
 	// bindingKey.Close when finished.

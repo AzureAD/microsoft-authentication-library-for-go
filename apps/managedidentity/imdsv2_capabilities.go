@@ -119,8 +119,9 @@ type Capabilities struct {
 	// signal that actually distinguishes them.
 	Source Source
 
-	// MaxSupportedBindingStrength is the strongest binding this host can
-	// produce. This is the signal to branch on rather than the source label.
+	// MaxSupportedBindingStrength is the strongest binding established for this
+	// host. When Capabilities returns an error, this is only a lower bound and
+	// must not be used to select a weaker token.
 	MaxSupportedBindingStrength MtlsBindingStrength
 
 	// ErrorReason carries diagnostic detail when discovery, or the attempt to
@@ -135,13 +136,14 @@ type Capabilities struct {
 	// IMDSv1-only host whose compute document was read successfully and says the
 	// host cannot bind, where it carries the IMDSv2 probe's answer. A populated
 	// ErrorReason alongside [DefaultToIMDS] is therefore ordinary, and says
-	// managed identity works here while a bound token does not.
+	// managed identity was detected, not necessarily that binding is unavailable.
 	//
 	// It is empty for an environment-configured source that simply does not
 	// support binding. App Service, Cloud Shell, Azure ML, Service Fabric and
 	// Azure Arc issue no binding certificate, so [MtlsBindingStrengthNone]
 	// there is the complete answer and nothing failed to produce it. Branch on
-	// MaxSupportedBindingStrength, and read ErrorReason for the explanation.
+	// MaxSupportedBindingStrength only after checking the returned error.
+	// ErrorReason is diagnostic text, not a programmatic error classification.
 	ErrorReason string
 }
 
@@ -158,8 +160,8 @@ type Capabilities struct {
 // returns true here - it does speak the protocol, and MSAL .NET reports the same
 // tier for the same machine - while [WithMtlsProofOfPossession] on it fails with
 // [ErrCredentialGuardNotAvailable]. A caller deciding whether to attempt an
-// acquisition should compare MaxSupportedBindingStrength against
-// [MtlsBindingStrengthKeyGuard] rather than calling this.
+// acquisition should first check the error returned by Capabilities, then compare
+// MaxSupportedBindingStrength against [MtlsBindingStrengthKeyGuard].
 func (c Capabilities) IsMtlsPoPSupportedByHost() bool {
 	return c.MaxSupportedBindingStrength > MtlsBindingStrengthNone
 }
@@ -211,9 +213,10 @@ type capabilitiesState struct {
 	// deadline; a channel lets one give up.
 	gate chan struct{}
 
-	// mu only ever covers the two fields below, never a network call.
+	// mu only ever covers the fields below, never a network call.
 	mu      sync.Mutex
 	result  *Capabilities
+	err     error
 	expires time.Time
 }
 
@@ -222,21 +225,22 @@ func newCapabilitiesState() *capabilitiesState {
 }
 
 // cached returns a stored answer that is still good.
-func (s *capabilitiesState) cached() (Capabilities, bool) {
+func (s *capabilitiesState) cached() (Capabilities, bool, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	if s.result != nil && (s.expires.IsZero() || now().Before(s.expires)) {
-		return *s.result, true
+		return *s.result, true, s.err
 	}
-	return Capabilities{}, false
+	return Capabilities{}, false, nil
 }
 
 // store records an answer, keeping a definitive one for the life of the process
 // and a transient one only until it expires.
-func (s *capabilitiesState) store(result Capabilities, definitive bool) {
+func (s *capabilitiesState) store(result Capabilities, definitive bool, err error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.result = &result
+	s.err = err
 	if definitive {
 		s.expires = time.Time{}
 	} else {
@@ -268,6 +272,7 @@ func (c Client) hostCapabilityState() *capabilitiesState {
 const capabilitiesRetryInterval = 30 * time.Second
 
 // Capabilities reports what this host can do for managed identity.
+// For availability checks without provisioning a binding key, use [Client.DiscoverSource].
 //
 // The result is discovered once per client and reused for the lifetime of that
 // client. Copies of a client made by value share the result; independently
@@ -294,11 +299,18 @@ const capabilitiesRetryInterval = 30 * time.Second
 // leaves a key behind. No certificate and no token is minted, so nothing is
 // requested from IMDS beyond the probe itself.
 //
-// An error is returned only when the context is cancelled. A host with no
-// managed identity at all is not an error: it is reported as a Capabilities
+// When a source is detected but its maximum binding strength cannot be
+// established, the partial result is returned with an error wrapping the cause.
+// Source remains valid, but MaxSupportedBindingStrength is only a lower bound:
+// callers must not treat a discovery failure as evidence that weaker binding
+// should be selected. A confirmed lack of KeyGuard support is an ordinary result,
+// not an error.
+//
+// An undetected managed identity source is reported as a Capabilities
 // with an empty Source and a populated ErrorReason, because "there is no
 // managed identity here" is an answer a credential chain acts on rather than a
-// failure. A cancelled call caches nothing.
+// failure. An empty Source does not establish a binding strength. Cancellation
+// returns the context error and caches nothing.
 //
 // How long an answer lasts depends on how settled it is, and the difference is
 // visible to a caller that retries. A settled answer - an environment source, a
@@ -316,9 +328,32 @@ const capabilitiesRetryInterval = 30 * time.Second
 // carry different HTTP clients, key providers and metadata endpoints, so one
 // client's answer is not generally valid for another.
 func (c Client) Capabilities(ctx context.Context) (Capabilities, error) {
+	return c.hostDiscovery(ctx, false)
+}
+
+// DiscoverSource identifies the managed identity source without provisioning a
+// binding key or evaluating binding strength. It uses the same environment and
+// IMDSv2-then-IMDSv1 probes as Capabilities, but does not read the compute document.
+// An empty source with no error means neither probe detected managed identity.
+//
+// Source discovery is cached separately from full capabilities, with the same
+// lifetime and retry interval. It does not wait for binding-strength evaluation
+// by another caller. Copies of a Client share its source-discovery cache.
+func (c Client) DiscoverSource(ctx context.Context) (Source, error) {
+	result, err := c.hostDiscovery(ctx, true)
+	return result.Source, err
+}
+
+func (c Client) hostDiscovery(ctx context.Context, sourceOnly bool) (Capabilities, error) {
 	state := c.hostCapabilityState()
-	if result, ok := state.cached(); ok {
-		return result, nil
+	if sourceOnly {
+		state = c.hostSource
+		if state == nil {
+			state = newCapabilitiesState()
+		}
+	}
+	if result, ok, err := state.cached(); ok {
+		return result, err
 	}
 	if err := ctx.Err(); err != nil {
 		return Capabilities{}, err
@@ -332,19 +367,19 @@ func (c Client) Capabilities(ctx context.Context) (Capabilities, error) {
 
 	// Whoever held the gate may have answered the question while this caller
 	// was queued behind it.
-	if result, ok := state.cached(); ok {
-		return result, nil
+	if result, ok, err := state.cached(); ok {
+		return result, err
 	}
 
-	result, definitive := c.discoverCapabilities(ctx)
+	result, definitive, err := c.discoverCapabilities(ctx, sourceOnly)
 	if ctxErr := ctx.Err(); ctxErr != nil {
 		// A result reached under a cancelled context may be the cancellation
 		// rather than the host's answer, and caching it would make one
 		// cancelled call poison every later one.
 		return Capabilities{}, ctxErr
 	}
-	state.store(result, definitive)
-	return result, nil
+	state.store(result, definitive, err)
+	return result, err
 }
 
 // discoverCapabilities works out what this host supports. The second return
@@ -368,12 +403,12 @@ func (c Client) Capabilities(ctx context.Context) (Capabilities, error) {
 // conflating them would report "no source" on, say, a Linux VM that plainly has
 // one. The platform limit shows up as the binding tier and as the error an
 // actual acquisition returns, not as an absent source.
-func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
+func (c Client) discoverCapabilities(ctx context.Context, sourceOnly bool) (Capabilities, bool, error) {
 	// An environment-configured source is authoritative and costs nothing to
 	// read, so it settles the question without a probe. None of these sources
 	// issues a binding certificate, so none of them can bind a token.
 	if c.source != DefaultToIMDS {
-		return Capabilities{Source: c.source, MaxSupportedBindingStrength: MtlsBindingStrengthNone}, true
+		return Capabilities{Source: c.source, MaxSupportedBindingStrength: MtlsBindingStrengthNone}, true, nil
 	}
 
 	v := imdsV2{
@@ -386,37 +421,46 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 	if imdsV2Disabled() {
 		if err := v.probeV1Endpoint(ctx, newCorrelationID()); err != nil {
 			if ctx.Err() != nil {
-				return Capabilities{}, false
+				return Capabilities{}, false, ctx.Err()
 			}
 			return Capabilities{
 				MaxSupportedBindingStrength: MtlsBindingStrengthNone,
 				ErrorReason:                 fmt.Sprintf("%s is set; %s", disableIMDSv2EnvVar, err),
-			}, false
+			}, false, nil
 		}
 		return Capabilities{
 			Source:                      DefaultToIMDS,
 			MaxSupportedBindingStrength: MtlsBindingStrengthNone,
 			ErrorReason:                 disableIMDSv2EnvVar + " disables IMDSv2 mTLS support",
-		}, true
+		}, true, nil
 	}
 
 	v2Err := v.probeEndpoint(ctx, newCorrelationID())
 	if v2Err == nil {
+		if sourceOnly {
+			return Capabilities{Source: DefaultToIMDS}, true, nil
+		}
 		// The host speaks the key-bound CSR protocol, so it can bind at least
 		// at software strength; the platform key decides whether it can do
 		// better. Whether that answer is settled is decided by the provider:
 		// a key it actually produced is a fact about the host, while a provider
 		// that failed for a local reason leaves the tier unknown and must not
 		// be cached as though the host had answered.
-		strength, reason, definitive := bindingStrengthFor(v.keyProvider)
-		return Capabilities{
+		strength, bindingErr, definitive := bindingStrengthFor(ctx, v.keyProvider)
+		result := Capabilities{
 			Source:                      DefaultToIMDS,
 			MaxSupportedBindingStrength: strength,
-			ErrorReason:                 reason,
-		}, definitive
+		}
+		if bindingErr != nil {
+			result.ErrorReason = bindingErr.Error()
+			if !definitive {
+				return result, false, fmt.Errorf("managedidentity: determining binding strength: %w", bindingErr)
+			}
+		}
+		return result, definitive, nil
 	}
 	if ctx.Err() != nil {
-		return Capabilities{}, false
+		return Capabilities{}, false, ctx.Err()
 	}
 
 	// v2 answered 404, which is the host saying it has no v2 route. Anything
@@ -426,7 +470,7 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 
 	if v1Err := v.probeV1Endpoint(ctx, newCorrelationID()); v1Err != nil {
 		if ctx.Err() != nil {
-			return Capabilities{}, false
+			return Capabilities{}, false, ctx.Err()
 		}
 		// Neither probe established IMDS. Source stays empty: reporting
 		// DefaultToIMDS here would tell a credential chain there is an identity
@@ -434,7 +478,11 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 		return Capabilities{
 			MaxSupportedBindingStrength: MtlsBindingStrengthNone,
 			ErrorReason:                 fmt.Sprintf("%s; %s", v2Err, v1Err),
-		}, false
+		}, false, nil
+	}
+
+	if sourceOnly {
+		return Capabilities{Source: DefaultToIMDS}, v2Definitive, nil
 	}
 
 	// v1 is there. Its tier comes from the compute document, which is the same
@@ -450,7 +498,7 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 		// The source is established either way; only the tier is unknown, and
 		// the reason has to say so rather than repeating the v2 failure.
 		result.ErrorReason = computeErr.Error()
-		return result, false
+		return result, false, computeErr
 	}
 	if strength == MtlsBindingStrengthNone {
 		result.ErrorReason = v2Err.Error()
@@ -459,7 +507,11 @@ func (c Client) discoverCapabilities(ctx context.Context) (Capabilities, bool) {
 	// failure means v2 may come back, and a client that cached this answer for
 	// good would keep reporting the weaker v1 tier for a host that had
 	// recovered.
-	return result, v2Definitive
+	if !v2Definitive {
+		result.ErrorReason = v2Err.Error()
+		return result, false, fmt.Errorf("managedidentity: IMDSv1 is available but the maximum binding strength could not be determined: %w", v2Err)
+	}
+	return result, true, nil
 }
 
 // imdsV1BindingStrength reads the tier for a host that has answered the IMDSv1
@@ -505,10 +557,8 @@ func imdsV1BindingStrength(ctx context.Context, v imdsV2) (MtlsBindingStrength, 
 //
 //   - a key that was produced, at either tier, is a fact about the host and is
 //     definitive;
-//   - [ErrMtlsNotSupportedForPlatform] is definitive too, but for the opposite
-//     reason: it is chosen at compile time by the build's key provider, so it
-//     cannot change while this binary is running, and retrying it every thirty
-//     seconds would only re-answer a settled question;
+//   - [ErrMtlsNotSupportedForPlatform] and [ErrCredentialGuardNotAvailable]
+//     report an unsupported platform or operation and are definitive too;
 //   - anything else is indeterminate and is reported as transient, so the
 //     thirty-second expiry re-asks once the local condition has had a chance to
 //     clear.
@@ -517,23 +567,27 @@ func imdsV1BindingStrength(ctx context.Context, v imdsV2) (MtlsBindingStrength, 
 // process. A Linux build reports the software floor the host really has - the
 // same tier MSAL .NET reports for that machine - together with a reason saying
 // this build cannot mint the key. Acquisition remains KeyGuard-only either way.
-func bindingStrengthFor(provider keyProvider) (MtlsBindingStrength, string, bool) {
-	key, err := provider.getOrCreateKey(bindingKeyName)
+func bindingStrengthFor(ctx context.Context, provider keyProvider) (MtlsBindingStrength, error, bool) {
+	key, err := provider.getOrCreateKey(ctx, bindingKeyName)
 	if err != nil {
-		if errors.Is(err, ErrMtlsNotSupportedForPlatform) {
-			return MtlsBindingStrengthSoftware, err.Error(), true
+		if errors.Is(err, ErrMtlsNotSupportedForPlatform) || errors.Is(err, ErrCredentialGuardNotAvailable) {
+			return MtlsBindingStrengthSoftware, err, true
 		}
-		return MtlsBindingStrengthSoftware, err.Error(), false
+		return MtlsBindingStrengthSoftware, err, false
 	}
 	defer func() {
 		if key.Close != nil {
 			_ = key.Close()
 		}
 	}()
-	if key.Type == keyTypeKeyGuard {
-		return MtlsBindingStrengthKeyGuard, "", true
+	switch key.Type {
+	case keyTypeKeyGuard:
+		return MtlsBindingStrengthKeyGuard, nil, true
+	case keyTypeSoftware:
+		return MtlsBindingStrengthSoftware, nil, true
+	default:
+		return MtlsBindingStrengthSoftware, fmt.Errorf("managedidentity: key provider returned an unrecognized binding key type %d", key.Type), false
 	}
-	return MtlsBindingStrengthSoftware, "", true
 }
 
 // enforceMinStrength fails an acquisition whose host cannot bind as strongly as
@@ -551,6 +605,9 @@ func (c Client) enforceMinStrength(ctx context.Context, min MtlsBindingStrength)
 	capabilities, err := c.Capabilities(ctx)
 	if err != nil {
 		return err
+	}
+	if capabilities.Source == "" {
+		return fmt.Errorf("managedidentity: the requested binding strength could not be determined because no managed identity source was detected: %s", capabilities.ErrorReason)
 	}
 	if capabilities.MaxSupportedBindingStrength < min {
 		return fmt.Errorf("%w: this host supports %s, the request requires at least %s",

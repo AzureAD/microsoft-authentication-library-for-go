@@ -57,7 +57,10 @@ type revocableKeyProvider struct {
 	key *rsa.PrivateKey
 }
 
-func (p *revocableKeyProvider) getOrCreateKey(string) (bindingKey, error) {
+func (p *revocableKeyProvider) getOrCreateKey(ctx context.Context, _ string) (bindingKey, error) {
+	if err := ctx.Err(); err != nil {
+		return bindingKey{}, err
+	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.key == nil {
@@ -341,7 +344,7 @@ func TestIMDSv2CachedTokenIsNotServedWithAnOrphanedCertificate(t *testing.T) {
 	if result.BindingCertificate == nil {
 		t.Fatal("no binding certificate was returned")
 	}
-	current, err := provider.getOrCreateKey(bindingKeyName)
+	current, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatal(err)
 	}

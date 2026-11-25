@@ -6,6 +6,7 @@
 package managedidentity
 
 import (
+	"context"
 	"crypto"
 	"crypto/rand"
 	"crypto/rsa"
@@ -73,7 +74,7 @@ func rsaPublic(t *testing.T, key bindingKey) *rsa.PublicKey {
 func TestRealKeyGuardKeyIsIsolated(t *testing.T) {
 	provider := requireRealKeyGuard(t)
 
-	key, err := provider.getOrCreateKey(bindingKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatalf("getOrCreateKey: %v", err)
 	}
@@ -197,7 +198,7 @@ func TestRealKeyGuardCrossProcessCreationConverges(t *testing.T) {
 func runKeyGuardRaceChild(t *testing.T, container string) {
 	t.Helper()
 	provider := requireRealKeyGuard(t)
-	key, err := provider.getOrCreateKey(container)
+	key, err := provider.getOrCreateKey(context.Background(), container)
 	if err != nil {
 		t.Fatalf("getOrCreateKey: %v", err)
 	}
@@ -261,7 +262,7 @@ func TestRealKeyGuardConcurrentCreationConvergesOnOneKey(t *testing.T) {
 		go func(i int) {
 			defer wg.Done()
 			<-start
-			key, err := provider.getOrCreateKey(name)
+			key, err := provider.getOrCreateKey(context.Background(), name)
 			if err != nil {
 				errs[i] = err
 				return
@@ -303,7 +304,7 @@ func TestRealKeyGuardConcurrentCreationConvergesOnOneKey(t *testing.T) {
 	// And a later getOrCreateKey adopts that key rather than making another,
 	// which is the property NCRYPT_OVERWRITE_KEY_FLAG would destroy: with the
 	// flag restored this call would replace a key the handles above still name.
-	again, err := provider.getOrCreateKey(name)
+	again, err := provider.getOrCreateKey(context.Background(), name)
 	if err != nil {
 		t.Fatalf("getOrCreateKey on an existing key: %v", err)
 	}
@@ -535,7 +536,7 @@ func (s *staleUntilReplacedContainer) adopt(h windows.Handle) (bindingKey, error
 func TestRealKeyGuardSignHonoursPSSSaltSentinels(t *testing.T) {
 	provider := requireRealKeyGuard(t)
 
-	key, err := provider.getOrCreateKey(bindingKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatalf("getOrCreateKey: %v", err)
 	}
@@ -608,7 +609,7 @@ func TestRealKeyGuardOpenKeyDoesNotCreate(t *testing.T) {
 func TestRealKeyGuardKeySigns(t *testing.T) {
 	provider := requireRealKeyGuard(t)
 
-	key, err := provider.getOrCreateKey(bindingKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatalf("getOrCreateKey: %v", err)
 	}
@@ -662,7 +663,7 @@ func TestRealKeyGuardPersistedCertificateIsUsable(t *testing.T) {
 		t.Logf("alias %s is left in the store for the .NET interop check to consume and remove", alias)
 	}
 
-	key, err := provider.getOrCreateKey(bindingKeyName)
+	key, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatalf("getOrCreateKey: %v", err)
 	}
@@ -740,14 +741,14 @@ func TestRealKeyGuardPersistedCertificateIsUsable(t *testing.T) {
 func TestRealKeyGuardContainerIsStable(t *testing.T) {
 	provider := requireRealKeyGuard(t)
 
-	first, err := provider.getOrCreateKey(bindingKeyName)
+	first, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatalf("first getOrCreateKey: %v", err)
 	}
 	defer func() { _ = first.Close() }()
 	firstPub := rsaPublic(t, first)
 
-	second, err := provider.getOrCreateKey(bindingKeyName)
+	second, err := provider.getOrCreateKey(context.Background(), bindingKeyName)
 	if err != nil {
 		t.Fatalf("second getOrCreateKey: %v", err)
 	}
