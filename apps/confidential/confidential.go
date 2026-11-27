@@ -848,6 +848,7 @@ func (cca Client) AcquireTokenByAuthCode(ctx context.Context, code string, redir
 type acquireTokenByCredentialOptions struct {
 	claims, tenantID    string
 	clientClaims        string
+	forceRefresh        bool
 	authnScheme         AuthenticationScheme
 	extraBodyParameters map[string]string
 	cacheKeyComponents  map[string]string
@@ -858,9 +859,39 @@ type AcquireByCredentialOption interface {
 	acquireByCredOption()
 }
 
+// WithForceRefresh skips the access token cache lookup for an [AcquireTokenByCredential] call
+// when forceRefresh is true. A successful acquisition is cached normally. An acquisition error
+// is returned rather than a cached token. False preserves the default cache behavior, including
+// the cache bypass caused by [WithClaims].
+//
+// This option does not change claims or send a force_refresh parameter to the authority.
+// With a credential created by [NewCredFromTokenProvider], it invokes the provider but does not
+// bypass any cache maintained by that provider. It does not invalidate caches in other libraries.
+func WithForceRefresh(forceRefresh bool) interface {
+	AcquireByCredentialOption
+	options.CallOption
+} {
+	return struct {
+		AcquireByCredentialOption
+		options.CallOption
+	}{
+		CallOption: options.NewCallOption(
+			func(a any) error {
+				switch t := a.(type) {
+				case *acquireTokenByCredentialOptions:
+					t.forceRefresh = forceRefresh
+				default:
+					return fmt.Errorf("unexpected options type %T", a)
+				}
+				return nil
+			},
+		),
+	}
+}
+
 // AcquireTokenByCredential acquires a security token from the authority, using the client credentials grant.
 //
-// Options: [WithClaims], [WithClaimsFromClient], [WithTenantID], [WithFMIPath], [WithAttribute]
+// Options: [WithClaims], [WithClaimsFromClient], [WithForceRefresh], [WithTenantID], [WithFMIPath], [WithAttribute]
 func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string, opts ...AcquireByCredentialOption) (AuthResult, error) {
 	o := acquireTokenByCredentialOptions{}
 	err := options.ApplyOptions(&o, opts)
@@ -880,7 +911,7 @@ func (cca Client) AcquireTokenByCredential(ctx context.Context, scopes []string,
 	}
 	authParams.ExtraBodyParameters = o.extraBodyParameters
 	authParams.CacheKeyComponents = o.cacheKeyComponents
-	if o.claims == "" {
+	if !o.forceRefresh && o.claims == "" {
 		silentParameters := base.AcquireTokenSilentParameters{
 			Scopes:              scopes,
 			Account:             Account{}, // empty account for app token

@@ -56,6 +56,7 @@ type AcquireTokenSilentParameters struct {
 	AuthorizationType   authority.AuthorizeType
 	Claims              string
 	ClientClaims        string
+	ForceRefresh        bool
 	AuthnScheme         authority.AuthenticationScheme
 	ExtraBodyParameters map[string]string
 	CacheKeyComponents  map[string]string
@@ -395,8 +396,8 @@ func (b Client) AcquireTokenSilent(ctx context.Context, silent AcquireTokenSilen
 		return ar, err
 	}
 
-	// ignore cached access tokens when given claims
-	if silent.Claims == "" {
+	// ignore cached access tokens when given claims or when explicitly requested
+	if silent.Claims == "" && !silent.ForceRefresh {
 		ar, err = AuthResultFromStorage(storageTokenResponse)
 		if err == nil {
 			if rt := storageTokenResponse.AccessToken.RefreshOn.T; !rt.IsZero() && Now().After(rt) {
