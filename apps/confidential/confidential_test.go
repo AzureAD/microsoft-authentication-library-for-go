@@ -968,6 +968,89 @@ func TestNewCredFromCertError(t *testing.T) {
 	}
 }
 
+func TestNewCredFromCertInvalidDER(t *testing.T) {
+	data, err := os.ReadFile("../testdata/test-cert.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, key, err := CertFromPEM(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, test := range []struct {
+		name string
+		raw  []byte
+	}{
+		{"empty", nil},
+		{"invalid", []byte("not a certificate")},
+		{"trailing data", append(append([]byte(nil), certs[0].Raw...), 0)},
+	} {
+		for _, additional := range []bool{false, true} {
+			t.Run(fmt.Sprintf("%s/additional=%v", test.name, additional), func(t *testing.T) {
+				cert := *certs[0]
+				cert.Raw = test.raw
+				input := []*x509.Certificate{&cert}
+				if additional {
+					input = append([]*x509.Certificate{certs[0]}, input...)
+				}
+				if _, err := NewCredFromCert(input, key); err == nil {
+					t.Fatal("expected an error for invalid certificate DER")
+				}
+			})
+		}
+	}
+}
+
+func TestNewCredFromCertUsesEncodedPublicKey(t *testing.T) {
+	data, err := os.ReadFile("../testdata/test-cert.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, key, err := CertFromPEM(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherData, err := os.ReadFile("../testdata/test-cert-chain.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherCerts, _, err := CertFromPEM(otherData, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cert := *certs[0]
+	cert.Raw = otherCerts[0].Raw
+	if _, err := NewCredFromCert([]*x509.Certificate{&cert}, key); err == nil {
+		t.Fatal("expected an error because the encoded certificate doesn't match the key")
+	}
+}
+
+func TestNewCredFromCertCopiesCertificate(t *testing.T) {
+	data, err := os.ReadFile("../testdata/test-cert.pem")
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs, key, err := CertFromPEM(data, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cred, err := NewCredFromCert(certs, key)
+	if err != nil {
+		t.Fatal(err)
+	}
+	certs[0].Raw[0] ^= 0xff
+	certs[0].PublicKey = nil
+	if _, err := x509.ParseCertificate(cred.cert.Raw); err != nil {
+		t.Fatalf("caller mutation changed the credential certificate: %v", err)
+	}
+	if !key.(*rsa.PrivateKey).PublicKey.Equal(cred.cert.PublicKey) {
+		t.Fatal("caller mutation changed the credential public key")
+	}
+	if base64.StdEncoding.EncodeToString(cred.cert.Raw) != cred.x5c[0] {
+		t.Fatal("credential certificate differs from x5c")
+	}
+}
+
 func TestNewCredFromTokenProvider(t *testing.T) {
 	expectedToken := "expected token"
 	called := false

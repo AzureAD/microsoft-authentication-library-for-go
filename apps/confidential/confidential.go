@@ -201,16 +201,21 @@ func NewCredFromAssertionCallback(callback func(context.Context, AssertionReques
 
 // NewCredFromCert creates a Credential from a certificate or chain of certificates and an RSA private key
 // as returned by [CertFromPEM].
+// Each non-nil certificate must contain valid DER in Raw; its parsed fields are used.
 func NewCredFromCert(certs []*x509.Certificate, key crypto.PrivateKey) (Credential, error) {
 	cred := Credential{key: key}
 	k, ok := key.(*rsa.PrivateKey)
 	if !ok {
 		return cred, errors.New("key must be an RSA key")
 	}
-	for _, cert := range certs {
+	for i, cert := range certs {
 		if cert == nil {
 			// not returning an error here because certs may still contain a sufficient cert/key pair
 			continue
+		}
+		cert, err := x509.ParseCertificate(append([]byte(nil), cert.Raw...))
+		if err != nil {
+			return Credential{}, fmt.Errorf("certificate at index %d could not be parsed by x509: %w", i, err)
 		}
 		certKey, ok := cert.PublicKey.(*rsa.PublicKey)
 		if ok && k.E == certKey.E && k.N.Cmp(certKey.N) == 0 {
